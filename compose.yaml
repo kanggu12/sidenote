@@ -6,6 +6,7 @@ services:
   server:
     build:
       context: .
+      dockerfile: docker/Dockerfile
       args:
         # The cloud agents' CLIs, at this PC's own versions when it has them (./sidenote up passes them), since
         # each shares its login folder with the PC's own copy.
@@ -99,12 +100,12 @@ services:
 
   # Runs the code from a solution and returns its real output. Isolated: no network at all, a
   # read-only root filesystem, process and memory capped, and every compile and every run under a
-  # user of its own, which is all the four capabilities below are for (docker/runner.py). Each run
+  # user of its own, which is all the four capabilities below are for (runner/runner.py). Each run
   # also gets CPU, memory and file rlimits and a timeout.
   runner:
     build:
       context: .
-      dockerfile: docker/Dockerfile.runner
+      dockerfile: runner/Dockerfile
     image: sidenote-runner:local
     container_name: sidenote-runner
     restart: "no"
@@ -151,9 +152,9 @@ services:
   # The local LLM for SIDENOTE_ANALYZER=local (the default): Ollama. Started only in that mode (./sidenote up adds
   # the "local" profile). It sits on an internal network with no route to the internet, so screens and transcripts
   # sent to it cannot leave the PC; models come in through the separate llm-pull service below (./sidenote llm pull).
-  # Which GPU it runs on comes from one more file beside this one, which ./sidenote picks by the GPU it finds
-  # (COMPOSE_FILE): compose.nvidia.yaml, compose.amd.yaml, or compose.cpu.yaml for none. Each also writes the GPU's
-  # readings for the panel's chart into the gpu-stat volume, one line every two seconds.
+  # Which GPU it runs on comes from one more file in docker/, which ./sidenote picks by the GPU it finds
+  # (COMPOSE_FILE): docker/compose.nvidia.yaml, docker/compose.amd.yaml, or docker/compose.cpu.yaml for none. Each
+  # also writes the GPU's readings for the panel's chart into the gpu-stat volume, one line every two seconds.
   llm:
     image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}
     container_name: sidenote-llm

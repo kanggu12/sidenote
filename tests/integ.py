@@ -414,13 +414,13 @@ async def test_claude_knobs():
 
 
 # ---------- 4. code check harness ----------
-RUNNER_ESM = __import__("re").compile(r"^\s*(import\s|import\{|export\s)", __import__("re").M)   # docker/runner.py
+RUNNER_ESM = __import__("re").compile(r"^\s*(import\s|import\{|export\s)", __import__("re").M)   # runner/runner.py
 
 
 def runner_stub(lang, code, stdin):
-    """Stand in for the runner sandbox with its own commands and flags (docker/runner.py LANGS: python3 -I -S,
+    """Stand in for the runner sandbox with its own commands and flags (runner/runner.py LANGS: python3 -I -S,
     node with an ES module run as main.mjs, gcc -std=c11, g++ -std=c++23), shaping the reply like the real runner
-    (server/app.py runner_exec / docker/runner.py)."""
+    (server/app.py runner_exec / runner/runner.py)."""
     src, build, argv = {"python": ("main.py", None, ["python3", "-I", "-S", "main.py"]),
                         "javascript": ("main.js", None, ["node", "--max-old-space-size=512", "main.js"]),
                         "c": ("main.c", ["gcc", "-O2", "-std=c11", "-o", "a.out", "main.c", "-lm"], ["./a.out"]),
@@ -433,7 +433,7 @@ def runner_stub(lang, code, stdin):
             f.write(code)
         if build:
             b = subprocess.run(build, cwd=d, capture_output=True, text=True, timeout=120)
-            if b.returncode != 0 and lang == "cpp":   # the runner's C++17 try (docker/runner.py COMPILE_AGAIN)
+            if b.returncode != 0 and lang == "cpp":   # the runner's C++17 try (runner/runner.py COMPILE_AGAIN)
                 again = subprocess.run([x.replace("c++23", "c++17") for x in build], cwd=d, capture_output=True, text=True,
                                        timeout=120)
                 b = again if again.returncode == 0 else b
@@ -3335,7 +3335,7 @@ def test_runner_token():
     from http.server import ThreadingHTTPServer
     import server.app as app
     os.environ["RUNNER_TOKEN"] = "s3cret-token"
-    spec = importlib.util.spec_from_file_location("sidenote_runner", str(support.ROOT / "docker" / "runner.py"))
+    spec = importlib.util.spec_from_file_location("sidenote_runner", str(support.ROOT / "runner" / "runner.py"))
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)                     # the module only: main() never runs here
     check("the token is read once and taken out of the environment, so nothing the runner starts inherits it",

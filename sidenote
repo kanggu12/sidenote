@@ -54,9 +54,10 @@ case "$AGENT" in
   "") case "$ANALYZER" in api|claude) AGENT=anthropic-api ;; mock) AGENT=mock ;; *) AGENT=claude-code ;; esac ;;
   *) AGENT=claude-code ;;
 esac
-# The GPU the local model gets picks compose.yaml's companion file: compose.nvidia.yaml, compose.amd.yaml, or
-# compose.cpu.yaml when there is neither (server/hardware.py finds it). docker compose reads COMPOSE_FILE itself, so one
-# set in the environment or in .env stays as it is; otherwise the one found here is exported for every compose command.
+# The GPU the local model gets picks compose.yaml's companion file: docker/compose.nvidia.yaml, docker/compose.amd.yaml,
+# or docker/compose.cpu.yaml when there is neither (server/hardware.py finds it). docker compose reads COMPOSE_FILE itself,
+# so one set in the environment or in .env stays as it is; otherwise the one found here is exported for every compose
+# command.
 gpu_vendor() {
   python3 - <<'PY' 2>/dev/null || echo cpu
 import sys
@@ -67,7 +68,7 @@ print(gpu.vendor if gpu and gpu.vendor in ("nvidia", "amd") else "cpu")
 PY
 }
 COMPOSE_FILE="$(setting COMPOSE_FILE "")"
-[ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="compose.yaml:compose.$(gpu_vendor).yaml"
+[ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="compose.yaml:docker/compose.$(gpu_vendor).yaml"
 export COMPOSE_FILE
 LOCAL_MODEL="$(setting SIDENOTE_LOCAL_MODEL auto)"            # auto: the largest measured model that fits the GPU
 BUSY_MODEL="$(setting SIDENOTE_LOCAL_BUSY_MODEL auto)"         # for while the GPU is busy; auto: the model's smaller one

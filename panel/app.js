@@ -1170,7 +1170,7 @@ document.addEventListener("copy", (e) => {
   e.preventDefault();
 });
 
-// ---- what a function is, on hover: panel/code-docs.json (docker/make_code_docs.py), loaded the first time ----
+// ---- what a function is, on hover: panel/code-docs.json (runner/make_code_docs.py), loaded the first time ----
 let codeDocs = null, codeDocsLoading = null;
 function loadCodeDocs() {
   codeDocsLoading ??= fetch("code-docs.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}))

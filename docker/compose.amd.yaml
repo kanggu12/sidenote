@@ -1,6 +1,6 @@
 # The local model on an AMD GPU with ROCm (Linux with the amdgpu driver; Docker on Windows cannot reach an AMD GPU,
 # so there Ollama for Windows runs outside Docker and SIDENOTE_LOCAL_URL points at it).
-# ./sidenote picks this file when it finds an AMD GPU; by hand: COMPOSE_FILE=compose.yaml:compose.amd.yaml
+# ./sidenote picks this file when it finds an AMD GPU; by hand: COMPOSE_FILE=compose.yaml:docker/compose.amd.yaml
 services:
   llm:
     image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}-rocm

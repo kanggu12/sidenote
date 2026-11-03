@@ -1,6 +1,6 @@
 """Unpacks the packages LeetCode's JavaScript judge has ready into /node_modules, where node finds them from
-any folder. Build time only (docker/Dockerfile.runner): the runner itself has no network. Each tarball is
-checked against the sha256 the Dockerfile pins, so a package whose bytes differ stops the build.
+any folder. Build time only (runner/Dockerfile): the runner itself has no network. Each tarball is
+checked against the sha256 runner/Dockerfile pins, so a package whose bytes differ stops the build.
 
   python3 js_packages.py <name> <version> <file> <sha256> [<name> ...]
 """

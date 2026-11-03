@@ -2,7 +2,7 @@
 
     python fetch_vendor.py vendor.json OUT_DIR
 
-Run while building the image (Dockerfile), so the panel loads nothing from a CDN at run time and its
+Run while building the image (docker/Dockerfile), so the panel loads nothing from a CDN at run time and its
 Content-Security-Policy can allow only the server itself. A file whose bytes differ from the pinned
 checksum stops the build. An entry with "classic": NAME is an ES module with no imports: it is
 wrapped into a plain script that sets window.NAME, because a page opened as a file (the panel's

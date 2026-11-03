@@ -1,8 +1,8 @@
 # Values for the sidenote chart.
 #
 # The chart runs the stack that the repository's compose.yaml runs, with the same hardening:
-#   server   the analysis server and the browser panel (image built from Dockerfile)
-#   runner   the code runner, with no network (image built from docker/Dockerfile.runner)
+#   server   the analysis server and the browser panel (image built from docker/Dockerfile)
+#   runner   the code runner, with no network (image built from runner/Dockerfile)
 #   llm      the local vision LLM (Ollama), and a Job that downloads its models
 #   search   the web search the local LLM uses (SearXNG)
 # The capture program stays outside the cluster, on the PC with the screen, and connects to the server's WebSocket
@@ -61,7 +61,7 @@ agent:
 
 server:
   image:
-    # Built from the repository's Dockerfile and pushed where the cluster can pull it.
+    # Built from the repository's docker/Dockerfile and pushed where the cluster can pull it.
     repository: sidenote
     # Empty: the chart's appVersion.
     tag: ""
@@ -159,7 +159,7 @@ runner:
   # false: no code runner, and the panel shows no run button (SIDENOTE_RUNNER_URL is empty).
   enabled: true
   image:
-    # Built from docker/Dockerfile.runner and pushed where the cluster can pull it.
+    # Built from runner/Dockerfile and pushed where the cluster can pull it.
     repository: sidenote-runner
     # Empty: the chart's appVersion.
     tag: ""

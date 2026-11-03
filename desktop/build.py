@@ -31,10 +31,10 @@ SEP = os.pathsep                 # PyInstaller's --add-data takes "source<sep>de
 # Files the program reads at run time, beside its code: where each goes inside the folder.
 DATA = [
     ("panel", "panel"),                                  # the panel, its fonts and its libraries (panel/vendor)
-    ("server/models", "server/models"),                  # the face finder's model
+    ("server/assets", "server/assets"),                  # the face finder's model
     ("server/locale", "server/locale"),                  # the server's words in other languages
     ("LICENSE", "."),
-    ("THIRD_PARTY_NOTICES.md", "."),
+    ("docs/THIRD_PARTY_NOTICES.md", "."),                # beside the program, with LICENSE
 ]
 # Imported where PyInstaller cannot see it: uvicorn picks its protocol and loop modules by name, and the speech
 # recognizer keeps its voice detector's model as a package file.

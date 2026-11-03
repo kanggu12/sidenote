@@ -93,7 +93,9 @@ flowchart TB
 | `client/capture.py` | the capture program (Windows, Linux with X11): screen, speaker sound, tray | `main` |
 | `sidenote` | the launcher: `install`, `up`, `capture`, `status`, `doctor`, ... | `cmd_help`, and the `case` at its end |
 | `desktop/` | the app for one PC without Docker: starts and watches the server, the capture program and Ollama; its build | `app.py`, `run()` |
-| `docker/` | the code runner and its sandbox, the image's entrypoint, the panel's pinned libraries | `runner.py` |
+| `runner/` | the code runner and its sandbox image: runs code answers with no network | `runner.py`, its `LANGS` |
+| `docker/` | the server image, its entrypoint and pinned packages, the GPU files compose adds (`compose.<gpu>.yaml`), the panel's pinned libraries | `Dockerfile` |
+| `compose.yaml` | the Docker setup the launcher drives | its `services` |
 | `deploy/helm/sidenote/` | the Helm chart | its `README.md` |
 | `tests/` | the suites CI runs | [tests/README.md](tests/README.md) |
 
@@ -210,8 +212,8 @@ Add its cases to `tests/models_check.py` (the pattern, and the tier each GPU siz
 1. `server/hardware.py`: the vendor's PCI ID in `VENDORS` and its name in `SUPPORTED`, a parser for its tool's output
    in `detect()`, and its live readings in `usage()` (the panel's GPU card when no container writes them). Test the
    parsers on captured output in `tests/models_check.py`.
-2. `compose.<vendor>.yaml`: the device access for the `llm` service, and a loop that writes
-   `usedMiB, totalMiB, busy%, tempC, powerW` to `/gpu/now.csv` for the GPU card (see `compose.amd.yaml`). The
+2. `docker/compose.<vendor>.yaml`: the device access for the `llm` service, and a loop that writes
+   `usedMiB, totalMiB, busy%, tempC, powerW` to `/gpu/now.csv` for the GPU card (see `docker/compose.amd.yaml`). The
    launcher's `gpu_vendor()` picks the file by the vendor's name; add the name to its list.
 3. The Helm chart: `llm.gpuVendor` in `values.yaml`, and the resource name and image in
    `templates/llm-deployment.yaml`, which switches between NVIDIA and AMD today.
@@ -254,8 +256,8 @@ Kotlin, JavaScript, TypeScript, Go, Bash). A new language needs:
 - `server/checklangs/`: a module that builds the harness calling the answer's function (see `go.py`).
 - `server/codecheck.py`: the code block's language names in `CHECK_LANGS`, its name in `LANG_NAME`, and in
   `NODE_LANGS` when the harness builds trees and linked lists.
-- `docker/runner.py`: its file name, compile and run commands in `LANGS`, and its compiler in
-  `docker/Dockerfile.runner`.
+- `runner/runner.py`: its file name, compile and run commands in `LANGS`, and its compiler in
+  `runner/Dockerfile`.
 - `panel/app.js`: `RUN_LANG`, so its code blocks get a Run button, and its name in `LANG_LABEL` and `CHECK_LANG`.
 
 ## Report a bug
@@ -266,7 +268,7 @@ Open an issue with what you did, what you expected, and what happened. These hel
 - `./sidenote report`: each day's answers by engine, with their timing and cost.
 - Your OS, GPU and memory, and the local model's name.
 
-Please do not attach screenshots with private content. A security problem goes through [SECURITY.md](SECURITY.md),
+Please do not attach screenshots with private content. A security problem goes through [SECURITY.md](.github/SECURITY.md),
 not an issue.
 
 By contributing, you agree that your contribution is licensed under the [MIT License](LICENSE).

@@ -1,6 +1,6 @@
 {{- if .Values.runner.enabled }}
 {{- $image := include "sidenote.image" (dict "context" . "image" .Values.runner.image) }}
-# The code runner (docker/runner.py): runs the code from a solution and returns its real output. Its
+# The code runner (runner/runner.py): runs the code from a solution and returns its real output. Its
 # own Deployment, so it shares neither the server's network nor its processes: a sidecar would.
 apiVersion: apps/v1
 kind: Deployment

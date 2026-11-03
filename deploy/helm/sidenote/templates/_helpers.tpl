@@ -67,7 +67,7 @@ storageClassName: {{ .storageClass | quote }}
 {{- end }}
 {{- end -}}
 
-{{/* The server image's HEALTHCHECK (Dockerfile), as an exec probe command. */}}
+{{/* The server image's HEALTHCHECK (docker/Dockerfile), as an exec probe command. */}}
 {{- define "sidenote.server.healthCommand" -}}
 - python
 - -c

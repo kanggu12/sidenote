@@ -9,9 +9,9 @@ on:
     paths:
       - "deploy/**"
       - "docker/**"
+      - "runner/**"
       - "server/**"
       - "panel/**"
-      - "Dockerfile"
       - "tests/k3d_check.sh"
       - ".github/workflows/chart-e2e.yml"
   workflow_dispatch:
@@ -43,7 +43,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: docker/Dockerfile
           load: true
           tags: sidenote:e2e
           cache-from: type=gha,scope=server
@@ -51,7 +51,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: docker/Dockerfile.runner
+          file: runner/Dockerfile
           load: true
           tags: sidenote-runner:e2e
           cache-from: type=gha,scope=runner

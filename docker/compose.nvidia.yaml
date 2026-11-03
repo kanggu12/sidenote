@@ -1,5 +1,5 @@
 # The local model on an NVIDIA GPU (the NVIDIA Container Toolkit, or Docker Desktop with WSL 2).
-# ./sidenote picks this file when nvidia-smi finds a GPU; by hand: COMPOSE_FILE=compose.yaml:compose.nvidia.yaml
+# ./sidenote picks this file when nvidia-smi finds a GPU; by hand: COMPOSE_FILE=compose.yaml:docker/compose.nvidia.yaml
 services:
   llm:
     # Ollama, and beside it one line of nvidia-smi every two seconds: used and total memory (MiB), load (%),

@@ -27,7 +27,7 @@ section 18 gives the Korean label for each.
 | Local model | Docker container `sidenote-llm` in WSL (GPU, no internet) | The vision model that solves (Ollama) |
 | Web search | Docker container `sidenote-searxng` in WSL | Sends the local model's searches to search engines (SearXNG) |
 | Panel `panel/index.html` | Browser, `http://127.0.0.1:8777` | Writes the solutions down one below the other, like a notebook |
-| Code runner `docker/runner.py` | Docker container `sidenote-runner` in WSL (no network) | Runs the code you run from the panel and returns its real output |
+| Code runner `runner/runner.py` | Docker container `sidenote-runner` in WSL (no network) | Runs the code you run from the panel and returns its real output |
 | Cloud agent `server/agents.py` | The Claude Code or Codex CLI inside the `sidenote` container, or the Anthropic API | Solves the problems that need reasoning, signed in with this PC's own login (section 3) |
 
 WSL cannot see the Windows screen or sound directly, so only the capture runs on Windows.
@@ -92,7 +92,7 @@ limit** off.
 ./sidenote llm pull        # the local model for this GPU and its smaller one, once (a few GB to tens of GB)
 ```
 
-The GPU is found by itself: `./sidenote` uses `compose.nvidia.yaml`, `compose.amd.yaml` or `compose.cpu.yaml` with
+The GPU is found by itself: `./sidenote` uses `docker/compose.nvidia.yaml`, `docker/compose.amd.yaml` or `docker/compose.cpu.yaml` with
 `compose.yaml` (`COMPOSE_FILE` in `.env` picks one by hand), and `./sidenote doctor` says which.
 
 `install` runs the steps in the order they need and skips the ones already done, so it is safe to run again
@@ -1032,13 +1032,13 @@ Three parts, built and updated in different ways:
 
 | Part | What it is | Built how | Updated by |
 |---|---|---|---|
-| Server | A container image, `sidenote:local` | `Dockerfile`, built by `./sidenote up` | `./sidenote up` after a change (it rebuilds only what changed) |
-| Code runner | A second image, `sidenote-runner:local`, with no network | `docker/Dockerfile.runner` | the same |
+| Server | A container image, `sidenote:local` | `docker/Dockerfile`, built by `./sidenote up` | `./sidenote up` after a change (it rebuilds only what changed) |
+| Code runner | A second image, `sidenote-runner:local`, with no network | `runner/Dockerfile` | the same |
 | Capture program | Python run by the Windows Python, from `client/capture.py` | not built: run as it is | `./sidenote setup-windows` for its packages |
 
 What is pinned, so a rebuild gives the same thing:
 
-- Every Python package in the server image: exact versions in `docker/constraints.txt`, which the Dockerfile
+- Every Python package in the server image: exact versions in `docker/constraints.txt`, which `docker/Dockerfile`
   passes to pip as constraints. `server/requirements.txt` names what is wanted, the constraints decide which.
 - The panel's libraries and fonts: `docker/vendor.json` holds a URL and a SHA-256 for each, fetched at build
   time and verified; nothing is loaded from the internet at run time.

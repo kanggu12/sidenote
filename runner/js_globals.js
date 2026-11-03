@@ -1,5 +1,5 @@
 // The names LeetCode's own judge has ready for a JavaScript or TypeScript answer written there, which it
-// imports nowhere: a heap, a deque and lodash. Node preloads this file for every run (docker/runner.py), and
+// imports nowhere: a heap, a deque and lodash. Node preloads this file for every run (runner/runner.py), and
 // each name is a getter, so a run that never asks for one pays nothing for it (lodash alone is half a megabyte
 // of source). A name the answer declares itself shadows the one here, and assigning to it replaces it.
 "use strict";

@@ -23,7 +23,7 @@ fetches them into `panel/vendor/`, served by the panel itself so that it needs n
 
 | Component | License | Where |
 |:---|:---:|:---|
-| YuNet face detection model (2023mar) | MIT, Copyright (c) 2020 Shiqi Yu | `server/models/face_detection_yunet_2023mar.onnx`, its license beside it |
+| YuNet face detection model (2023mar) | MIT, Copyright (c) 2020 Shiqi Yu | `server/assets/face_detection_yunet_2023mar.onnx`, its license beside it |
 | Hallmark themes (Ribbon, Dusk, Refract) | MIT, https://github.com/Nutlope/hallmark | their component styles, followed by `panel/new.css`, an alternative design that is not loaded |
 
 ## Run beside Sidenote, not part of it

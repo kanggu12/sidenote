@@ -13,7 +13,7 @@
 #
 # It goes into the image, not into a running container: the server runs read_only (compose.yaml),
 # so `docker exec pip install` cannot write site-packages, and anything that did get in would be
-# gone at the next `./sidenote up`. Add these four lines to the Dockerfile's pip step instead:
+# gone at the next `./sidenote up`. Add these four lines to the pip step of docker/Dockerfile instead:
 #
 #       COPY ... server/requirements-ocr.txt ... /tmp/req/
 #       RUN pip install ... -r /tmp/req/requirements-ocr.txt -c /tmp/req/constraints.txt \

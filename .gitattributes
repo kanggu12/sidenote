@@ -1,0 +1,5 @@
+# LF in the repository and in every checkout: the launcher and the shell scripts run in WSL or on Linux straight
+# from a clone, and a Windows clone with core.autocrlf would otherwise give them CRLF endings that bash cannot run.
+* text=auto eol=lf
+*.png binary
+*.onnx binary

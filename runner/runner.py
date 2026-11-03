@@ -66,7 +66,7 @@ BUSY_WAIT = 15.0                  # a run waits this long for the one before it,
 WORK, TMP = "/work", "/tmp"
 WIPED = (WORK, TMP, "/dev/shm", "/dev/mqueue")   # every place a run can write, emptied after it
 OUT = "/out"                      # the output files: this process's alone (compose: a tmpfs of mode 0700)
-# The users compiles and runs are started as, one after another (Dockerfile.runner makes them): a request takes
+# The users compiles and runs are started as, one after another (the Dockerfile beside this makes them): a request takes
 # at most 2 + MAX_STDINS (a compile, the Go repair's second compile, and one per input), so none comes round
 # twice in one.
 RUN_UIDS = tuple(range(10100, 10132))
@@ -87,7 +87,7 @@ LANGS = {
     # The run names the compiled program by its folder's path ({b}): it runs in a folder of its own.
     "python":     ("main.py",   None, ["python3", "-I", "{b}/main.py"], "as", "as"),
     # --require: the names LeetCode's judge has ready for an answer (a heap, a deque, lodash), as getters, so a
-    # run that asks for none pays nothing (docker/js_globals.js)
+    # run that asks for none pays nothing (runner/js_globals.js)
     "javascript": ("main.js",   None, ["node", f"--max-old-space-size={NODE_HEAP_MB}", "--require",
                                        "/app/js_globals.js", "{b}/main.js"], None, None),
     "typescript": ("main.ts",   ["node", "/app/ts_strip.js", "main.ts", "main.js"],
@@ -128,7 +128,7 @@ GO_PACKAGE_CLAUSE = re.compile(r"^[ \t]*package[ \t]+\w+[^\n]*\n", re.M)
 COMPILE_ENV = {"kotlin": {"JAVA_OPTS": "-Xmx512m -XX:+UseSerialGC -XX:ActiveProcessorCount=2 -XX:-UsePerfData"},
                "go": {"GOCACHE": "{cwd}/.gocache", "GOPATH": "{cwd}/.gopath", "GOFLAGS": "-buildvcs=false",
                       "GOMAXPROCS": "2", "GOTOOLCHAIN": "local"}}
-GO_CACHE_SEED = "/opt/gocache"   # the standard packages compiled when the image was made (Dockerfile.runner)
+GO_CACHE_SEED = "/opt/gocache"   # the standard packages compiled when the image was made (the Dockerfile beside this)
 # A Go program's runtime does not start under the address-space limit (it died in rt0_go): it gets Go's own
 # memory target, and the limit on writable memory as the hard one.
 RUN_ENV = {"go": {"GOMEMLIMIT": "256MiB", "GOMAXPROCS": "2"}}

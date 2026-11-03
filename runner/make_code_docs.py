@@ -1,8 +1,8 @@
 """Write panel/code-docs.json: what the panel shows when the pointer rests on a built-in or library function in a code
 block of an answer, the way an editor shows a hover (panel/app.js, docTips).
 
-    docker run --rm -i -v "$PWD/docker/code-docs-ko.json:/ko.json:ro" sidenote-runner:local \
-        python3 - /ko.json < docker/make_code_docs.py > panel/code-docs.json.new \
+    docker run --rm -i -v "$PWD/runner/code-docs-ko.json:/ko.json:ro" sidenote-runner:local \
+        python3 - /ko.json < runner/make_code_docs.py > panel/code-docs.json.new \
         && mv panel/code-docs.json.new panel/code-docs.json
 
 Run in the code runner's image, so the Python entries are that Python's own (the one an answer's code runs on when
@@ -12,7 +12,7 @@ functions and types of a coding test, each a signature and one line of what it d
 (cppreference, the Java SE API, MDN, pkg.go.dev) describe them.
 
 Every entry also says in Korean what it does ("ko"), what goes in ("in") and what comes out ("out"), from
-docker/code-docs-ko.json, written from the same references: the English line alone was one more thing to translate
+runner/code-docs-ko.json, written from the same references: the English line alone was one more thing to translate
 before it said anything. The script stops, writing nothing, when an entry it writes has no Korean.
 
 The file is a dict per language: "names" for what is looked up by its full name (a built-in, `module.attr`,

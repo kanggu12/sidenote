@@ -1,4 +1,4 @@
-# Core server, installed in the image (Dockerfile) with requirements-audio.txt.
+# Core server, installed in the image (docker/Dockerfile) with requirements-audio.txt.
 anthropic>=1.17   # output_config (effort) on messages.stream
 httpx2>=2.14   # the local LLM backend (also pulled in by anthropic)
 fastapi>=0.115

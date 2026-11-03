@@ -422,7 +422,7 @@ else bad "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it" 
 top() { sed -n '1,/^LOCAL_MODEL=/p' "$launcher"; }       # the launcher's settings, up to where the models are read
 picked="$(cd "$work" && env -u COMPOSE_FILE bash -c 'source /dev/stdin >/dev/null 2>&1; printf %s "$COMPOSE_FILE"' < <(top))"
 kept="$(cd "$work" && COMPOSE_FILE=compose.yaml:mine.yaml bash -c 'source /dev/stdin >/dev/null 2>&1; printf %s "$COMPOSE_FILE"' < <(top))"
-if [[ "$picked" =~ ^compose\.yaml:compose\.(nvidia|amd|cpu)\.yaml$ ]] && [ "$kept" = compose.yaml:mine.yaml ]; then
+if [[ "$picked" =~ ^compose\.yaml:docker/compose\.(nvidia|amd|cpu)\.yaml$ ]] && [ "$kept" = compose.yaml:mine.yaml ]; then
   ok "the GPU picks the compose file (${picked#*:}), and a COMPOSE_FILE that is set stays"
 else bad "the GPU picks the compose file, and a COMPOSE_FILE that is set stays" "picked: ${picked:-none}, kept: ${kept:-none}"; fi
 

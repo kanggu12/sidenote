@@ -19,8 +19,8 @@ first and what differs from compose.
 
 | Component | compose service | Kubernetes objects | Notes |
 |:---|:---:|:---|:---|
-| Analysis server and panel | `server` | Deployment, Service (ClusterIP, port 8777), PersistentVolumeClaim, NetworkPolicy | Image built from `Dockerfile`. One replica |
-| Code runner | `runner` | Deployment, Service (port 8000), NetworkPolicy, Secret (its token) | Image built from `docker/Dockerfile.runner`. No network at all; see "Code runner isolation" |
+| Analysis server and panel | `server` | Deployment, Service (ClusterIP, port 8777), PersistentVolumeClaim, NetworkPolicy | Image built from `docker/Dockerfile`. One replica |
+| Code runner | `runner` | Deployment, Service (port 8000), NetworkPolicy, Secret (its token) | Image built from `runner/Dockerfile`. No network at all; see "Code runner isolation" |
 | Local LLM | `llm` | Deployment, Service (port 11434), PersistentVolumeClaim, NetworkPolicy | `ollama/ollama:0.40.5`, on an NVIDIA or AMD GPU (`llm.gpuVendor`). `llm.enabled` |
 | Model download | `llm-pull` | Job (Helm hook), NetworkPolicy | Off until `llm.pull.enabled=true` |
 | Web search | `searxng` | Deployment, Service (port 8080), ConfigMap, NetworkPolicy | `searxng/searxng:2026.10.7-6671d89be`. `search.enabled` |
@@ -55,7 +55,7 @@ registry your cluster can pull from, and name it in your values:
 
 ```bash
 docker build -t registry.example.com/sidenote:0.1.0 .
-docker build -f docker/Dockerfile.runner -t registry.example.com/sidenote-runner:0.1.0 .
+docker build -f runner/Dockerfile -t registry.example.com/sidenote-runner:0.1.0 .
 docker push registry.example.com/sidenote:0.1.0
 docker push registry.example.com/sidenote-runner:0.1.0
 ```
@@ -206,7 +206,7 @@ themselves.
 
 compose runs the code runner with `network_mode: none`, and the server reaches it through a Unix socket in a
 volume the two share, which only root may open. The chart keeps the runner in a Deployment of its own and lets it
-listen on TCP (`RUNNER_PORT`, 8000; `docker/runner.py` does this when `RUNNER_SOCKET` is not set):
+listen on TCP (`RUNNER_PORT`, 8000; `runner/runner.py` does this when `RUNNER_SOCKET` is not set):
 
 - A Unix socket needs a volume both sides mount, which works only for containers in one pod or on one node.
 - A sidecar in the server's pod would share the server's network namespace: the code it runs would have the

@@ -5,7 +5,7 @@ video, a photo in an article or a profile picture shows somebody's likeness, and
 the cloud agent when it answers and into the panel's thumbnail. So the faces on every screen that comes in are found and covered in prepare_frame, before the change
 detector, the models, the crops and the thumbnail are made from it.
 
-The finder is YuNet (OpenCV Zoo, MIT licence in models/LICENSE.yunet), 232 KB of ONNX run by onnxruntime, which the
+The finder is YuNet (OpenCV Zoo, MIT license in assets/LICENSE.yunet), 232 KB of ONNX run by onnxruntime, which the
 image has already for speech. Its input is fixed at 640 x 640, so a screen is read twice over: once whole, fitted into
 640, which finds a face from about a fiftieth of the screen's long side up (a video call, a video, a photo), and once
 in overlapping tiles, closer, for the smaller ones (a thumbnail, a profile picture): four quarters on a screen up to
@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw   # the screen is a PIL image in prepare_frame;
 
 log = logging.getLogger("sidenote.faces")
 
-MODEL = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
+MODEL = Path(__file__).resolve().parent / "assets" / "face_detection_yunet_2023mar.onnx"
 SIDE = 640            # the model's fixed input: a square this many pixels on a side
 SCORE = 0.6           # a face from this confidence up (measured: design note 84)
 NMS_IOU = 0.3         # two boxes overlapping this much are the same face (OpenCV's FaceDetectorYN uses 0.3)

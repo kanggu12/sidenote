@@ -371,15 +371,16 @@ first paint), `fonts.css`, `i18n.js` and `i18n/ko.js` (the panel's Korean, keyed
 thread ([note 27](#note-27)). `?demo=1` previews it with samples and no server.
 
 **Deployment**
-- `Dockerfile`: on python 3.10 slim, the server dependencies, the panel libraries (pinned versions from
+- `docker/Dockerfile`: on python 3.10 slim, the server dependencies, the panel libraries (pinned versions from
   `docker/vendor.json`, sha256-checked, `docker/fetch_vendor.py`) and the agents' CLIs: Claude Code (the same
   version as this PC's, sha256-checked against the release manifest) and Codex (this PC's version when it has one,
   checked against the npm registry's sha512). Runs as root of the container ([notes 23](#note-23) and
   [39](#note-39)).
 - `compose.yaml`: services `server` (container `sidenote`) and `runner` (container `sidenote-runner`), with `llm`
   (`sidenote-llm`) and `searxng` (`sidenote-searxng`) in the `local` profile and the model download `llm-pull` in
-  the `tools` one. The port
-  on `127.0.0.1` only, `restart: "no"`, caps of 8 GB of memory and 8 CPUs, whisper models in the `hf-cache`
+  the `tools` one. The GPU's part of `llm` comes from one of `docker/compose.nvidia.yaml`, `docker/compose.amd.yaml`
+  and `docker/compose.cpu.yaml`, which `./sidenote` adds by the GPU it finds (`COMPOSE_FILE`). The port on
+  `127.0.0.1` only, `restart: "no"`, caps of 8 GB of memory and 8 CPUs, whisper models in the `hf-cache`
   volume, logs bound to `~/.local/state/sidenote/logs`, this PC's `~/.claude` bound to `/root/.claude` (with
   `backups` and `sessions` under it as container scratch space) and `~/.codex` to `/root/.codex`. One capability
   (CHOWN), no privilege escalation, a read-only root, a cap of 512 processes. Networks: `default` (the agent's
@@ -388,15 +389,15 @@ thread ([note 27](#note-27)). `?demo=1` previews it with samples and no server.
   `runner-sock` volume. The server takes connections only through its published port (the gateway of its default
   route) and from itself (`PeerGuard` in `app.py`, [note 37](#note-37)). Docker's own copy of each container's
   output is capped too ([note 24](#note-24)).
-- `docker/runner.py`, `docker/Dockerfile.runner`: the code runner service ([note 47](#note-47)). One stdlib HTTP
+- `runner/runner.py`, `runner/Dockerfile`: the code runner service ([note 47](#note-47)). One stdlib HTTP
   server takes `POST /run`, compiles and runs per language, and returns the result. Python, C, C++, JavaScript,
-  TypeScript 4.9 (types stripped by `docker/ts_strip.js`, with no type checking), Java 21, Kotlin 2.0 (JetBrains'
+  TypeScript 4.9 (types stripped by `runner/ts_strip.js`, with no type checking), Java 21, Kotlin 2.0 (JetBrains'
   compiler, pinned by its sha256), Go 1.24 and Bash, on Debian 13 (its packages: Debian 12's Go 1.19 had no `min`
   or `max` and its Node 18 no `toSorted`); the image is 1.24 GB (455 MB with four languages). C++ is compiled as
   C++23 and, when that fails, as C++17 (from C++20 `<string>` brings `std::count` along, and a global `count`
   beside `using namespace std` stops compiling); the C++23 errors are the ones returned. Go 1.20 stopped shipping
   its standard packages compiled, so each run compiled them again (4.3 s, and one file over the 8 MB a run may
-  write): the image compiles the common ones once into `/opt/gocache` (43 MB, `docker/go_warm.go`) and each Go
+  write): the image compiles the common ones once into `/opt/gocache` (43 MB, `runner/go_warm.go`) and each Go
   compile starts from a copy of its own (32 ms; a shared one could be changed by a run), and a compiler may write
   files of 64 MB. A JVM or a
   Go program gets its own memory limit and a 768 MB limit on writable memory (`RLIMIT_DATA`) instead of the
@@ -869,7 +870,7 @@ on the project's test PC (Windows 11, RTX 4090); the scripts and their data are 
     `runner-sock` volume the two share (on Kubernetes it listens on TCP and a run must carry its token,
     [note 87](#note-87)). It is root of its container with four capabilities, for itself alone (SETUID, SETGID, CHOWN,
     KILL), and takes one request at a time: it starts every compile and every run as a user of its own, one of
-    `RUN_UIDS` in turn, which can neither signal nor read it (`docker/runner.py`). Output goes to files in `/out`, a
+    `RUN_UIDS` in turn, which can neither signal nor read it (`runner/runner.py`). Output goes to files in `/out`, a
     tmpfs only the runner may open, instead of the runner's memory, and a run stops on the spot after writing more
     than 8 MB, so that one endless output cannot kill the runner by running out of memory (with `restart: "no"` it
     would stay dead); one that catches the write error and carries on is reported as stopped there too. After each run
@@ -1061,9 +1062,9 @@ flowchart TD
     text-indent of that many columns), and its indentation is drawn as guides every step (the smallest indentation
     above zero, usually 4). The block's text holds the numbers, so copying and running read the code kept apart as
     written (codeText). The hover over built-in and library functions reads panel/code-docs.json, written by
-    docker/make_code_docs.py: the Python entries are the code runner's own Python's signatures and docstrings, the
+    runner/make_code_docs.py: the Python entries are the code runner's own Python's signatures and docstrings, the
     other languages' the most used functions of a coding test. Every entry also carries what it does, what goes in and
-    what comes out in Korean (docker/code-docs-ko.json, merged by the script, which stops when an entry it writes has
+    what comes out in Korean (runner/code-docs-ko.json, merged by the script, which stops when an entry it writes has
     none), and the box shows those first and the reference's English line last, smaller: the English alone was one
     more thing to translate before it said anything. Python names are resolved through the block's imports
     (`from collections import deque` makes `deque` collections.deque).
@@ -1551,7 +1552,7 @@ flowchart TD
     check was skipped twice over. The look is Classic ([note 98](#note-98)), and the right column moves as
     [note 102](#note-102) says.
 92. <a id="note-92"></a>**New and Classic: a design is its parts.** New (`panel/new.css`, not loaded;
-    [note 98](#note-98)) follows the parts of three MIT-licensed Hallmark themes, credited in THIRD_PARTY_NOTICES.md.
+    [note 98](#note-98)) follows the parts of three MIT-licensed Hallmark themes, credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
     Changed tokens and a picture laid under the page, with every part left as it was, do not make a design, so New
     takes the parts themselves: a floating pill bar and ringed selection, machined pills, recessed beds, hairline
     lists and switch rows, lit panels, run heads, ruled lists with a dot and flagged strips. The one sheet with its

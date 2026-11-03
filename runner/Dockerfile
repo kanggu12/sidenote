@@ -33,13 +33,13 @@ lodash 4.18.1 lodash 696942c2a488c9d7428e9ca5f12ccf03b52de01dcdbfe4d4751d392f049
 @datastructures-js/priority-queue 6.4.0 priority-queue 5c567a500d1869e1de9cbe97b0d99a3731f3cc00d3c56acd25d7fb45f38a228a \
 @datastructures-js/heap 4.3.7 heap d9ede1351b2ecb50cfd3cf346b2c3a455d9019b57c4512032dcb63d18e7b9b9f \
 @datastructures-js/deque 1.0.8 deque fe15942ef520a6855f1f5d89b0ee42432be4877b6c412c09d2e9478b30ed452f"
-COPY docker/js_packages.py /tmp/js_packages.py
+COPY runner/js_packages.py /tmp/js_packages.py
 RUN python3 -I /tmp/js_packages.py ${NPM_PACKAGES} \
     && rm /tmp/js_packages.py \
     && node -e "require('lodash'); require('@datastructures-js/priority-queue'); require('@datastructures-js/deque')"
 
 # Preloaded for every JavaScript and TypeScript run, so those names are there without an import.
-COPY docker/js_globals.js /app/js_globals.js
+COPY runner/js_globals.js /app/js_globals.js
 
 # Kotlin: Debian's is 1.3 (2019), so the compiler comes from JetBrains' release, checked against its sha256 (a
 # file whose bytes differ stops the build).
@@ -54,7 +54,7 @@ zipfile.ZipFile(io.BytesIO(d)).extractall('/opt')" \
 
 # The Go build cache every Go compile starts from (a copy of it, so no run can change another's): the standard
 # packages compiled once here, with the settings a run's compile has.
-COPY docker/go_warm.go /tmp/gowarm/main.go
+COPY runner/go_warm.go /tmp/gowarm/main.go
 RUN cd /tmp/gowarm && GOCACHE=/opt/gocache GOPATH=/tmp/gowarm/gopath GOFLAGS=-buildvcs=false GOTOOLCHAIN=local \
         go build -o /dev/null main.go \
     && rm -rf /tmp/gowarm && chmod -R a+rX /opt/gocache
@@ -67,7 +67,7 @@ RUN for u in $(seq 10100 10131); do \
     done \
     && mkdir -p /work /out
 
-COPY docker/runner.py docker/ts_strip.js /app/
+COPY runner/runner.py runner/ts_strip.js /app/
 
 # The runner itself is root of the container, with only the capabilities compose grants it (SETUID, SETGID,
 # CHOWN, KILL): it starts the runs as the users above, which can neither signal nor read it.

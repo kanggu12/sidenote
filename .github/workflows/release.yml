@@ -53,7 +53,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: docker/Dockerfile
           push: true
           # Claude Code is Anthropic's to distribute: left out of the published image, fetched by a pod when it starts
           build-args: |
@@ -67,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: docker/Dockerfile.runner
+          file: runner/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner:${{ steps.v.outputs.version }}

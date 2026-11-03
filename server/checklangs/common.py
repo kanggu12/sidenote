@@ -10,7 +10,7 @@ import re
 CASE_MARK = "@@CASE"
 
 
-MAX_CASES = 8   # at most the runner's MAX_STDINS (docker/runner.py): a program's examples go in one request
+MAX_CASES = 8   # at most the runner's MAX_STDINS (runner/runner.py): a program's examples go in one request
 
 
 IDENT = re.compile(r"[A-Za-z_]\w*", re.A)

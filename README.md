@@ -247,4 +247,4 @@ PY=.venv/bin/python tests/run.sh server
 ## License
 
 MIT ([LICENSE](LICENSE)). The libraries, fonts and models Sidenote uses, and the programs it runs beside it, are listed
-with their licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+with their licenses in [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
