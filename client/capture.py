@@ -77,7 +77,7 @@ KO = {
     "Could not show the tray menu (exit code {code}, {n} in a row)": "트레이 메뉴를 띄우지 못했습니다 (종료 코드 {code}, 연속 {n}번)",
     "Using the Windows menu from now on": "이제 Windows 기본 메뉴를 씁니다",
     "Could not show the tray menu, using the Windows menu ({error})": "트레이 메뉴를 띄우지 못해 Windows 기본 메뉴를 씁니다 ({error})",
-    "No tray icon ({error}). To install it: ./sidenote setup-windows": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-windows",
+    "No tray icon ({error}). To install it: ./sidenote setup-capture": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-capture",
     "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up 을 실행하세요.",
     "Quit from the tray.": "트레이에서 종료했습니다.",
     "Restarting from the tray.": "트레이에서 다시 시작합니다.",
@@ -88,15 +88,15 @@ KO = {
     "Could not start again: {error}": "다시 시작하지 못했습니다: {error}",
     # the tray menu
     "Open the panel": "패널 열기",
-    "Screen capture": "화면 보기",
-    "Sound capture": "소리 듣기",
+    "Screen capture": "화면 캡처",
+    "Sound capture": "소리 캡처",
     "Restart capture": "캡처 다시 시작",
     "Quit": "끝내기",
     "Quit Sidenote": "Sidenote 끝내기",
     "Sidenote is not running. Start the Sidenote app again.": "Sidenote가 실행 중이 아닙니다. Sidenote 앱을 다시 켜세요.",
     "Not connected (./sidenote up)": "서버에 연결되지 않음 (./sidenote up)",
     "Not connected": "서버에 연결되지 않음",
-    "Capturing: {what}": "받는 중: {what}",
+    "Capturing: {what}": "캡처 중: {what}",
     "Screen": "화면",
     "Sound": "소리",
     "nothing": "없음",
@@ -1606,28 +1606,51 @@ class Updater:
         return True
 
 
+# ---- the icon: desktop/build.py draws the app's icon from this block too, so the two stay one ----
 INK = (26, 30, 40, 255)        # the panel's own ink
 PAPER = (250, 250, 247, 255)
 MARK = (232, 200, 64, 255)      # the highlighter
+# The wordmark's S (Bricolage Grotesque at weight 800, the logo's), as its one outline on the icon's 64-point grid
+S_OUTLINE = (
+    (32.18, 49.7), (29.68, 49.59), (28.15, 49.39), (26.73, 49.09), (25.41, 48.69), (24.21, 48.2), (23.12, 47.63),
+    (22.13, 46.96), (20.86, 45.81), (20.16, 44.94), (19.58, 44), (19.11, 42.98), (18.75, 41.88), (18.51, 40.73),
+    (18.39, 39.52), (18.38, 38.25), (25.88, 36.6), (25.98, 37.7), (26.17, 38.68), (26.47, 39.56), (26.86, 40.33),
+    (27.33, 40.99), (28.19, 41.81), (28.87, 42.24), (29.61, 42.58), (30.4, 42.84), (31.68, 43.06), (33.31, 43.08),
+    (34.32, 42.95), (35.23, 42.73), (36.26, 42.27), (36.88, 41.84), (37.47, 41.14), (37.64, 40.74), (37.72, 40.32),
+    (37.72, 39.81), (37.6, 39.26), (37.22, 38.54), (36.83, 38.12), (36.34, 37.75), (35.44, 37.24), (34.36, 36.8),
+    (26.51, 34.38), (24.96, 33.78), (23.53, 33.08), (22.63, 32.55), (21.8, 31.96), (20.71, 30.92), (19.81, 29.7),
+    (19.55, 29.25), (19.15, 28.27), (18.88, 27.18), (18.75, 25.99), (18.76, 24.56), (18.96, 23.08), (19.14, 22.39),
+    (19.64, 21.08), (19.97, 20.48), (20.78, 19.35), (21.75, 18.36), (22.29, 17.92), (22.87, 17.51), (24.16, 16.79),
+    (25.59, 16.2), (26.34, 15.96), (27.94, 15.59), (29.63, 15.37), (31.43, 15.3), (33.33, 15.38), (35.12, 15.63),
+    (35.97, 15.82), (37.6, 16.31), (39.12, 16.98), (40.47, 17.79), (41.65, 18.76), (42.65, 19.88), (43.08, 20.5),
+    (43.78, 21.85), (44.04, 22.57), (44.23, 23.34), (44.43, 24.97), (44.38, 26.75), (36.98, 27.95), (36.93, 26.54),
+    (36.76, 25.59), (36.37, 24.49), (35.78, 23.56), (35.22, 22.97), (34.31, 22.36), (33.21, 21.94), (32.25, 21.76),
+    (31.18, 21.7), (29.76, 21.8), (28.87, 22.01), (27.91, 22.44), (27.19, 23.03), (26.83, 23.56), (26.6, 24.15),
+    (26.54, 25.06), (26.73, 25.76), (27.14, 26.37), (27.77, 26.89), (28.6, 27.36), (30.41, 28.04), (35.34, 29.48),
+    (38.04, 30.36), (40.1, 31.26), (41.98, 32.38), (42.82, 33.05), (43.56, 33.81), (44.21, 34.65), (44.77, 35.58),
+    (45, 36.09), (45.35, 37.2), (45.61, 39.1), (45.6, 40.61), (45.52, 41.38), (45.39, 42.12), (44.96, 43.5),
+    (44.66, 44.13), (43.91, 45.3), (42.96, 46.33), (42.43, 46.8), (41.86, 47.23), (40.59, 47.98), (39.89, 48.31),
+    (38.38, 48.86), (36.76, 49.27), (35.01, 49.55),
+)
 
 
 def tray_image(size: int = 256):
-    """The icon: a sheet of paper with one highlighter stroke across it.
+    """The icon: the wordmark's S over a highlighter stroke, on a sheet of paper, as the logo writes the name.
 
-    Drawn large and shrunk with a good filter, because Windows asks for 16 and 20 points and a shape
-    drawn at that size comes out ragged. Three shapes only, and the stroke carries most of the weight:
-    at 16 points an outline and three lines of "text" were mud."""
+    Drawn four times larger and brought down with a good filter, because Windows asks for 16 and 20 points and a shape
+    drawn at that size comes out ragged. The paper keeps the ink readable on a dark taskbar as on a light one."""
     big = size * 4
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    u = big / 64.0                                     # the old 64-point grid, scaled up
+    u = big / 64.0                                     # the 64-point grid, scaled up
     # Edge to edge: Windows shrinks the whole image to the tray's slot, so what is left blank round the sheet only made it small
-    d.rounded_rectangle([1 * u, 0 * u, 63 * u, 64 * u], radius=9 * u, fill=PAPER)
-    d.rounded_rectangle([1 * u, 0 * u, 63 * u, 64 * u], radius=9 * u, outline=INK, width=int(4 * u))
-    d.polygon([(43 * u, 0 * u), (63 * u, 20 * u), (43 * u, 20 * u)], fill=INK)   # the turned corner
-    d.rounded_rectangle([9 * u, 29 * u, 55 * u, 44 * u], radius=2 * u, fill=MARK)  # the stroke
-    d.line([(9 * u, 52 * u), (38 * u, 52 * u)], fill=INK, width=int(4 * u))
+    d.rounded_rectangle([0.5 * u, 0.5 * u, 63.5 * u, 63.5 * u], radius=15 * u, fill=PAPER, outline=INK, width=round(4 * u))
+    # the stroke leans as the wordmark's does: 12 degrees, behind the lower half of the S
+    lean = 0.2126                                      # tan(12 degrees)
+    d.polygon([((x + 7 - lean * y) * u, y * u) for x, y in ((9, 34), (55, 34), (55, 49), (9, 49))], fill=MARK)
+    d.polygon([(x * u, y * u) for x, y in S_OUTLINE], fill=INK)
     return img.resize((size, size), Image.LANCZOS)
+# ---- end of the icon ----
 
 
 # The tray's right-click menu, drawn in the panel's own look. A program of its own, run for as long as the menu is open:
@@ -2041,7 +2064,7 @@ def start_tray(sender, stop: threading.Event, args):
     try:
         import pystray
     except Exception as exc:
-        print("[tray] " + t("No tray icon ({error}). To install it: ./sidenote setup-windows", error=type(exc).__name__))
+        print("[tray] " + t("No tray icon ({error}). To install it: ./sidenote setup-capture", error=type(exc).__name__))
         return None
 
     url = panel_url(args.server)

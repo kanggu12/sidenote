@@ -1,11 +1,14 @@
 # Tests
 
-How this fits with CI and the deploy: [docs/QA.md](../docs/QA.md).
+The suites CI runs, in two groups. How they fit with CI and the deploy is in [docs/QA.md](../docs/QA.md).
 
-The suites CI runs, in two groups. The server and capture group runs the server's code in mock mode (no GPU, no
-network, no cloud agent) and the capture program against made-up screens and sound devices. The panel group serves a
-copy of `panel/` and drives it in headless Chromium through Playwright, with a stand-in for the server's socket. Each
-suite is a script that prints one line per check and a tally at the end, and exits non-zero when a check failed.
+- **Server and capture.** The server's code in mock mode (no GPU, no network, no cloud agent), and the capture
+  program against made-up screens and sound devices.
+- **Panel.** A copy of `panel/` served and driven in headless Chromium through Playwright, with a stand-in for the
+  server's socket.
+
+Each suite is a script that prints one line per check and a tally at the end, and exits non-zero when a check
+failed.
 
 ```bash
 tests/run.sh              # every suite
@@ -16,8 +19,8 @@ tests/run.sh --check      # every suite on disk is in a list and in this file
 ```
 
 `tests/run.sh` prints one line per suite (its tally, and what it skipped), keeps each suite's whole output in
-`logs/<suite>.log` of the output folder, and exits non-zero if any suite failed. Every suite runs with
-`SIDENOTE_ANALYZER=mock` and `SIDENOTE_LANG=ko`: the server's words in Korean, as the checks read them
+`logs/<suite>.log` in the output folder, and exits non-zero if any suite failed. Every suite runs with
+`SIDENOTE_ANALYZER=mock` and `SIDENOTE_LANG=ko`, so the server's words are in Korean, as the checks read them
 (`i18n_check.py` unsets it and checks both languages).
 
 | Variable | What it is | Default |
@@ -31,9 +34,9 @@ tests/run.sh --check      # every suite on disk is in a list and in this file
 
 ## Running them locally
 
-The server group needs the server's packages (`server/requirements.txt`) and `websocket-client`, which the capture
-program imports; the repository's `.venv` has both. `integ.py` also runs answers' code with `gcc`, `g++`, `node` and
-`bash`, the way the code runner does.
+The server group needs the server's packages (`server/requirements.txt` and `server/requirements-audio.txt`) and
+`websocket-client`, which the capture program imports: the `.venv` that [CONTRIBUTING.md](../CONTRIBUTING.md) sets up
+has them. `integ.py` also runs answers' code with `gcc`, `g++`, `node` and `bash`, as the code runner does.
 
 The panel group needs Playwright with its Chromium, in a virtual environment of its own:
 
@@ -49,7 +52,7 @@ and the panel's libraries, which are fetched (and checked against their checksum
 python3 docker/fetch_vendor.py docker/vendor.json panel/vendor
 ```
 
-Then:
+Then run every suite with those two interpreters. `./sidenote qa` does the same, with these defaults:
 
 ```bash
 PY=.venv/bin/python PW=.venv-panel/bin/python tests/run.sh
@@ -70,21 +73,28 @@ The suites that load the capture program take another copy of it as their first 
 
 ## In CI
 
-One interpreter with everything, then the same script:
+Each group runs in a job of its own (`.github/workflows/ci.yml`), with one interpreter that has what the group
+needs. `PY` and `PW` are left unset there, so both are that job's Python:
 
 ```bash
-pip install -r server/requirements.txt websocket-client -r tests/requirements-panel.txt
+# the server job
+pip install -r server/requirements.txt -r server/requirements-audio.txt -c docker/constraints.txt
+pip install websocket-client -c docker/constraints.txt
+tests/run.sh server
+
+# the panel job
+pip install -r tests/requirements-panel.txt -r server/requirements.txt -c docker/constraints.txt
 python -m playwright install --with-deps chromium
-python3 docker/fetch_vendor.py docker/vendor.json panel/vendor
-tests/run.sh
+python docker/fetch_vendor.py docker/vendor.json panel/vendor
+tests/run.sh panel
 ```
 
-The measurement data is not there, so the checks that read it are skipped, and each suite that skipped some says
-how many and why in its line (below). Every other check runs as it does locally.
+The measurement data is not there, so the checks that read it are skipped, and each suite that skipped some says how
+many and why in its line (see "The measurement data" below). Every other check runs as it does locally.
 
-`launcher_args.sh` runs the control script itself, with every Windows program it calls stood in for, but the script
-reaches Windows through WSL: it finds the capture program's path with `wslpath` and starts Windows programs from
-`/mnt/c`. A machine that is not WSL has neither, so `tests/run.sh` skips that suite there and says so in its line.
+`launcher_args.sh` runs the launcher itself, with every Windows program it calls stood in for. The launcher reaches
+Windows through WSL: it finds the capture program's path with `wslpath` and starts Windows programs from `/mnt/c`. A
+machine that is not WSL has neither, so `tests/run.sh` skips that suite there and says so in its line.
 
 ## The Helm chart on a cluster
 
@@ -106,12 +116,12 @@ The chart-e2e workflow runs it on a push that changes the chart, the images or t
 ## The measurement data
 
 It stays out of the repository for its size and for what it holds: screenshots of other people's sites, the answers
-the models wrote for them, and a photo of a face. The checks that read it find it through the variables above. Where
-a file is missing, the group of checks that needs it is skipped from the point it asks for the file, and the suite
-prints one line, before its tally, saying how many groups it skipped, which, and what was missing.
+the models wrote for them, and a photo of a face. The checks that read it find it through the variables above. When a
+file is missing, the group of checks that needs it is skipped from the point where it asks for the file, and the
+suite prints one line before its tally: how many groups it skipped, which, and what was missing.
 
 | Data | Read by |
-|---|---|
+|:---|:---|
 | `SIDENOTE_BENCH/real/spec/code_bj_ab.png`, a problem page from Baekjoon | `integ.py`: the face cover group, every check in it |
 | `SIDENOTE_FACES/face.jpg`, a face photo pasted beside that problem | `integ.py`: the same group |
 | `SIDENOTE_CORPUS/doocs/solution/...`, three problem figures (`illu_1.jpg`, `list.jpg`, `bomb2-grid.jpg`) | `integ.py`: the three checks that a drawn figure is not taken for a face, each on its own |
@@ -122,17 +132,17 @@ prints one line, before its tally, saying how many groups it skipped, which, and
 Server and capture (`PY`):
 
 | Suite | What it checks |
-|---|---|
-| `integ.py` | the pipeline with the mock engines: settings, answer heads, routing between this PC's model and the agent, the spend brake, crops and windows, the example check run against real compilers, search, the face cover, the theme tokens |
-| `agent_first.py` | the agent first and this PC's model when the agent cannot: routing by speed and GPU, the first-token deadline, the thinking progress, a video beside a still problem, a drawn region, the verify mode on a 4K screen |
-| `server_review.py` | what one commit left wrong in the server, and one older loop: the first-token hand-off, which scrolled problems continue an answer, a spoken question a screen stopped, the spend brake, the retry and continuation slots, the idle release, the GPU button, the example check between analyses |
+|:---|:---|
+| `integ.py` | the pipeline with the mock engines: settings, answer heads, routing between the local model and the agent, the spend brake, crops and windows, the example check run against real compilers, search, the face cover, the theme tokens |
+| `agent_first.py` | the agent first, and the local model when the agent cannot: routing by speed and GPU, the first-token deadline, the thinking progress, a video beside a still problem, a drawn region, the verify mode on a 4K screen |
+| `server_review.py` | thirteen defects of the server, each a check: the first-token hand-off, which scrolled problems continue an answer, a spoken question a screen stopped, the spend brake, the retry and continuation slots, the idle release, the GPU button, the example check between analyses |
 | `worker_order.py` | the analysis worker: what starts, waits or is canceled between the screen and a spoken problem, the settle, the quiet after empty answers |
 | `voice_trigger.py` | what counts as a problem read aloud and what is only the room's sound |
 | `lang_vote.py` | the session's language vote over Whisper's odds, with a stand-in model |
 | `stall_guard.py` | the watchdog that ends a stuck event loop, and the guard that keeps fork() away from speech decoding |
 | `capture_loop.py` | the capture program's screen loop on made-up screens: a scrolled problem joined into one page, typing is no scroll, control and quit messages, no grabbing without a server |
 | `up_wait.py` | `./sidenote up` waits while the server is in use (its `in_use` function against `/health` answers) |
-| `ci_gate.py` | `./sidenote up` asks what CI said of the commit: a failed one is refused, `--when-green` waits, what CI has not seen goes up and says so (its `ci_state` and `ci_gate` functions, with a stand-in `gh`) |
+| `ci_gate.py` | the CI check before a deploy (`SIDENOTE_CI_GATE=1`): a failed commit is refused, `--when-green` waits, what CI has not seen goes up and says so (the launcher's `ci_state` and `ci_gate`, with a stand-in `gh`) |
 | `server_scenarios.py` | what real use has done to the server and the capture program: a restart in the middle of a problem, a reading mistaken for a busy GPU, a plan's limit outliving a new sign-in, a late probe of the agent's CLI, the averages, example headings, a tray menu whose program has gone |
 | `models_check.py` | which local model fits which GPU: the GPU readers on NVIDIA, AMD (amd-smi, rocm-smi, sysfs) and DXGI output, the model profiles and the choice among pulled models, "auto" in the server, and a local server that is not Ollama |
 | `desktop_check.py` | Sidenote on one PC without Docker (`desktop/`): the server's environment on the host, the data folder on each system, the capped logs, the port check, the watch that starts a stopped child again, the capture program's restart code, `python -c` in the built app, and a whole start and stop with stand-in models |
@@ -148,13 +158,13 @@ Server and capture (`PY`):
 | `tray_switch.py` | the tray's screen and sound switches go through the server, as the panel's do |
 | `codex_agent.py` | Codex through its CLI, the agent chosen by the environment, the newest model of a family |
 | `repeats_check.py` | a problem seen again (scrolled, moved, come back to) is not solved again, and an agent at its usage limit rests until it comes back |
-| `limits_check.py` | why analyses stopped and what the agent was paid for, from the log; this PC's model, switched off, standing in for the agent at its limit; the thinking pass's last sentence; code run on made-up inputs when a problem shows none; Codex's reset times and missing prices, the API agent's stop reasons, a status code inside a request id; the chart's runner token rendered without a cluster (design note 89) |
-| `launcher_args.sh` | what `./sidenote` hands to Windows, and how it behaves when something it calls is missing or broken |
+| `limits_check.py` | why analyses stopped and what the agent was paid for, from the log; the local model, switched off, standing in for the agent at its limit; the thinking pass's last sentence; code run on made-up inputs when a problem shows none; Codex's reset times and missing prices, the API agent's stop reasons, a status code inside a request id; the chart's runner token rendered without a cluster ([note 89](../docs/DECISIONS.md#note-89)) |
+| `launcher_args.sh` | what `./sidenote` hands to Windows, and how it behaves when a program it calls is missing or broken |
 
 Panel (`PW`):
 
 | Suite | What it checks |
-|---|---|
+|:---|:---|
 | `panel_scroll.py` | the page is the one scroller, and no card of the rail is clipped |
 | `panel_run.py` | the run box when code reads input and none is typed, and the marks on its bar |
 | `panel_asks.py` | the follow-up buttons under the newest answer |
@@ -162,14 +172,16 @@ Panel (`PW`):
 | `panel_review.py` | ten bugs and eleven design faults of the panel, each a check |
 | `panel_viz.py` | charts and diagrams in an answer under the server's CSP, tilde ranges, code read as in an editor, the frame round the sheets |
 | `panel_churn.py` | superseded looks, redraws that keep a press, a caret and an open follow-up, the layout, the rail, code still being written |
-| `panel_limits.py` | the thinking's last sentence while it thinks, finding and exporting the answers, a notice that brings its answer into view, the agent resting at its limit with this PC's model standing in |
+| `panel_limits.py` | the thinking's last sentence while it thinks, finding and exporting the answers, a notice that brings its answer into view, the agent resting at its limit with the local model standing in |
 | `panel_new.py` | the highlighter, the contents inside their card, the rail's rows, history over a reconnect, the filters, Export and a long answer drawn live, on Classic (New (Beta) is switched off; one check keeps it off) |
 | `panel_scenarios.py` | whole sittings: the place in the thread through focus, picks, filters and resizes, a dropped connection, messages out of order, hostile and broken answers, a sitting of 400 answers, boxes on portrait and ultrawide screens, the keys |
 | `panel_design.py` | what the design promises, measured: one color down the column off a screenshot, the column at 5 widths by 8 heights, the ribbon, contrast, and each answer drawn from its words with none lost |
 | `panel_lang.py` | the panel's language: English for an English browser, with no Hangul in what it shows across the page's states other than what answers say; Korean for a Korean browser or `?lang=ko`; the language told to the server first; the Korean particle after a word; a notice's level. The other panel suites open Korean pages (`support.LOCALE`) and read the Korean words |
 | `panel_layout.py` | an audit of the page as laid out, over 30 states of the column at 11 sizes, 22 shapes of answer and what opens over the page: words cut, out of their box or over each other, rows and columns a few pixels off, keys with their words off the middle. Plants a defect of each kind to see it found. The panel's parts, check by check, and motion: nothing loops at rest, what comes in comes once and ends where it would have stood. `ONLY="the audit,motion"`, `LAYOUT_SIZES=1920x1080` and `AUDIT_REPORT=path` narrow it |
 
-`data/answers/` holds answers written by hand in the shape of eight of the bench's, for the groups of `panel_review`, `panel_churn` and `panel_viz` that read them: with the bench missing, as in CI, those groups run on these rather than being skipped.
+`data/answers/` holds answers written by hand in the shape of eight of the bench's, for the groups of `panel_review`,
+`panel_churn` and `panel_viz` that read them: with the bench missing, as in CI, those groups run on these instead of
+being skipped.
 
 Beside them: `fake_claude.py` and `fake_codex.py` stand in for the `claude` and `codex` CLIs (`integ.py` and
 `codex_agent.py` run them), and `support.py` holds what the suites share: the paths above, the settings message, a

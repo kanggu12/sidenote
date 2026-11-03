@@ -76,7 +76,7 @@ def cmd_stats(args) -> int:
             cost=f"{totals.get('cost_usd', 0):.4f}"))
     sec = lambda v: "-" if v is None else t("{v} s", v=v)
     if r.get("n"):
-        print(t("Last {n}: response median {p50}, 90% {p90}, median to the first character {first}", n=r["n"],
+        print(t("Last {n}: response median {p50}, 90% {p90}, median to the first token {first}", n=r["n"],
                 p50=sec(r.get("elapsed_p50")), p90=sec(r.get("elapsed_p90")), first=sec(r.get("first_token_p50"))))
     else:
         print(t("Recent responses: none yet"))
@@ -171,16 +171,17 @@ def cmd_report(args) -> int:
     if not rows:
         print(t("No records in the last {n} day(s)", n=args.days))
         return 0
-    dash = lambda v: "-" if v is None else str(v)   # 0.0 is a value, not "none"
+    # a time with its unit, as stats writes it (the medians are seconds); 0.0 is a value, not "none"
+    sec = lambda v: "-" if v is None else t("{v} s", v=v)
     cols = [("Date", 10, False), ("Answers", 4, True), ("Follow-ups", 4, True), ("Empty screens", 7, True),
-            ("Cancelled", 4, True), ("Errors", 4, True), ("Response (median)", 10, True), ("First character", 6, True),
-            ("Cost", 9, True)]
+            ("Cancelled", 4, True), ("Errors", 4, True), ("Response (median)", 10, True),
+            ("First token (median)", 6, True), ("Cost", 9, True)]
     # each heading in the terminal's language, its column as wide as the heading where that is wider
     cols = [(t(name), max(w, _width(t(name))), right) for name, w, right in cols]
     print("  ".join(_pad(name, w, right) for name, w, right in cols) + "  " + t("Types"))
     for r in rows:
         vals = [r["day"], r["answers"], r["followups"], r["empty"], r["cancelled"], sum(r["errors"].values()),
-                dash(r["elapsed_median"]), dash(r["first_token_median"]), f"${r['cost_usd']:.4f}"]
+                sec(r["elapsed_median"]), sec(r["first_token_median"]), f"${r['cost_usd']:.4f}"]
         print("  ".join(_pad(v, w, right) for v, (_, w, right) in zip(vals, cols)) + "  "
               + ", ".join(f"{k} {v}" for k, v in sorted(r["types"].items(), key=lambda x: -x[1])))
     _print_period(period)
@@ -202,7 +203,7 @@ def _period(since: float) -> dict:
     again (local_stuck), and what the example checks concluded, a check that read examples and left them all out (none
     of them in the problem's text after an example heading) apart from one that found none. Counted by hand once
     to find where real use went slow and where the money went; needed again, so made a report."""
-    first: dict[str, list] = defaultdict(list)
+    first: dict[tuple, list] = defaultdict(list)   # (engine, spoken) -> first-token times; named when printed
     cost = {"answers": 0.0, "empty": 0.0, "empty_turns": 0, "headless": 0.0, "headless_turns": 0, "followups": 0.0}
     # the agent's turns that found nothing, by what it was given (empty_sent) and why it got them (empty_via)
     empty_sent: Counter = Counter()
@@ -235,8 +236,8 @@ def _period(since: float) -> dict:
                 cost["answers"] += e.get("cost_usd") or 0
             if isinstance(e.get("first_token"), (int, float)):
                 # "claude": how the agent's answers were recorded while it could only be Claude
-                way = t({"agent": "Agent", "claude": "Agent", "local": "This PC"}.get(e.get("engine"), "not recorded"))
-                first[f"{way} {t('speech') if e.get('trigger') == 'voice' else t('screen')}"].append(e["first_token"])
+                engine = {"agent": 0, "claude": 0, "local": 1}.get(e.get("engine"), 2)
+                first[(engine, e.get("trigger") == "voice")].append(e["first_token"])
         elif k == "followup_done":
             cost["followups"] += e.get("cost_usd") or 0
         elif k == "analysis_cancelled":
@@ -268,7 +269,13 @@ def _period(since: float) -> dict:
                    "skipped" if e.get("skipped") else "error" if e.get("error") else "other"] += 1
             if e.get("none") and e.get("read") and not e.get("kept"):   # read off the screen, then all left out
                 checks["left_out"] += 1
-    return {"first_token": {w: {"n": len(v), "p50": _pct(v, .5), "p90": _pct(v, .9)} for w, v in sorted(first.items())},
+    # one line for each engine and way in, in the same order in every language: sorted by the translated words, the
+    # Korean put speech before screen. The agent, the local model, then what was not recorded; screens, then speech.
+    label = lambda engine, voice: (
+        f"{t('Agent') if engine == 0 else t('Local model') if engine == 1 else t('not recorded')}, "
+        f"{t('speech') if voice else t('screen')}")
+    return {"first_token": {label(*way): {"n": len(v), "p50": _pct(v, .5), "p90": _pct(v, .9)}
+                            for way, v in sorted(first.items())},
             "cost_usd": {k: round(v, 4) if isinstance(v, float) else v for k, v in cost.items()},
             "gpu_busy": gpu_busy, "local_timeouts": timeouts, "local_stuck": stuck, "local_stuck_failed": stuck_failed,
             "checks": dict(checks),
@@ -285,8 +292,8 @@ CANCEL_NAMES = {"superseded": "new screen", "voice": "spoken problem", "reanalyz
                 "screen_off": "screen off", "sound_off": "sound off", "local_off": "model off", "repeat": "same problem",
                 "gpu_busy": "GPU busy", "not_sent": "not sent", "unknown": "no reason recorded"}
 # why the agent was given a problem (pipeline.solve, stages["why"])
-VIA_NAMES = {"handoff": "first pass slow", "unknown": "type not read", "slow": "this PC slow", "kind": "type handed over",
-             "all": "all handed over", "only": "agent only", "none": "not recorded"}
+VIA_NAMES = {"handoff": "first pass slow", "unknown": "type not read", "slow": "local model slow",
+             "kind": "type handed over", "all": "all handed over", "only": "agent only", "none": "not recorded"}
 
 
 def _shape(sent, trigger) -> str:
@@ -308,12 +315,13 @@ def _shape(sent, trigger) -> str:
 
 def _print_period(period: dict) -> None:
     print("\n  " + t("The whole period"))
+    wide = max((_width(way) for way in period["first_token"]), default=0)   # Hangul takes two columns
     for way, f in period["first_token"].items():
-        print("  " + t("First character  {way} count {n}   median {p50} s   slowest 10% {p90} s", way=_pad(way, 12),
+        print("  " + t("First token  {way}   answers {n}   median {p50} s   slowest 10% {p90} s", way=_pad(way, wide),
                        n=f"{f['n']:>3}", p50=f["p50"], p90=f["p90"]))
     c = period["cost_usd"]
     print("  " + t("Agent cost  answers ${answers}   follow-ups ${followups}   screens with nothing to solve ${empty} "
-                   "(count {empty_n})   answers with no head ${headless} (count {headless_n})",
+                   "(count {empty_n})   answers with no head line ${headless} (count {headless_n})",
                    answers=f"{c['answers']:.2f}", followups=f"{c['followups']:.2f}", empty=f"{c['empty']:.2f}",
                    empty_n=c["empty_turns"], headless=f"{c['headless']:.2f}", headless_n=c["headless_turns"]))
     if period.get("empty_by_sent"):
@@ -333,10 +341,12 @@ def _print_period(period: dict) -> None:
                    answers=rp.get("answers", 0))
           + ("   " + t("lowest score {min}, median {p50}", min=rp["min"], p50=rp["p50"]) if rp.get("n") else ""))
     ch = period["checks"]
-    # of the checks with no examples, those that read some and found none of them in the problem's text
-    left = t("(read but not in the problem's text, left out: {n})", n=ch["left_out"]) if ch.get("left_out") else ""
-    failed = t("(could not be taken off: {n})", n=period["local_stuck_failed"]) if period.get("local_stuck_failed") else ""
-    print("  " + t("GPU busy: {gpu}   this PC's model timed out: {timeouts}   stuck and loaded again: {stuck}{failed}   "
+    # of the checks with no examples, those that read some and found none of them in the problem's text. Each aside
+    # brings its own space: English puts one before a bracket after a number, Korean writes the bracket close to it.
+    left = t(" (read but not in the problem's text, left out: {n})", n=ch["left_out"]) if ch.get("left_out") else ""
+    failed = (t(" (could not be taken off: {n})", n=period["local_stuck_failed"])
+              if period.get("local_stuck_failed") else "")
+    print("  " + t("GPU busy: {gpu}   the local model timed out: {timeouts}   stuck and loaded again: {stuck}{failed}   "
                    "example checks: passed {passed}, failed {failed_n}, no examples {none}{left}, not run "
                    "{not_run}", gpu=period["gpu_busy"], timeouts=period["local_timeouts"],
                    stuck=period.get("local_stuck", 0), failed=failed, passed=ch.get("passed", 0),

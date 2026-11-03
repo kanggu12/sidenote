@@ -36,6 +36,11 @@ jobs:
   release:
     needs: [checks, chart, desktop]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write      # the GitHub release and its files
+      packages: write      # the images and the chart in ghcr.io
+      id-token: write      # the build provenance below, signed through GitHub's OIDC token
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - name: Version and names
@@ -101,6 +106,21 @@ jobs:
           pattern: Sidenote-*
           path: dist/app
           merge-multiple: true
+      # The app is not code-signed yet: a checksum file and GitHub's own record of where each file was built are what a
+      # download can be checked against (sha256sum -c SHA256SUMS; gh attestation verify FILE --repo OWNER/sidenote)
+      - name: Checksums of the files the release carries
+        run: |
+          cd dist
+          { sha256sum "sidenote-${{ steps.v.outputs.version }}.tgz" "sidenote-capture-${{ steps.v.outputs.version }}.zip"
+            (cd app && sha256sum Sidenote-*.zip); } > SHA256SUMS
+          cat SHA256SUMS
+      - name: Where each file was built, signed by GitHub
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/sidenote-${{ steps.v.outputs.version }}.tgz
+            dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
+            dist/app/Sidenote-*.zip
       - name: GitHub release
         uses: softprops/action-gh-release@v3
         with:
@@ -109,3 +129,4 @@ jobs:
             dist/sidenote-${{ steps.v.outputs.version }}.tgz
             dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
             dist/app/Sidenote-*.zip
+            dist/SHA256SUMS

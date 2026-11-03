@@ -101,8 +101,11 @@ class FasterWhisperTranscriber:
                  model_size, compute_type, self.language, cpu_threads)
         # cpu_threads: without it CTranslate2 decodes on every core the container has, which is
         # the lag the tool is supposed to save the user. num_workers 1: one utterance at a time.
-        self._model = WhisperModel(model_size, device="cpu", compute_type=compute_type,
-                                   cpu_threads=max(1, int(cpu_threads)), num_workers=1)
+        # Built under the spawn lock: it loads in the background now, beside the CLI checks and the analyses, and its
+        # int8 conversion can run in a native parallel region, which a fork must not meet (forksafe.py)
+        with forksafe.native_work():
+            self._model = WhisperModel(model_size, device="cpu", compute_type=compute_type,
+                                       cpu_threads=max(1, int(cpu_threads)), num_workers=1)
 
     @property
     def language(self) -> str:

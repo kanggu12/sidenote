@@ -27,9 +27,9 @@ import numpy as np     # the correlation, by FFT
 from PIL import Image  # the crops
 
 # The width the screen is brought to before anything is compared: the same for every screen, so a problem keeps its
-# size in pixels from one screen to the next. 1200 keeps a 4K screen's 16 px text at about 5 px, enough for the lines
-# and the words to correlate, and makes a box's search a few tens of milliseconds (calibration: docs/ARCHITECTURE.md,
-# design note 88).
+# size in pixels from one screen to the next. 1600 keeps a 4K screen's 16 px text at about 7 px, enough for the lines
+# and the words to correlate, and makes a box's search a few tens of milliseconds (calibration: docs/DECISIONS.md,
+# note 88).
 WORK_WIDTH = 1600
 BAND_PX = 24           # about how tall a band is: a box is cut into its height / BAND_PX bands, 3 to 8
 MIN_BANDS = 3          # with fewer bands that hold anything, nothing is decided (and the problem is solved as before)

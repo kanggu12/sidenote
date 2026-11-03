@@ -2194,6 +2194,88 @@ async def test_search_turned_away():
     check("results from the engines that did answer: no error", "error" not in second and second["results"], str(second))
 
 
+async def test_page_dials_checked_address():
+    """A page is fetched only from an address that was resolved and checked: a name that resolves to a public address
+    for the check and to a LAN one for the connect (DNS rebinding) is turned away before anything is dialled."""
+    print("\n[web pages: only a checked address is dialled]")
+    import json
+    import socket
+    import httpcore2
+    from server import search
+    from server.search import WebTools, public_backend
+
+    real_resolve, real_global = socket.getaddrinfo, search._global_ip
+    answers = []                                    # what each lookup gives, in turn
+
+    def resolve(host, port, *a, **k):
+        ip = answers.pop(0) if answers else "127.0.0.1"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port or 0))]
+
+    backend = public_backend()
+    dialled = []
+
+    async def record(host, port, **kw):             # the real dialler, never reached for a refused name
+        dialled.append(host)
+        raise httpcore2.ConnectError("not dialled in this check")
+    backend._inner.connect_tcp = record
+    socket.getaddrinfo = resolve
+    try:
+        for ips, why in ((["127.0.0.1"], "a name on this PC"), (["10.0.0.7"], "a name on the LAN")):
+            answers[:] = ips
+            dialled.clear()
+            try:
+                await backend.connect_tcp("rebind.example", 443)
+                refused = False
+            except httpcore2.ConnectError as exc:
+                refused = "not allowed" in str(exc)
+            check(f"{why} is refused before anything is dialled", refused and not dialled, str(dialled))
+        # A name given two addresses, one of them private: refused as a whole, as allowed_url refuses it
+        def two(host, port, *a, **k):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", port)),
+                    (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.1", port))]
+        socket.getaddrinfo = two
+        dialled.clear()
+        try:
+            await backend.connect_tcp("two.example", 443)
+        except httpcore2.ConnectError:
+            pass
+        check("...and one with a private address among its public ones", not dialled, str(dialled))
+        # The address dialled is the one checked, not the name: with 127.0.0.1 let through for the check, the listener
+        # on it gets the connection
+        search._global_ip = lambda ip: ip == "127.0.0.1"
+        socket.getaddrinfo = real_resolve
+        got = []
+
+        async def accept(reader, writer):
+            got.append(True)
+            writer.close()
+        server = await asyncio.start_server(accept, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        socket.getaddrinfo = lambda host, p, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", p))]
+        stream = await public_backend().connect_tcp("pinned.example", port, timeout=4)
+        await stream.aclose()
+        await asyncio.sleep(0.05)
+        server.close()
+        check("the address dialled is the one the name gave the check", got == [True], str(got))
+        search._global_ip = real_global
+        # The whole fetch: the check sees a public address, the connect a private one: no page, a reason, nothing dialled
+        web = WebTools(CONFIG)
+        await web._client.aclose()
+        pool = web._pages._transport._pool
+        check("the page client's pool dials through the checked backend (the transport swap holds)",
+              type(pool._network_backend).__name__ == "PublicOnly", type(pool._network_backend).__name__)
+        pool._network_backend._inner.connect_tcp = record
+        answers[:] = ["93.184.215.14", "192.168.0.1"]   # allowed_url's lookup, then the dial's
+        socket.getaddrinfo = resolve
+        dialled.clear()
+        out = json.loads(await web.call("fetch_page", {"url": "https://rebind.example/"}))
+        check("a name that rebinds between the check and the dial gets no GET", not dialled and "not allowed" in
+              out.get("error", ""), str(out)[:160])
+        await web.aclose()
+    finally:
+        socket.getaddrinfo, search._global_ip = real_resolve, real_global
+
+
 async def test_pace_shared():
     print("\n[busy GPU switch: requests side by side]")
     import json
@@ -3746,6 +3828,7 @@ async def main():
     await test_gpu_pace()
     await test_thinking_cut()
     await test_search_turned_away()
+    await test_page_dials_checked_address()
     await test_pace_shared()
     await test_load_kept()
     await test_claude_gets_the_searches()

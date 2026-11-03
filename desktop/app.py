@@ -32,8 +32,10 @@ import importlib
 import importlib.util
 import json
 import os
+import secrets
 import shutil
 import socket
+import signal
 import subprocess
 import sys
 import tempfile
@@ -106,7 +108,17 @@ def server_env(base: dict, data: Path, port: int) -> dict:
         found = agent_found(env.get("PATH"))
         if found:
             env["SIDENOTE_AGENT"] = found
+    # The CLI by its full path: on Windows an npm-installed one is claude.cmd or codex.cmd, which shutil.which finds and a
+    # bare name started by the server does not (CreateProcess adds .exe alone), so the panel said "Not installed"
+    cli = AGENT_CLIS.get(env.get("SIDENOTE_AGENT", ""))
+    if cli and not env.get("SIDENOTE_AGENT_BIN"):
+        full = shutil.which(cli, path=env.get("PATH"))
+        if full:
+            env["SIDENOTE_AGENT_BIN"] = full
     return env
+
+
+AGENT_CLIS = {"claude-code": "claude", "codex": "codex"}   # each CLI agent's command
 
 
 def agent_found(path: str | None) -> str:
@@ -175,10 +187,14 @@ def ui_lang() -> str:
 KO = {
     "Another program is using the port Sidenote needs ({port}). Close that program, then start Sidenote again.":
         "다른 프로그램이 Sidenote가 쓰는 포트({port})를 쓰고 있습니다. 그 프로그램을 끈 뒤 Sidenote를 다시 켜세요.",
-    "The Sidenote server did not start. The end of its log:": "Sidenote 서버가 시작하지 못했습니다. 기록의 끝:",
-    "Sidenote's server keeps stopping. The end of its log:": "Sidenote 서버가 계속 멈춥니다. 기록의 끝:",
-    "Ollama keeps stopping. The end of its log:": "Ollama가 계속 멈춥니다. 기록의 끝:",
-    "The capture program keeps stopping. The end of its log:": "캡처 프로그램이 계속 멈춥니다. 기록의 끝:",
+    "The Sidenote server did not start. The end of its log:": "Sidenote 서버를 시작하지 못했습니다. 로그 마지막 부분:",
+    "Sidenote's server keeps stopping. The end of its log:": "Sidenote 서버가 계속 꺼집니다. 로그 마지막 부분:",
+    "Ollama keeps stopping. The end of its log:": "Ollama가 계속 꺼집니다. 로그 마지막 부분:",
+    "The capture program keeps stopping. The end of its log:": "캡처 프로그램이 계속 꺼집니다. 로그 마지막 부분:",
+    "The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.":
+        "로그는 {folder}에 있습니다. Sidenote를 다시 켜 보고, 또 그러면 로그를 붙여 이슈를 열어 주세요.",
+    "Sidenote goes on without starting Ollama: the local model answers only once Ollama runs.":
+        "Sidenote는 Ollama 없이 계속 실행합니다. 이 PC의 모델은 Ollama가 켜져 있어야 답합니다.",
 }
 
 
@@ -249,6 +265,20 @@ def _windows_job():
 _JOIN_JOB = None   # set by run(): puts a new child into the job above
 
 
+# Linux only: prctl(PR_SET_PDEATHSIG) makes a child get SIGTERM when this program ends in any way, so a server is not
+# left running with no supervisor after a crash or a kill -9 (the next start would find it up and only open the panel).
+# The function is looked up here, before any fork: the child then makes one call and loads nothing.
+try:
+    import ctypes
+    _PRCTL = ctypes.CDLL(None, use_errno=True).prctl if sys.platform.startswith("linux") else None
+except (OSError, AttributeError):
+    _PRCTL = None
+
+
+def _die_with_parent() -> None:
+    _PRCTL(1, signal.SIGTERM)            # 1: PR_SET_PDEATHSIG
+
+
 class Child:
     """One child process, its output written to a CappedLog. `starts` keeps when it was started, so one that keeps
     stopping can be given up on instead of started for ever."""
@@ -265,6 +295,8 @@ class Child:
             group = {"creationflags": CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
         else:
             group = {"start_new_session": True}
+        if _PRCTL is not None:           # Linux: the child is told to stop when this program dies, a kill -9 included
+            group["preexec_fn"] = _die_with_parent
         self.proc = subprocess.Popen([*self.cmd, *extra], cwd=str(ROOT), env=self.env, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **group)
         if _JOIN_JOB is not None:
@@ -287,10 +319,18 @@ class Child:
         now = time.monotonic()
         return sum(1 for t in self.starts if now - t < within) >= count
 
-    def stop(self, timeout: float = 10) -> None:
+    def stop(self, timeout: float = 10, ask=None) -> bool:
+        """Ends it; True when it ended by itself. `ask` asks it to close down first (the server's /server/stop), and
+        only one that has not ended within `timeout` is killed."""
         proc = self.proc
         if proc is None or proc.poll() is not None:
-            return
+            return True
+        if ask is not None and ask():
+            try:
+                proc.wait(timeout)       # its own shutdown runs: what the next start needs is kept, server_stop logged
+                return True
+            except subprocess.TimeoutExpired:
+                pass                     # it did not close down in time: killed below, as one never asked
         if sys.platform == "win32":
             # Windows has no SIGTERM, and ending one process leaves its own children running (Ollama's model
             # runner holding the GPU memory, an agent's CLI): the whole tree goes.
@@ -303,6 +343,20 @@ class Child:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(5)
+        return False
+
+
+def ask_server_to_stop(port: int, token: str) -> bool:
+    """Asks the server on this port to close down by itself, with the token it was started with; True when it said
+    it will. Windows has no SIGTERM: without this the server was killed and its shutdown never ran."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    request = urllib.request.Request(f"http://127.0.0.1:{port}/server/stop", data=b"", method="POST",
+                                     headers={"X-Sidenote-Stop": token})
+    try:
+        with opener.open(request, timeout=3) as r:
+            return r.status == 202
+    except OSError:                      # not answering, or the token refused: it is stopped the other way
+        return False
 
 
 def health(port: int, timeout: float = 1.5) -> dict | None:
@@ -447,13 +501,22 @@ def run(args) -> int:
         log.close()
         return 1
     env = server_env(os.environ, data, port)
+    # The server alone gets the token that lets this program ask it to close down (ask_server_to_stop)
+    token = secrets.token_urlsafe(24)
     # The server writes server.log itself; what it prints also covers what comes before that file is open (an
     # import that fails) and uvicorn's own lines.
-    server = Child("server", role_cmd("--serve", "--port", str(port)), env, CappedLog(logs / "server-console.log"))
+    server = Child("server", role_cmd("--serve", "--port", str(port)), {**env, "SIDENOTE_STOP_TOKEN": token},
+                   CappedLog(logs / "server-console.log"))
     ollama: Child | None = None
     capture: Child | None = None
     try:
-        binary = ollama_binary() if ollama_needed(env) else None
+        needed = ollama_needed(env)
+        binary = ollama_binary() if needed else None
+        if not needed and env.get("SIDENOTE_ANALYZER", "local") == "local" \
+                and env.get("SIDENOTE_LOCAL_URL", "").startswith(("http://127.0.0.1:11434", "http://localhost:11434")):
+            # Ollama's own installer starts it at sign-in, with its defaults: a shorter context and images cut to fewer
+            # tokens than OLLAMA_ENV gives, which blurs small code text. The tuned model brings its context along.
+            say("Ollama was already running, with its own settings; quit it before starting Sidenote to have Sidenote's", log)
         if binary:
             ollama = Child("ollama", [binary, "serve"], {**env, **{k: env.get(k, v) for k, v in OLLAMA_ENV.items()}},
                            CappedLog(logs / "ollama.log"))
@@ -463,7 +526,9 @@ def run(args) -> int:
         say(f"starting the server on {url}", log)
         if not wait_for(lambda: health(port) is not None or server.exited() is not None, timeout=180) \
                 or health(port) is None:
-            tell(t("The Sidenote server did not start. The end of its log:") + "\n\n" + tail(server.log.path), log)
+            tell(t("The Sidenote server did not start. The end of its log:") + "\n\n" + tail(server.log.path) + "\n\n"
+                 + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
+                     folder=logs), log)
             return 1
         say("the server is up", log)
         supported, why = capture_supported()
@@ -484,7 +549,7 @@ def run(args) -> int:
             ask_capture_to_quit(port)
             if not wait_for(lambda: capture.exited() is not None, timeout=5):
                 capture.stop()
-        server.stop()
+        server.stop(ask=lambda: ask_server_to_stop(port, token))
         if ollama is not None:
             ollama.stop()
         say("stopped", log)
@@ -493,15 +558,27 @@ def run(args) -> int:
 
 def watch(server: Child, capture: Child | None, ollama: Child | None, log: CappedLog) -> int:
     """Start again what stops, until the capture program is quit (or this program is stopped)."""
+    folder = server.log.path.parent
     while True:
         time.sleep(1)
         for child in (server, ollama):
             if child is None or child.exited() is None:
                 continue
+            if child is ollama and not ollama_needed(ollama.env):
+                # something else answers on Ollama's port now (Ollama's own tray app, often, at sign-in): it serves the
+                # model, so this one is not started again, and nothing else stops for it
+                say("Ollama answers on its own now; Sidenote no longer starts it", log)
+                ollama = None
+                continue
             if child.given_up():
-                said = "Ollama keeps stopping. The end of its log:" if child.name == "ollama" else \
-                    "Sidenote's server keeps stopping. The end of its log:"
-                tell(t(said) + "\n\n" + tail(child.log.path), log)
+                if child is ollama:      # the local model is one engine: the server, the panel and the agent go on
+                    tell(t("Ollama keeps stopping. The end of its log:") + "\n\n" + tail(child.log.path) + "\n\n"
+                         + t("Sidenote goes on without starting Ollama: the local model answers only once Ollama runs."), log)
+                    ollama = None
+                    continue
+                tell(t("Sidenote's server keeps stopping. The end of its log:") + "\n\n" + tail(child.log.path) + "\n\n"
+                     + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
+                         folder=folder), log)
                 return 1
             say(f"the {child.name} stopped (exit {child.exited()}); starting it again", log)
             child.start()
@@ -512,7 +589,9 @@ def watch(server: Child, capture: Child | None, ollama: Child | None, log: Cappe
             say("the capture program was quit; stopping", log)
             return 0
         if capture.given_up():
-            tell(t("The capture program keeps stopping. The end of its log:") + "\n\n" + tail(capture.log.path), log)
+            tell(t("The capture program keeps stopping. The end of its log:") + "\n\n" + tail(capture.log.path) + "\n\n"
+                 + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
+                     folder=folder), log)
             return 1
         say(f"the capture program {'asked for a restart' if code == CAPTURE_RESTART else f'stopped (exit {code})'}; "
             "starting it again", log)
@@ -594,7 +673,8 @@ def check() -> int:
     port = free_port()
     with tempfile.TemporaryDirectory(prefix="sidenote-check-") as d:
         env = server_env(os.environ, Path(d), port)
-        env.update(SIDENOTE_ANALYZER="mock", SIDENOTE_TRANSCRIBER="null")
+        token = secrets.token_urlsafe(24)
+        env.update(SIDENOTE_ANALYZER="mock", SIDENOTE_TRANSCRIBER="null", SIDENOTE_STOP_TOKEN=token)
         log = CappedLog(Path(d) / "server.log")
         server = Child("server", role_cmd("--serve", "--port", str(port)), env, log)
         server.start()
@@ -611,7 +691,9 @@ def check() -> int:
             problems.append("the server did not answer /health:\n" + tail(Path(d) / "server.log", 30))
         if up and "<html" not in page.lower():
             problems.append("GET / did not return the panel")
-        server.stop()
+        # closed down as the app closes it: on Windows this is the one run of that path before a release
+        if not server.stop(ask=lambda: ask_server_to_stop(port, token)) and up:
+            problems.append("the server did not close down when asked (/server/stop):\n" + tail(Path(d) / "server.log", 20))
         log.close()
     report = [f"FAIL {p}" for p in problems] + ["ok" if not problems else f"{len(problems)} problem(s)"]
     print("\n".join(report))

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 476" width="906" height="476" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="app.py holds the connections and the one analysis worker. It calls the screen and sound modules (detector and gate, faces, transcriber) and pipeline.py, which solves one problem with repeats.py. The pipeline uses the engines: analyzer.py for the local model, agents.py for the cloud agents, codecheck.py with checklangs/ for code checks, search.py for web search. Everything reads settings.py and config.py; models.py and hardware.py pick the model; history.py and telemetry.py keep answers and logs">
+<rect x="0" y="0" width="900" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="14" y="26.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="14,886">app.py</text>
+<text x="14" y="45.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,886">the panel's and the capture program's sockets, and the one analysis worker</text>
+<rect x="0" y="96" width="520" height="112" rx="14" fill="none" stroke="#d1d9e0" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="14" y="196" font-size="11" font-weight="600" fill="#59636e" text-anchor="start" data-box="14,506">SCREEN AND SOUND</text>
+<rect x="12" y="108" width="150" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="26" y="134.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="26,148">detector.py</text>
+<text x="26" y="153.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="26,148">screen changed?</text>
+<rect x="168" y="108" width="140" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="182" y="134.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="182,294">faces.py</text>
+<text x="182" y="153.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="182,294">covers faces</text>
+<rect x="314" y="108" width="194" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="328" y="134.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="328,494">transcriber.py</text>
+<text x="328" y="153.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="328,494">speech to text</text>
+<rect x="550" y="96" width="350" height="112" rx="14" fill="none" stroke="#d1d9e0" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="564" y="196" font-size="11" font-weight="600" fill="#59636e" text-anchor="start" data-box="564,886">ONE PROBLEM</text>
+<rect x="562" y="108" width="160" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="576" y="134.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="576,708">pipeline.py</text>
+<text x="576" y="153.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="576,708">its stages</text>
+<rect x="728" y="108" width="160" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="742" y="134.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="742,874">repeats.py</text>
+<text x="742" y="153.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="742,874">seen it before?</text>
+<rect x="0" y="240" width="900" height="112" rx="14" fill="none" stroke="#d1d9e0" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="14" y="340" font-size="11" font-weight="600" fill="#59636e" text-anchor="start" data-box="14,886">ENGINES</text>
+<rect x="12" y="252" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="26" y="278.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="26,208">analyzer.py</text>
+<text x="26" y="297.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="26,208">the local model's client</text>
+<rect x="232" y="252" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#eb6834" stroke-width="2"/>
+<text x="246" y="278.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="246,428">agents.py</text>
+<text x="246" y="297.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="246,428">the cloud agents</text>
+<rect x="452" y="252" width="216" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="466" y="278.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="466,654">codecheck.py</text>
+<text x="466" y="297.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="466,654">checks code answers</text>
+<rect x="678" y="252" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="692" y="278.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="692,874">search.py</text>
+<text x="692" y="297.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="692,874">web search, page reads</text>
+<rect x="0" y="384" width="900" height="86" rx="14" fill="none" stroke="#d1d9e0" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="14" y="458" font-size="11" font-weight="600" fill="#59636e" text-anchor="start" data-box="14,886">SETTINGS AND RECORDS</text>
+<rect x="12" y="394" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="26" y="420.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="26,208">settings.py</text>
+<text x="26" y="439.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="26,208">the panel's switches</text>
+<rect x="232" y="394" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="246" y="420.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="246,428">config.py</text>
+<text x="246" y="439.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="246,428">SIDENOTE_* settings</text>
+<rect x="452" y="394" width="216" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="466" y="420.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="466,654">models.py</text>
+<text x="466" y="439.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="466,654">profiles; hardware.py</text>
+<rect x="678" y="394" width="210" height="64" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="692" y="420.8" font-size="13.5" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2328" text-anchor="start" data-box="692,874">history.py</text>
+<text x="692" y="439.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="692,874">kept answers; logs</text>
+<path d="M260,64.5 L260,88.5" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M260,95.5 L255.5,86.5 L264.5,86.5 Z" fill="#818b98" data-tip="260,95.5"/>
+<path d="M725,64.5 L725,88.5" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M725,95.5 L720.5,86.5 L729.5,86.5 Z" fill="#818b98" data-tip="725,95.5"/>
+<path d="M705,172.5 L705,224 L450,224 L450,232.5" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M450,239.5 L445.5,230.5 L454.5,230.5 Z" fill="#818b98" data-tip="450,239.5"/>
+<path d="M450,352.5 L450,376.5" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M450,383.5 L445.5,374.5 L454.5,374.5 Z" fill="#818b98" data-tip="450,383.5"/>
+</svg>

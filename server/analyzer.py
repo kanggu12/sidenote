@@ -90,7 +90,7 @@ def estimate_cost(model: str, usage: dict | None) -> float | None:
 # charts, with the cases named or not. On the 56 known screens no answer held a picture, and the answers stayed
 # where earlier runs put them. The diagram kind keeps trees and lists in ASCII: mermaid lays a single child
 # straight under its parent, so the left or right of a binary tree is lost. The panel draws both kinds
-# (panel/app.js, drawPictures; ARCHITECTURE design 52).
+# (panel/app.js, drawPictures; docs/DECISIONS.md, note 52).
 SYSTEM_PROMPT = """\
 당신은 사용자의 화면 스크린샷과 (있을 수 있는) 최근 오디오 전사를 실시간으로 받아
 분석하는 문제 풀이 도우미입니다. 문제는 화면에 보일 수도, 음성으로 읽혀 전사로만
@@ -481,6 +481,14 @@ def error_hint(message: str) -> str:
     if "timeout" in m or "timed out" in m:
         return "timeout"
     return ""
+
+
+def error_words(message: str) -> str:
+    """The kind of failure in words of the panel's language, for a message that names it: the codes of error_hint are
+    for the panel's own choice of advice and read as English in a Korean sentence."""
+    from .i18n import t
+    return {"limit": t("usage limit"), "auth": t("sign-in rejected"), "timeout": t("no answer in time")}.get(
+        error_hint(message), t("error"))
 
 
 # Local models think before they answer only when it pays. Measured on gemma4:26b: without thinking
@@ -886,10 +894,12 @@ def main_model(cfg) -> str:
     if chosen and chosen != "auto":
         return chosen
     vram = cfg.local_vram_gb or LOCAL_SEEN.get("vram_gb")
-    picked = models.choose(pulled_models(), vram)
+    picked = models.choose(pulled_models(), vram or None)
     if picked:
         return picked
-    fit = models.fits(vram) if vram else models.by_key(models.TIERS[0])
+    # Not known (None): the 24 GB default the launcher and the chart assume. Known, with 0 for no GPU at all: the largest
+    # that fits, else the smallest, which is what the processor can run (slowly), not an 18 GB model offered "on the CPU"
+    fit = models.by_key(models.TIERS[0]) if vram is None else models.fits(vram)
     return fit.name if fit else models.by_key(models.TIERS[-1]).name
 
 
@@ -1890,7 +1900,7 @@ async def local_status(cfg, model: str | None = None) -> dict:
 
 @dataclass
 class Engines:
-    """The engines this server can use: this PC's model and one cloud agent (server/agents.py); which one solves what
+    """The engines this server can use: the local model and one cloud agent (server/agents.py); which one solves what
     is decided per problem by the settings (server/pipeline.py)."""
     local: object | None
     agent: object | None

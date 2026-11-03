@@ -856,7 +856,7 @@ async def run_cases(text: str, cases: dict, run) -> dict | None:
     """The answer's code on the examples, called as a function or fed standard input: passed, total, and the
     first failing examples; {"skipped": why} when its code cannot be run on them; None when there are no examples.
 
-    With cases["probe"] the inputs are ones this PC's model made up for a problem that shows no examples
+    With cases["probe"] the inputs are ones the local model made up for a problem that shows no examples
     (analyzer.EXTRACT_PROBES) and carry no answers: a run passes when it ends in time with no error, and the result
     says "probe", so the card says what it is and no retry is asked from it (the input may be the wrong one)."""
     probe = bool(cases.get("probe"))

@@ -96,20 +96,20 @@ sender, stop = Sender(), threading.Event()
 args = types.SimpleNamespace(server="ws://127.0.0.1:8777/ingest", no_audio=False)
 icon = cap.start_tray(sender, stop, args)
 items = {i.text: i for i in icon.menu.items if isinstance(i.text, str)}
-items["소리 듣기"].action(icon, None)
+items["소리 캡처"].action(icon, None)
 check("the tray's sound switch asks the server, as the panel's does",
       sender.sent == [{"type": "capture_set", "audio": False}], str(sender.sent))
 check("...and does not write 'the device did not open' into caps", sender.caps.get("audio") is True, str(sender.caps))
 sender.connected = False
 check("the switches cannot be flipped with no server to keep them",
-      not items["화면 보기"].is_enabled() and not items["소리 듣기"].is_enabled())
+      not items["화면 캡처"].is_enabled() and not items["소리 캡처"].is_enabled())
 # The drawn right-click menu (client/capture.py, TRAY_MENU): what it is given, and Windows' own menu behind it
 compile(cap.TRAY_MENU, "TRAY_MENU", "exec")
 rows = cap.tray_rows(icon.menu)
 shown = {r["text"]: r for r in rows if not r["sep"]}
 check("the drawn menu is given the menu as it stands: nothing to press while there is no server",
-      shown["화면 보기"]["enabled"] is False and shown["끝내기"]["enabled"] is True, str(rows))
-check("...and which of its rows are switches", shown["소리 듣기"]["checked"] in (True, False) and shown["끝내기"]["checked"] is None, str(rows))
+      shown["화면 캡처"]["enabled"] is False and shown["끝내기"]["enabled"] is True, str(rows))
+check("...and which of its rows are switches", shown["소리 캡처"]["checked"] in (True, False) and shown["끝내기"]["checked"] is None, str(rows))
 # Every item has its mark, the panel's own: the tray's right-click menu is drawn in the panel's design
 import re  # noqa: E402
 marks = eval(re.search(r"^MARKS = (\(.*?\))$", cap.TRAY_MENU, re.M).group(1))

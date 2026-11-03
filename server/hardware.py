@@ -48,7 +48,9 @@ def _run(cmd: list[str], timeout: float = 5.0) -> str | None:
     if shutil.which(cmd[0]) is None:
         return None
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # no console window on Windows: the app is a windowed program, and nvidia-smi every 2 s would flash one
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

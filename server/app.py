@@ -25,6 +25,7 @@ import http.client
 import io
 import ipaddress
 import functools
+import hmac
 import pathlib
 import json
 import logging
@@ -34,6 +35,7 @@ try:
     import resource  # the core-dump limit the CLIs inherit (Linux and macOS; a Windows host has no core dumps to stop)
 except ImportError:
     resource = None
+import signal
 import socket
 import struct
 import time
@@ -51,9 +53,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
 
-from . import faces, history as answers_log, i18n, models, repeats, telemetry, watchdog
+from . import faces, forksafe, history as answers_log, i18n, models, repeats, telemetry, watchdog
 from . import agents
-from .analyzer import LOCAL_SEEN, LoadStopped, busy_model, error_hint, local_models, local_status, main_model, make_engines
+from .analyzer import (LOCAL_SEEN, LoadStopped, busy_model, error_hint, error_words, local_models, local_status,
+                       main_model, make_engines)
 from .codecheck import CHECKED, RUNNER_MARK, args_lines
 from .config import CONFIG, agent_label, agent_name
 from .detector import make_detector
@@ -894,7 +897,7 @@ async def runner_exec(lang: str, code: str, stdin: str | list) -> dict:
         res = await asyncio.get_running_loop().run_in_executor(None, _post_json, CONFIG.runner_url, payload,
                                                                 run_wait_seconds(len(stdin) if isinstance(stdin, list) else 1))
         if res.get("busy"):
-            return {"error": RUN_BUSY}
+            return {"error": t(RUN_BUSY)}
         return res
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"[:200]}
@@ -1199,7 +1202,8 @@ def read_gpu() -> dict | None:
                 "power": round(float(power)) if power.replace(".", "").isdigit() else None}
     except FileNotFoundError:
         from . import hardware
-        return hardware.usage()
+        with forksafe.native_work():   # nvidia-smi is a child process: never started while speech is decoded (forksafe.py)
+            return hardware.usage()
     except (OSError, ValueError):
         return None
 
@@ -1217,8 +1221,9 @@ def gpu_memory_gb() -> float | None:
         return round(reading["total"] * 1048576 / 1e9, 1)
     if not _HOST_GPU:
         from . import hardware
-        gpu = hardware.best(hardware.detect())
-        _HOST_GPU.append(gpu.memory_gb if gpu else None)
+        with forksafe.native_work():   # its tools are child processes, kept away from a decode as every spawn is
+            gpu = hardware.best(hardware.detect())
+        _HOST_GPU.append(gpu.memory_gb if gpu else 0.0)   # 0: looked, and there is none the local model can use
     return _HOST_GPU[0]
 
 
@@ -1437,12 +1442,12 @@ async def engine_watch() -> None:
             telemetry.event("local_stand_in", reason=why or None, ended=was if not why else None)
             await broadcast_engines()
             if why and not was:
-                said = {"limit": "The agent is at its usage limit: until {until}, this PC's model, switched off, "
+                said = {"limit": "The agent is at its usage limit: until {until}, the local model, switched off, "
                                  "solves instead",
-                        "signin": "The agent is signed out: until it signs in again, this PC's model, switched off, "
+                        "signin": "The agent is signed out: until it signs in again, the local model, switched off, "
                                   "solves instead",
-                        "brake": "The agent reached its hourly cost limit: meanwhile this PC's model, switched off, "
-                                 "solves instead"}.get(why, "{why}: this PC's model, switched off, solves instead")
+                        "brake": "The agent reached its hourly cost limit: meanwhile the local model, switched off, "
+                                 "solves instead"}.get(why, "{why}: the local model, switched off, solves instead")
                 await notice(t(said, agent=agent_name(), until=PIPELINE.spend.limit_left(), why=why))
             elif not why and local is not None and not SETTINGS.get("local_llm"):
                 if await local.unload():
@@ -1474,6 +1479,9 @@ async def engine_watch() -> None:
         now = changed_at()
         if now != seen and PIPELINE is not None:   # a new sign-in, perhaps another plan: it does not go on resting on the old one's limit
             PIPELINE.spend.signed_in()
+            # and the warm Claude session started under the old login would go on answering as that account
+            if ENGINES is not None and hasattr(ENGINES.agent, "reset_session"):
+                ENGINES.agent.reset_session()
         # Signed in and left alone, nothing to ask. A new Codex login is asked about: an API key bills by the turn and a
         # ChatGPT plan does not, which the hourly ceiling goes by.
         if ((STATE.agent.get("ok") and (now == seen or CONFIG.agent != "codex")) or CONFIG.agent not in ("claude-code", "codex")
@@ -1786,7 +1794,7 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         if res is None:   # the examples were there: say why the fixed code was not run on them
             res = {"error": t("The rewritten answer has no code to run ({langs})", langs=CHECKED)
                    if answer_code(result.text) is None
-                   else t("Not run: Check the examples or this PC's model is off")
+                   else t("Not run: Check the examples or the local model is off")
                    if checkable(PIPELINE, frame, result, any_type=True) is None
                    else t("Not run: these examples do not fit the rewritten code")}
         res = {k: v for k, v in res.items() if k != "cases"}
@@ -1879,7 +1887,7 @@ def analysis_turn() -> None:
 
 
 async def between_analyses(make, what: str):
-    """`make()`, one read with this PC's model, awaited only while no analysis runs: an analysis that begins stops it
+    """`make()`, one read with the local model, awaited only while no analysis runs: an analysis that begins stops it
     (its request to the model goes), and it starts over once none runs. The example check of an answer goes on into
     the next analysis, since most find nothing and stopping it there said it was stopped "for the next problem" when
     none came, but it went on as requests of its own to the same model: once it read
@@ -1909,7 +1917,7 @@ async def between_analyses(make, what: str):
 
 async def run_check(app: FastAPI, seq: int, frame, outcome) -> None:
     """After a coding answer: run its code on the problem's examples and put the result on the card.
-    It reads with this PC's model only between analyses (between_analyses), and a newer answer cancels
+    It reads with the local model only between analyses (between_analyses), and a newer answer cancels
     it. When an example fails, the engine that wrote the answer gets one retry with the failing examples
     (design section 7), as a follow-up under the same card, and its code is checked on the same examples."""
     await broadcast({"type": "check", "id": seq, "running": True})
@@ -1961,13 +1969,13 @@ async def problem_text(card_id) -> dict:
     if "problem_text" not in last:
         if PIPELINE is None or PIPELINE._local() is None or not SETTINGS.on("extract"):
             return {"type": "problem_text", "id": card_id,
-                    "error": t("This PC's model or 'Write out the problem text' is off")}
+                    "error": t("The local model or 'Write out the problem text' is off")}
         try:
             text = await PIPELINE.problem_text(last["frame"], last.get("crop_box"), last.get("local_view"))
         except Exception as exc:   # the panel waits on this answer: say what went wrong instead of nothing
             log.warning("problem text #%s failed: %s", card_id, exc)
             return {"type": "problem_text", "id": card_id,
-                    "error": t("Writing out failed ({why})", why=error_hint(str(exc)) or type(exc).__name__)}
+                    "error": t("Writing out failed ({why})", why=error_words(str(exc)))}
         if STATE.last_result is not last or last.get("frame") is None:   # a newer problem, or the screen went off
             return {"type": "problem_text", "id": card_id, "error": t("The screen changed or went off meanwhile")}
         last["problem_text"] = text
@@ -2325,8 +2333,16 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
 
 async def load_speech(app: FastAPI) -> None:
     """The speech model, loaded after the server is up, then its worker started and the panels told that speech is
-    there. A model that cannot load leaves the server without speech, as before."""
-    tr = await asyncio.to_thread(make_transcriber, CONFIG)
+    there. A model that cannot load leaves the server without speech, and says so in the log and on the panel."""
+    try:
+        tr = await asyncio.to_thread(make_transcriber, CONFIG)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
+        log.error("the speech model did not load (%s); the server goes on without speech", exc)
+        await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
+                     "warn")
+        return
     if hasattr(tr, "hint") and not SETTINGS.get("whisper_hint"):
         tr.hint = None
     # The language is a setting, so a saved one applies to the decoder as well as to the sheet
@@ -2989,6 +3005,22 @@ def create_app() -> FastAPI:
         # this server's own is refused, as the panel's socket already is.
         return await ask_captures(request, "quit", "/capture/quit")
 
+    @app.post("/server/stop")
+    async def server_stop(request: Request) -> JSONResponse:
+        """The desktop app closes the server down through here: Windows has no SIGTERM, and `taskkill /F` skipped the
+        shutdown, so nothing was kept for the next start (the screen still showing was solved again) and the logs had no
+        server_stop. Only with the token the app gave this server when it started it (SIDENOTE_STOP_TOKEN): a page in
+        the browser cannot add the header without a preflight this server never answers, and knows no token."""
+        token = os.environ.get("SIDENOTE_STOP_TOKEN", "")
+        given = request.headers.get("x-sidenote-stop", "")
+        if not token or not hmac.compare_digest(given.encode(), token.encode()):
+            telemetry.event("refused", path="/server/stop")
+            return JSONResponse({"error": "not allowed"}, status_code=403)
+        log.info("asked to close down by the app")
+        # once this reply is out: uvicorn takes it as Ctrl+C and runs the shutdown (the lifespan's finally)
+        asyncio.get_running_loop().call_later(0.2, signal.raise_signal, signal.SIGINT)
+        return JSONResponse({"stopping": True}, status_code=202)
+
     async def ask_captures(request: Request, what: str, path: str, extra: dict | None = None) -> JSONResponse:
         """Send every capture program connected `{"type": what, **extra}`, for a request from this PC."""
         origin = request.headers.get("origin")
@@ -3287,7 +3319,7 @@ def create_app() -> FastAPI:
                     local = ENGINES.local if ENGINES is not None else None
                     if local is None or not SETTINGS.on("local_llm"):
                         await reply({"type": "notice", "level": "warn",
-                                     "text": t("This PC's model is off: nothing to load onto the GPU")})
+                                     "text": t("The local model is off: nothing to load onto the GPU")})
                         continue
                     if STATE.gpu_loading is None or STATE.gpu_loading.done():
                         STATE.gpu_loading = asyncio.create_task(load_local(local))   # a load takes seconds: this socket keeps reading
@@ -3329,7 +3361,7 @@ def create_app() -> FastAPI:
                 elif kind == "llm_pull":
                     # the local model's card offered a download (engines.local.pull): one at a time, of a known model
                     if pull_allowed() and not PULL:
-                        asyncio.create_task(pull_model(str(data.get("model") or "")))
+                        spawn(pull_model(str(data.get("model") or "")), "llm pull")   # held, as every background task is
                     continue
                 elif kind == "ui_lang":
                     # The panel's own language, said once it connects: the server's words follow the last panel to
@@ -3353,8 +3385,8 @@ def create_app() -> FastAPI:
                     continue
         except WebSocketDisconnect:
             pass
-        except Exception:
-            pass
+        except Exception:   # a message the loop could not handle ends this panel's socket: it reconnects, and the log says why
+            log.exception("a panel's connection ended on an error")
         finally:
             STATE.panel_clients.discard(ws)
 

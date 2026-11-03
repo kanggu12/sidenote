@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -71,7 +72,7 @@ with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"
 with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8", "SIDENOTE_LANG": "en"},
                                                                    clear=True):
     en = app.t("The Sidenote server did not start. The end of its log:")
-check("the app's message boxes follow the system's language, and SIDENOTE_LANG wins", ko.startswith("Sidenote 서버가")
+check("the app's message boxes follow the system's language, and SIDENOTE_LANG wins", ko.startswith("Sidenote 서버를")
       and en.startswith("The Sidenote server"), (ko, en))
 check("every message box the app can show has its Korean", all(
     app.KO.get(m) for m in ("Another program is using the port Sidenote needs ({port}). Close that program, then start "
@@ -216,6 +217,17 @@ else:
         time.sleep(2)
         again = app.wait_for(lambda: app.health(port) is not None, timeout=60)
         check("a server that is killed is started again", bool(again))
+        # Its stop route takes only the token the app started it with: a page, or anything else on this PC, gets a 403
+        refused = []
+        for headers in ({}, {"X-Sidenote-Stop": "not-the-token"}):
+            try:
+                urllib.request.build_opener(urllib.request.ProxyHandler({})).open(urllib.request.Request(
+                    f"http://127.0.0.1:{port}/server/stop", data=b"", method="POST", headers=headers), timeout=5)
+                refused.append("accepted")
+            except urllib.error.HTTPError as exc:
+                refused.append(exc.code)
+        check("asked to stop with no token, or the wrong one, the server refuses and runs on",
+              refused == [403, 403] and app.health(port) is not None, refused)
         proc.send_signal(signal.SIGTERM)
         try:
             proc.wait(30)
@@ -231,6 +243,12 @@ else:
         app_log = (logs / "app.log").read_text() if (logs / "app.log").is_file() else ""
         check("...and app.log says what happened", "the server is up" in app_log and "starting it again" in app_log
               and "stopped" in app_log, app_log)
+        # The app asked its server to close down, so the server's own shutdown ran: on Windows it was killed before this
+        server_log = (logs / "server.log").read_text() if (logs / "server.log").is_file() else ""
+        events = (logs / "events.jsonl").read_text() if (logs / "events.jsonl").is_file() else ""
+        check("the server closed down when the app asked, through its own shutdown (server_stop logged)",
+              "asked to close down by the app" in server_log and '"server_stop"' in events,
+              server_log[-400:] + events[-300:])
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         opener.open(f"http://127.0.0.1:{port}/health", timeout=1)

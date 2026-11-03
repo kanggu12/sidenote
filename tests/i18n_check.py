@@ -126,7 +126,7 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         first = p.wait(lambda m: m.get("type") == "settings" and "meta" in m)
         status = p.wait(lambda m: m.get("type") == "status" and "engines" in m)
         meta = first["meta"] if first else {"items": [], "sections": []}
-        check("the settings sheet comes in English", label_of(meta, "local_llm") == "This PC's model"
+        check("the settings sheet comes in English", label_of(meta, "local_llm") == "Local model"
               and label_of(meta, "agent_mode") == "Problems the agent solves", str([i["label"] for i in meta["items"]][:4]))
         check("...with no Korean in its words but the language names", not hangul_in(meta), str(hangul_in(meta)[:3]))
         check("the agent's card says its name in English", status and status["engines"]["agent"]["label"] == "Agent",
@@ -177,7 +177,7 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         pws.send_text(json.dumps({"type": "ui_lang", "lang": "en-US"}))
         back = p.wait(lambda m: m.get("type") == "settings" and "meta" in m, after=n)
         check("ui_lang en-US switches back to English", i18n.LANG == "en" and back
-              and label_of(back["meta"], "local_llm") == "This PC's model" and not hangul_in(back["meta"]),
+              and label_of(back["meta"], "local_llm") == "Local model" and not hangul_in(back["meta"]),
               str(back and hangul_in(back["meta"])[:3]))
         n = len(p.msgs)
         pws.send_text(json.dumps({"type": "ui_lang", "lang": "fr"}))

@@ -9,21 +9,34 @@ document.documentElement.style.setProperty("--t-stale", JSON.stringify(t("Old sc
 document.documentElement.style.setProperty("--t-go", JSON.stringify(t(" ↑ to the answer")));
 const TYPE_LABEL = { mcq: t("MCQ"), short: t("Short"), essay: t("Essay"), coding: t("Coding"), algorithm: t("Algorithm"),
   work: t("Work"), math: t("Math"), diagram: t("Diagram"), other: t("Other"), conceptual: t("Concept"), followup: t("Follow-up") };
-const ANSWER_LABEL = { mcq: t("Answer"), short: t("Answer"), math: t("Result"), followup: t("Reply"), coding: t("Key"), algorithm: t("Key") };
+// The same kinds by their whole names, where a list has room for them (the contents' type filter); the margin's chip keeps the short ones
+const TYPE_NAME = { ...TYPE_LABEL, mcq: t("Multiple choice"), short: t("Short answer") };
+const ANSWER_LABEL = { mcq: t("Answer"), short: t("Answer"), math: t("Result"), followup: t("Reply"), coding: t("Approach"), algorithm: t("Approach") };
 // Getters where a line names the agent: the box is drawn long after this runs, once the server has said which.
+// The desktop app has no ./sidenote and no server's terminal: there a card says what to do in the app, with no command to copy.
 const HINT = {
-  auth: { get title() { return t("{agent} sign-in needed", { agent: AG() }); }, get text() { return t("Not signed in, or the sign-in expired. Sign in from the server's terminal and it resumes within 20 seconds"); }, get cmd() { return LOGIN(); } },
+  auth: { get title() { return t("{agent} sign-in needed", { agent: AG() }); },
+    get text() { return status.desktop ? t("Not signed in, or the sign-in expired. Open a terminal, type {cmd} and press Enter, then sign in · resumes within 20 seconds", { cmd: `<code class="cmd">${LOGIN()}</code>` })
+      : t("Not signed in, or the sign-in expired. Sign in from the server's terminal and it resumes within 20 seconds"); },
+    // in the app the command is in the sentence already, the CLI's own name: no chip of its own after it, only its copy key
+    get cmd() { return status.desktop ? "" : LOGIN(); }, get copy() { return LOGIN(); } },
   // with the agent resting on its plan's limit, until when: "in a moment" under a band that says two days was wrong
   limit: { title: t("Usage limit"), get text() {
     const until = eng()?.agent?.limit_until, L = eng()?.local;
     if (!until) return t("{redo} in a moment", { redo: REDO_KEY() });
-    return t("{agent} rests until {when}", { agent: AG(), when: restAt(until) }) + (L && L.ok && (L.on || L.stand_in) ? t(" · the local model solves meanwhile") : "");
+    return t("The agent rests until {when}", { agent: AG(), when: restAt(until) }) + (L && L.ok && (L.on || L.stand_in) ? t(" · the local model solves meanwhile") : "");
   } },
   timeout: { title: t("Stopped: timed out"), get text() { return t("Try again with {redo}", { redo: REDO_KEY() }); } },
-  interrupted: { title: t("Stopped: connection lost"), get text() { return t("{redo} once the server is up", { redo: REDO_KEY() }); } },
-  nosolver: { title: t("No engine to solve"), get text() { return t("Neither the local model nor {agent} can be used. Turn one on in Solver settings, or check the server's terminal", { agent: AG() }); }, cmd: "./sidenote doctor" },
+  // the desktop app's server is the app itself: it is up again when the app is
+  interrupted: { title: t("Stopped: connection lost"), get text() { return status.desktop ? t("{redo} once Sidenote is running again", { redo: REDO_KEY() }) : t("{redo} once the server is up", { redo: REDO_KEY() }); } },
+  nosolver: { title: t("No engine to solve"),
+    get text() { return status.desktop ? t("Neither the local model nor the agent can be used. Turn one on in Solver settings", { agent: AG() })
+      : t("Neither the local model nor the agent can be used. Turn one on in Solver settings, or check the server's terminal", { agent: AG() }); },
+    get cmd() { return status.desktop ? "" : "./sidenote doctor"; } },
   // the command as a chip with its copy key, as the other failures give theirs
-  "": { title: t("Analysis failed"), get text() { return t("Try again with {redo}. If it keeps failing, check the server's terminal", { redo: REDO_KEY() }); }, cmd: "./sidenote events --errors" },
+  "": { title: t("Analysis failed"),
+    get text() { return status.desktop ? t("Try again with {redo}", { redo: REDO_KEY() }) : t("Try again with {redo}. If it keeps failing, check the server's terminal", { redo: REDO_KEY() }); },
+    get cmd() { return status.desktop ? "" : "./sidenote events --errors"; } },
 };
 
 // Quotes too: this is used inside attributes as often as in text, and textContent leaves them alone.
@@ -35,9 +48,8 @@ const escapeHtml = (s) => {
   d.textContent = s == null ? "" : String(s);
   return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 };
-// Times and weekdays in the panel's language. en-GB for English: a 24-hour clock that starts the day at 00, as ko-KR does
+// Weekdays and times in the panel's language. en-GB for English: a 24-hour clock that starts the day at 00, as ko-KR does
 const LOCALE = LANG === "ko" ? "ko-KR" : "en-GB";
-const fmtTime = (ms) => new Date(ms).toLocaleTimeString(LOCALE, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 // One way of writing a date everywhere: 11.02(월) 02:42 AM. A time alone does not say when: answers are kept for days
 const fmtDay = (ms) => { const d = new Date(ms); return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}(${d.toLocaleDateString(LOCALE, { weekday: "short" })})`; };
 const fmtClock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${String(h % 12 || 12).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
@@ -1698,6 +1710,9 @@ function vTables(md) {
     for (let j = Math.max(0, ...[...table.rows].map((r) => r.cells.length)) - 1; j >= 0; j--) {
       if ([...table.rows].every((r) => !r.cells[j]?.textContent.trim() && !r.cells[j]?.querySelector("img, svg"))) [...table.rows].forEach((r) => r.cells[j]?.remove());
     }
+    // So is a head row with nothing in any of its cells ("| | |" over a table of names and values): a grey band that said nothing
+    const blank = (r) => [...r.cells].every((c) => !c.textContent.trim() && !c.querySelector("img, svg"));
+    if (table.tHead && table.tBodies[0]?.rows.length && [...table.tHead.rows].every(blank)) table.tHead.remove();
     const body = [...(table.tBodies[0]?.rows || [])], heads = [...(table.tHead?.rows[0]?.cells || [])];
     if (!body.length) return;
     const cols = Math.max(...body.map((r) => r.cells.length));
@@ -1964,10 +1979,17 @@ function captionFigures(el) {
         const t = shown.textContent.trim();
         if (p.matches("h1, h2, h3, h4, p.lead, p.para-head")) return capWords(t.replace(QA_HEAD, "").replace(/^[\s.:)]+/, ""));
         // A paragraph led by its words in bold ("**단계 2: 공간 확보** ...") names what follows it, however long the rest: the scan
-        // went past it and took a line further up about something else
+        // went past it and took a line further up about something else. Only a bold lead that is a label, though: one with a colon or a
+        // full stop in it or right after it, or the whole paragraph. A sentence's own bold subject ("**The side that opens the
+        // connection** sends SYN ...") names nothing, and the heading above it does
         const lead = p.matches("p") ? p.querySelector(":scope > strong:first-child") : null;
-        if (lead && t.startsWith(lead.textContent.trim().slice(0, 4))) return capWords(lead.textContent.trim().replace(/[:：]\s*$/, ""));
-        if (p.matches("p") && t.length <= 48 && /[:：]$/.test(t)) return capWords(t.replace(/[:：]$/, ""));
+        const leadText = lead ? lead.textContent.trim() : "", after = lead ? t.slice(t.indexOf(leadText) + leadText.length).trimStart() : "";
+        const label = lead && (/[:：.]/.test(leadText) || /^[:：.—–-]/.test(after) || !after);
+        if (label && t.startsWith(leadText.slice(0, 4))) return capWords(leadText.replace(/[:：.]\s*$/, ""));
+        // A short line ending in a colon names what follows it, when it is one phrase: "It keeps the order. As a picture:" is two
+        // sentences leading in, and the heading names it better
+        const said = t.replace(/[:：]$/, "");
+        if (p.matches("p") && t.length <= 48 && /[:：]$/.test(t) && !/[.!?。](\s|$)/.test(said)) return capWords(said);
       }
       return "";
     };
@@ -2051,10 +2073,23 @@ function texPlain(t) {
     .replace(/\\(?:ge|geq)\b/g, "≥").replace(/\\(?:ne|neq)\b/g, "≠").replace(/\\infty\b/g, "∞").replace(/\\pi\b/g, "π")
     .replace(/\\(log|ln|sin|cos|tan|max|min)\b/g, "$1").replace(/\\[A-Za-z]+/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
 }
-function plainAnswer(md) {
-  return String(md || "").replace(/\$\$([^$]+)\$\$|\$([^$]+)\$/g, (_, a, b) => texPlain(a || b))
-    .replace(/\*\*|__|`/g, "").replace(/(^|\s)[*_]([^*_\s][^*_]*)[*_](?=\s|$)/g, "$1$2").replace(/[#>|]/g, " ")
-    .replace(/\s+/g, " ").trim();
+// The line as the page draws it (inline Markdown): only the marks drawn away go, the emphasis, the code ticks and a formula's
+// dollars. A "#", ">" or "|" is what was written (C#, i >= n, ps aux | grep), so the copy key gives it as it stands.
+// `block`: a line of the body, whose own marks open it (a heading's hashes, a quote's ">", a table row's bars), for the contents.
+function plainAnswer(md, block = false) {
+  const code = [];
+  // code spans first, kept as written without their ticks: nothing inside one is a mark
+  let s = String(md || "").replace(/`([^`\n]*)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`);
+  s = s.replace(/\$\$([^$]+)\$\$|\$([^$]+)\$/g, (_, a, b) => texPlain(a || b))
+    // a pair of ** or __ round words is emphasis; a lone one (2 ** 10) is drawn as it is
+    .replace(/(\*\*|__)(?=\S)(.*?\S)\1/g, "$2").replace(/(^|\s)[*_]([^*_\s][^*_]*)[*_](?=\s|$)/g, "$1$2");
+  if (block) {
+    // the marks that open a block, at the start of its line only
+    s = s.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "").replace(/^[ \t]{0,3}>[ \t]?/gm, "")
+      .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_, cells) => cells.replace(/\|/g, " "));
+  }
+  // the code spans back in, then one line
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => code[+i]).replace(/\s+/g, " ").trim();
 }
 function announce(text) {   // one short line per finished answer for screen readers (the notebook is not live)
   const n = $("live-note"); if (!n) return;
@@ -2124,7 +2159,7 @@ function agentViz(C, pay, forced) {
         ? `<span class="prod">${escapeHtml(C.product || AG())} </span>${escapeHtml(planWord)}` : escapeHtml(how)}</span></div>
     ${quotaHtml(C)}
     ${scale(t("Takes"), modes, modes.indexOf(C.effective), MODE_TEXT[C.effective] || "", false)}
-    ${scale(t("Sends"), pays, pays.indexOf(pay), PAYLOAD_TEXT[pay] || "", forced)}
+    ${scale(t("Sends"), pays, pays.indexOf(pay), escapeHtml(payloadName(pay)), forced)}
       </div>`;
 }
 // The plan's usage, read by the server where Claude Code's own /usage reads it: the five-hour session and the week, each a meter of the share
@@ -2184,9 +2219,11 @@ function screenState() {
   // The switch may be on, but with no program connected nothing is being received at all; the one
   // thing worth saying is how to start it.
   if (capture.clients === 0) {
-    // started on the PC whose screen it reads, the server's own only in the default set-up (a server, with the capture PC as its client)
-    return card("idle", t("Capture program off"), [], status.desktop
-      ? t("The capture program stopped. Quit Sidenote from its tray icon and start it again")
+    // started on the PC whose screen it reads, the server's own only in the default set-up (a server, with the capture PC as its client).
+    // In the desktop app the tray icon is the capture program's own, gone with it: the app is quit and started again
+    // The pill is a word or two: its column beside the switch has some 120 px at 1366
+    return card("idle", t("Program off"), [], status.desktop
+      ? t("The capture program stopped. Quit Sidenote and start it again")
       : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` }));
   }
   // Switched off here in the panel: the monitor still matters, because it is what will be read
@@ -2226,11 +2263,11 @@ function audioState() {
   // The server itself has transcription off: no switch here can change that.
   if (!status.audio) return card("off", t("Off on the server"), [], t("Start it with {cmd} to listen", { cmd: "<code class=\"cmd\">SIDENOTE_AUDIO=1</code>" }));
   // Said by the screen card too, and once is enough: no note here.
-  if (capture.clients === 0) return card("idle", t("Capture program off"), []);
+  if (capture.clients === 0) return card("idle", t("Program off"), []);
   // Started with --no-audio: the program never opened a device, so the panel's switch is moot.
-  if (caps.no_audio) return card("off", t("Running without sound"), [], t("The capture was started with {cmd}", { cmd: "<code class=\"cmd\">--no-audio</code>" }));
+  if (caps.no_audio) return card("off", t("No sound"), [], t("The capture was started with {cmd}", { cmd: "<code class=\"cmd\">--no-audio</code>" }));
   if (caps.audio === false) {
-    return card("warn", t("Could not open the device"), [[t("Device"), device || t("Not found")]],
+    return card("warn", t("Device error"), [[t("Device"), device || t("Not found")]],
       t("Check the speakers and microphone, then restart the capture"));
   }
   if (!capture.audio_on) return card("off", t("Off"), [[t("Device"), device]], t("Turn it on to take spoken problems too"));
@@ -2251,8 +2288,8 @@ const localTrouble = (L) => (L.missing ? (L.pull ? t("No local model yet") : t("
 // there but not answering. The rail and the alert band must not disagree about this.
 const localFix = (L) => (L && L.missing ? "./sidenote llm pull" : "./sidenote doctor");
 // Why this PC's model, switched off, answers for now (engines.local.stand_in)
-const STAND_IN_TEXT = { get limit() { return t("{agent} reached its usage limit", { agent: AG() }); }, get signin() { return t("{agent} is signed out", { agent: AG() }); },
-  get brake() { return t("{agent} reached its hourly cost limit", { agent: AG() }); } };
+const STAND_IN_TEXT = { get limit() { return t("The agent reached its usage limit", { agent: AG() }); }, get signin() { return t("The agent is signed out", { agent: AG() }); },
+  get brake() { return t("The agent reached its hourly cost limit", { agent: AG() }); } };
 // How long until the agent may be asked again after its plan's limit (engines.agent.limit_until, the server's clock):
 // "2일 4시간", "3시간 20분", "12분"
 function restLeft(until) {
@@ -2293,7 +2330,7 @@ function pullOffer(L) {
   if (!name) return "";
   const size = L.want_gb ? t(", about {gb} GB to download", { gb: L.want_gb }) : "";
   const why = L.fits === false
-    ? (eng()?.agent?.ok ? t("No model fits this GPU's memory, so {agent} answers every problem. This one also runs on the CPU, slowly", { agent: AG() })
+    ? (eng()?.agent?.ok ? t("No model fits this GPU's memory, so the agent answers every problem. This one also runs on the CPU, slowly", { agent: AG() })
       : t("No model fits this GPU's memory. This one runs on the CPU, slowly")) + size
     : (L.gpu_gb ? t("The model for this GPU ({gb} GB of memory)", { gb: Math.round(L.gpu_gb) }) : t("The model for this PC")) + size;
   return `${why} <button type="button" class="btn sm pull-model" data-model="${escapeHtml(name)}">${t("Download")}</button>`;
@@ -2308,9 +2345,10 @@ function localState() {
   // Shown in every state below, including the broken ones: which model is meant is half the answer.
   const model = L.model ? `<span class="model">${escapeHtml(L.model)}</span>` : "";
   // Switched off, and answering for the agent while it cannot (its limit, its sign-in, the spend brake): the server's
-  // stand-in (Pipeline.standing_in), which ends by itself and takes the model off the GPU again
-  if (!L.on && L.stand_in && L.ok) return card("warn", t("Standing in"), [[t("Model"), model]],
-    t("{why}, so this model solves for now though it is off. It leaves the GPU once sending works again", { why: STAND_IN_TEXT[L.stand_in] || t("{agent} cannot be used", { agent: AG() }) }));
+  // stand-in (Pipeline.standing_in), which ends by itself and takes the model off the GPU again. One word for the pill: beside Free
+  // the GPU it has some 78 px at 1366
+  if (!L.on && L.stand_in && L.ok) return card("warn", t("Stand-in"), [[t("Model"), model]],
+    t("{why}, so this model solves for now though it is off. It leaves the GPU once sending works again", { why: STAND_IN_TEXT[L.stand_in] || t("The agent cannot be used", { agent: AG() }) }));
   if (!L.on) return card("off", t("Off"), [[t("Model"), model]], t("Turn it on to find problems on the GPU and answer the easy ones at once"));
   if (!L.ok) {
     // A missing model is pulled; a server that does not answer is looked at. L.missing is what the
@@ -2328,9 +2366,10 @@ function localState() {
   const g = L.loaded;
   // Whether the model sits on the GPU now, ready to answer, or the GPU was given back and the model goes on again
   // with the next problem. "unloaded (loads on the next problem)" did not say what it meant.
-  // the state lit and in words, what it means quieter beside it ("loaded · answers at once" read as faint)
+  // the state lit and in words, what it means quieter beside it ("loaded · answers at once" read as faint). Loaded, the pill says
+  // "On GPU" already: the lit words are what that means, so the card does not say the same state twice
   const gpu = !g ? `<span class="lit off">${t("Empty")}</span> <span class="sub gpu-says">· <mark class="key">${t("Loads by itself when a problem comes")}</mark></span>`
-    : g.unknown ? "" : `<span class="lit ok">${t("Loaded")}</span> <span class="sub gpu-says">· ${t("Solves at once")}${g.vram_gb ? ` (${g.vram_gb} GB)` : ""}${[g.params, g.quant, g.ctx ? t("Context {n}", { n: Number(g.ctx).toLocaleString() }) : ""].filter(Boolean).map((x) => ` · ${escapeHtml(String(x))}`).join("")}</span>`;
+    : g.unknown ? "" : `<span class="lit ok">${t("Solves at once")}</span> <span class="sub gpu-says">${[g.vram_gb ? `${g.vram_gb} GB` : "", g.params, g.quant, g.ctx ? t("Context {n}", { n: Number(g.ctx).toLocaleString() }) : ""].filter(Boolean).map((x, i) => `${i ? " · " : "· "}${escapeHtml(String(x))}`).join("")}</span>`;
   if (L.busy) {   // another program keeps the GPU busy: a smaller model answers for a while
     // L.busy.until is the server's clock: read against this browser's, a clock some minutes apart
     // counted the hold down to nothing (or up to hours)
@@ -2345,8 +2384,12 @@ function localState() {
   if (L.loading) return card("ok", t("Loading"), [[t("Model"), model]], loadStepsHtml());
   return card("ok", !g ? t("Idle") : g.unknown ? t("Connected") : t("On GPU"), [[t("Model"), model], ["GPU", gpu]]);
 }
-const MODE_TEXT = { hard: t("Hard, chosen types"), verify: t("Checks local answers"), all: t("Every problem") };
-const PAYLOAD_TEXT = { crop: t("Problem area only"), text: t("Problem text only"), screen: t("Whole screen") };
+// What the agent takes, as a value after "Takes" (the card's scale, the sheet's note): a noun phrase in each mode
+const MODE_TEXT = { hard: t("Hard problems of chosen types"), verify: t("Local answers to check"), all: t("Every problem") };
+// What is sent, by one name wherever it is said (the card, the sheet's note, the welcome's picture): the setting's own option as the
+// server words it, these until its list has come
+const PAYLOAD_TEXT = { crop: t("Problem area"), text: t("Problem text"), screen: t("Whole screen") };
+const payloadName = (p) => (settingItem("agent_payload")?.options || []).find(([v]) => v === p)?.[1] || PAYLOAD_TEXT[p] || "";
 // What will actually leave this PC. The crop and the written-out problem both come from this PC's
 // model: with it off or down there is neither, and the whole screen goes instead. Saying "Problem
 // crop" then is a promise the tool does not keep.
@@ -2362,8 +2405,11 @@ function agentModelLine(C) {
   const name = C.model || C.asked_model || "";
   return name ? `<span class="model">${escapeHtml(name)}</span>` : `<span class="sub">${t("Unknown")}</span>`;
 }
-// How hard it is told to think, a line of its own (it trailed the model's name, "· thinking default", and was missed)
-const agentEffortLine = (C) => (C.effort ? `${escapeHtml(C.effort)}${C.effort_own ? ` <span class="sub" title="${t("The CLI's default; change it in Solver settings")}">· ${t("CLI")}</span>` : ""}` : t("Unknown"));
+// How hard it is told to think, a line of its own (it trailed the model's name, "· thinking default", and was missed). Its value in the
+// words of the setting that moves it (Solver settings, Thinking effort), these until the server's list has come. The CLI's own default
+// is marked with its one short word ("Medium · default" took the row's second half and more, and the row broke in two)
+const effortName = (e) => (settingItem("agent_effort")?.options || []).find(([v]) => v === e)?.[1] || EFFORT_TEXT[e] || e;
+const agentEffortLine = (C) => (C.effort ? `${escapeHtml(effortName(C.effort))}${C.effort_own ? ` <span class="sub" title="${t("The CLI's default; change it in Solver settings")}">· ${t("CLI")}</span>` : ""}` : t("Unknown"));
 // Where an agent's CLI is installed from, for a PC that has none: the agent is optional, and this is how to add it
 const AGENT_GET = { "claude-code": "https://docs.anthropic.com/en/docs/claude-code", codex: "https://github.com/openai/codex" };
 function agentGet(C) {
@@ -2371,21 +2417,19 @@ function agentGet(C) {
   const name = escapeHtml(C?.product || AG());
   return url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a>` : name;
 }
+// What the card and the setup say of an agent not installed: the pill or the step's state says it is optional, this what adding it gives
+const agentOptional = (C) => t("The local model answers on its own. To have the hard problems solved too, install {agent} and sign in once", { agent: agentGet(C) });
 function agentState() {
   const C = eng()?.agent;
   if (wsState !== "up" || !C) return card("idle", t("Checking"), [], wsState !== "up" ? t("Checked once the server is connected") : "");
   if (!C.present) return card("off", t("Not used"), [], t("The server was started with {cmd}", { cmd: "<code class=\"cmd\">SIDENOTE_AGENT=off</code>" }));
   if (C.mode === "off") return card("off", t("Off"), [], t("Only the local model solves"));
-  if (!C.ok && C.installed === false) {   // no CLI on this PC: optional, said as such
-    return card("off", t("Not installed"), [], t("Optional: the local model answers on its own. To have the hard problems solved too, install {agent} and sign in once", { agent: agentGet(C) }));
-  }
+  // No CLI on this PC: optional, said as such, at rest in grey rather than red as a fault (renderSignals, data-rest)
+  if (!C.ok && C.installed === false) return card("idle", t("Optional"), [], agentOptional(C));
   if (!C.ok) {
     return card("bad", C.rejected ? t("Sign-in expired") : t("Sign-in needed"), [],
       t(status.desktop ? "Open a terminal, type {cmd} and press Enter, then sign in" : "Run {cmd} in the server's terminal", { cmd: `<code class="cmd">${LOGIN()}</code>` }));
   }
-  // How it signs in, in plain words rather than the server's field value.
-  const how = { "claude.ai": t("This PC's {agent} sign-in", { agent: AG() }), chatgpt: t("This PC's {agent} sign-in (ChatGPT)", { agent: AG() }), "api-key": t("API key"),
-    mock: t("Mock") }[C.method] || C.method || "";
   // What will actually leave, which is not always what the setting says (see payloadNow).
   const pay = payloadNow(C);
   // The setting asked for part of the screen and the whole of it is going instead: the one thing
@@ -2393,24 +2437,17 @@ function agentState() {
   const forced = pay === "screen" && (C.payload || "crop") !== "screen";
   // One note, not three sentences that each say the local model is off.
   const note = forced ? t("The local model is off, so the whole screen is sent")
-    : C.effective === "all" && C.mode === "hard" ? t("The local model is off, so {agent} solves every problem", { agent: AG() })
+    : C.effective === "all" && C.mode === "hard" ? t("The local model is off, so the agent solves every problem", { agent: AG() })
     : "";
-  const facts = [
-    [t("Product"), C.product ? escapeHtml(C.product) : ""],   // the one place the product is named
-    [t("Model"), agentModelLine(C)],
-    ["effort", agentEffortLine(C)],
-    [t("Takes"), MODE_TEXT[C.effective] || ""],
-    [t("Sends"), forced ? `<span class="warn">${PAYLOAD_TEXT[pay]}</span>` : PAYLOAD_TEXT[pay]],
-    [t("Sign-in"), escapeHtml(how)],
-  ];
   // The model and its effort, one row of two, with no rows for details such as thinking or the maximum output;
-  // the scales say what it is asked to take and to send, and the meters what is left of the plan
-  const core = facts.filter(([k]) => [t("Model"), "effort"].includes(k));
+  // the scales say what it is asked to take and to send, the profile who it is, and the meters what is left of the plan
+  const core = [[t("Model"), agentModelLine(C)], [t("Effort"), agentEffortLine(C)]];
   // Resting on its plan's limit: nothing goes to it until then, questions asked by hand included (they can only fail)
   if (C.limit_until) {
     const L = eng()?.local, who = L && L.ok && (L.on || L.stand_in) ? t("the local model solves") : t("no engine to solve");
+    // on the agent's own card: the limit is its own, said without naming it again
     return { ...card("warn", t("Resting at its limit"), [...core, [t("Sends again"), `${restAt(C.limit_until)} <span class="sub">· ${t("in {when}", { when: restLeft(C.limit_until) })}</span>`]],
-      t("{agent} usage limit · until then {who}", { agent: AG(), who })), viz: agentViz(C, pay, forced) };
+      t("Usage limit · until then {who}", { agent: AG(), who })), viz: agentViz(C, pay, forced) };
   }
   // The spend brake holds: the watching sends nothing by itself until it lifts. This card is where
   // that is said, for as long as it lasts, because the answers list is not the place to repeat it.
@@ -2508,8 +2545,11 @@ function renderSignals() {
     pill.textContent = st.pill;          // text, not HTML: the pill is one word
     pill.dataset.state = st.s;           // the CSS picks the colour from this
     pill.closest(".src")?.setAttribute("data-state", st.s);   // and the source's mark lights in it (index.html)
-    // A model resting off the GPU, or an agent switched off, is at rest and not at fault: grey, not green or red (index.html, [data-rest])
-    pill.closest(".src")?.toggleAttribute("data-rest", (id === "local" && eng()?.local?.ok && !eng()?.local?.loaded && !eng()?.local?.loading) || (id === "agent" && eng()?.agent?.mode === "off"));
+    // A model resting off the GPU, or an agent switched off or not installed (it is optional), is at rest and not at fault: grey, not
+    // green or red (index.html, [data-rest])
+    const A = eng()?.agent;
+    pill.closest(".src")?.toggleAttribute("data-rest", (id === "local" && eng()?.local?.ok && !eng()?.local?.loaded && !eng()?.local?.loading)
+      || (id === "agent" && !!A && (A.mode === "off" || (!A.ok && A.installed === false))));
   }
   syncSrc();   // what can be folded goes with the state and the details just drawn
   const L = eng()?.local;
@@ -2529,6 +2569,8 @@ function renderSignals() {
   swc.hidden = !(C && C.present);
   swc.setAttribute("aria-checked", String(!!(C && C.mode !== "off")));
   swc.disabled = wsState !== "up";
+  // On with no CLI on this PC, it does nothing yet: quiet, as the capture switches are with no program connected
+  swc.dataset.idle = String(!!(C && !C.ok && C.installed === false));
   $("sw-screen").setAttribute("aria-checked", String(!!capture.screen_on));
   $("sw-audio").setAttribute("aria-checked", String(!!capture.audio_on));
   // Nothing connected to switch: greyed out and not pressable
@@ -2565,12 +2607,14 @@ function answerBars(recent) {
 
 // What one engine has done today, in its own card
 function engineUsage(u, which) {
-  if (!u || !u.answers) return `<p class="usage-none">${which === "agent" ? t("No answers from {agent} yet", { agent: AG() }) : t("No answers from the local model yet")}</p>`;
+  if (!u || !u.answers) return `<p class="usage-none">${which === "agent" ? t("No answers from the agent yet", { agent: AG() }) : t("No answers from the local model yet")}</p>`;
   const money = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : v >= 100 ? `$${Math.round(v)}` : v >= 0.1 ? `$${v.toFixed(2)}` : `$${v.toFixed(3)}`);
   const much = (v) => (v >= 1e7 ? `${(v / 1e6).toFixed(1)}M` : Number(v || 0).toLocaleString());
-  const stat = (v, k) => `<span class="stat"><b>${v}</b><span class="k">${k}</span></span>`;
-  // Over the last day, or, with none in it, over the last answers it gave: said as "최근 답", the day of the last one in its tooltip
-  const top = [stat(t("{answers}", { answers: u.answers }), u.window === "recent" ? t("Recent") : t("24 h"))];
+  const stat = (v, k, tip = "") => `<span class="stat"${tip ? ` title="${escapeHtml(tip)}"` : ""}><b>${v}</b><span class="k">${k}</span></span>`;
+  // Over the last day, or, with none in it, over the last answers it gave. The label says what it counts in the room a tile has (60 px:
+  // "Answers, 24 h" ran into the next one), the tooltip over what
+  const top = [stat(t("{answers}", { answers: u.answers }), u.window === "recent" ? t("Recent") : t("Answers"),
+    u.window === "recent" ? t("None in the last 24 hours: its latest answers") : t("Answers in the last 24 hours"))];
   // One decimal in every tile, three figures at most from a hundred up: "88.64초" beside "61.3초" read as two kinds of figure
   const one = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10);
   if (u.elapsed_p50 != null) top.push(stat(t("{n} s", { n: one(u.elapsed_p50) }), t("Response p50")));
@@ -2680,7 +2724,7 @@ function renderAlerts() {
       // The desktop app: the download key itself, or where to get Ollama; no command to run
       out.push(alertHtml(kind, `<b>${localTrouble(L)}</b> ` + (L.missing && L.pull ? pullOffer(L)
         : t("Ollama does not answer. Install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }))
-        + `${E.ready ? t(" · {agent} solves meanwhile", { agent: AG() }) : ""}`, ""));
+        + `${E.ready ? t(" · the agent solves meanwhile", { agent: AG() }) : ""}`, ""));
     } else if (localBad && !(pullNow || L.pulling)) {
       // The same command the rail gives: pull only when the model was never downloaded, otherwise
       // look at a server that is there and not answering.
@@ -2689,7 +2733,7 @@ function renderAlerts() {
       out.push(alertHtml(kind, (L.missing
         ? t("{title} Get the model with {cmd} in the server's terminal, then {up} · resumes within 20 seconds", { title, cmd, up: `<code class="cmd">./sidenote up</code>` })
         : t("{title} Run {cmd} in the server's terminal · resumes within 20 seconds", { title, cmd }))
-        + `${E.ready ? t(" · {agent} solves meanwhile", { agent: AG() }) : ""}`,
+        + `${E.ready ? t(" · the agent solves meanwhile", { agent: AG() }) : ""}`,
         `<button class="btn sm" data-copy="${fix}">${COPY_MARK}<span>${t("Copy command")}</span></button>`));
     }
     if (agentBad) {
@@ -2713,13 +2757,13 @@ function renderAlerts() {
       out.push(alertHtml("info", `<b>${t("{agent} usage limit: resting until {when}", { agent: AG(), when: restAt(C.limit_until) })}</b>${sub}`));
     }
     if (!E.ready && !localBad && !agentBad) {
-      out.push(alertHtml("bad", t("{title} Turn on the local model or {agent} in Solver settings", { title: `<b>${t("Every engine is off")}</b>`, agent: AG() }),
+      out.push(alertHtml("bad", t("{title} Turn on the local model or the agent in Solver settings", { title: `<b>${t("Every engine is off")}</b>`, agent: AG() }),
         `<button class="btn sm" data-act="settings">${t("Solver settings")}</button>`));
     }
   }
   if (wsState === "up" && capture.clients === 0 && (capture.screen_on || capture.audio_on)) {
     out.push(alertHtml("warn", `<b>${t("Capture program off")}</b> ${status.desktop
-      ? t("The capture program stopped. Quit Sidenote from its tray icon and start it again")
+      ? t("The capture program stopped. Quit Sidenote and start it again")
       : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` })}`, ""));
   }
   // A drawn region is easy to forget and it decides everything that follows: with one set, the models
@@ -2752,8 +2796,8 @@ function pendingItems() { return [...items.values()].filter((it) => it.live && !
 // What a running analysis is doing (the server's stage messages): shown in the foot of the page until
 // its answer starts, then on its headline.
 // Getters where a stage names the agent: this runs when the page loads, before the server has said which agent it is.
-const STAGE_TEXT = { think: t("The local model is thinking"), local: t("The local model is solving"), get agent() { return t("{agent} is solving", { agent: AG() }); },
-  extract: t("Writing out the problem as text"), get confirm() { return t("Asking whether to send it to {agent}", { agent: AG() }); },
+const STAGE_TEXT = { think: t("The local model is thinking"), local: t("The local model is solving"), get agent() { return t("The agent is solving", { agent: AG() }); },
+  extract: t("Writing out the problem as text"), get confirm() { return t("Asking whether to send it to the agent", { agent: AG() }); },
   // Asked again on a screen the first look found nothing on: the screen is read once more in two
   // halves, each at its own resolution, which is what finds a problem in a narrow window.
   halves: t("Looking again at each half of the screen") };
@@ -2768,7 +2812,8 @@ function stageText(it) {
 // two brackets in a row, and the head ", 5초째" for the same wait
 const pendingText = (it) => t("{what} · {n} s", { what: stageText(it) || (it.trigger === "voice" ? t("Looking at the problem heard") : t("Looking at the new screen")), n: liveSeconds(it) });
 const liveText = (it) => (stageText(it) ? t("{what} · {n} s", { what: stageText(it), n: liveSeconds(it) }) : t("Solving · {n} s", { n: liveSeconds(it) }));
-const noneText = () => `${fmtTime(lastNone.ts)} ${lastNone.voice ? t("No problem to solve in what was heard") : t("No problem to solve")}`;
+// in the clock every other time on the page is written in ("04:53 AM"), not a 24-hour one with seconds
+const noneText = () => `${fmtClock(lastNone.ts)} ${lastNone.voice ? t("No problem to solve in what was heard") : t("No problem to solve")}`;
 const row = (mg, ct, cls = "", attrs = "") => `<div class="row ${cls}" ${attrs}><div class="mg">${mg}</div><div class="ct">${ct}</div></div>`;
 
 // How a screen becomes an answer, drawn rather than described: the welcome page was a wall of text
@@ -2786,31 +2831,34 @@ function flowDiagram() {
   const off = (on) => (on ? "" : " off");
   // Off, not signed in, not there at all and not known yet are four different things, and the
   // picture used to call all of them Off while the checklist under it said Needed or Checking.
+  // A download under way is said as the card says it, not as a model still to get
   const localWhy = !eng() || wsState !== "up" ? t("Checking")
     : !L || !L.present ? t("Not on this server")
     : !L.on ? t("Off")
+    : pullNow || L.pulling ? t("Downloading")
     : L.missing ? t("Model download needed")
     : !L.ok ? t("No response") : "";
+  // An agent with no CLI on this PC is optional, as its card and the setup say: not a sign-in to make
   const agentWhy = !eng() || wsState !== "up" ? t("Checking")
     : !C || !C.present ? t("Not on this server")
     : C.mode === "off" ? t("Off")
+    : !C.ok && C.installed === false ? t("Optional")
     : !C.ok ? t("Sign-in needed") : "";
   // What actually goes out, not what the setting says: cutting the problem out needs this PC's
   // model, so with it off the whole screen goes however the setting reads (the same rule as the
-  // rail's own line, payloadText).
-  const SHORT_PAYLOAD = { crop: t("Problem part only"), text: t("Problem text only"), screen: t("Whole screen") };
-  const goes = !localOn ? t("Whole screen") : (SHORT_PAYLOAD[C?.payload] || t("Problem part only"));
+  // rail's own line, payloadNow), by the name the setting gives it.
+  const goes = payloadName(!localOn ? "screen" : C?.payload || "crop");
   // The same picture twice: one row for a wide column, one column for a narrow one. Only one is
   // ever displayed (the container query in the stylesheet picks it). The wide one needs 600px, and
   // below that it used to be dragged sideways inside the card, which reads as a card cut in half.
-  const label = t("The local model takes the screen and the sound, solves the easy problems at once and leaves the hard ones to {agent}, and the answers are written here", { agent: AG() });
+  const label = t("The local model takes the screen and the sound, solves the easy problems at once and leaves the hard ones to the agent, and the answers are written here", { agent: AG() });
   // Nothing named on the arrow before the server has said what the agent is set to: "모두" stood there with the server down
   const edge = !eng() || wsState !== "up" ? ""
     : !localOn ? t("All")
     : C?.effective === "all" ? t("All")
     : C?.effective === "verify" ? t("Check") : t("If hard");
   const localSub = localOn
-    ? (C?.effective === "all" ? t("Finds, sends to {agent}", { agent: AG() })
+    ? (C?.effective === "all" ? t("Finds, sends to the agent", { agent: AG() })
       : C?.effective === "verify" ? t("Finds and solves all")
       : t("Finds, solves the easy"))
     : localWhy;
@@ -2883,14 +2931,14 @@ function flowDiagram() {
   </svg>`;
 }
 
-// What the agent does in each mode, as a sentence. MODE_TEXT is a value for a label ("Problems it solves: ..."): put in
+// What the agent does in each mode, as a sentence. MODE_TEXT is a value for a label ("Takes: ..."): put in
 // front of a fixed particle it read "찾은 문제 모두을 Claude 가 풉니다" and "이 PC 의 답을 검토을 ...", with the wrong particle.
 function agentDoes(mode) {
-  if (mode === "verify") return t("{agent} checks this PC's answers", { agent: AG() });
+  if (mode === "verify") return t("The agent checks the local model's answers", { agent: AG() });
   // whole sentences in English; the Korean reads as it did, "<what> <agent> solves"
-  if (mode === "hard") return t("{agent} solves the hard problems of the chosen kinds", { agent: AG() });
-  if (mode === "all") return t("{agent} solves every problem", { agent: AG() });
-  return t("{agent} solves: {what}", { agent: AG(), what: MODE_TEXT[mode] || t("the chosen problems") });
+  if (mode === "hard") return t("The agent solves the hard problems of the chosen kinds", { agent: AG() });
+  if (mode === "all") return t("The agent solves every problem", { agent: AG() });
+  return t("The agent solves: {what}", { agent: AG(), what: MODE_TEXT[mode] || t("the chosen problems") });
 }
 let welcomeDrawn = "";   // the page as it is now: rebuilt only when something in it changed
 function renderWelcome() {
@@ -2915,16 +2963,19 @@ function renderWelcome() {
     ${row(t("Setup"), `<ul class="steps">
       ${step(srv, t("Server"), status.desktop ? t("The Sidenote app runs it: start the app again if it is not running")
         : t("Run {cmd} in the server's terminal", { cmd: "<code class=\"cmd\">./sidenote up</code>" }), { true: t("Connected"), false: t("Not connected"), null: t("Checking") }[srv], srv === false)}
-      ${L && L.present ? step(L.on ? L.ok : null, t("Local model"), L.pull && !L.ok && !L.missing
+      ${L && L.present ? step(L.on && !(pullNow || L.pulling) ? L.ok : null, t("Local model"), L.pull && !L.ok && !L.missing
         ? t("Finds problems on the GPU and answers what it can at once. First install Ollama from {link}", { link: OLLAMA_LINK })
         : L.pull ? t("Finds problems on the GPU and answers what it can at once. With no model yet: the Download button on the Local model card")
         : t("Finds problems on the GPU and answers what it can at once. With no model yet: {cmd}", { cmd: "<code class=\"cmd\">./sidenote llm pull</code>" }),
-        !L.on ? t("Off") : L.ok ? t("Connected") : t("Needed")) : ""}
+        // a download under way is the step being done, as the card's own pill says
+        !L.on ? t("Off") : L.ok ? t("Connected") : pullNow || L.pulling ? t("Downloading") : t("Needed")) : ""}
       ${C && C.present ? step(C.mode === "off" || C.installed === false ? null : C.ok, `${AG()}`, C.mode === "off"
-        ? t("Off. Turned on in Solver settings, {agent} solves the hard problems of the chosen types", { agent: AG() })
-        : C.installed === false
-          ? t("Optional: the local model answers on its own. To have the hard problems solved too, install {agent} and sign in once", { agent: agentGet(C) })
-          : t("{does}. Uses this PC's {agent} sign-in; with none, {cmd}", { does: agentDoes(C.mode), agent: AG(), cmd: `<code class="cmd">${LOGIN()}</code>` }),
+        ? t("Off. Turned on in Solver settings, the agent solves the hard problems of the chosen types", { agent: AG() })
+        : C.installed === false ? agentOptional(C)
+          // the sign-in to make, said as an instruction: where the command is typed is the app's terminal, or the server's
+          : t(status.desktop ? "{does}. It uses the sign-in this PC has; if there is none, open a terminal and run {cmd}"
+            : "{does}. It uses the sign-in this PC has; if there is none, run {cmd} in the server's terminal",
+          { does: agentDoes(C.mode), agent: AG(), cmd: `<code class="cmd">${LOGIN()}</code>` }),
         C.mode === "off" ? t("Off") : C.installed === false ? t("Optional") : C.ok ? t("Connected") : t("Needed")) : ""}
       ${!eng() ? step(null, t("Solving engines"), t("Checked once the server is connected"), t("Checking")) : ""}
       ${step(capOk, t("Capture program"), status.desktop ? t("The Sidenote app starts it with no window; quitting it from its tray icon ends the app")
@@ -2950,7 +3001,7 @@ function metaHtml(m) {
   // Which engine answered is the one thing in this line worth telling apart at a glance: it says
   // whether the answer left the PC. The two take the colours the header's own signals use for them.
   if (m.engine) parts.push(`<span class="by ${m.engine === "agent" ? "cloud" : "here"}">`
-    + `<b>${m.engine === "agent" ? `${AG()}` : t("This PC")}</b>${m.model ? `<span class="model">${escapeHtml(m.model)}</span>` : ""}</span>`);
+    + `<b>${m.engine === "agent" ? `${AG()}` : t("Local model")}</b>${m.model ? `<span class="model">${escapeHtml(m.model)}</span>` : ""}</span>`);
   else if (m.model) parts.push(`<span class="model">${escapeHtml(m.model)}</span>`);
   if (m.elapsed != null) parts.push(`<span class="took">${t("{n} s", { n: `<b>${Number(m.elapsed).toFixed(1)}</b>` })}</span>`);
   if (m.first_token != null) {
@@ -3006,14 +3057,19 @@ function checkHtml(c) {
     + `${c.total ? `<span class="vc-count">${c.passed}/${c.total}</span>${vDots(c.passed, c.total)}` : ""}<span class="vc-meta">${escapeHtml(meta)}</span></div>`
     + `${notes.length ? `<p class="vc-note">${notes.join(" · ")}</p>` : ""}`;
   if (!runs.length) return `<div class="vcheck ${ok ? "ok" : "bad"}">${head}</div>`;
-  const box = (v) => { const s = v == null ? "" : typeof v === "string" ? v.replace(/\n$/, "") : jsonText(v); return s.trim() ? `<pre>${escapeHtml(s)}</pre>` : `<pre class="none">${t("(none)")}</pre>`; };
+  // A value as an example writes it, a space after each comma ([3, 1, 4], {"a": 1}); a string keeps its own lines
+  const valueText = (v) => (Array.isArray(v) ? `[${v.map(valueText).join(", ")}]`
+    : v && typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${jsonText(k)}: ${valueText(x)}`).join(", ")}}` : jsonText(v));
+  const box = (v) => { const s = v == null ? "" : typeof v === "string" ? v.replace(/\n$/, "") : valueText(v); return s.trim() ? `<pre>${escapeHtml(s)}</pre>` : `<pre class="none">${t("(none)")}</pre>`; };
+  // A function's input is its arguments (the server sends them as one list): one a line, as the run box takes them, not one nested list
+  const input = (v) => (c.how === "function" && Array.isArray(v) ? v.map(valueText).join("\n") : v);
   const first = Math.max(0, runs.findIndex((r) => r.ok === false));
   const label = probe ? t("Input") : call ? t("Call") : t("Example");
   const tabs = runs.length > 1 ? `<div class="vc-tabs" role="tablist">${runs.map((r, i) => `<button type="button" role="tab" class="vc-tab ${r.ok === false ? "bad" : "ok"}" data-case="${i}" aria-selected="${i === first}"><i></i>${label} ${i + 1}</button>`).join("")}</div>` : "";
   const cases = runs.map((r, i) => {
     const expected = !probe && "expected" in r;
     return `<div class="vc-case${r.ok === false ? " bad" : ""}" data-case="${i}" role="tabpanel"${i === first ? "" : " hidden"}>`
-      + `<div class="vc-io"><span class="vc-k">${call ? t("Call") : t("Input")}</span>${box(r.input)}</div>`
+      + `<div class="vc-io"><span class="vc-k">${call ? t("Call") : t("Input")}</span>${box(input(r.input))}</div>`
       + `<div class="vc-pair${expected ? "" : " one"}"><div class="vc-io got"><span class="vc-k">${t("Output")}</span>${box(r.got)}</div>`
       + `${expected ? `<div class="vc-io"><span class="vc-k">${t("Expected")}</span>${box(r.expected)}</div>` : ""}</div></div>`;
   }).join("");
@@ -3077,20 +3133,22 @@ function ptextHtml(p) {
 // The verify mode: the agent's check of a local answer (its corrected solution, or any other reply, is
 // painted into [data-vbody] by paintItem, like the solution itself).
 function verifyHtml(v) {
-  if (v.running) return `<div class="topline pending"><span class="spin"></span><span>${t("{agent} is checking this solution", { agent: AG() })}</span></div>`;
+  if (v.running) return `<div class="topline pending"><span class="spin"></span><span>${t("The agent is checking this solution", { agent: AG() })}</span></div>`;
   if (v.cancelled) return `<p class="cap">${t("Check stopped")}</p>`;
   if (v.lost) return `<p class="cap">${t("Connection lost: no check result")}</p>`;
   if (v.not_sent) return `<p class="cap">${v.why ? escapeHtml(v.why) + " · " : ""}${t("Not checked")}</p>`;
   if (v.error) return `<p class="cap check bad">${t("Check failed ({why})", { why: escapeHtml(HINT[v.error]?.title || v.error) })}</p>`;
-  if (v.verdict === "ok") return `<p class="cap check ok"><b>${t("{agent} gives the same answer", { agent: AG() })}</b></p>`;
+  if (v.verdict === "ok") return `<p class="cap check ok"><b>${t("The agent gives the same answer", { agent: AG() })}</b></p>`;
   // the pill, then its answer: the line is a row with gaps (index.html, .cap.check), and a ": " between them stood alone in it
-  const lead = v.verdict === "fix" ? `<b>${t("{agent} sees it differently", { agent: AG() })}</b>${splitHead(v.text || "", true).answer ? "<span data-vans></span>" : ""}`
-    : `<b>${t("{agent}'s answer", { agent: AG() })}</b> ${t("(not in the format; shown as written)")}`;
+  const lead = v.verdict === "fix" ? `<b>${t("The agent sees it differently", { agent: AG() })}</b>${splitHead(v.text || "", true).answer ? "<span data-vans></span>" : ""}`
+    : `<b>${t("The agent's answer", { agent: AG() })}</b> ${t("(not in the format; shown as written)")}`;
   return `<p class="cap check bad">${lead}</p><div class="md" data-vbody></div>`;
 }
 function errorHtml(err, hint) {
   const h = HINT[hint] || HINT[""];
-  return `<div class="errbox"><h2>${h.title}</h2><p>${h.text}${h.cmd ? ` <code class="cmd">${h.cmd}</code> <button class="btn sm" data-copy="${h.cmd}">${COPY_MARK}<span>${t("Copy command")}</span></button>` : ""}</p>
+  // the command's chip after the sentence, and its copy key; a sentence that names the command itself keeps only the key (h.copy)
+  const copy = h.copy || h.cmd;
+  return `<div class="errbox"><h2>${h.title}</h2><p>${h.text}${h.cmd ? ` <code class="cmd">${h.cmd}</code>` : ""}${copy ? ` <button class="btn sm" data-copy="${copy}">${COPY_MARK}<span>${t("Copy command")}</span></button>` : ""}</p>
     <details><summary>${t("Error details")}</summary><pre>${escapeHtml(err)}</pre></details></div>`;
 }
 function turnHtml(turn) {
@@ -3351,9 +3409,9 @@ function confirmLeft(c) { return Math.max(0, Math.round(c.timeout - (Date.now() 
 document.addEventListener("load", (e) => { if (e.target.closest?.("#thread")) followEnd(); }, true);
 function confirmHtml(c) {
   const what = escapeHtml(c.what || "");
-  const preview = c.thumb ? `<img src="${escapeHtml(c.thumb)}" alt="${t("Screen to send to {agent}", { agent: AG() })}" />` : c.text ? `<pre>${escapeHtml(c.text)}</pre>` : "";
-  return row(t("Confirm"), `<div class="alert warn confirm"><div class="msg"><b>${t("Send to {agent}?", { agent: AG() })}</b> ${what}
-      <span class="cap" data-countdown="${escapeHtml(c.cid)}">${t("Not sent in {n} s", { n: confirmLeft(c) })}</span>${preview}</div>
+  const preview = c.thumb ? `<img src="${escapeHtml(c.thumb)}" alt="${t("Screen to send to the agent", { agent: AG() })}" />` : c.text ? `<pre>${escapeHtml(c.text)}</pre>` : "";
+  return row(t("Confirm"), `<div class="alert warn confirm"><div class="msg"><b>${t("Send to the agent?", { agent: AG() })}</b> ${what}
+      <span class="cap" data-countdown="${escapeHtml(c.cid)}">${t("Skipped in {n} s", { n: confirmLeft(c) })}</span>${preview}</div>
       <div class="acts"><button class="btn sm pen" data-confirm="${escapeHtml(c.cid)}" data-send="1">${t("Send")}</button>
       <button class="btn sm" data-confirm="${escapeHtml(c.cid)}" data-send="0">${t("Don't send")}</button></div></div>`);
 }
@@ -3381,7 +3439,7 @@ function askEnabled() { return status.canAsk && wsState === "up"; }
 // the field is only as wide as the window leaves it (246px of text at 360px). So every state gives
 // its wording from the fullest down to the shortest, and the widest one that fits is the one shown.
 const ASK_TEXT = {
-  on: [t("Ask more about the problem just solved (e.g. why is ③ the answer?)"), t("Ask more about the problem just solved"), t("Ask a follow-up")],
+  on: [t("Ask more about the problem just solved (e.g. why is 3 the answer?)"), t("Ask more about the problem just solved"), t("Ask a follow-up")],
   down: [t("Questions once the server is connected"), t("Questions once connected"), t("Ask once connected")],
   stale: [t("Server restarted: questions from the next answer"),
     t("Questions from the next answer"), t("Ask after the next answer")],
@@ -3479,7 +3537,7 @@ function paintItem(it, final) {
   const { type, answer, asked, body } = it.head;
   // The stream stopped part way: say so beside the answer too, not only beside the body (the
   // ANSWER line may itself have been cut off).
-  const label = ANSWER_LABEL[type] || t("Gist");
+  const label = ANSWER_LABEL[type] || t("Summary");
   paintAnswer(el, type, answer, it.error ? t("{label}, unfinished", { label }) : label);
   // a problem that is not in Korean: what it asks, in Korean, above the answer it is answered in
   const askedRow = el.querySelector("[data-askedrow]"), askedEl = el.querySelector("[data-asked]");
@@ -3661,8 +3719,9 @@ function renderShot() {
   const shotTitle = drawing
     ? (drawing.live ? `<span class="now-dot"></span>${t("Screen now")}` : t("Last screen {when}", { when: stamp(fmtAgo(serverNow() - (drawing.ts ?? serverNow()))) }))
     // "This answer's screen" only over a screen that is then shown: a spoken problem has none, and the title
-    // used to promise one above a frame that said there was none
-    : it && thumb ? t("Solved {when}", { when: stamp(fmtWhen(it.ts)) })
+    // used to promise one above a frame that said there was none. It names the card, not a state ("Solved ..." read as one), in words
+    // that leave its date room at 1366 (229 px for both)
+    : it && thumb ? t("Screen at {when}", { when: stamp(fmtWhen(it.ts)) })
     : looking ? `<span class="now-dot"></span>${t("Analyzing {when}", { when: stamp(fmtWhen(looking.ts)) })}`
     : noneShot ? t("No problem {when}", { when: stamp(fmtWhen(noneShot.ts)) }) : t("Screen");
   // The words and the date in one line of their own, so they stand on one baseline, and that line centred with the title's mark (index.html)
@@ -3706,7 +3765,7 @@ function renderShot() {
              : t("Drag to draw a region · Esc cancels") + boxSize)
     : it && it.region && thumb ? t("Highlight: where the problem was seen")
         + `${cutTop || cutBottom ? (cutTop && cutBottom ? t(" · it goes on above and below; scroll and it reads on") : cutTop ? t(" · it goes on above; scroll and it reads on") : t(" · it goes on below; scroll and it reads on")) : ""}`
-        + `${sentCrop ? t(" · only this part went to {agent}", { agent: AG() }) : ""}`
+        + `${sentCrop ? t(" · only this part went to the agent", { agent: AG() }) : ""}`
     : noneShot && thumb ? t("No problem found · if there is one, Reanalyze or draw a region")
     : drawn && thumb ? t("Only what is inside the dotted box is looked at and sent") : "";
   $("roi-clear").hidden = !drawn || !!drawing;
@@ -3897,7 +3956,8 @@ function fillChoices() {
     if (t && TYPE_LABEL[t] && (!histDay || dayOf(it.ts) === histDay)) perKind.set(t, (perKind.get(t) || 0) + 1);
   }
   if (histKind && TYPE_LABEL[histKind] && !perKind.has(histKind)) perKind.set(histKind, 0);
-  const kindHtml = `<option value="">${t("All types")}</option>` + [...perKind].map(([type, n]) => `<option value="${type}" data-short="${escapeHtml(TYPE_LABEL[type])}">${escapeHtml(TYPE_LABEL[type])} · ${n === 1 ? t("{n} answer", { n }) : t("{n} answers", { n })}</option>`).join("");
+  // the list names each kind in full, as the settings' types do; the closed button keeps the margin's short name
+  const kindHtml = `<option value="">${t("All types")}</option>` + [...perKind].map(([type, n]) => `<option value="${type}" data-short="${escapeHtml(TYPE_LABEL[type])}">${escapeHtml(TYPE_NAME[type])} · ${n === 1 ? t("{n} answer", { n }) : t("{n} answers", { n })}</option>`).join("");
   if (kind.dataset.html !== kindHtml) { kind.dataset.html = kindHtml; kind.innerHTML = kindHtml; kind.value = histKind; }
   syncPick(day); syncPick(kind);
 }
@@ -3918,7 +3978,8 @@ function renderIndex() {
   miss.hidden = !(narrowed && !ids.length && thread.length);
   if (!miss.hidden) {
     const typed = $("hist-q").value.trim();   // as it was typed, not lower-cased
-    miss.textContent = words.length ? t("No answer holds {q}", { q: `'${typed}'` }) : t("No matching answer");
+    // no particle after what was typed: a Latin word's ("GPU") is not told by its letters
+    miss.textContent = words.length ? t("No answers contain {q}", { q: `'${typed}'` }) : t("No matching answer");
   }
   // rebuilt on every status message: a row with the keyboard's focus gets it back
   const focused = document.activeElement?.closest?.("#history .h")?.dataset.id;
@@ -3934,8 +3995,9 @@ function renderIndex() {
     const label = it.error ? t("Error") : it.live && !it.head.type ? t("Analyzing") : (TYPE_LABEL[it.head.type] || it.head.type || t("Result"));
     // What was asked names a row: that is what the eye looks for. The answer stands in where no question was written out, unless it
     // is a bare mark ("④" names nothing), and then the first sentence of the working, and last the kind
-    const says = (s) => { const t = plainAnswer(s); return /[\p{L}\p{N}]{2,}/u.test(t) ? t : ""; };
-    const firstLine = (s) => says(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => says(l)));
+    const says = (s, block = false) => { const t = plainAnswer(s, block); return /[\p{L}\p{N}]{2,}/u.test(t) ? t : ""; };
+    // a line of the body is read as a block: its heading's hashes and a table row's bars are marks there
+    const firstLine = (s) => says(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => says(l, true)), true);
     let text = it.error ? (HINT[it.hint] || HINT[""]).title : (plainAnswer(it.head.asked) || says(it.head.answer) || firstLine(it.head.body) || label);
     // a row kept for words that are not in its first line shows where they are
     if (words.length && !words.every((w) => text.toLowerCase().includes(w))) {
@@ -3965,7 +4027,7 @@ function exportMarkdown() {
     if (!it || it.live || !inChoice(it) || !words.every((w) => searchText(it).includes(w))) continue;
     written++;
     const kind = it.error ? t("Error") : TYPE_LABEL[it.head.type] || it.head.type || t("Result");
-    const who = it.meta ? `${it.meta.engine === "agent" ? AG() : t("This PC")}${it.meta.model ? ` · ${it.meta.model}` : ""}${it.meta.elapsed != null ? ` · ${t("{n} s", { n: it.meta.elapsed })}` : ""}` : "";
+    const who = it.meta ? `${it.meta.engine === "agent" ? AG() : t("Local model")}${it.meta.model ? ` · ${it.meta.model}` : ""}${it.meta.elapsed != null ? ` · ${t("{n} s", { n: it.meta.elapsed })}` : ""}` : "";
     out.push(`## ${when(it.ts)} ${kind}${who ? ` (${who})` : ""}`, "");
     if (it.trigger === "voice" && it.transcript) out.push(`> ${t("Heard: {text}", { text: it.transcript.replace(/\s+/g, " ") })}`, "");
     if (it.head.asked) out.push(`> ${t("Question: {text}", { text: String(it.head.asked).replace(/\s+/g, " ") })}`, "");
@@ -4123,13 +4185,15 @@ function renderAll() {
   if (!thread.length) syncEmpty();
   noteChange();
 }
-// Trouble that starts while the view is down in the notebook, with the alerts scrolled out of
-// view: said once in a toast as well (the alerts and the signals keep showing it).
+// Trouble that starts while the page is read: the server's connection and the capture program, as they were at the last look
 let prevState = { up: false, clients: null };
+// The bands stay in view at any scroll now (in the bar at the top, floating under it further down), so a toast is said only where no
+// band says the same: one over the other said it twice.
 function noteChange() {
   const up = wsState === "up";
-  if (!demo && prevState.up && !up) toast(t("Server disconnected, reconnecting"), null, "bad");
-  else if (up && prevState.clients > 0 && capture.clients === 0) toast(status.desktop ? t("The capture program stopped")
+  // The server gone always raises its band (renderAlerts), and the capture program gone raises one while a capture switch is on:
+  // with both switches off, only this toast tells it
+  if (up && prevState.clients > 0 && capture.clients === 0 && !(capture.screen_on || capture.audio_on)) toast(status.desktop ? t("The capture program stopped")
     : t("Capture program off: run ./sidenote capture on the capture PC"), null, "warn");
   prevState = { up, clients: capture.clients };
 }
@@ -4291,7 +4355,7 @@ function onDone(m) {
 // Stopped on purpose (pause, a switch turned off): a half-written answer stays, with a note. Any
 // other cancel means a newer analysis replaces it (a new screen, a new spoken problem, Reanalyze).
 const STOP_NOTE = { pause: t("Stopped: paused"), screen_off: t("Stopped: screen capture was turned off"),
-  sound_off: t("Stopped: sound capture was turned off"), get not_sent() { return t("Not solved: not sent to {agent}", { agent: AG() }); },
+  sound_off: t("Stopped: sound capture was turned off"), get not_sent() { return t("Not solved: not sent to the agent", { agent: AG() }); },
   local_off: t("Stopped: the local model was turned off") };
 // Whether a message ends the spoken problem's own run: the status "solving … what was heard" went whenever any analysis was
 // stopped, a screen's superseded one included. An id the panel does not know (reloaded)
@@ -4464,7 +4528,7 @@ function handle(m) {
     case "agent_confirm":
       m.gotAt = Date.now() / 1000;   // this browser's own clock, not the server's (they can differ)
       confirms.set(m.cid, m); renderTail(); followEnd();
-      toast(t("Choose whether to send it to {agent}", { agent: AG() }));
+      toast(t("Choose whether to send it to the agent", { agent: AG() }));
       break;
     case "agent_confirm_done":
       if (confirms.delete(m.cid)) renderTail();
@@ -4523,7 +4587,7 @@ function onRunResult(m) {
 // drawn box. A setting whose prerequisite is off is dimmed and says which one to turn on.
 // What this server was started without cannot be switched on here (its environment decides).
 const noSearch = () => !eng()?.search?.present && t("No search server (SIDENOTE_SEARCH_URL)");
-const noAgent = () => !eng()?.agent?.present && t("The server was started without {agent} (SIDENOTE_AGENT)", { agent: AG() });
+const noAgent = () => !eng()?.agent?.present && t("The server was started without the agent (SIDENOTE_AGENT)", { agent: AG() });
 const noRunner = () => !status.runner && t("No code runner (SIDENOTE_RUNNER_URL)");
 const noAudio = () => !status.audio && t("Speech recognition off (SIDENOTE_AUDIO)");
 const UNAVAILABLE = {
@@ -4541,18 +4605,18 @@ function outboundNote() {
   // it is on would be a promise the tool does not keep.
   const web = S && S.present && S.on ? t("Web search is on: search words go to the search engine") : "";
   if (!C || !C.present) return web;
-  if (C.mode === "off") return (web ? t("Nothing goes to {agent}. ", { agent: AG() }) + web
+  if (C.mode === "off") return (web ? t("Nothing goes to the agent. ", { agent: AG() }) + web
                                     : t("<b>Nothing</b> leaves this PC"));
-  if (!C.ok) return t("{agent} is not signed in, so nothing goes out", { agent: AG() }) + (web ? ". " + web : "");
+  if (!C.ok) return t("The agent is not signed in, so nothing goes out", { agent: AG() }) + (web ? ". " + web : "");
   const ask = settingsValues.agent_confirm ? t(" · asks before sending") : "";
   const pay = payloadNow(C);
   const forced = pay === "screen" && (C.payload || "crop") !== "screen";
-  // Two facts, each one ended, the way the the agent card in the rail lists them. As one sentence with the
-  // mode in brackets it read "(Hard problems only (chosen types)) Web search ...": brackets in brackets, and no
-  // full stop before the next sentence.
-  const mode = MODE_TEXT[C.effective] ? t(" Problems it solves: {what}.", { what: MODE_TEXT[C.effective] }) : "";
-  return t("Going out now: {what}.", { what: `<b>${PAYLOAD_TEXT[pay]}</b>` }) + `${mode}${ask}`
-    + `${forced ? t(" The local model is off, so the problem part cannot be cut out") : ""}${web ? " " + web : ""}`;
+  // What goes and which problems take it, under the agent card's own two names (Sends, Takes), one line of facts set apart by
+  // "·" as the card's are: written as two sentences of their own words ("Going out now: ... Problems it solves: ...") they read
+  // as fragments, and named what goes a third way
+  const mode = MODE_TEXT[C.effective] ? ` · ${t("Takes")}: ${MODE_TEXT[C.effective]}` : "";
+  return `${t("Sends")}: <b>${escapeHtml(payloadName(pay))}</b>${mode}${ask}`
+    + `${forced ? t(" · the local model is off, so the problem area cannot be cut out") : ""}${web ? ` · ${web}` : ""}`;
 }
 function settingItem(key) { return settingsMeta?.items.find((i) => i.key === key); }
 function settingBlocker(item) {
@@ -4566,15 +4630,15 @@ function settingBlocker(item) {
   }
   const f = ACTIVE_WHEN[item.key];
   if (f && !f(settingsValues)) {
-    if (item.key !== "agent_hard_types") return t("Needs {agent} on", { agent: AG() });
+    if (item.key !== "agent_hard_types") return t("Needs the agent on", { agent: AG() });
     // the setting's own label and option as the server words them, so the warning and the setting read the same
     const mode = settingItem("agent_mode");
     const hard = (mode?.options || []).find((o) => o[0] === "hard")?.[1] || t("Hard problems");
-    return t("Used when {setting} is {value}", { setting: `'${mode?.label || t("Problems {agent} solves", { agent: AG() })}'`, value: `'${hard}'` });
+    return t("Used when {setting} is {value}", { setting: `'${mode?.label || t("Problems the agent solves", { agent: AG() })}'`, value: `'${hard}'` });
   }
   return "";
 }
-function boxText(b) { return b ? t("x {x0}~{x1}%, y {y0}~{y1}%", { x0: Math.round(b[0] * 100), x1: Math.round(b[2] * 100), y0: Math.round(b[1] * 100), y1: Math.round(b[3] * 100) }) : t("None (the whole screen)"); }
+function boxText(b) { return t("x {x0}~{x1}%, y {y0}~{y1}%", { x0: Math.round(b[0] * 100), x1: Math.round(b[2] * 100), y0: Math.round(b[1] * 100), y1: Math.round(b[3] * 100) }); }
 function settingControl(item, v, off) {
   const dis = off || wsState !== "up" ? " disabled" : "";
   const k = escapeHtml(item.key);
@@ -4612,7 +4676,8 @@ function settingRow(item) {
   // one control in the sheet still drawn that way after the dropdowns stopped being <select>s.
   const multi = item.kind === "multi" ? `<div class="seg checks" role="group" aria-label="${escapeHtml(item.label)}">${item.options.map(([ov, ol]) =>
     `<button type="button" data-set="${escapeHtml(item.key)}" data-multi="${escapeHtml(ov)}" aria-pressed="${(v || []).includes(ov)}"${why || wsState !== "up" ? " disabled" : ""}>${escapeHtml(ol)}</button>`).join("")}</div>` : "";
-  const extra = item.kind === "box" ? t(" Now: {box}.", { box: boxText(v) }) : "";
+  // the drawn box as it stands, set apart from the server's help after it: "none" alone, the help says what none means
+  const extra = item.kind === "box" ? ` · ${t("Now: {box}", { box: v ? boxText(v) : t("none") })}` : "";
   const pick = (item.opt_help || {})[String(v)];
   return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, v, !!why)}</span>
     ${multi}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
@@ -5199,7 +5264,7 @@ document.addEventListener("click", (e) => {
   const ca = e.target.closest("[data-copy-answer]");
   if (ca) { const it = items.get(idOf(ca.dataset.copyAnswer)); if (it?.head.answer) copyText(plainAnswer(it.head.answer), ca); }
   const ci = e.target.closest("[data-copy-item]");
-  if (ci) { const it = items.get(idOf(ci.dataset.copyItem)); if (it) copyText((it.head.answer ? `${ANSWER_LABEL[it.head.type] || t("Gist")}: ${it.head.answer}\n\n` : "") + it.head.body.trim(), ci); }
+  if (ci) { const it = items.get(idOf(ci.dataset.copyItem)); if (it) copyText((it.head.answer ? `${ANSWER_LABEL[it.head.type] || t("Summary")}: ${it.head.answer}\n\n` : "") + it.head.body.trim(), ci); }
   const pt = e.target.closest("[data-ptext]");
   if (pt) { const it = items.get(idOf(pt.dataset.ptext)); if (it && send({ type: "problem_text", id: it.id })) { it.ptext = { pending: true }; renderEntry(it); } }
   const mm = e.target.closest("[data-meta]");
@@ -5265,7 +5330,7 @@ setInterval(() => {   // keep the "N s ago / N s so far" readouts current
   document.querySelectorAll("[data-countdown]").forEach((el) => {
     const c = confirms.get(el.dataset.countdown); if (!c) return;
     const left = confirmLeft(c);
-    el.textContent = left ? t("Not sent in {n} s", { n: left }) : t("Time ran out: not sent");
+    el.textContent = left ? t("Skipped in {n} s", { n: left }) : t("Time ran out: not sent");
     if (!left) el.closest(".confirm")?.querySelectorAll("button").forEach((b) => { b.disabled = true; });
   });
   fillPending();        // the seconds on the line that says a screen is being looked at

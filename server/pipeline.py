@@ -34,8 +34,8 @@ from typing import Awaitable, Callable
 from PIL import Image, ImageDraw
 
 from . import repeats, telemetry
-from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, build_user_text, error_hint, speech_request, text_request,
-                       verify_request)
+from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, build_user_text, error_hint, error_words, speech_request,
+                       text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
 from .heads import head_of, head_start, parse_region, region_box, within
@@ -66,7 +66,7 @@ class NoSolver(RuntimeError):
 
 
 class GpuBusy(TimeoutError):
-    """Neither this PC's model nor the one it uses while the GPU is held started on a screen within the first-token
+    """Neither the local model nor the one it uses while the GPU is held started on a screen within the first-token
     deadline: the GPU is taken by something else. Nothing went to the agent (where the problem is was never read).
     A TimeoutError still, for whatever reads it as one; the worker tells it apart to stay quiet (app.py)."""
 
@@ -644,7 +644,7 @@ def box_first(frame, box) -> bool:
     on a screen large enough that the model gets its text at under half size (halves_help) and with the box's crop
     keeping at least 1.2 times the whole screen image's resolution, the margin halves_help asks of the halves.
     Measured (scratch/local-llm-bench/span_payload.py, span_sharp.py) with one analysis in mind:
-    a coding problem on a 4K screen whose box ran into the next window fell to this PC's model for 169 s while the agent
+    a coding problem on a 4K screen whose box ran into the next window fell to the local model for 169 s while the agent
     was on. On the 4K desktops of section 11 the whole screen came back with nothing 6 times of 6 at 100 and 125 per
     cent and lost 2 or 3 of 7 key phrases each time at 150 per cent, while a box of that size (a crop at 0.66 of the
     resolution, the screen at 0.42) gave all 7, 9 times of 9. At 1440p and 1080p the whole screen gave the problem
@@ -1075,7 +1075,10 @@ class Spend:
         self.path = path
         try:
             saved = json.loads(path.read_text(encoding="utf-8"))
-            if float(saved.get("limit_until", 0)) > time.time():
+            # a limit is the agent's that reached it: after a switch to another agent (SIDENOTE_AGENT, or the app finding
+            # the other CLI) the new one is asked at once, not after the old one's week is over
+            same_agent = saved.get("agent", CONFIG.agent) == CONFIG.agent
+            if same_agent and float(saved.get("limit_until", 0)) > time.time():
                 self.limit_until, self.limit_said, self.limit_kind = float(saved["limit_until"]), str(saved.get("limit_said", "")), str(saved.get("limit_kind", ""))
             self.spent = deque((float(t), float(c)) for t, c in saved.get("spent", ()) if time.time() - float(t) <= 3600)
         except Exception:   # no file yet, or a broken one: nothing to take up
@@ -1087,7 +1090,7 @@ class Spend:
         try:
             tmp = self.path.with_suffix(".tmp")      # whole or not at all
             tmp.write_text(json.dumps({"limit_until": self.limit_until, "limit_said": self.limit_said, "limit_kind": self.limit_kind,
-                                       "spent": list(self.spent)}), encoding="utf-8")
+                                       "agent": CONFIG.agent, "spent": list(self.spent)}), encoding="utf-8")
             tmp.replace(self.path)
         except OSError as exc:    # a convenience: it costs a repeat after a restart at worst
             log.debug("spend not kept (%s)", exc)
@@ -1303,10 +1306,10 @@ class Pipeline:
         return e if e is not None and SETTINGS.on("local_llm") and self.hooks.local_ok() else None
 
     def standing_in(self) -> str:
-        """Why this PC's model, switched off, answers for now, or "": the agent is at its plan's limit ("limit"), its
+        """Why the local model, switched off, answers for now, or "": the agent is at its plan's limit ("limit"), its
         sign-in is gone ("signin"), or the spend brake holds ("brake"), and local_fallback is on. The
         rule: at a limit, the answers come from the local model where they can. With the agent
-        switched off, or this PC's model not there or not answering, nothing stands in: both were turned off,
+        switched off, or the local model not there or not answering, nothing stands in: both were turned off,
         or there is nothing to stand in with. Reads the switch itself (get), not on(), which asks this."""
         if (SETTINGS.get("local_llm") or not SETTINGS.get("local_fallback") or self.engines.local is None
                 or self.engines.agent is None or SETTINGS.get("agent_mode") == "off" or not self.hooks.local_ok()):
@@ -1343,8 +1346,8 @@ class Pipeline:
         if self.engines.agent is not None and self.spend.limit_left():   # resting on its limit: say until when
             # this PC's model is off (or not answering) and does not stand in: say what would have it answer meanwhile
             how = ("" if self.engines.local is None or not self.hooks.local_ok()
-                   else t(" · switch this PC's model on to solve meanwhile") if SETTINGS.get("local_fallback")
-                   else t(" · switch this PC's model (or 'This PC's model stands in at a limit') on to solve meanwhile"))
+                   else t(" · switch the local model on to solve meanwhile") if SETTINGS.get("local_fallback")
+                   else t(" · switch the local model (or 'This PC's model stands in at a limit') on to solve meanwhile"))
             return self.spend.blocked() + how
         if self._agent() is None:               # neither engine, which `ready()` already covers
             return ""
@@ -1535,7 +1538,7 @@ class Pipeline:
         # while the agent was on, and nothing recorded which of these held (fast pass type and route, the
         # brake, the agent there or not), so it could not be told afterwards.
         log.info("analysis #%d: %s answers (type %s, route %s, hard %s, handoff %s, slow here %s, agent %s, mode %s%s)",
-                 seq, "The agent" if to_agent else "this PC's model", f.type or "-", f.route or "-", hard, handoff,
+                 seq, "The agent" if to_agent else "the local model", f.type or "-", f.route or "-", hard, handoff,
                  slow_here, "on" if agent is not None else "off", mode, f", brake: {brake}" if brake else "")
         if to_agent:
             # why the agent got this one, for the record (report: what the agent was paid for on a screen it found
@@ -1569,7 +1572,7 @@ class Pipeline:
                     log.info("analysis #%d: the agent declined to answer (%d chars); the local model answers",
                              seq, len(out.text))
                     telemetry.event("agent_declined", id=seq, chars=len(out.text), type=f.type or "", local=True)
-                    await self.hooks.notice(t("The agent did not answer: this PC's model solves", agent=agent_name()))
+                    await self.hooks.notice(t("The agent did not answer: the local model solves", agent=agent_name()))
                 else:
                     out.sent = sent + out.sent
                     return out
@@ -1580,18 +1583,18 @@ class Pipeline:
                 # Why nothing went, in the log as well as on the panel: the 169 s answer fell to this
                 # PC's model with no record of which it was (no place and no words, numbers like personal data, a
                 # confirm not given, the agent switched off meanwhile)
-                log.info("analysis #%d: nothing sent to the agent (%s); this PC's model answers", seq,
+                log.info("analysis #%d: nothing sent to the agent (%s); the local model answers", seq,
                          str(why) or "not confirmed")
                 telemetry.event("agent_not_sent", id=seq, reason=str(why)[:120] or "not confirmed", type=f.type or "")
-                await self._warn(t("{why} · not sent to the agent, this PC's model solves", why=why, agent=agent_name())
+                await self._warn(t("{why} · not sent to the agent, the local model solves", why=why, agent=agent_name())
                                  if str(why) else
-                                 t("Not sent to the agent, this PC's model solves", agent=agent_name()))
+                                 t("Not sent to the agent, the local model solves", agent=agent_name()))
             except ToolCallWritten as exc:   # it tried to run something it cannot have here: no error of the agent's
                 log.info("analysis #%d: %s; the local model answers", seq, exc)
                 stages["agent_failed"] = True
                 agent_wrote = True
                 sent = sent + getattr(exc, "sent", [])
-                await self._warn(t("{why} · this PC's model solves", why=exc))
+                await self._warn(t("{why} · the local model solves", why=exc))
             except Exception as exc:   # an error, not an answer: a refusal is handled above
                 sent = sent + getattr(exc, "sent", [])   # the problem went out all the same
                 stages["agent_failed"] = True
@@ -1601,8 +1604,8 @@ class Pipeline:
                 else:
                     await self.hooks.agent_failed(exc)
                     log.warning("The agent failed (%s); the local model answers", exc)
-                    await self._warn(t("The agent could not answer ({why}) · this PC's model solves",
-                                       why=error_hint(str(exc)) or t("error"), agent=agent_name()))
+                    await self._warn(t("The agent could not answer ({why}) · the local model solves",
+                                       why=error_words(str(exc)), agent=agent_name()))
 
         # the local thinking pass, with the problem cropped at full resolution beside the screen. What it
         # gets stays on this PC: a box that places nothing is cut as it is, over any windows, unless it covers
@@ -1639,11 +1642,11 @@ class Pipeline:
             if declined is None:
                 raise
             # it took over a problem the agent declined and failed: the agent's reply is the card, not an error
-            log.warning("analysis #%d: this PC's model failed after the agent declined (%s); the agent's reply stands",
+            log.warning("analysis #%d: the local model failed after the agent declined (%s); the agent's reply stands",
                         seq, exc)
             stages["local_failed"] = True
-            await self._warn(t("This PC's model could not answer ({why}) · the agent's reply is shown",
-                               why=error_hint(str(exc)) or t("error"), agent=agent_name()))
+            await self._warn(t("The local model could not answer ({why}) · the agent's reply is shown",
+                               why=error_words(str(exc)), agent=agent_name()))
             await self.hooks.stage(seq, "agent", "", restart=True)
             declined.stages = stages
             return declined
@@ -1651,6 +1654,7 @@ class Pipeline:
             stages["local_failed"] = True   # it wrote nothing: the agent's words are more than that
             await self.hooks.stage(seq, "agent", "", restart=True)
             declined.stages = stages
+            declined.sent = sent + _searches(getattr(res, "searches", None))   # what it searched for went out all the same
             return declined
         out = self._local_outcome(res, view, stages, think=on, windows=windows)
         out.sent = sent + out.sent
@@ -1784,7 +1788,7 @@ class Pipeline:
             return [crop], CROP_REQUEST + note, t("Problem area {w}x{h}", w=size[0], h=size[1]) + said, "", None
         if local is not None:   # the local model can take it: the whole screen never goes out unasked
             raise NotSent(t("Could not find where the problem is"))
-        why = t("this PC's model is off, so the problem was not placed")
+        why = t("the local model is off, so the problem was not placed")
         await self.hooks.notice(t("The whole screen goes to the agent ({why}) · draw a region to send only what is in it",
                                   why=why, agent=agent_name()))
         return look, build_user_text("", 0, False, True), t("Whole screen ({why})", why=why), "", None
@@ -1842,10 +1846,14 @@ class Pipeline:
             # The web search is opened only for this: everything else keeps the warm process with no tools. A web
             # turn's first word is not timed: a fresh process that searches first is no measure of how fast the agent
             # starts an answer, and eight of them made the local model look as fast.
+            sent_before = getattr(agent, "sent", None)
             res = await agent.run(images, text, guarded(on_delta if web else self.speed.timed("agent", on_delta)),
                                    **({"web": True} if web else {}))
         except asyncio.CancelledError:
-            self.spend.cut_short()           # stopped before its price arrived, but paid for
+            # stopped before its price arrived, but paid for once its request went out; an agent that does not count
+            # what it sent is taken to have sent it
+            if sent_before is None or getattr(agent, "sent", None) != sent_before:
+                self.spend.cut_short()
             raise
         except Exception as exc:
             exc.engine = "agent"   # the server tells an agent sign-in problem from a local one by this
@@ -1859,7 +1867,7 @@ class Pipeline:
                 log.warning("The agent is at its usage limit until %s (%s)", self.spend.limit_left(), exc)
                 telemetry.event("agent_limit", id=seq, until=round(self.spend.limit_until),
                                 limit=self.spend.limit_kind, error=str(exc)[:160])
-                who = t(" · this PC's model solves meanwhile") if self._local() is not None else ""
+                who = t(" · the local model solves meanwhile") if self._local() is not None else ""
                 await self._warn(
                     t("The agent's usage limit: not sent until {until}{who}", agent=agent_name(),
                       until=self.spend.limit_left(), who=who)
@@ -2094,7 +2102,7 @@ async def check_code(pipeline: "Pipeline", frame, outcome: Outcome, run, cases: 
     """Run a coding answer's code on the problem's examples, in its own language (codecheck.py). `run(lang, code,
     stdin)` sends a program to the runner sandbox. None when there is nothing to check. The examples read off the
     problem come back under "cases", so a retry is checked against the same ones. `gap(read)` awaits each read with
-    this PC's model (a coroutine factory) when the server lets it, between analyses (app.between_analyses); the runs
+    the local model (a coroutine factory) when the server lets it, between analyses (app.between_analyses); the runs
     on the runner are not put through it, since they do not use the model and a run that was cut would go on in the
     runner all the same. `note`, when given, is told how the reading went, for the record:
     how many examples were read off the screen ("read"), how many of them the problem's text shows ("kept"), and of

@@ -1,25 +1,26 @@
 # Local-first pipeline: design and measurements
 
-Status: implemented.
+Status: implemented. Why the local model answers every screen first, when the cloud agent takes over, and the
+measurements behind each choice.
 
-- Sections 1 to 12 are the first design. Where the code went another way, the code and section 13 are current:
-  the per-type table is the ticks of **Types the agent solves**, one payload setting covers every type (crop by
-  default), a retry goes to the engine that wrote the answer, the panel protocol is `setting` with
-  `.switches.json` kept for the capture switches, there is no search signal, and the server takes the model off the
-  GPU itself instead of sending `keep_alive`.
-- The cases of section 11 were built and measured: on the server's own path the known-answer set came out 34 to 36
-  of 36 a run, the crops held the whole problem in all but at most two a run and no pixel of another window in any,
-  the 4K desktop is read at 100% and 150% scaling since the thinking pass gets a sharper view of it (section 4),
+- Sections 1 to 12 are the first design. Where the code went another way, the code and section 13 are current: the
+  per-type table became the ticks of **Types the agent solves**, one payload setting covers every type (the crop by
+  default), a retry goes to the engine that wrote the answer, the panel protocol is `setting` with `.switches.json`
+  kept for the capture switches, there is no search signal, and the server takes the model off the GPU itself
+  instead of sending `keep_alive`.
+- The cases of section 11 were built and measured. On the server's own path the known-answer set came out 34 to 36
+  of 36 a run, and the crops held the whole problem in all but at most two a run, with no pixel of another window in
+  any. The 4K desktop is read at 100% and 150% scaling since the thinking pass gets a sharper view of it (section 4),
   and a screen with nothing to solve takes about 0.7 s with two runtime slots (section 10).
 - The end-to-end runs on a real screen (phase 4, section 12) turned up a frame over the server's message limit, an
-  answer cut at the thinking pass's output limit and a model load thrown away by each canceled analysis, all
-  fixed; then two more search engines, the local model's one-line answers in Korean, the example check in
-  JavaScript, C++ and C, and a larger sound buffer in the capture program. Section 13 records the decisions.
+  answer cut at the thinking pass's output limit, and a model load thrown away by each canceled analysis, all fixed.
+  Then came two more search engines, the local model's one-line answers in Korean, the example check in JavaScript,
+  C++ and C, and a larger sound buffer in the capture program. Section 13 records the decisions.
 
 The cloud agent is now a choice: Claude Code, Codex or the Anthropic API (`SIDENOTE_AGENT`,
-ARCHITECTURE.md, design 86). Every measurement here was made with Claude Code, and the passages that record one
-name it; "the agent" is whichever of them is set. The measurements ran on the test PC (Windows 11, an RTX 4090 with
-24 GB); their scripts and data are not published, and the suites that check the behavior are in `tests/`.
+[DECISIONS.md, note 86](DECISIONS.md#note-86)). Every measurement here was made with Claude Code, and the passages
+that record one name it; "the agent" is whichever of them is set. The measurements ran on the test PC (Windows 11, an
+RTX 4090 with 24 GB). Their scripts and data are not published; the suites that check the behavior are in `tests/`.
 
 ## 1. Defaults
 
@@ -36,7 +37,7 @@ Known-answer set: 25 browser-rendered screens (coding test sites, quiz and exam 
 task, screens with nothing to solve) and 11 spoken questions (Windows TTS, transcribed by the server's Whisper).
 
 | Path | Answers | Latency | Notes |
-|---|---|---|---|
+|:---|:---|:---|:---|
 | Local gemma4:26b, router `auto`, search on | 31/32 without current-info questions; code tests 3/3 | nothing to solve <= 1 s, explanations 2 to 5 s, multiple choice, math and code 10 to 37 s | current-info questions 1/4: the fast pass did not call search |
 
 Other facts the design relies on:
@@ -48,19 +49,22 @@ Other facts the design relies on:
 
 ## 3. Pipeline
 
-```
-capture (Windows) ─ frame ─► gate ─► ROI ─► fast pass (TYPE, ROUTE, ANSWER, REGION)
-                                     │            │
-                                     │            ├─ fast enough ──────────────────────────────► panel
-                                     │            └─ needs reasoning ─► solve ─► verify ───────► panel
-                                     │                                   ├ local deep (+ search)
-                                     │                                   └ agent assist (if on)
-                                     └─► extract text (only when a later stage needs it)
-capture (Windows) ─ audio ─► VAD + Whisper ─► utterance ─► fast pass
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-answer-dark.svg">
+  <img alt="The screen settles and the capture program sends one frame. The server covers faces and compares the problem with the last one. The local model's fast pass on the GPU says what kind of problem it is and where. Then: nothing to solve, decided on the GPU in a second with no tokens; a short question, answered at once; or a hard one, for the cloud agent when it would answer sooner, otherwise for the thinking pass on the GPU. A code answer is then run on the problem's own examples" src="assets/diagram-answer-light.svg" width="100%">
+</picture>
 
-Each card in the panel says which stages ran: ROI, local (think), search N, the agent (verify or solve),
-examples passed or failed, and what was sent out (section 8).
+The fast pass writes `TYPE`, `ROUTE`, `ANSWER` and `REGION`; the ROI of section 4 is cut from that region, or from a
+box the user drew. Besides the screen's path in the picture:
+
+- Speech takes the same path from the fast pass on: voice activity detection and Whisper write the utterance down,
+  and the fast pass reads it, with the screen as context.
+- Text extraction runs only when a later stage needs it (section 5).
+- The thinking pass may search the web, and in the `verify` mode the agent checks the local answer instead of
+  solving the problem (section 6).
+
+Each card in the panel says which stages ran: ROI, local (think), search N, the agent (verify or solve), examples
+passed or failed, and what was sent out (section 8).
 
 ## 4. ROI: cropping to the problem
 
@@ -68,35 +72,42 @@ Three sources, in order of precedence:
 
 1. **Manual box.** The user drags a box on the screen thumbnail in the panel ("only this area"). It stays until
    cleared. Stored as a setting; drawn on the thumbnail. It is cut as drawn, whatever windows it covers.
-2. **Model box.** The fast pass already returns `REGION` (0 to 1000 grid for local models). A box does not place the
-   problem when it covers 80% of the screen or more, lies mostly over the wallpaper, or has more than 20% of it shown
-   by windows other than the one that shows the most of it (the wallpaper and the taskbar strip do not count). Then
-   nothing is cropped: the thinking pass reads the screen, and the agent gets the problem written out (section 5), or
-   nothing at all when the local model cannot write it out, the text holds a number shaped like personal data
-   (section 6) or extraction is off (the local model answers, and the panel says why). Any other box is padded by 15%
-   of the screen on the left and 6% on the other sides and clipped to the window that shows most of it (item 3); the
-   parts of windows in front of that one are painted over, so no window the capture program lists comes along (it
-   leaves out tool windows, such as most pop-up notices, untitled windows and windows under 1% of the screen). A line
-   the box cuts short stays cut: the boxes stopped short of a long terminal command in 3 of 3 runs. Following such a
-   line to its end inside the window was tried and dropped. On the saved boxes it made that terminal
-   whole, but on other layouts it pulled in other content (the next column across a narrow
-   gutter, the next question's line in the margin, a pop-up the capture program does not list lying over the line),
-   and a crop is a rectangle, so following one line widens all of it. Measured weaknesses: Gemma's boxes run tight,
-   most of all on the left, where they often start at the code or the body (6% on every side held the whole problem
-   61 of 69 times over 3 runs of the 23 known-answer screens, 15% on the left 65, counting whole-screen boxes as
-   crops then), hence the padding; they come back as the whole screen on a task next to a terminal, at times on a
-   coding site, on a 4K desktop with small text and on two problems side by side; on desktops with several windows
-   they ran a third to a half of their width into the next window, at times the wrong one (section 11). The y-first
-   variant is still open: the thinking pass's own REGION line came back y first, Gemma's own order, in 17 of 266
-   thinking-pass answers over two days of runs, the fast pass's in none of 246 boxes. So what may go out later
-   (the verify mode's crop, a follow-up to the agent) is now cut from the fast pass's
-   box only, as the agent's crop is, and the duplicate check watches that box too; the code check and the problem
-   text, which stay on this PC, read what the thinking pass read. A sentence restating the order at the end of the
-   thinking pass's request was tried as well: 2 of 60 y first over two runs against 10 of 148 in five runs
-   without it, not a difference to keep it for. Measured afterwards over 116 thinking answers: the fast pass's box
-   was the region of 96, 16 had no REGION (spoken problems), and the thinking pass's own line decided 4 (two spoken
-   questions with a screen, two current-info questions), none of them y first; the 4 lines that were y first all had
-   a box from the fast pass.
+2. **Model box.** The fast pass already returns `REGION` (0 to 1000 grid for local models).
+
+   A box does not place the problem when it covers 80% of the screen or more, lies mostly over the wallpaper, or has
+   more than 20% of it shown by windows other than the one that shows the most of it (the wallpaper and the taskbar
+   strip do not count). Then nothing is cropped: the thinking pass reads the screen, and the agent gets the problem
+   written out (section 5). It gets nothing at all when the local model cannot write the problem out, when the text
+   holds a number shaped like personal data (section 6), or when extraction is off; the local model answers then, and
+   the panel says why.
+
+   Any other box is padded by 15% of the screen on the left and 6% on the other sides, and clipped to the window that
+   shows most of it (item 3). The parts of windows in front of that one are painted over, so no window the capture
+   program lists comes along (it leaves out tool windows, such as most pop-up notices, untitled windows and windows
+   under 1% of the screen).
+
+   A line the box cuts short stays cut: the boxes stopped short of a long terminal command in 3 of 3 runs. Following
+   such a line to its end inside the window was tried and dropped. On the saved boxes it made that terminal whole, but
+   on other layouts it pulled in other content (the next column across a narrow gutter, the next question's line in
+   the margin, a pop-up the capture program does not list lying over the line), and a crop is a rectangle, so
+   following one line widens all of it.
+
+   Measured weaknesses: Gemma's boxes run tight, most of all on the left, where they often start at the code or the
+   body (6% on every side held the whole problem 61 of 69 times over 3 runs of the 23 known-answer screens, 15% on
+   the left 65, counting whole-screen boxes as crops then), hence the padding. They come back as the whole screen on
+   a task next to a terminal, at times on a coding site, on a 4K desktop with small text and on two problems side by
+   side. On desktops with several windows they ran a third to a half of their width into the next window, at times
+   the wrong one (section 11).
+
+   The y-first variant is still open: the thinking pass's own REGION line came back y first, Gemma's own order, in 17
+   of 266 thinking-pass answers over two days of runs, the fast pass's in none of 246 boxes. So what may go out later
+   (the verify mode's crop, a follow-up to the agent) is now cut from the fast pass's box only, as the agent's crop
+   is, and the duplicate check watches that box too; the code check and the problem text, which stay on this PC, read
+   what the thinking pass read. A sentence restating the order at the end of the thinking pass's request was tried as
+   well: 2 of 60 y first over two runs, against 10 of 148 in five runs without it, not a difference worth keeping it
+   for. Measured afterwards over 116 thinking answers: the fast pass's box was the region of 96, 16 had no REGION
+   (spoken problems), and the thinking pass's own line decided 4 (two spoken questions with a screen, two
+   current-info questions), none of them y first; the 4 lines that were y first all had a box from the fast pass.
 3. **Window bounds.** The capture client sends the rectangles of visible top-level windows with each frame (Win32
    window list with DWM extended frame bounds, front to back). Used to clip item 2 and to tell a box that runs over
    two windows, not on their own: the focused window is often the editor, not the problem. The list holds no
@@ -132,7 +143,7 @@ LaTeX). It runs only when something needs it:
 - Code checks (the examples in the statement).
 - **Problem text** in the panel (copyable).
 
-Code and math lose layout more easily as text, so for those types the default agent payload is the crop image.
+Code and math lose their layout more readily as text, so for those types the default agent payload is the crop image.
 Switch: extraction on/off (stages that need it say so when it is off).
 
 ## 6. Routing and the agent assist
@@ -148,10 +159,10 @@ algorithm always go to a thinking pass; `ROUTE: deep` or a missing route goes th
 Agent assist modes (`hard` by default, section 13):
 
 | Mode | What happens | Why |
-|---|---|---|
+|:---|:---|:---|
 | `off` | the agent is never called | privacy first |
 | `verify` | after the local answer, the agent gets the problem payload and the local answer and replies "OK" or a corrected answer; a disagreement shows both on the card | small requests, a second opinion |
-| `hard` | the types ticked in the table (default algorithm, coding, math, later widened to work, essay and other: ARCHITECTURE.md design 53) are solved by the agent instead of the local thinking pass | Claude Code measured faster on algorithms (11 to 16 s against 24 to 37 s) |
+| `hard` | the types ticked in the table (default algorithm, coding, math, later widened to work, essay and other: [DECISIONS.md, note 53](DECISIONS.md#note-53)) are solved by the agent instead of the local thinking pass | Claude Code measured faster on algorithms (11 to 16 s against 24 to 37 s) |
 | `all` | every problem goes to the agent | the current main behavior, but with the smaller payload |
 
 Payload (what the agent receives):
@@ -179,7 +190,7 @@ the agent if the assist mode allows). Switch: automatic checks on/off.
 ## 8. What leaves the PC
 
 | Data | Leaves the PC | When |
-|---|---|---|
+|:---|:---|:---|
 | Screens, crops, extracted text, speech | no | always local (LLM, Whisper, runner) |
 | Search queries | to search engines through SearXNG | search on and the model calls `web_search`, without numbers shaped like personal data |
 | Page reads | to that site | page reading on and the model calls `fetch_page` (public addresses only, without numbers shaped like personal data) |
@@ -215,7 +226,7 @@ bar gains two signals: local LLM and search.
 Current switches and where they move:
 
 | Today | After |
-|---|---|
+|:---|:---|
 | screen, sound, pause (panel) | unchanged, now part of the settings model |
 | speech language (panel menu) | settings sheet |
 | `SIDENOTE_ANALYZER`, `SIDENOTE_LOCAL_THINK`, `SIDENOTE_SEARCH_URL`, `SIDENOTE_VOICE_TRIGGER`, `SIDENOTE_WHISPER_HINT`, `SIDENOTE_RUNNER_URL` (env only) | settings sheet, env stays as the default |
@@ -229,9 +240,10 @@ Current switches and where they move:
   it, by a generate request with no prompt that a canceled analysis does not close, since Ollama aborts a load
   whose request goes away. A pause, the release button, switching the local model off or picking another stops
   that load, and a request still waiting for it then fails rather than load the model itself; a load past
-  `SIDENOTE_LOCAL_TIMEOUT` fails the requests waiting for it, as it did inside the request. Measured
-  with the request canceled 2 s into the load: before (3 rounds), the load was aborted each time and the next
-  request took as long as one alone (6.1, 6.3, 6.1 s against 6.1, 5.9, 5.9 s); after (7 rounds), no load was
+  `SIDENOTE_LOCAL_TIMEOUT` fails the requests waiting for it, as it did inside the request.
+
+  Measured with the request canceled 2 s into the load: before (3 rounds), the load was aborted each time and the
+  next request took as long as one alone (6.1, 6.3, 6.1 s against 6.1, 5.9, 5.9 s); after (7 rounds), no load was
   aborted and the next request ended with that load, 3.8 to 5.1 s after the cancel (one alone: 5.8 to 24.4 s).
   A pause and a release 2 s into a load each aborted it, a release also with a request still waiting, which
   failed, and the model was not on the GPU 15 s later. The lookup this adds before each request (`/api/ps`)
@@ -245,21 +257,26 @@ Current switches and where they move:
   `num_batch` 768 to 1024 keeps accuracy and frees VRAM.
 - Two runtime slots (`SIDENOTE_LOCAL_SLOTS`, Ollama's `OLLAMA_NUM_PARALLEL`) keep the prompts of the fast pass and
   the thinking pass apart, and idle slots are not copied to system memory on each new request
-  (`LLAMA_ARG_CACHE_IDLE_SLOTS=false`). With one slot, the first screen with nothing to solve after a problem that
-  needed the thinking pass or the example check took 0.98 to 1.49 s (3 rounds of each flow): the
-  thinking pass's prompt differs from its first tokens (thinking on), and swapping 650 to 870 MiB of state with
-  system memory took 0.46 to 0.68 s. Three slots (one more for the code check's example reading) first measured 0.66 to
-  0.92 s after every flow, at 22,432 MiB of GPU memory in use at the peak against 20,945 MiB with one
-  slot (the desktop's 860 MiB included), about 740 MiB a slot. Later the same three slots made every
-  request slower: each new screen 1.6 to 1.9 s after every flow (the 847 tokens of its image and text processed in
-  1.56 to 1.69 s against 0.56 s with one slot), and two runs of the bench took a median of 17.6 and 19.3 s a case
-  against 11.8 s before (with 12% more tokens written). Moving the 200 MiB context checkpoints (one slot
-  moves them too and stays fast), the RAM prompt cache (`--cache-ram 0` changed nothing) and the GPU clock (at its
-  top, 2,775 MHz) were ruled out, and the cause was not found: GPU memory read 22,288 to 22,314 of 23,028 MiB in the
-  slow runs, below the fast runs' peak, with the desktop at 1,008 to 1,574 MiB against 860 MiB then. Two slots peaked at
-  21,860 MiB and measured 0.65 to 0.90 s for the first screen after a direct answer, Claude Code's answer with its
-  example check or a thinking pass, and 1.31 to 1.46 s after a thinking pass with its example check (2 rounds), so
-  two is the default. Answers that ran alongside another request do not count for the busy-GPU switch (13.4).
+  (`LLAMA_ARG_CACHE_IDLE_SLOTS=false`).
+
+  With one slot, the first screen with nothing to solve after a problem that needed the thinking pass or the example
+  check took 0.98 to 1.49 s (3 rounds of each flow): the thinking pass's prompt differs from its first tokens
+  (thinking on), and swapping 650 to 870 MiB of state with system memory took 0.46 to 0.68 s.
+
+  Three slots (one more for the code check's example reading) first measured 0.66 to 0.92 s after every flow, at
+  22,432 MiB of GPU memory in use at the peak against 20,945 MiB with one slot (the desktop's 860 MiB included), about
+  740 MiB a slot. Later the same three slots made every request slower: each new screen 1.6 to 1.9 s after every flow
+  (the 847 tokens of its image and text processed in 1.56 to 1.69 s against 0.56 s with one slot), and two runs of the
+  bench took a median of 17.6 and 19.3 s a case against 11.8 s before (with 12% more tokens written). Moving the 200
+  MiB context checkpoints (one slot moves them too and stays fast), the RAM prompt cache (`--cache-ram 0` changed
+  nothing) and the GPU clock (at its top, 2,775 MHz) were ruled out, and the cause was not found: GPU memory read
+  22,288 to 22,314 of 23,028 MiB in the slow runs, below the fast runs' peak, with the desktop at 1,008 to 1,574 MiB
+  against 860 MiB then.
+
+  Two slots peaked at 21,860 MiB and measured 0.65 to 0.90 s for the first screen after a direct answer, Claude Code's
+  answer with its example check or a thinking pass, and 1.31 to 1.46 s after a thinking pass with its example check (2
+  rounds), so two is the default. Answers that ran alongside another request do not count for the busy-GPU switch
+  (13.4).
 
 ## 11. Measurement plan (needs the GPU)
 
@@ -279,12 +296,11 @@ Acceptance:
 - nothing-to-solve screens stay at 1 s or less;
 - every setting round-trips through the panel, applies without a restart, and survives a restart.
 
-Results. `bench5.py` runs each case through `Pipeline.solve` as the server does (the agent off, the
-window rectangles the capture program would send, three runtime slots); `fastbox5.py` saves the fast pass's boxes
-and `crop_eval.py` cuts them with the server's crop code; `seq_probe.py` times screens with nothing to solve
-after each kind of problem. The earlier bench (`bench3.py`) never gave the thinking pass the crop, so this is the
-first full run of the server's path.
-- Built (`make_roi_screens.py`): six desktops with several windows (a problem window in a corner of a 2560x1440
+Results. The bench runs each case through `Pipeline.solve` as the server does (the agent off, the window rectangles
+the capture program would send, three runtime slots). Further scripts save the fast pass's boxes and cut them with the
+server's crop code, and time the screens with nothing to solve after each kind of problem. The earlier bench never
+gave the thinking pass the crop, so this is the first full run of the server's path.
+- Built: six desktops with several windows (a problem window in a corner of a 2560x1440
   screen with 13 px text and of a 3840x2160 screen with 14 px text, a split screen with the editor focused, a
   messenger with personal data beside the problem's window and in front of it, two problems in two windows; later
   the 4K desktop again at 150%, laid out at 2560x1440 and rendered at 3840x2160, not run yet) and four current-info
@@ -331,10 +347,10 @@ desktop at 150% added.
 - Without that view the thinking pass reached its 8,000-token limit 1 to 3 times a run, 8 times over the four runs
   (7 on the 4K desktops, 1 on the 2560x1440 one), each answered again (`cut`, ARCHITECTURE.md); none in the full
   run with it.
-- What the agent would get without a crop (`extract_probe.py`, 3 runs of the 9 desktops): the problem came through in
+- What the agent would get without a crop (3 runs of the 9 desktops): the problem came through in
   18 of 27, no text of another window in any, so nothing was held back for personal data; nothing came out of the
   4K desktop at 100% and of the chat and issue screens with current-info questions.
-- Boxes (`fastbox5.py`, 3 runs of the 31 screens with a box, cut offline by the server's code): 60 cut, 56 held the
+- Boxes (3 runs of the 31 screens with a box, cut offline by the server's code): 60 cut, 56 held the
   whole problem (the misses: the terminal with the spoken question 3 times, a coding site once at 0.95), none a
   pixel of another window, 33 placed nothing. The 4K desktop at 150% placed its box 1 of 3 times.
 - Slots: three made every request slower in this run (section 10); two is the default.
@@ -415,7 +431,7 @@ Last run: what was left after Phase 4.
   3 rounds and on four new screens (`real/spec`: Group Anagrams, Merge Sorted Array, Sort an Array, Baekjoon
   1008) over 3 rounds: on the screens the words came out right 11 of 12, 3 of 3 and 3 of 3, with no field
   claimed where the problem said nothing, and the examples themselves as before. Forcing the answer into a JSON
-  schema was tried first and dropped: it read the fields just as well but made the model write a screen's
+  schema was tried first and dropped: it read the fields equally well but made the model write a screen's
   example values as strings holding JSON, and Group Anagrams came out wrong every round. Three of the four
   screens now run their check in every round, and three of the four pass every example. The fourth, Group
   Anagrams, fails one: "any order" counts however the elements of an answer are ordered, but not how each
@@ -479,7 +495,7 @@ against the facts of the day they were measured (the newest Ollama was then v0.4
 
 1. **Agent assist default: `hard`.** With the agent signed in, algorithm, coding and math (the default types of
    section 6, where Claude Code was measured faster on algorithms; later widened to work, essay and other,
-   ARCHITECTURE.md design 53) go to the agent as the problem crop, and
+   [DECISIONS.md, note 53](DECISIONS.md#note-53)) go to the agent as the problem crop, and
    everything else stays with the local model; without a login it behaves as `off`. The local model alone answered 35
    of 36 (the miss: the latest Python patch release, answered with the newest 3.14 instead of 3.15), so `off` stays a
    full choice for keeping everything but search queries on the PC. Without the local model
@@ -500,23 +516,27 @@ against the facts of the day they were measured (the newest Ollama was then v0.4
    in the panel, with what they send in their help lines), and every payload is shown on its card and logged
    as it goes (section 8). A confirmation per problem would hold each hard problem's answer for a click (up to
    2 minutes) and undo the speed `hard` is for. The switch stays, to see each payload before it goes.
-4. **A smaller model while the GPU is busy: gemma4:e4b, switched on measured speed.** The two candidates on the
-   same set: gemma4:12b answered 29 of 36 and needs 9.6 GiB, but 5 cases came back empty after 72 to 97 s, most
-   likely out of its 8,000 tokens while thinking (a rerun of one used 7,874 and answered), and spoken questions
-   took 17.4 s against 5.1 s; gemma4:e4b answered 29 of 36 (code tests 1 of 3) in 5.5 GiB, faster than the 26b
-   (screens 11.4 s against 19.7 s). The check section 10 plans does not work here: under WSL2 the runtime does
-   not see other programs' GPU memory (with 8 GiB held elsewhere it reported about 21 GiB free and loaded the
-   26b whole), and Ollama's `ollama ps` sizes leave out most of the model on this runner (1.5 GB for the 26b).
-   A busy GPU shows as slowness instead: with another program writing 8 GiB continuously, the 26b generated 4.6
-   times slower (173 to 37.5 tokens/s), the e4b 1.26 times. On four cases the 26b took 84 to 186 s
-   per screen on the busy GPU against 11 to 39 s free, and 24 s against 4.7 s for a spoken question; the e4b on
-   the busy GPU took 12 to 25 s and 8 s, with 3 of the 4 answers right. So each answer's generation rate
-   (tokens after the first, over the time they took) is compared with that model's usual rate, the median
-   of its last 10 normal ones, kept across restarts; under half of it switches to the e4b for 30 s, a hold that
-   doubles while the GPU stays busy, up to 10 minutes (README section 12), and the next problem after that tries
-   the chosen model again. Answers under 200 tokens or 1 s are not
-   measured, so a busy GPU shows on thinking passes and long answers, not on short direct ones. The model
-   that answered is named on the card and the panel's connection line says while the e4b is in use. On the real server the first screen on the busy GPU took 80 s
-   on the 26b and was measured at 29.8 tokens/s against 133.3 (the fastest rate then; the usual rate is now the median); the next two went to the e4b (57 s with the
-   model change, then 18 s), all three answers right. The e4b is pulled with the default model; the panel can switch this off or
-   pick another pulled model.
+4. **A smaller model while the GPU is busy: gemma4:e4b, switched on measured speed.** The two candidates on the same
+   set: gemma4:12b answered 29 of 36 and needs 9.6 GiB, but 5 cases came back empty after 72 to 97 s, most likely out
+   of its 8,000 tokens while thinking (a rerun of one used 7,874 and answered), and spoken questions took 17.4 s
+   against 5.1 s; gemma4:e4b answered 29 of 36 (code tests 1 of 3) in 5.5 GiB, faster than the 26b (screens 11.4 s
+   against 19.7 s).
+
+   The check section 10 plans does not work here: under WSL2 the runtime does not see other programs' GPU memory (with
+   8 GiB held elsewhere it reported about 21 GiB free and loaded the 26b whole), and Ollama's `ollama ps` sizes leave
+   out most of the model on this runner (1.5 GB for the 26b). A busy GPU shows as slowness instead: with another
+   program writing 8 GiB continuously, the 26b generated 4.6 times slower (173 to 37.5 tokens/s), the e4b 1.26 times.
+   On four cases the 26b took 84 to 186 s per screen on the busy GPU against 11 to 39 s free, and 24 s against 4.7 s
+   for a spoken question; the e4b on the busy GPU took 12 to 25 s and 8 s, with 3 of the 4 answers right.
+
+   So each answer's generation rate (tokens after the first, over the time they took) is compared with that model's
+   usual rate, the median of its last 10 normal ones, kept across restarts; under half of it switches to the e4b for
+   30 s, a hold that doubles while the GPU stays busy, up to 10 minutes ([the user guide](README.md#12-settings),
+   section 12), and the next problem after that tries the chosen model again. Answers under 200 tokens or 1 s are not
+   measured, so a busy GPU shows on thinking passes and long answers, not on short direct ones. The model that
+   answered is named on the card and the panel's connection line says while the e4b is in use.
+
+   On the real server the first screen on the busy GPU took 80 s on the 26b and was measured at 29.8 tokens/s against
+   133.3 (the fastest rate then; the usual rate is now the median); the next two went to the e4b (57 s with the model
+   change, then 18 s), all three answers right. The e4b is pulled with the default model; the panel can switch this
+   off or pick another pulled model.

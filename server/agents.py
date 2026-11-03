@@ -6,7 +6,7 @@ local model is off, go to one cloud agent, chosen with SIDENOTE_AGENT:
   claude-code    Anthropic's Claude Code CLI with this PC's login (~/.claude, `./sidenote login`). The default.
   codex          OpenAI's Codex CLI with this PC's login (~/.codex, `codex login`).
   anthropic-api  the Anthropic Messages API with ANTHROPIC_API_KEY.
-  off            no cloud agent: this PC's model answers everything.
+  off            no cloud agent: the local model answers everything.
 
 Every agent takes the same request, the pictures (base64 PNG, the screen or crop first, then page tiles), the text and
 a callback for the answer's pieces as they come, and gives back an AnalysisResult. The pipeline (server/pipeline.py)
@@ -25,6 +25,9 @@ import json         # both CLIs speak JSON lines
 import logging      # what each agent started and how it ended
 import os           # the API key's presence, and the home the CLIs keep their logins in
 import re           # the plan's tier in its login, and the usage address's times
+import signal       # a cancelled CLI is stopped with everything it started (kill_group)
+import subprocess   # the start options each CLI gets, and taskkill on Windows
+import sys          # Windows starts its CLIs with no console window
 import tempfile     # a working folder of its own for each Codex run, removed after it
 import time         # the limit on one turn's whole length
 import urllib.request   # what is left of the plan's limits (read_plan_usage)
@@ -39,6 +42,32 @@ from .i18n import t
 from .settings import SETTINGS                              # the model and effort the panel may change while running
 
 log = logging.getLogger("sidenote.agents")
+
+# Each CLI starts in a group of its own, so a cancelled turn stops all of it: npm's codex.js passes SIGKILL on to
+# nothing, and its native binary went on with the turn, and the usage, after the cancel. On Windows it starts with no
+# console window: the app is a windowed program, and every console child it starts would otherwise open one.
+SPAWN = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {"start_new_session": True}
+
+
+def kill_group(proc) -> None:
+    """Stops a CLI and every process it started; one that has ended already is no error."""
+    if proc is None or proc.returncode is not None:
+        return
+    pid = proc.pid
+    # Only a child's own pid is signalled as a group: killpg(0) is this server's own group, and killpg(1) every process
+    if isinstance(pid, int) and pid > 1:
+        try:
+            if sys.platform == "win32":    # the whole tree, as Windows has no process groups to signal
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=10,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                os.killpg(pid, signal.SIGKILL)   # its session is its own (SPAWN), so the group is the CLI's
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        proc.kill()                    # and the process itself, if the group was gone already
+    except (OSError, ProcessLookupError):
+        pass
 
 # What the panel says to run when the agent is not signed in: the launcher's command, or in the desktop app the CLI's
 # own sign-in in any terminal (the app's server reads the same login folder).
@@ -151,6 +180,7 @@ def probe_cli(cfg) -> dict:
     try:
         with forksafe.native_work():     # every spawn waits for speech being decoded: a fork during that can hang the server (forksafe.py)
             proc = subprocess.Popen(claude_args(cfg), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    **SPAWN,
                                     env={**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_address[1]}"})
         proc.stdin.write(b'{"type":"user","message":{"role":"user","content":[{"type":"text","text":"probe"}]}}\n')
         proc.stdin.flush()
@@ -159,7 +189,7 @@ def probe_cli(cfg) -> dict:
         log.debug("no probe of the CLI: %s", exc)
     finally:
         if proc is not None:
-            proc.kill()
+            kill_group(proc)
             proc.wait()
         server.shutdown()
         server.server_close()
@@ -237,12 +267,12 @@ async def claude_auth_status(cfg) -> dict:
         async with forksafe.spawn_guard():
             proc = await asyncio.create_subprocess_exec(
                 cfg.agent_bin or "claude", "auth", "status", "--json",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                **SPAWN, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 30)
         finally:
             if proc.returncode is None:   # timed out or cancelled: it would sit there for good,
-                proc.kill()               # and this runs every 20 s while signed out
+                kill_group(proc)          # and this runs every 20 s while signed out
         d = json.loads(out or b"{}")
         return {"ok": bool(d.get("loggedIn")), "method": str(d.get("authMethod") or ""), "plan": str(d.get("subscriptionType") or "")}
     except FileNotFoundError as exc:      # no CLI on this PC: the agent is optional, and the panel says how to get it
@@ -268,6 +298,8 @@ def claude_message(images, text: str, independent: bool) -> bytes:
 class ClaudeCodeSession:
     """One long-lived `claude -p` process reused across turns (warm cache, no respawn)."""
 
+    sent = 0   # requests written to the CLI (ClaudeCodeAgent.sent); a class default, so every instance starts at 0
+
     def __init__(self, cfg):
         self.cfg = cfg
         self._proc: asyncio.subprocess.Process | None = None
@@ -285,7 +317,7 @@ class ClaudeCodeSession:
         async with forksafe.spawn_guard():
             self._proc = await asyncio.create_subprocess_exec(
                 *claude_args(self.cfg),
-                stdin=asyncio.subprocess.PIPE,
+                **SPAWN, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 limit=4 * 1024 * 1024,
@@ -299,10 +331,7 @@ class ClaudeCodeSession:
         self._turns = 0
         self._cost_so_far = 0.0
         if p and p.returncode is None:
-            try:
-                p.kill()
-            except Exception:
-                pass
+            kill_group(p)
 
     def retire(self) -> None:
         """End this process for the next turn to start a new one (the model or the effort changed). A turn being
@@ -329,6 +358,7 @@ class ClaudeCodeSession:
         proc = self._proc
         try:
             proc.stdin.write(claude_message(images, text, independent=True))
+            self.sent += 1   # the request is out: from here a cancel still costs it (Pipeline counts it, Spend.cut_short)
             await asyncio.wait_for(proc.stdin.drain(), self.cfg.cli_timeout)   # a CLI that stops reading: a timeout
             out, usage, cost, is_error, used = await read_claude_turn(proc.stdout, on_delta, self.cfg.cli_timeout,
                                                                 self.cfg.cli_turn_budget)
@@ -368,10 +398,17 @@ class ClaudeCodeAgent:
     name = "claude-code"
     label = "Claude Code"
     region_scale = 100
+    _fresh_sent = 0   # requests written by processes of their own, outside the warm session
 
     def __init__(self, cfg):
         self.cfg = cfg
         self._session = ClaudeCodeSession(cfg) if cfg.cli_session else None
+
+    @property
+    def sent(self) -> int:
+        """How many requests have gone out, in the warm session and in processes of their own: a turn cancelled before
+        its request was written (still waiting for the session or the spawn guard) cost nothing."""
+        return self._fresh_sent + (self._session.sent if self._session is not None else 0)
 
     def reset_session(self) -> None:
         if self._session is not None:
@@ -393,26 +430,24 @@ class ClaudeCodeAgent:
         async with forksafe.spawn_guard():   # see _start
             proc = await asyncio.create_subprocess_exec(
                 *claude_args(self.cfg, web=web),
-                stdin=asyncio.subprocess.PIPE,
+                **SPAWN, stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 limit=4 * 1024 * 1024,
             )
         try:
             proc.stdin.write(claude_message(images, text, independent=False))
+            self._fresh_sent += 1   # out, and paid for from here on
             await asyncio.wait_for(proc.stdin.drain(), self.cfg.cli_timeout)
             proc.stdin.close()
             out, usage, cost, is_error, used = await read_claude_turn(proc.stdout, on_delta, self.cfg.cli_timeout,
                                                                 self.cfg.cli_turn_budget)
         except (asyncio.CancelledError, asyncio.TimeoutError):
-            proc.kill()
+            kill_group(proc)
             raise
         finally:
             if proc.returncode is None:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+                kill_group(proc)
         if usage is None or is_error:
             exc = claude_error(out if usage is not None else "", proc.returncode)
             exc.cost_usd = cost        # an error result is paid for, as the warm session's says
@@ -431,6 +466,7 @@ class AnthropicApiAgent:
     name = "anthropic-api"
     label = "Anthropic API"
     region_scale = 100
+    sent = 0   # requests sent (Pipeline counts a cancelled one only when it went out); a class default, from 0
 
     def __init__(self, cfg):
         import anthropic  # lazy: only needed in API mode
@@ -483,6 +519,7 @@ class AnthropicApiAgent:
         model = await self.model()
 
         async def turn():
+            self.sent += 1   # the request goes out with the stream's opening
             async with self._client.messages.stream(
                 model=model,
                 max_tokens=max(self.cfg.max_tokens, self.STREAM_MAX_TOKENS),
@@ -664,6 +701,7 @@ class CodexAgent:
     name = "codex"
     label = "Codex"
     region_scale = 100
+    sent = 0   # requests written to the CLI (Pipeline counts a cancelled one only when it went out); a class default
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -677,11 +715,12 @@ class CodexAgent:
             async with forksafe.spawn_guard():   # a fork while speech is decoded can hang the server (forksafe.py)
                 proc = await asyncio.create_subprocess_exec(
                     *codex_args(self.cfg, work, pictures, web),
-                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                    **SPAWN, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     limit=4 * 1024 * 1024)
             errs = asyncio.create_task(_drain(proc.stderr))
             try:
                 proc.stdin.write((in_answer_language(SYSTEM_PROMPT) + "\n\n" + text).encode())
+                self.sent += 1   # out, and paid for from here on
                 await asyncio.wait_for(proc.stdin.drain(), self.cfg.cli_timeout)
                 proc.stdin.close()
                 # Codex 0.165 sends its answer whole when it is done (one item.completed, no item.updated), and
@@ -698,10 +737,7 @@ class CodexAgent:
                     log.info("codex CLI: the turn is over but the process has not ended in 10 s; it is stopped")
             finally:
                 if proc.returncode is None:      # cancelled, timed out or failed: it must not go on in the background
-                    try:
-                        proc.kill()
-                    except ProcessLookupError:
-                        pass
+                    kill_group(proc)             # nor the native binary npm's wrapper started
                 stderr = await errs if errs.done() else b""
                 if not errs.done():
                     errs.cancel()
@@ -741,12 +777,12 @@ async def codex_auth_status(cfg) -> dict:
         async with forksafe.spawn_guard():
             proc = await asyncio.create_subprocess_exec(
                 cfg.agent_bin or "codex", "login", "status",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                **SPAWN, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 30)
         finally:
             if proc.returncode is None:   # timed out or cancelled: it would sit there for good
-                proc.kill()
+                kill_group(proc)
         said = (out or b"").decode("utf-8", "replace")
         method = "chatgpt" if "ChatGPT" in said else "api-key" if "API key" in said else ""
         return {"ok": proc.returncode == 0 and "Not logged in" not in said, "method": method}
@@ -776,6 +812,14 @@ _ACCOUNT_FILE = "/data/logs/.account.json"   # what ./sidenote up copies out of 
 # still named the account of the last start after a sign-in as another account. A folder, not the file: Claude Code
 # replaces ~/.claude.json rather than writing into it, and a file mounted on its own would have stayed the old one.
 _BACKUPS = os.environ.get("SIDENOTE_CLAUDE_BACKUPS", "/host/claude-backups")
+
+
+def _backups_dir() -> str:
+    """Claude Code's copies of its config: mounted at _BACKUPS in the container, or the PC's own folder on a host install
+    (the desktop app), where nothing is mounted and the account and the plan meters had nothing to read."""
+    if os.path.isdir(_BACKUPS) or "SIDENOTE_CLAUDE_BACKUPS" in os.environ:
+        return _BACKUPS
+    return str(home() / ".claude" / "backups")
 _newest: dict = {"name": None, "email": None}
 
 
@@ -783,7 +827,7 @@ def _signed_in_email() -> str | None:
     """The address in the newest of Claude Code's own copies of its config; "" when that copy names no account (signed out); None where
     there is no copy to read."""
     try:
-        names = [n for n in os.listdir(_BACKUPS) if n.startswith(".claude.json.backup.")]
+        names = [n for n in os.listdir(_backups_dir()) if n.startswith(".claude.json.backup.")]
     except OSError:
         return None
     if not names:
@@ -791,7 +835,7 @@ def _signed_in_email() -> str | None:
     newest = max(names, key=lambda n: int(n.rsplit(".", 1)[-1]) if n.rsplit(".", 1)[-1].isdigit() else 0)
     if newest != _newest["name"]:
         try:
-            with open(os.path.join(_BACKUPS, newest), encoding="utf-8") as f:
+            with open(os.path.join(_backups_dir(), newest), encoding="utf-8") as f:
                 email = (json.load(f).get("oauthAccount") or {}).get("emailAddress")
         except (OSError, ValueError):
             return _newest["email"]
@@ -878,8 +922,14 @@ def account(provider: str) -> dict:
                 return {"email": live, **({"plan": plan} if plan else {})}
             if live == "":   # the newest copy names no account: signed out, and the name ./sidenote up wrote is not who is signed in
                 return {}
-            with open(_ACCOUNT_FILE, encoding="utf-8") as f:
-                return {k: v for k, v in json.load(f).items() if k in ("email", "plan") and v and isinstance(v, str)}
+            if os.path.exists(_ACCOUNT_FILE):
+                with open(_ACCOUNT_FILE, encoding="utf-8") as f:
+                    return {k: v for k, v in json.load(f).items() if k in ("email", "plan") and v and isinstance(v, str)}
+            # a host install has no copy made by ./sidenote up: the PC's own config names the account
+            with open(home() / ".claude.json", encoding="utf-8") as f:
+                email = (json.load(f).get("oauthAccount") or {}).get("emailAddress")
+            plan = _claude_plan()
+            return {k: v for k, v in {"email": email, "plan": plan}.items() if v and isinstance(v, str)}
         if provider == "codex":
             with open(os.path.expanduser("~/.codex/auth.json"), encoding="utf-8") as f:
                 token = (json.load(f).get("tokens") or {}).get("id_token") or ""

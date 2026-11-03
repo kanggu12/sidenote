@@ -1,8 +1,8 @@
 # Sidenote Helm chart
 
-This chart runs the stack that the repository's `compose.yaml` runs, on a Kubernetes cluster, with the same
-hardening. The capture program (`client/capture.py`, on Windows or a Linux desktop with X11) stays on your PC and
-connects to the server's WebSocket, as it does with compose.
+This chart runs on Kubernetes the stack that the repository's `compose.yaml` runs, with the same hardening. The
+capture program (`client/capture.py`, on Windows or a Linux desktop with X11) stays on your PC and connects to the
+server's WebSocket, as it does with compose.
 
 ```bash
 helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote --version 0.1.0 \
@@ -21,7 +21,7 @@ first and what differs from compose.
 |:---|:---:|:---|:---|
 | Analysis server and panel | `server` | Deployment, Service (ClusterIP, port 8777), PersistentVolumeClaim, NetworkPolicy | Image built from `docker/Dockerfile`. One replica |
 | Code runner | `runner` | Deployment, Service (port 8000), NetworkPolicy, Secret (its token) | Image built from `runner/Dockerfile`. No network at all; see "Code runner isolation" |
-| Local LLM | `llm` | Deployment, Service (port 11434), PersistentVolumeClaim, NetworkPolicy | `ollama/ollama:0.40.5`, on an NVIDIA or AMD GPU (`llm.gpuVendor`). `llm.enabled` |
+| Local model | `llm` | Deployment, Service (port 11434), PersistentVolumeClaim, NetworkPolicy | `ollama/ollama:0.40.5`, on an NVIDIA or AMD GPU (`llm.gpuVendor`). `llm.enabled` |
 | Model download | `llm-pull` | Job (Helm hook), NetworkPolicy | Off until `llm.pull.enabled=true` |
 | Web search | `searxng` | Deployment, Service (port 8080), ConfigMap, NetworkPolicy | `searxng/searxng:2026.10.7-6671d89be`. `search.enabled` |
 
@@ -36,11 +36,11 @@ and no `SIDENOTE_LOCAL_URL` of your own, the chart sets `SIDENOTE_ANALYZER=agent
 - A network plugin that enforces NetworkPolicy, such as Calico, Cilium, or k3s with its built-in policy
   controller. flannel alone does not enforce it. Without enforcement the policies are accepted and do nothing,
   and the code runner, which runs code a model read off your screen, can reach the network.
-- For the local LLM: the NVIDIA device plugin (or the GPU Operator), so that pods can request `nvidia.com/gpu`, or
-  for `llm.gpuVendor: amd` the AMD GPU device plugin (`amd.com/gpu`, with the ROCm build of the image). The pod
-  cannot read the GPU, so tell the server its memory: `SIDENOTE_LOCAL_VRAM_GB` in `server.env` picks the model and
-  what the pull Job downloads, and without it a 24 GB GPU is assumed (`gemma4:26b`). Some clusters also need a
-  RuntimeClass for GPU pods (`llm.runtimeClassName`, for example `nvidia` on k3s).
+- For the local model: the NVIDIA device plugin (or the GPU Operator), so that pods can request `nvidia.com/gpu`,
+  or for `llm.gpuVendor: amd` the AMD GPU device plugin (`amd.com/gpu`, with the ROCm build of the image). Some
+  clusters also need a RuntimeClass for GPU pods (`llm.runtimeClassName`, for example `nvidia` on k3s).
+- The GPU's memory in `server.env`: the pod cannot read the GPU, so `SIDENOTE_LOCAL_VRAM_GB` picks the model and what
+  the pull Job downloads. Without it a 24 GB GPU is assumed (`gemma4:26b`).
 - A default StorageClass, or `storageClass` / `existingClaim` in the two `persistence` blocks. The models volume
   needs tens of GB (`llm.persistence.size`, 50Gi by default).
 - The namespace must allow the `baseline` Pod Security level. `restricted` refuses the server and the runner:
@@ -54,7 +54,7 @@ repository names the images by their local names (`sidenote`, `sidenote-runner`)
 registry your cluster can pull from, and name it in your values:
 
 ```bash
-docker build -t registry.example.com/sidenote:0.1.0 .
+docker build -f docker/Dockerfile -t registry.example.com/sidenote:0.1.0 .
 docker build -f runner/Dockerfile -t registry.example.com/sidenote-runner:0.1.0 .
 docker push registry.example.com/sidenote:0.1.0
 docker push registry.example.com/sidenote-runner:0.1.0
@@ -100,10 +100,9 @@ helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote --version 0.1.0 \
 ```
 
 Helm waits for the model-pull Job, and the first download is tens of GB, hence `--timeout 2h`. With
-`llm.pull.enabled` left false the install returns once the objects are created, and the models can be pulled
-later with
-`helm upgrade ... --set llm.pull.enabled=true --timeout 2h`. A pull that stopped part way resumes where it
-stopped. Until a model is on the volume the agent solves everything, if it is signed in.
+`llm.pull.enabled` left false, the install returns once the objects are created, and the models can be pulled later
+with `helm upgrade ... --set llm.pull.enabled=true --timeout 2h`. A pull that stopped part way resumes where it
+stopped. Until a model is on the volume, a signed-in agent solves everything.
 
 ## Agent login
 
@@ -122,8 +121,9 @@ kubectl --namespace sidenote create secret generic sidenote-agent \
 The chart mounts the Secret read-only at `/root/.claude`, where the CLI and the server's sign-in check read it.
 
 **claude-code, with a long-lived token.** `claude setup-token` signs in once in a browser and prints a
-long-lived token, for machines with no browser of their own. The chart gives a key `CLAUDE_CODE_OAUTH_TOKEN` in the Secret to the
-server as that environment variable, and `claude auth status` in the pod then reports the CLI as signed in:
+long-lived token, for machines with no browser of their own. The chart passes the Secret's `CLAUDE_CODE_OAUTH_TOKEN`
+key to the server as that environment variable, and `claude auth status` in the pod then reports the CLI as signed
+in:
 
 ```bash
 read -rs CLAUDE_TOKEN    # paste the token, then Enter; it is not echoed or kept in the shell history
@@ -255,7 +255,7 @@ What the chart cannot reproduce:
 ## Security compared with compose
 
 | compose.yaml | This chart |
-|---|---|
+|:---|:---|
 | `cap_drop: [ALL]`, `cap_add` (server CHOWN; runner SETUID, SETGID, CHOWN, KILL) | `securityContext.capabilities`, the same lists |
 | `security_opt: no-new-privileges:true` | `allowPrivilegeEscalation: false` |
 | Docker's default seccomp profile | `seccompProfile: RuntimeDefault` |

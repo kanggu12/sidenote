@@ -254,7 +254,7 @@ def main() -> int:
         # Each menu heading wears its own mark: counted by place, the marks slid onto the wrong headings when Design left, and Motion had none (a filled square)
         marks = page.evaluate("""() => [...document.querySelectorAll('#menu h3')].map((h) => { const c = getComputedStyle(h, '::before');
             return [h.textContent.trim(), c.webkitMaskImage || c.maskImage || 'none']; })""")
-        mine = {"밝기": "r='4'", "움직임": "M3 12h4"}   # the sun's disc, the pulse line
+        mine = {"화면 모드": "r='4'", "움직임": "M3 12h4"}   # the sun's disc, the pulse line
         check("each menu heading wears its own mark", len(marks) >= 2 and all("url(" in m and mine.get(t, "url(") in m for t, m in marks)
               and len({m for _, m in marks}) == len(marks), str([(t, m[-60:]) for t, m in marks]))
         # In Classic: a page for each answer with the margin column, the details open, and bold still wearing the yellow

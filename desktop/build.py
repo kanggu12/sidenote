@@ -91,21 +91,15 @@ def licenses(dest: Path) -> int:
 
 
 def icon(path: Path) -> Path:
-    """The app's icon, drawn as the capture program draws its tray icon (a sheet of paper with a highlighter
-    stroke), at the sizes Windows asks an .ico for."""
+    """The app's icon at the sizes Windows asks an .ico for: the capture program's tray icon, drawn by its own code,
+    the block between the icon markers in client/capture.py (read here, so the program itself is not imported)."""
     from PIL import Image, ImageDraw
-    ink, paper, mark = (26, 30, 40, 255), (250, 250, 247, 255), (232, 200, 64, 255)
-    big = 1024
-    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    u = big / 64.0
-    d.rounded_rectangle([1 * u, 0, 63 * u, 64 * u], radius=9 * u, fill=paper)
-    d.rounded_rectangle([1 * u, 0, 63 * u, 64 * u], radius=9 * u, outline=ink, width=int(4 * u))
-    d.polygon([(43 * u, 0), (63 * u, 20 * u), (43 * u, 20 * u)], fill=ink)
-    d.rounded_rectangle([9 * u, 29 * u, 55 * u, 44 * u], radius=2 * u, fill=mark)
-    d.line([(9 * u, 52 * u), (38 * u, 52 * u)], fill=ink, width=int(4 * u))
-    img.resize((256, 256), Image.LANCZOS).save(path, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (48, 48),
-                                                            (64, 64), (128, 128), (256, 256)])
+    src = (ROOT / "client" / "capture.py").read_text(encoding="utf-8")
+    block = src[src.index("# ---- the icon:"):src.index("# ---- end of the icon ----")]
+    scope = {"Image": Image, "ImageDraw": ImageDraw}
+    exec(block, scope)
+    scope["tray_image"](256).save(path, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128),
+                                                 (256, 256)])
     return path
 
 

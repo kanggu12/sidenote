@@ -65,10 +65,49 @@ def _public(host: str) -> bool:
     return bool(infos)
 
 
+def public_backend():
+    """The network backend of the page fetches: it opens a connection only to an address it has checked itself.
+
+    allowed_url checks the name and peer_ip the open socket, and between the two the request was already out: a name
+    that resolved to a public address for the check and to a LAN one for the connect (DNS rebinding) still had its GET
+    sent, on port 80 or 443 of a router or a NAS, before the socket's address turned it away. Here the name is resolved
+    once, every address it gives must be public, and the socket opens to one of those same addresses. TLS still checks
+    the certificate against the name: httpcore takes the server name from the URL, not from the address dialled."""
+    import httpcore2  # lazy, as httpx2 in WebTools: only needed when search is on
+
+    class PublicOnly(httpcore2.AsyncNetworkBackend):
+        def __init__(self):
+            self._inner = httpcore2.AnyIOBackend()   # what httpcore uses under asyncio, given an address instead of a name
+
+        async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+            try:
+                infos = await asyncio.to_thread(socket.getaddrinfo, host, port, type=socket.SOCK_STREAM)
+            except OSError as exc:            # an unknown name: the same error a plain connect gives
+                raise httpcore2.ConnectError(f"{host}: {exc}") from exc
+            addrs = list(dict.fromkeys(info[4][0] for info in infos))   # in the resolver's order, each once
+            if not addrs or not all(_global_ip(a) for a in addrs):
+                raise httpcore2.ConnectError(f"not allowed: {host} resolves to an address that is not public")
+            last = None
+            for addr in addrs[:3]:            # the next address when one does not answer, as a connect by name does
+                try:
+                    return await self._inner.connect_tcp(addr, port, timeout=timeout, local_address=local_address,
+                                                         socket_options=socket_options)
+                except (httpcore2.ConnectError, httpcore2.ConnectTimeout) as exc:
+                    last = exc
+            raise last
+
+        async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+            raise httpcore2.ConnectError("not allowed: a local socket")
+
+        async def sleep(self, seconds):
+            await self._inner.sleep(seconds)
+
+    return PublicOnly()
+
+
 def peer_ip(response) -> str:
-    """The address the page actually came from. allowed_url resolves the name itself, and a name
-    can resolve to something else by the time httpx connects (DNS rebinding), so the address on the
-    open socket is what decides. Empty when the transport does not say (then the name check holds)."""
+    """The address the page actually came from: the second check, after public_backend dialled only an address it
+    checked. Empty when the transport does not say (then the name check holds)."""
     try:
         stream = response.extensions.get("network_stream")
         sock = stream.get_extra_info("socket") if stream is not None else None
@@ -180,12 +219,21 @@ class WebTools:
     """Runs the tool calls; one shared HTTP client."""
 
     def __init__(self, cfg):
-        import httpx2  # lazy: only needed when search is on
+        import httpcore2  # lazy, both: only needed when search is on
+        import httpx2
 
         self.cfg = cfg
         self._http = httpx2
-        self._client = httpx2.AsyncClient(timeout=httpx2.Timeout(cfg.search_timeout, connect=4.0),
-                                          headers={"User-Agent": "Mozilla/5.0 (sidenote)"})
+        timeout = httpx2.Timeout(cfg.search_timeout, connect=4.0)
+        headers = {"User-Agent": "Mozilla/5.0 (sidenote)"}
+        # The search engine is the one private address this asks (the searxng container): its own client.
+        self._client = httpx2.AsyncClient(timeout=timeout, headers=headers)
+        # Pages come through a pool that dials only public addresses it resolved and checked (public_backend). The
+        # transport takes no backend of its own, so its pool is swapped for one built with it; integ checks the swap.
+        transport = httpx2.AsyncHTTPTransport()
+        transport._pool = httpcore2.AsyncConnectionPool(ssl_context=transport._pool._ssl_context,
+                                                        network_backend=public_backend())
+        self._pages = httpx2.AsyncClient(timeout=timeout, headers=headers, transport=transport)
 
     # A question about the newest version of something is the one search where a snippet is reliably
     # useless: a search engine answers it with release notes and blog posts, and the number itself is
@@ -279,7 +327,7 @@ class WebTools:
         for _ in range(4):   # follow redirects by hand, checking each hop
             if not await asyncio.to_thread(allowed_url, url):
                 return json.dumps({"url": url, "error": "not allowed: only public http/https pages"})
-            async with self._client.stream("GET", url, follow_redirects=False) as r:
+            async with self._pages.stream("GET", url, follow_redirects=False) as r:
                 peer = peer_ip(r)
                 if peer and not _global_ip(peer):
                     return json.dumps({"url": url, "error": f"not allowed: {peer} is not a public address"})
@@ -319,3 +367,4 @@ class WebTools:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        await self._pages.aclose()

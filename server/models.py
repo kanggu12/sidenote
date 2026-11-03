@@ -18,8 +18,10 @@ import re
 from dataclasses import asdict, dataclass, field
 
 # Ollama's default batch of 512 caps an image at 512 tokens, which blurs small code text in a screenshot; the tuned
-# copy takes 1152 (627 image tokens, 21.9 of 23 GB for the 26b on a 24 GB card)
-TUNED_BATCH = {"num_batch": 1152}
+# copy takes 1152 (627 image tokens, 21.9 of 23 GB for the 26b on a 24 GB card). Its context is the one compose.yaml
+# gives Ollama (SIDENOTE_LOCAL_CONTEXT), carried by the model itself, so an Ollama that Sidenote did not start (its own
+# installer starts it at sign-in, with a shorter default) still reads a whole screen and its answer.
+TUNED_PARAMS = {"num_batch": 1152, "num_ctx": 16384}
 # Room left beside the model on the GPU (the desktop, the browser) before a size is said to fit
 MARGIN_GB = 0.5
 
@@ -52,19 +54,19 @@ class Profile:
 
 
 PROFILES: tuple[Profile, ...] = (
-    Profile("gemma4:26b", r"^(sidenote-)?gemma4:26b", "gemma4:26b", "sidenote-gemma4:26b", TUNED_BATCH, 22.0,
+    Profile("gemma4:26b", r"^(sidenote-)?gemma4:26b", "gemma4:26b", "sidenote-gemma4:26b", TUNED_PARAMS, 22.0,
             smaller="gemma4:e4b", tested=True, note="Mixture of experts, about 4B active: fast for its size", size_gb=18.0),
-    Profile("gemma4:31b", r"^(sidenote-)?gemma4:31b", "gemma4:31b", "sidenote-gemma4:31b", TUNED_BATCH, 26.0,
+    Profile("gemma4:31b", r"^(sidenote-)?gemma4:31b", "gemma4:31b", "sidenote-gemma4:31b", TUNED_PARAMS, 26.0,
             smaller="gemma4:e4b", note="Dense; slower than the 26b"),
     # Measured with the agent off: 34 of 56, every spoken question and every problem area cut right, 3 of 7 coding answers,
     # a screen with nothing on it in 0.7 s.
-    Profile("gemma4:e4b", r"^(sidenote-)?gemma4(:e4b|:latest)?$", "gemma4:e4b", "sidenote-gemma4:e4b", TUNED_BATCH, 9.0,
+    Profile("gemma4:e4b", r"^(sidenote-)?gemma4(:e4b|:latest)?$", "gemma4:e4b", "sidenote-gemma4:e4b", TUNED_PARAMS, 9.0,
             smaller="gemma4:e2b", tested=True, note="Finds and cuts problems well; code is better left to the agent",
             size_gb=6.6),
     # Measured on the known-answer set with the agent off: 24 of 56 answers right, a screen with nothing on it in
     # 0.65 s, 7 of 8 spoken questions, but 1 of 7 coding answers and no current facts: on an 8 GB GPU it finds the
     # problems and answers the short ones, and the cloud agent should take the rest.
-    Profile("gemma4:e2b", r"^(sidenote-)?gemma4:e2b", "gemma4:e2b", "sidenote-gemma4:e2b", TUNED_BATCH, 6.0,
+    Profile("gemma4:e2b", r"^(sidenote-)?gemma4:e2b", "gemma4:e2b", "sidenote-gemma4:e2b", TUNED_PARAMS, 6.0,
             tested=True, note="Finds problems and answers short ones; leave the hard ones to the agent", size_gb=4.6),
 )
 GENERIC = Profile("generic", r".", "")

@@ -857,7 +857,7 @@ def group_found(br, s):
     line = p.js("() => document.querySelector('#st-local .fact.wide dd:has(.lit), #st-local dd:has(.lit)')?.textContent.replace(/\\s+/g, ' ').trim()")
     gauge = p.js("() => Math.round(document.getElementById('gpu-viz').getBoundingClientRect().height)")
     # Nothing folds on a short window now (everything shows, the same at every resolution): the state and the model's details, the gauges under them
-    check("on a short window the GPU's line is the state and the model's details, its gauges under it", bool(line) and line.startswith("올라가 있음") and "Q4_K_M" in line and gauge > 40, [line, gauge])
+    check("on a short window the GPU's line is the state and the model's details, its gauges under it", bool(line) and line.startswith("바로 풂") and "Q4_K_M" in line and gauge > 40, [line, gauge])
     p.close()
     p = Page(br, s, many(14), w=1920, h=1040, settle=500)
     status(p, eng(local={"ok": False, "missing": True, "loaded": None}))
@@ -1034,7 +1034,7 @@ def group_asked(br, s):
     p.send({"type": "check", "id": 1803, "lang": "python", "passed": 1, "total": 2, "how": "stdin", "rows": [{"input": "1\n", "expected": "1\n", "got": "1\n", "ok": True}, {"input": "2\n", "expected": "4\n", "got": "3\n", "ok": False}]})
     p.wait(250)
     same = p.js("""() => { const b = entryEl(1803).querySelector('.vcheck'); if (!b) return null; return { verdict: b.querySelector('.vc-verdict').textContent, count: b.querySelector('.vc-count').textContent, tabs: [...b.querySelectorAll('.vc-tab')].map((t) => [t.classList.contains('bad') ? 'bad' : 'ok', t.getAttribute('aria-selected')]), keys: [...b.querySelectorAll('.vc-case:not([hidden]) .vc-k')].map((k) => k.textContent), table: !!b.querySelector('table') }; }""")
-    check("the runs of the code are a judge's result, not a table", same and same["verdict"] == "실패" and same["count"] == "1/2" and same["tabs"] == [["ok", "false"], ["bad", "true"]] and same["keys"] == ["입력", "출력", "기대"] and not same["table"], same)
+    check("the runs of the code are a judge's result, not a table", same and same["verdict"] == "실패" and same["count"] == "1/2" and same["tabs"] == [["ok", "false"], ["bad", "true"]] and same["keys"] == ["입력", "출력", "기대 출력"] and not same["table"], same)
     p.js("() => entryEl(1803).querySelector('.vc-tab.ok').click()")
     shown = p.js("() => [...entryEl(1803).querySelectorAll('.vc-case')].map((c) => c.hidden)")
     check("...and a tab brings its run into view", shown == [False, True], shown)
@@ -1077,7 +1077,7 @@ def group_asked(br, s):
     tab = p.js("() => { const t = document.querySelector('#history .h-tab'), c = getComputedStyle(t); return [c.backgroundColor, c.borderTopWidth, c.borderTopLeftRadius, c.borderBottomLeftRadius]; }")
     check("a day of the contents is an index tab: a ground, a border and its top corners rounded", tab[0] not in ("rgba(0, 0, 0, 0)",) and float(tab[1].rstrip("px")) >= 1 and tab[2] != "0px" and tab[3] == "0px", tab)
     # The model and its effort on one row, in two columns
-    check("the model and its effort on one row", [f[0] for f in a["facts"]] == ["모델", "effort"] and abs(a["facts"][0][1] - a["facts"][1][1]) <= 2, a["facts"])
+    check("the model and its effort on one row", [f[0] for f in a["facts"]] == ["모델", "생각 깊이"] and abs(a["facts"][0][1] - a["facts"][1][1]) <= 2, a["facts"])
     # The connected badge right beside its title
     gaps = p.js("() => [...document.querySelectorAll('.rail .src-top')].filter((t) => t.offsetParent).map((t) => Math.round(t.querySelector('.pill').getBoundingClientRect().left - t.querySelector('.src-name').getBoundingClientRect().right))")
     check("every source's state stands right beside its name", gaps and all(0 <= g <= 12 for g in gaps), gaps)

@@ -79,7 +79,7 @@ def gpu(what: str) -> int:
     else:
         where = t(", the GPU is empty")
     stand_in = t(" (standing in for the agent)") if not on and local.get("stand_in") else ""
-    print(t("This PC's model: {state}{stand_in}{where}", state=t("on") if on else t("off"), stand_in=stand_in,
+    print(t("Local model: {state}{stand_in}{where}", state=t("on") if on else t("off"), stand_in=stand_in,
             where=where))
     if what == "off":   # what it means while it is off, so the next problem is no surprise
         print(t("While it is off, the agent solves every problem found, and sends the whole screen when it cannot cut "

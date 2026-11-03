@@ -217,7 +217,7 @@ async def downloads():
         paths = [p for p, _ in got]
         check("the tuned name pulls its base model through the local server, then makes the copy",
               paths == ["/api/pull", "/api/create"] and got[0][1]["model"] == "gemma4:e4b"
-              and got[1][1] == {"model": "sidenote-gemma4:e4b", "from": "gemma4:e4b", "parameters": {"num_batch": 1152},
+              and got[1][1] == {"model": "sidenote-gemma4:e4b", "from": "gemma4:e4b", "parameters": {"num_batch": 1152, "num_ctx": 16384},
                                 "stream": False}, got)
         steps = [m.get("status") for m in told if m.get("type") == "llm_pull"]
         check("the panels are told it starts, the copy is made, and it is done",

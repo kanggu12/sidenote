@@ -190,7 +190,8 @@ def main() -> int:
         page.fill("#hist-q", "TCP없음")
         page.wait_for_timeout(500)
         said = page.evaluate("() => document.getElementById('hist-nomatch').textContent")
-        check("the search says what was typed, with its proper particle", "'TCP없음'이 든" in said, said)
+        # what was typed in its quotes, and no particle after it: one after a Latin word ("GPU") could not be told by its letters
+        check("the search says what was typed", said == "'TCP없음' 검색 결과 없음", said)
         page.close()
 
         print("[what the panel keeps while it redraws]")
@@ -486,7 +487,7 @@ def main() -> int:
         said = page.evaluate("() => [document.getElementById('st-agent').innerText, document.getElementById('st-local').innerText]")
         # The thinking setting and the output limit are not worth a row; the model and its effort stay, on one row
         check("the agent's card names its model and effort, and not its thinking or output limit",
-              all(w in said[0] for w in ("claude-opus-5-5", "medium")) and not any(w in said[0] for w in ("adaptive", "128,000", "최대 출력")), said[0])
+              all(w in said[0] for w in ("claude-opus-5-5", "보통")) and not any(w in said[0] for w in ("adaptive", "128,000", "최대 출력")), said[0])
         check("the local model's card names its size, quantization and context", all(w in said[1] for w in ("Q4_K_M", "26B", "32,768")), said[1])
         page.close()
         # The contents' list keeps a scroll of its own: its first nine lines (rows and the days' tabs) whole, the same at every size

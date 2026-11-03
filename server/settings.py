@@ -37,7 +37,7 @@ RENAMED = {"claude_mode": "agent_mode", "claude_payload": "agent_payload", "clau
            "claude_model_name": "agent_model_name", "claude_effort": "agent_effort",
            "claude_hourly_usd": "agent_hourly_usd", "claude_confirm": "agent_confirm"}
 TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay", "coding": "Coding",
-              "algorithm": "Algorithm", "work": "Practical", "math": "Math", "diagram": "Diagram", "other": "Other"}
+              "algorithm": "Algorithm", "work": "Work", "math": "Math", "diagram": "Diagram", "other": "Other"}
 
 
 @dataclass
@@ -59,9 +59,10 @@ class Setting:
             return isinstance(v, bool)
         if self.kind == "choice":
             return any(v == o[0] for o in self.options)
-        if self.kind == "multi":
+        if self.kind == "multi":   # strings only: a list inside the list is unhashable, and raised out of the panel's loop
             allowed = {o[0] for o in self.options}
-            return isinstance(v, list) and all(x in allowed for x in v) and len(set(v)) == len(v)
+            return (isinstance(v, list) and all(isinstance(x, str) and x in allowed for x in v)
+                    and len(set(v)) == len(v))
         if self.kind == "box":
             if v is None:
                 return True
@@ -103,7 +104,7 @@ def _defs() -> list[Setting]:
         efforts.append((CONFIG.agent_effort, CONFIG.agent_effort))
     return [
         # solving
-        Setting("local_llm", "bool", local_default, "solve", t("This PC's model"),
+        Setting("local_llm", "bool", local_default, "solve", t("Local model"),
                 t("The model that solves on this PC's GPU. Off: the agent solves everything", agent=name)),
         Setting("local_think", "choice", CONFIG.local_think, "solve", t("Think before answering"),
                 t("Auto: thinks first only on problems that need working out, such as multiple choice, calculations "
@@ -130,17 +131,17 @@ def _defs() -> list[Setting]:
                 t("Signed out (for the API, with no key), the agent counts as off", agent=name),
                 [("off", t("Off")), ("verify", t("Check answers")), ("hard", t("Hard problems")), ("all", t("All"))],
                 opt_help={
-                    "off": t("The agent is not used. Only this PC's model solves", agent=name),
-                    "verify": t("This PC's model solves and the agent checks the answer. If they differ, the fixed "
+                    "off": t("The agent is not used. Only the local model solves", agent=name),
+                    "verify": t("The local model solves and the agent checks the answer. If they differ, the fixed "
                                 "solution is added", agent=name),
-                    "hard": t("Only 'Types the agent solves' go to the agent, the rest to this PC's model (to the agent "
-                              "when it would be over 1.5 times slower). If the agent fails, this PC's model", agent=name),
+                    "hard": t("Only 'Types the agent solves' go to the agent, the rest to the local model (to the agent "
+                              "when it would be over 1.5 times slower). If the agent fails, the local model", agent=name),
                     "all": t("The agent solves every problem found", agent=name),
                 }),
         Setting("agent_payload", "choice", payload_default, "agent", t("What is sent to the agent", agent=name),
                 t("A spoken problem sends only the question's words (and the screen with Whole screen). Written-out "
                   "words of a problem not found on the screen that hold resident registration, phone, card or account "
-                  "numbers are not sent: this PC's model solves. A coding problem also sends the language read off "
+                  "numbers are not sent: the local model solves. A coding problem also sends the language read off "
                   "the screen"),
                 [("crop", t("Problem area")), ("text", t("Problem text")), ("screen", t("Whole screen"))],
                 opt_help={
@@ -152,8 +153,8 @@ def _defs() -> list[Setting]:
                 }),
         Setting("agent_hard_types", "multi", ["algorithm", "coding", "math", "work", "essay", "other"], "agent",
                 t("Types the agent solves", agent=name),
-                t("The types 'Hard problems' hands to the agent. This PC's model thinks and answers the rest (the "
-                  "agent when it would be over 1.5 times slower). Default: Algorithm, Coding, Math, Practical, Essay, "
+                t("The types 'Hard problems' hands to the agent. The local model thinks and answers the rest (the "
+                  "agent when it would be over 1.5 times slower). Default: Algorithm, Coding, Math, Work, Essay, "
                   "Other", agent=name),
                 [(k, t(TYPE_NAMES[k])) for k in SOLVE_TYPES]),
         # The model and how hard it thinks: the environment sets where they start, the panel moves
@@ -169,13 +170,13 @@ def _defs() -> list[Setting]:
                 [(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]),
         # The rule: with the agent at a limit, the answers come from this PC's model where they
         # can, not from another agent. With that model switched on it answers then already; this is for one switched off.
-        Setting("local_fallback", "bool", True, "agent", t("This PC's model stands in at a limit"),
-                t("When the agent reaches a limit or is signed out, this PC's model, switched off, solves instead. Off "
+        Setting("local_fallback", "bool", True, "agent", t("The local model stands in at a limit"),
+                t("When the agent reaches a limit or is signed out, the local model, switched off, solves instead. Off "
                   "the GPU once the agent can be asked again", agent=name)),
         # A reply without the head is the agent declining a screen, or answering nothing. On, this PC's model, already
         # loaded, solves the same screen (pipeline.solve); off, or with that model off, the agent's reply is the card.
-        Setting("local_on_decline", "bool", True, "agent", t("This PC's model answers when the agent declines", agent=name),
-                t("When the agent declines a screen or answers nothing, this PC's model solves it instead. Off: the "
+        Setting("local_on_decline", "bool", True, "agent", t("The local model answers when the agent declines", agent=name),
+                t("When the agent declines a screen or answers nothing, the local model solves it instead. Off: the "
                   "agent's reply is shown as it came", agent=name), needs=["local_llm"]),
         Setting("agent_confirm", "bool", False, "agent", t("Confirm before sending"),
                 t("Shows what goes to the agent first, and sends it only on Send. Not sent when not pressed within 2 "
@@ -198,7 +199,7 @@ def _defs() -> list[Setting]:
                 t("Cuts at the edges of the problem's window so the windows beside it stay out. Off: only adds a margin "
                   "to the area the model gave"), needs=["local_llm"]),
         Setting("extract", "bool", True, "screen", t("Write out the problem text"),
-                t("This PC's model writes the problem out as text. Used to send text to the agent and to check the "
+                t("The local model writes the problem out as text. Used to send text to the agent and to check the "
                   "examples", agent=name), needs=["local_llm"]),
         # code
         Setting("run_button", "bool", True, "code", t("Run button"),
@@ -230,8 +231,8 @@ def _defs() -> list[Setting]:
         # replaces it with the real ones. Without that, the panel's list held "1" alone with nothing connected,
         # so all monitors could not be chosen at all.
         Setting("monitor", "int", 1, "capture", t("Monitor"),
-                t("All monitors takes them as one picture and sees a problem on any of them. The screen with the "
-                  "panel is covered before it is sent"),
+                t("All monitors takes them as one picture and sees a problem on any of them. On Windows the panel's "
+                  "own window is covered before it is sent"),
                 [(0, t("All monitors")), (1, t("Monitor {i}", i=1)), (2, t("Monitor {i}", i=2))]),
         # resources
         Setting("gpu_idle_min", "int", CONFIG.local_idle_min, "resource", t("Free the GPU when idle"),

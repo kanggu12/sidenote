@@ -203,6 +203,8 @@ held = []
 
 class Proc:
     stdin = types.SimpleNamespace(write=lambda *_: None, flush=lambda: None)
+    returncode = None   # running, as a Popen is before it is waited for
+    pid = None          # no process behind it: kill_group signals no group for it
     def kill(self): pass
     def wait(self): pass
 
@@ -466,7 +468,7 @@ if cap is not None:
             AllowSetForegroundWindow = staticmethod(lambda p: 1)
 
     import ctypes
-    switch = Item("소리 듣기", checked=True)
+    switch = Item("소리 캡처", checked=True)
     plain = Item("끝내기")
     icon = types.SimpleNamespace(menu=types.SimpleNamespace(items=[switch, plain]), _hwnd=0, _on_notify=lambda w, l: natives.append(l))
     natives = []

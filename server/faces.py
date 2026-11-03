@@ -1,7 +1,7 @@
 """Faces on the screen are painted over before anything reads it.
 
 This is for the sake of people's portrait rights: a video call beside the problem, a
-video, a photo in an article or a profile picture shows somebody's likeness, and a screen goes to this PC's model, to
+video, a photo in an article or a profile picture shows somebody's likeness, and a screen goes to the local model, to
 the cloud agent when it answers and into the panel's thumbnail. So the faces on every screen that comes in are found and covered in prepare_frame, before the change
 detector, the models, the crops and the thumbnail are made from it.
 
@@ -21,7 +21,7 @@ problem's figures alone.
 
 The session runs on the calling thread alone (one intra-op thread, no spinning). A pool of native threads beside it is
 what a fork for a child process must not land in (forksafe: the server stopped for 95 minutes over such a fork), and
-one thread is quick enough here. Measured numbers are in the design notes (docs/ARCHITECTURE.md, 85).
+one thread is quick enough here. Measured numbers are in the design notes (docs/DECISIONS.md, note 85).
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ log = logging.getLogger("sidenote.faces")
 
 MODEL = Path(__file__).resolve().parent / "assets" / "face_detection_yunet_2023mar.onnx"
 SIDE = 640            # the model's fixed input: a square this many pixels on a side
-SCORE = 0.6           # a face from this confidence up (measured: design note 84)
+SCORE = 0.6           # a face from this confidence up (measured: design note 85)
 NMS_IOU = 0.3         # two boxes overlapping this much are the same face (OpenCV's FaceDetectorYN uses 0.3)
 OVERLAP = 0.2         # how far the tiles reach into each other, so a face on a seam is whole in one of them
 GRID_AT = 2600        # a screen with a longer side than this is read in 3 x 3 tiles, a smaller one in 2 x 2

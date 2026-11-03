@@ -43,7 +43,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, ubuntu-24.04]
+        # Linux on the oldest runner there is: the app runs on the glibc it was built with and newer, so built on
+        # 22.04 (glibc 2.35) it also runs on Ubuntu 22.04 and Debian 12, which a 24.04 build (2.38) refused
+        os: [windows-2025, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

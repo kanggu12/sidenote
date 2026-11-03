@@ -31,7 +31,15 @@
 #   before it spoke English too. With SIDENOTE_LANG=en every command prints no Korean, a locale picks the language when
 #   SIDENOTE_LANG is not set, a SIDENOTE_LANG that is set is handed on to the Windows programs (WSLENV), and launch.pyw's
 #   boxes follow the same rule;
-# - with no COMPOSE_FILE set, the GPU picks compose.yaml's companion file, and one that is set is left alone.
+# - with no COMPOSE_FILE set, the GPU picks compose.yaml's companion file, and one that is set is left alone;
+# - the CI check is opt-in: without SIDENOTE_CI_GATE=1 nothing asks gh and no CI line is printed; with it a commit CI
+#   failed is refused, --no-ci and --when-green work, and doctor never fails for CI;
+# - setup-capture (and its old name setup-windows) installs the capture packages, a .venv-capture left without pip is
+#   made again, and install without Windows Python names python.org and still runs its other steps;
+# - Docker's own reason reaches the user: the docker group, the NVIDIA Container Toolkit;
+# - with no GPU that fits a model, llm pull, install, doctor and status say one and the same line;
+# - status names the engines as the panel does, uninstall on a Linux desktop lists and removes what it made there, and
+#   help names the start commands, setup-capture, the capture options and the CI switch.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
 
 here="$(cd "$(dirname "$0")" && pwd)"             # this script's folder, whatever the caller's cwd
@@ -50,6 +58,37 @@ bad()  { fail=$((fail + 1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && prin
 mkdir -p "$work/bin" "$work/calls" "$work/state" "$work/home" "$work/logs" "$work/repo/client"
 cp "$launcher" "$work/repo/sidenote"              # the launcher cds to its own folder: this one
 : > "$work/repo/client/capture.py"                # it only has to exist; nothing runs it
+# The GPU the launcher reads (server/hardware.py) stood in for: the one named in state/gpu ("vendor,name,GB"), or none.
+# server/models.py is the real one, so what fits a GPU is what the launcher would really pull.
+mkdir -p "$work/repo/server"
+cp "$root/server/models.py" "$work/repo/server/models.py"
+cat > "$work/repo/server/hardware.py" <<'STUB'
+"""Stand-in for server/hardware.py: the GPU named in $FAKE/state/gpu as "vendor,name,GB", or no GPU at all."""
+import os
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Gpu:
+    vendor: str
+    name: str
+    memory_gb: float
+
+
+def detect():
+    try:
+        vendor, name, gb = open(os.path.join(os.environ["FAKE"], "state", "gpu")).read().strip().split(",")
+    except (OSError, KeyError, ValueError):
+        return []
+    return [Gpu(vendor, name, float(gb))]
+
+
+def best(gpus):
+    return max(gpus, key=lambda g: g.memory_gb) if gpus else None
+STUB
+# A repository with one commit: with SIDENOTE_CI_GATE=1 the launcher asks gh about the commit it is on (git rev-parse)
+git -C "$work/repo" init -q && git -C "$work/repo" add -A \
+  && git -C "$work/repo" -c user.name=t -c user.email=t@t commit -qm "the launcher under test"
 
 # cmd.exe: writes its argv down (one record per argument, NUL-separated, so a value with spaces stays whole)
 # and answers what the launcher asks Windows Python: its version, whether the capture packages import (and
@@ -61,6 +100,8 @@ printf '%s|%s' "${WSLENV:-}" "${SIDENOTE_LANG:-}" > "$FAKE/state/cmd-lang"   # w
 shift                                             # /c
 case "$1" in
   py)
+    # no Python for Windows: cmd.exe's own words, on stderr, and a failing status
+    [ -f "$FAKE/state/no-py" ] && { echo "'py' is not recognized as an internal or external command," >&2; exit 1; }
     case "$3" in
       --version) echo "Python 3.14.0" ;;
       -c) [ -f "$FAKE/state/no-packages" ] && exit 1   # an import failed
@@ -97,25 +138,85 @@ printf '%s\0' "$@" > "$FAKE/calls/curl.$(date +%s%N)"
 [ -f "$FAKE/state/server-down" ] && exit 7
 case "$*" in
   */capture/quit*) [ -f "$FAKE/state/unkillable" ] || rm -f "$FAKE/state/running"; echo '{"asked": 1}' ;;
-  */health*) n=0; [ -f "$FAKE/state/running" ] && n=1
+  # state/health.json, when a check wrote one, is the answer as it stands (the engines' states the status reads)
+  */health*) if [ -f "$FAKE/state/health.json" ]; then cat "$FAKE/state/health.json"; exit 0; fi
+             n=0; [ -f "$FAKE/state/running" ] && n=1
              printf '{"ok": true, "audio": true, "paused": false, "engines": {"ready": true}, '
              printf '"capture": {"clients": %d, "screen_on": true, "audio_on": true}}\n' "$n" ;;
 esac
 exit 0
 STUB
 
-# docker: everything succeeds and changes nothing; `info` fails with state/docker-off. Each call also notes the
+# docker: everything succeeds and changes nothing; `info` fails with state/docker-off, and with state/docker-denied
+# the way it does for a user outside the docker group (its real words, on stderr). `version` names a server, and with
+# state/no-toolkit `compose up` fails as it does when Docker cannot reach the NVIDIA GPU. Each call also notes the
 # compose profiles it was given, which is how the local model's containers are switched on.
 cat > "$work/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\0' "$@" > "$FAKE/calls/docker.$(date +%s%N)"
 echo "${COMPOSE_PROFILES:-}" >> "$FAKE/state/profiles"
 case "$1" in
-  info) [ -f "$FAKE/state/docker-off" ] && exit 1 ;;
+  info) [ -f "$FAKE/state/docker-off" ] && exit 1
+        if [ -f "$FAKE/state/docker-denied" ]; then
+          echo "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" >&2; exit 1
+        fi ;;
+  version) [ -f "$FAKE/state/docker-off" ] || [ -f "$FAKE/state/docker-denied" ] || echo "29.0.0" ;;
   inspect) echo true ;;
+  compose) if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
+             echo 'Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu]]' >&2; exit 1
+           fi ;;
 esac
 exit 0
 STUB
+# gh: writes down that it was asked, and answers what CI said of the commit as the launcher's --jq prints it
+# (state/gh-answer: success, failure, running). Only a launcher with SIDENOTE_CI_GATE=1 may ask it at all.
+cat > "$work/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$FAKE/calls/gh.$(date +%s%N)"
+cat "$FAKE/state/gh-answer" 2>/dev/null
+exit 0
+STUB
+# pgrep and pkill, for the runs as a Linux desktop: this checkout's capture programs are counted from
+# state/linux-capture, and no process of this machine is ever looked at or ended.
+cat > "$work/bin/pgrep" <<'STUB'
+#!/usr/bin/env bash
+if [ -f "$FAKE/state/linux-capture" ]; then echo 1; else echo 0; exit 1; fi
+STUB
+cat > "$work/bin/pkill" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$FAKE/calls/pkill.$(date +%s%N)"
+rm -f "$FAKE/state/linux-capture"
+STUB
+# python3, on the PATH of the Linux setup checks alone: `-m venv` makes a .venv-capture whose python has pip or, with
+# state/no-ensurepip, fails halfway as Debian's python3 does without python3-venv, leaving a python and no pip.
+# Anything else goes to the real python3 (the launcher reads JSON and the GPU with it).
+mkdir -p "$work/venvbin"
+cat > "$work/venv-python" <<'STUB'
+#!/usr/bin/env bash
+# the python of a .venv-capture the stand-in made: pip only where the marker beside it says pip was installed
+venv="$(cd "$(dirname "$0")/.." && pwd)"
+if [ "${1:-}" = -m ] && [ "${2:-}" = pip ]; then
+  [ -f "$venv/pip-ok" ] || { echo "$venv/bin/python: No module named pip" >&2; exit 1; }
+  printf '%s\0' "$@" > "$FAKE/calls/pip.$(date +%s%N)"
+  echo "pip 24.0"; exit 0
+fi
+echo tray                                         # the capture packages' question: all there
+STUB
+cat > "$work/venvbin/python3" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = -m ] && [ "${2:-}" = venv ]; then
+  printf '%s\0' "$@" > "$FAKE/calls/venv.$(date +%s%N)"
+  dir="${*: -1}"                                  # the folder is the last argument
+  rm -rf "$dir"; mkdir -p "$dir/bin"; cp "$FAKE/venv-python" "$dir/bin/python"; chmod +x "$dir/bin/python"
+  if [ -f "$FAKE/state/no-ensurepip" ]; then
+    echo "The virtual environment was not created successfully because ensurepip is not available." >&2; exit 1
+  fi
+  touch "$dir/pip-ok"; exit 0
+fi
+exec @PYTHON3@ "$@"
+STUB
+sed -i "s#@PYTHON3@#$(command -v python3)#" "$work/venvbin/python3"
+chmod +x "$work/venvbin/python3"
 # wsl.exe, for client/launch.pyw: writes down its arguments and the WSL_UTF8 it was started with, then does what the
 # real one does with `-d <distro> --exec <program> <arguments...>`: runs that program with exactly those arguments
 # (here, already inside WSL, with the stand-ins first on the PATH). state/wsl-noisy has it print what a terminal
@@ -246,7 +347,7 @@ else bad "a failed process query does not block capture" "$(tail -2 "$work/out" 
 
 # 9. The same failure in status, with nothing connected: it must not say a capture program is reconnecting.
 state ps-broken; run status
-if ! said "다시 연결하는 중"; then ok "a failed process query is not reported as reconnecting"
+if ! said "다시 연결 중"; then ok "a failed process query is not reported as reconnecting"
 else bad "a failed process query is not reported as reconnecting" "$(grep -F "캡처 프로그램" "$work/out")"; fi
 
 # 10. What capture-stop asks PowerShell to end: the interpreters by their exact names, never a pattern.
@@ -368,7 +469,8 @@ cases=("|help" "|bogus" "|up --bogus" "running|status" "ps-broken|status" "serve
        "|uninstall" "running|capture-stop" "running unkillable|capture-stop" "|capture-restart" "|capture --no-tray"
        "notray|capture" "|capture --audio-device R&B" "|capture --once" "server-down docker-off|capture --up" "|shortcut"
        "no-pyw|shortcut" "|shortcut --remove" "|login" "|login codex" "|login anthropic-api" "|llm" "|open" "|install"
-       "|qa" "|down" "|restart" "|logs" "|gpu off" "|stats")
+       "|qa" "|down" "|restart" "|logs" "|gpu off" "|stats" "|setup-capture" "|setup-windows" "no-py|setup-capture"
+       "|llm pull" "docker-denied|up" "no-toolkit|up" "|up --when-green" "|gpu status")
 korean=() silent=()
 for c in "${cases[@]}"; do
   read -r -a mood <<<"${c%%|*}"; read -r -a cmd <<<"${c#*|}"
@@ -425,6 +527,154 @@ kept="$(cd "$work" && COMPOSE_FILE=compose.yaml:mine.yaml bash -c 'source /dev/s
 if [[ "$picked" =~ ^compose\.yaml:docker/compose\.(nvidia|amd|cpu)\.yaml$ ]] && [ "$kept" = compose.yaml:mine.yaml ]; then
   ok "the GPU picks the compose file (${picked#*:}), and a COMPOSE_FILE that is set stays"
 else bad "the GPU picks the compose file, and a COMPOSE_FILE that is set stays" "picked: ${picked:-none}, kept: ${kept:-none}"; fi
+
+# --- the CI check, setup-capture, Docker's reasons, a Linux desktop, a PC with no GPU that fits -----------------------
+gpu24() { echo "nvidia,NVIDIA GeForce RTX 4090,24" > "$work/state/gpu"; }   # a GPU the local model fits: an engine without an agent
+ci_line() { grep -E '(^|[^A-Za-z])CI([^A-Za-z]|$)' "$work/out"; }          # a line about CI (not one about a CLI)
+
+# 31. Without SIDENOTE_CI_GATE nothing asks gh, even of a commit CI failed: up deploys it, status and doctor print no
+#     CI line, and doctor's verdict is the setup's alone.
+state; gpu24; echo failure > "$work/state/gh-answer"
+run up; up_rc="$(cat "$work/rc")"; last_call docker up; up_n=${#CALL[@]}; asked="$(calls_of gh | wc -l)"; lines="$(ci_line)"
+run status; asked="$asked$(calls_of gh | wc -l)"; lines="$lines$(ci_line)"
+run doctor; doc_rc="$(cat "$work/rc")"; asked="$asked$(calls_of gh | wc -l)"; lines="$lines$(ci_line)"
+if [ "$up_rc" = 0 ] && [ "$up_n" -gt 0 ] && [ "$doc_rc" = 0 ] && [ "$asked" = 000 ] && [ -z "$lines" ]; then
+  ok "without SIDENOTE_CI_GATE nothing asks gh: up deploys, status and doctor have no CI line"
+else bad "without SIDENOTE_CI_GATE nothing asks gh: up deploys, status and doctor have no CI line" \
+         "up rc $up_rc (compose up: $up_n), doctor rc $doc_rc, gh asked per command: $asked, CI lines: ${lines:-none}"; fi
+
+# 32. With SIDENOTE_CI_GATE=1 a commit CI failed is not deployed, --no-ci deploys it, and doctor shows the CI line
+#     without failing for it (a commit's CI is not this PC's setup).
+state; gpu24; echo failure > "$work/state/gh-answer"
+EXTRA_ENV="SIDENOTE_CI_GATE=1" run up; refused_rc="$(cat "$work/rc")"; last_call docker up; refused_n=${#CALL[@]}
+asked="$(calls_of gh | wc -l)"
+EXTRA_ENV="SIDENOTE_CI_GATE=1" run up --no-ci; anyway_rc="$(cat "$work/rc")"; last_call docker up; anyway_n=${#CALL[@]}
+EXTRA_ENV="SIDENOTE_CI_GATE=1" run doctor; doc_rc="$(cat "$work/rc")"; lines="$(ci_line)"
+if [ "$refused_rc" != 0 ] && [ "$refused_n" = 0 ] && [ "$asked" -gt 0 ] && [ "$anyway_rc" = 0 ] && [ "$anyway_n" -gt 0 ] \
+   && [ "$doc_rc" = 0 ] && grep -qF "CI: 이 커밋 실패" <<<"$lines"; then
+  ok "with SIDENOTE_CI_GATE=1 a failed commit is refused, --no-ci deploys it, doctor shows CI and still passes"
+else bad "with SIDENOTE_CI_GATE=1 a failed commit is refused, --no-ci deploys it, doctor shows CI and still passes" \
+         "refused: rc $refused_rc, compose up $refused_n, gh asked $asked; --no-ci: rc $anyway_rc, compose up $anyway_n; doctor rc $doc_rc, CI: ${lines:-none}"; fi
+
+# 33. --when-green asks for CI by name: without the gate it is refused rather than deployed unchecked, and with the gate
+#     it deploys a commit CI passed.
+state; gpu24; echo success > "$work/state/gh-answer"
+run up --when-green; last_call docker up; off_rc="$(cat "$work/rc")"; off_n=${#CALL[@]}; off_asked="$(calls_of gh | wc -l)"
+off_said="$(said "SIDENOTE_CI_GATE=1" && echo y)"
+EXTRA_ENV="SIDENOTE_CI_GATE=1 CI_WAIT_EVERY=0" run up --when-green; last_call docker up; on_rc="$(cat "$work/rc")"; on_n=${#CALL[@]}
+if [ "$off_rc" != 0 ] && [ "$off_n" = 0 ] && [ "$off_asked" = 0 ] && [ "$off_said" = y ] && [ "$on_rc" = 0 ] && [ "$on_n" -gt 0 ] \
+   && said "CI를 통과한 커밋"; then ok "--when-green is refused without the gate, and with it deploys a commit CI passed"
+else bad "--when-green is refused without the gate, and with it deploys a commit CI passed" \
+         "without: rc $off_rc, compose up $off_n, gh asked $off_asked, names the switch: ${off_said:-n}; with: rc $on_rc, compose up $on_n"; fi
+
+# 34. setup-capture is the command's name and setup-windows still works: on WSL both install into Windows Python, and
+#     without Windows Python it says where to get it before pip is ever asked.
+state; run setup-capture; new_rc="$(cat "$work/rc")"; last_call cmd pip; new_n=${#CALL[@]}
+state; run setup-windows; last_call cmd pip; old_n=${#CALL[@]}
+state no-py; run setup-capture; nopy_rc="$(cat "$work/rc")"; last_call cmd pip; nopy_n=${#CALL[@]}
+if [ "$new_rc" = 0 ] && [ "$new_n" -gt 0 ] && [ "$old_n" -gt 0 ] && [ "$nopy_rc" != 0 ] && [ "$nopy_n" = 0 ] && said "python.org"; then
+  ok "setup-capture and setup-windows install the capture packages, and without Windows Python it says python.org"
+else bad "setup-capture and setup-windows install the capture packages, and without Windows Python it says python.org" \
+         "setup-capture: rc $new_rc, pip $new_n; setup-windows: pip $old_n; no Python: rc $nopy_rc, pip $nopy_n, $(tail -1 "$work/out")"; fi
+
+# 35. install with no Windows Python: step 2 names python.org, the shortcut is skipped, and steps 3 and 4 and doctor
+#     still run (cmd.exe's "'py' is not recognized" used to end it at step 2).
+state no-py no-pyw; run install
+if [ "$(cat "$work/rc")" != 0 ] && said "python.org" && said "3/4" && said "4/4" && said "점검" && ! said "is not recognized"; then
+  ok "install without Windows Python says python.org and still runs the other steps and doctor"
+else bad "install without Windows Python says python.org and still runs the other steps and doctor" \
+         "rc $(cat "$work/rc"), $(tr '\n' ' ' < "$work/out" | head -c 300)"; fi
+
+# 36. A Linux desktop whose first setup ran without python3-venv: that left a .venv-capture with a python and no pip.
+#     Once python3-venv is there, the next setup-capture makes it again and installs (it used to reuse it, and pip failed).
+linux="WSL_DISTRO_NAME= PATH=$work/venvbin:$work/bin:/usr/bin:/bin"
+rm -rf "$work/repo/.venv-capture"
+state no-ensurepip; EXTRA_ENV="$linux" run setup-capture; first_rc="$(cat "$work/rc")"; first_said="$(said "python3-venv" && echo y)"
+state; EXTRA_ENV="$linux" run setup-capture; second_rc="$(cat "$work/rc")"; last_call venv --clear; cleared=${#CALL[@]}
+last_call pip install; installed=${#CALL[@]}
+if [ "$first_rc" != 0 ] && [ "$first_said" = y ] && [ "$second_rc" = 0 ] && [ "$cleared" -gt 0 ] && [ "$installed" -gt 0 ]; then
+  ok "a .venv-capture left without pip is made again by the next setup-capture"
+else bad "a .venv-capture left without pip is made again by the next setup-capture" \
+         "first: rc $first_rc, names python3-venv: ${first_said:-n}; second: rc $second_rc, venv --clear $cleared, pip install $installed, $(tail -1 "$work/out")"; fi
+
+# 37. No GPU that fits a model: llm pull, install, doctor and status say one and the same line, once each, with no model
+#     "for this GPU" without a name and no other line about the CPU; the agent then gets the whole screen.
+# (taken out by fixed text, not a regex: some C.UTF-8 locales do not count every Hangul syllable as a character, and a
+# `.` in sed then stops short of the line's end)
+state; run llm pull; nofit="$(grep -m1 -F "쓰지 않음, 맞는 GPU 없음 (" "$work/out" | grep -F "  ! " | cut -c5-)"
+once() { [ -n "$nofit" ] && [ "$(grep -cxF "  ! $nofit" "$work/out")" = 1 ]; }
+cpu_lines() { grep -F "CPU" "$work/out" | grep -vxF "  ! $nofit"; }
+o_pull="$(once && echo y)"
+state; run install; o_install="$(once && echo y)"; noname="$(said "맞는 모델: ," && echo y)"; cpu="$(cpu_lines)"
+state; run doctor; o_doctor="$(once && echo y)"; cpu="$cpu$(cpu_lines)"
+state; cat > "$work/state/health.json" <<'JSON'
+{"ok": true, "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
+ "engines": {"ready": true,
+   "local": {"present": true, "on": true, "ok": false, "missing": true, "model": "sidenote-gemma4:26b", "fits": false, "gpu_gb": null},
+   "agent": {"present": true, "ok": true, "product": "Claude Code", "method": "claude.ai", "mode": "hard", "effective": "all", "payload": "crop"}}}
+JSON
+run status; o_status="$(once && echo y)"; screen="$(said "보내는 것: 화면 전체" && echo y)"
+if [ "$o_pull$o_install$o_doctor$o_status" = yyyy ] && [ -z "$noname$cpu" ] && [ "$screen" = y ]; then
+  ok "with no GPU that fits, llm pull, install, doctor and status say the same line once, and the agent gets the whole screen"
+else bad "with no GPU that fits, llm pull, install, doctor and status say the same line once, and the agent gets the whole screen" \
+         "line: ${nofit:-none}; once in pull, install, doctor, status: ${o_pull:-n}${o_install:-n}${o_doctor:-n}${o_status:-n}; model with no name: ${noname:-n}; other CPU lines: ${cpu:-none}; whole screen: ${screen:-n}"; fi
+
+# 38. The engines in status by the panel's names: the local model idle or on GPU, Solver settings, and what the agent
+#     takes beside what it sends (English, where the old names were).
+health_with() { cat > "$work/state/health.json" <<JSON
+{"ok": true, "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
+ "engines": {"ready": true, "local": $1,
+   "agent": {"present": true, "ok": true, "product": "Claude Code", "method": "claude.ai", "mode": "hard", "effective": "hard", "payload": "crop"}}}
+JSON
+}
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; idle="$(cat "$work/out")"
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": {"model": "sidenote-gemma4:26b", "vram_gb": 20.5}}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; loaded="$(cat "$work/out")"
+state; health_with '{"present": true, "on": false, "ok": true, "model": "sidenote-gemma4:26b"}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; off="$(cat "$work/out")"
+if grep -qF "Local model: idle (sidenote-gemma4:26b)" <<<"$idle" && grep -qF "Local model: on GPU (sidenote-gemma4:26b, 20.5 GB)" <<<"$loaded" \
+   && grep -qF "Local model: off (Solver settings in the panel)" <<<"$off" \
+   && grep -qF "takes hard problems of the chosen types, sends the problem area only" <<<"$idle" \
+   && ! grep -qiF "this PC's model" <<<"$idle$loaded$off"; then
+  ok "status names the local model, its idle and on-GPU states, Solver settings, and what the agent takes"
+else bad "status names the local model, its idle and on-GPU states, Solver settings, and what the agent takes" \
+         "$(grep -hE "model|Agent" <<<"$idle$loaded$off" | tr '\n' '|')"; fi
+
+# 39. What Docker itself says is passed on: a user outside the docker group is told so, and an NVIDIA GPU Docker cannot
+#     reach names the Container Toolkit and the CPU compose file (they used to read "check that Docker is running" and
+#     "exit code 1").
+state docker-denied; run up; denied="$(cat "$work/out")"
+state no-toolkit; run up; toolkit="$(cat "$work/out")"
+if grep -qF "docker 그룹" <<<"$denied" && grep -qF "NVIDIA Container Toolkit" <<<"$toolkit" && grep -qF "compose.cpu.yaml" <<<"$toolkit"; then
+  ok "up names the docker group and the NVIDIA Container Toolkit when Docker says those"
+else bad "up names the docker group and the NVIDIA Container Toolkit when Docker says those" \
+         "denied: $(tail -1 <<<"$denied"); toolkit: $(tail -1 <<<"$toolkit")"; fi
+
+# 40. uninstall on a Linux desktop: no Windows shortcut in the list, the capture packages' .venv-capture in it, the
+#     agents' login folders named as kept, and --yes goes on to remove the containers and the venv (it used to stop at
+#     the shortcut, which ends the script where there is no WSL).
+mkdir -p "$work/repo/.venv-capture/bin"
+state; EXTRA_ENV="WSL_DISTRO_NAME=" run uninstall; listed="$(cat "$work/out")"
+state; EXTRA_ENV="WSL_DISTRO_NAME=" run uninstall --yes; last_call docker down
+if ! grep -qF ".lnk" <<<"$listed" && grep -qF ".venv-capture" <<<"$listed" && grep -qF "~/.claude" <<<"$listed" \
+   && [ ${#CALL[@]} -gt 0 ] && [ ! -d "$work/repo/.venv-capture" ]; then
+  ok "uninstall on Linux lists what it made there, keeps the agents' logins, and --yes removes it"
+else bad "uninstall on Linux lists what it made there, keeps the agents' logins, and --yes removes it" \
+         "list: $(tr '\n' '|' <<<"$listed" | head -c 300); compose down: ${#CALL[@]}, venv left: $([ -d "$work/repo/.venv-capture" ] && echo yes || echo no)"; fi
+
+# 41. help, in both languages: README's three commands first, setup-capture, the capture options people type (--up,
+#     --no-tray, --no-auto-stitch), gpu status, and the CI check's switch.
+missing=""
+for lang in en ko; do
+  EXTRA_ENV="SIDENOTE_LANG=$lang" run help
+  for w in "./sidenote install, " "./sidenote llm pull, " "./sidenote capture --up" "setup-capture" "--no-tray" "--no-auto-stitch" \
+           "--up (" "gpu status" "SIDENOTE_CI_GATE=1"; do
+    said "$w" || missing="$missing $lang:$w"
+  done
+done
+if [ -z "$missing" ]; then ok "help names the start commands, setup-capture, the capture options, gpu status and the CI switch"
+else bad "help names the start commands, setup-capture, the capture options, gpu status and the CI switch" "missing:$missing"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Sidenote Panel</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='8' fill='%23121826'/%3E%3Cpath d='M10 12h12M10 20h7' stroke='%23e8f0ff' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='22' cy='20' r='2.4' fill='%23f2bd8a'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect x=%222.5%22 y=%222.5%22 width=%2259%22 height=%2259%22 rx=%2213%22 fill=%22%23fafaf7%22 stroke=%22%231a1e28%22 stroke-width=%224%22/%3E%3Cpolygon points=%228.77,34 54.77,34 51.58,49 5.58,49%22 fill=%22%23e8c840%22/%3E%3Cpath d=%22M32.2 49.7 L29.7 49.6 L28.1 49.4 L26.7 49.1 L25.4 48.7 L24.2 48.2 L23.1 47.6 L22.1 47.0 L20.9 45.8 L20.2 44.9 L19.6 44.0 L19.1 43.0 L18.8 41.9 L18.5 40.7 L18.4 39.5 L18.4 38.2 L25.9 36.6 L26.0 37.7 L26.2 38.7 L26.5 39.6 L26.9 40.3 L27.3 41.0 L28.2 41.8 L28.9 42.2 L29.6 42.6 L30.4 42.8 L31.7 43.1 L33.3 43.1 L34.3 43.0 L35.2 42.7 L36.3 42.3 L36.9 41.8 L37.5 41.1 L37.6 40.7 L37.7 40.3 L37.7 39.8 L37.6 39.3 L37.2 38.5 L36.8 38.1 L36.3 37.8 L35.4 37.2 L34.4 36.8 L26.5 34.4 L25.0 33.8 L23.5 33.1 L22.6 32.5 L21.8 32.0 L20.7 30.9 L19.8 29.7 L19.6 29.2 L19.1 28.3 L18.9 27.2 L18.8 26.0 L18.8 24.6 L19.0 23.1 L19.1 22.4 L19.6 21.1 L20.0 20.5 L20.8 19.4 L21.8 18.4 L22.3 17.9 L22.9 17.5 L24.2 16.8 L25.6 16.2 L26.3 16.0 L27.9 15.6 L29.6 15.4 L31.4 15.3 L33.3 15.4 L35.1 15.6 L36.0 15.8 L37.6 16.3 L39.1 17.0 L40.5 17.8 L41.6 18.8 L42.6 19.9 L43.1 20.5 L43.8 21.9 L44.0 22.6 L44.2 23.3 L44.4 25.0 L44.4 26.8 L37.0 27.9 L36.9 26.5 L36.8 25.6 L36.4 24.5 L35.8 23.6 L35.2 23.0 L34.3 22.4 L33.2 21.9 L32.2 21.8 L31.2 21.7 L29.8 21.8 L28.9 22.0 L27.9 22.4 L27.2 23.0 L26.8 23.6 L26.6 24.1 L26.5 25.1 L26.7 25.8 L27.1 26.4 L27.8 26.9 L28.6 27.4 L30.4 28.0 L35.3 29.5 L38.0 30.4 L40.1 31.3 L42.0 32.4 L42.8 33.0 L43.6 33.8 L44.2 34.6 L44.8 35.6 L45.0 36.1 L45.4 37.2 L45.6 39.1 L45.6 40.6 L45.5 41.4 L45.4 42.1 L45.0 43.5 L44.7 44.1 L43.9 45.3 L43.0 46.3 L42.4 46.8 L41.9 47.2 L40.6 48.0 L39.9 48.3 L38.4 48.9 L36.8 49.3 L35.0 49.5Z%22 fill=%22%231a1e28%22/%3E%3C/svg%3E" />
 <script src="theme.js"></script>
 <!-- The panel's words (English in the code, a table per other language), before anything draws them: app.js translates this page first -->
 <script src="i18n.js"></script>
@@ -971,9 +971,8 @@
   .facts .lit.ok { color: var(--ok); --lamp: var(--ok); } .facts .lit.off { color: var(--ink-2); --lamp: var(--off); }
   .facts .model { font-family: var(--mono); font-size: 12px; color: var(--ink); }
   .facts .warn { color: var(--warn); }
-  /* The one thing to do about it, when there is one. */
-  .src-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--graphite);
-    padding-left: 9px; border-left: 2px solid var(--rule-2); }
+  /* The one thing to do about it, when there is one: plain text under the card's rows, as the other notes are, with no bar beside it */
+  .src-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--graphite); }
   .src-note b { color: var(--ink-2); font-weight: 650; }
   /* A track sunk into the surface with a raised knob riding in it. */
   .switch { position: relative; width: 40px; height: 24px; border-radius: 12px; border: 0; padding: 0; cursor: pointer;
@@ -1070,7 +1069,10 @@
      actually coming in. */
   .hear h2 { display: flex; align-items: center; gap: 8px; }
   .hear .lang { margin-left: auto; font-weight: 600; color: var(--graphite); font-size: 12px; }
+  /* Only while words are coming in: three still stubs at rest read as a menu's dots beside the title, and did nothing when pressed.
+     Hidden rather than taken out, so the title's line keeps its place when they come */
   .hear .ears { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+  .hear:not(.live) .ears { visibility: hidden; }
   .hear .ears i { width: 3px; height: 11px; border-radius: 1.5px; background: var(--rule-2); transform: scaleY(.27); transform-origin: bottom; }
   .hear.live .ears i { background: var(--pen); animation: ear 1.1s ease-in-out infinite; }
   .hear.live .ears i:nth-child(2) { animation-delay: .18s; }
@@ -1466,7 +1468,7 @@
   :root[data-skin="classic"] .rail .card, :root[data-skin="classic"] .rail.stick .card { background: var(--pane); border: 1px solid var(--pane-line); border-radius: 16px;
     backdrop-filter: blur(20px) saturate(1.25); -webkit-backdrop-filter: blur(20px) saturate(1.25); box-shadow: inset 0 1px 0 var(--pane-top), 0 12px 32px -14px rgba(0, 0, 0, .5); }
   :root[data-skin="classic"] .rail .card::before { display: none; }
-  :root[data-skin="classic"] .rail :is(.gpu-viz, .agent-who) { background: var(--pane-well); box-shadow: none; border-radius: 12px; }
+  :root[data-skin="classic"] .rail .agent-who { background: var(--pane-well); box-shadow: none; border-radius: 12px; }
   :root[data-skin="classic"] .rail .agent-tiles > div { border-color: var(--pane-line); }
   :root[data-skin="classic"] .rail .src + .src { border-top: 1px solid var(--pane-line); }
   :root[data-skin="classic"] .rail .pill[data-state] { background: transparent; border-color: transparent; padding-left: 0; }
@@ -1653,8 +1655,22 @@
   :root[data-skin="classic"] .switch[aria-checked="false"] { background: color-mix(in srgb, var(--pen-red) 22%, var(--well)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pen-red) 70%, transparent); }
   :root[data-skin="classic"] .switch[aria-checked="true"] { background: #1f9460; }
   :root[data-skin="classic"] .switch[data-idle="true"][aria-checked="true"] { background: color-mix(in srgb, #2eb67d 45%, var(--rule-2)); }
-  /* The readings are all in the right column, which is always in view; a fault comes up as a band. The bar holds the name and the actions */
+  /* The readings are all in the right column, which is in view beside the answers; a fault comes up as a band. The bar holds the name and
+     the actions. In one column (1000 px and under) that column stands under the whole thread, thousands of pixels down: the bar keeps the
+     readings there, on its second row where the first has no room (780 px and under), written on the bar with no rule before them */
   :root[data-skin="classic"] .signals { display: none; }
+  @media (max-width: 1000px) { :root[data-skin="classic"] .signals { display: flex; } }
+  /* On the brand's row their words stand on its baseline: centred, they stood 2.9 px over it */
+  @media (min-width: 781px) and (max-width: 1000px) { :root[data-skin="classic"] .signals { position: relative; top: 3px; } }
+  @media (max-width: 780px) { :root[data-skin="classic"] .signals { padding: 0; border-left: 0; } }
+  /* the five on one line at 360 px in English too ("Local model" is its longest name): the narrow gaps the plain bar takes there */
+  @media (max-width: 410px) { :root[data-skin="classic"] .signals { gap: 4px 10px; } :root[data-skin="classic"] .signal { gap: 5px; } }
+  /* English names its kinds in longer words than Korean ("Algorithm" 81 px wide against "알고리즘" 60 px): its margin is 20 px wider and
+     its right padding 10 px, so every chip ends inside the red rule. Under 821 px there is no margin */
+  @media (min-width: 821px) {
+    :root[data-skin="classic"][lang="en"] { --mg-w: 112px; }
+    :root[data-skin="classic"][lang="en"] .mg { padding-right: 10px; }
+  }
   /* A close mark needs no box round it */
   :root[data-skin="classic"] #settings-close, :root[data-skin="classic"] #settings-close:hover:not(:disabled) { border: 0; background: none; box-shadow: none; color: var(--graphite); }
   :root[data-skin="classic"] #settings-close:hover:not(:disabled) { color: var(--ink); }
@@ -1744,7 +1760,10 @@
     :root[data-skin="classic"] .row.head { position: relative; min-height: 28px; align-items: center; }
     :root[data-skin="classic"] .row.head .mg { padding-top: 0; }
     :root[data-skin="classic"] .row.head .mg time { position: absolute; left: calc(var(--mg-w) + 24px); top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--graphite); }
+    /* The room kept for the date, the widest one and 13 px: 133 px in Korean, 149 px in English ("01.07(Wed) 12:00 AM"; Pretendard's
+       figures are all one width), where 146 px ran its AM into "Solving" */
     :root[data-skin="classic"] .row.head .headline { justify-content: flex-end; padding-left: 146px; }
+    :root[data-skin="classic"][lang="en"] .row.head .headline { padding-left: 162px; }
   }
   /* The contents' margin: a date and a time, one over the other */
   :root[data-skin="classic"] .h time { display: grid; font-size: 11px; line-height: 1.3; }
@@ -1999,8 +2018,8 @@
   :root[data-skin="classic"] .rail .switch[data-dead="true"][aria-checked]::after { background: #85868c; box-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
   :root[data-skin="classic"] .rail .steps3 i { background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
   :root[data-skin="classic"] .rail .steps3 i.on { background: linear-gradient(180deg, rgba(120, 240, 190, .85), rgba(46, 182, 125, .85)); box-shadow: 0 0 6px -1px rgba(46, 182, 125, .6); }
-  :root[data-skin="classic"] .rail :is(.gpu-viz, .agent-who) { background: rgba(0, 0, 0, .2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
-  :root[data-skin="classic"][data-theme="light"] .rail :is(.gpu-viz, .agent-who) { background: rgba(255, 255, 255, .5); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+  :root[data-skin="classic"] .rail .agent-who { background: rgba(0, 0, 0, .2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
+  :root[data-skin="classic"][data-theme="light"] .rail .agent-who { background: rgba(255, 255, 255, .5); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
   :root[data-skin="classic"][data-theme="light"] .rail .switch:not([aria-checked="true"]) { background: linear-gradient(180deg, rgba(0, 0, 0, .06), rgba(0, 0, 0, .02)), #d8d9de; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15), inset 0 0 0 1px rgba(0, 0, 0, .1); }
   :root[data-skin="classic"][data-theme="light"] .rail .steps3 i:not(.on) { background: rgba(0, 0, 0, .08); box-shadow: none; }
   /* GPU Release: the words read at a glance */
@@ -2108,7 +2127,9 @@
     :root[data-skin="classic"] .row.head.err .mg time { top: 14px; }
   }
   /* A key named in a sentence is drawn with its mark, as it stands on the page: the word alone is not on the key */
-  .key-hint { display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; margin: 0 1px; font-weight: 650; white-space: nowrap; color: var(--ink); background: color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 2px; }
+  /* What follows it touches its edge: a Korean particle ("[영역 그리기]로") or a comma belongs to the key's word, and at 5 px in and
+     1 px out it read as a word of its own */
+  .key-hint { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px 0 5px; margin: 0 0 0 1px; font-weight: 650; white-space: nowrap; color: var(--ink); background: color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 2px; }
   .key-hint svg { width: 13px; height: 13px; flex: none; }
   /* The gear is a key of the same set as the two beside it */
   :root[data-skin="classic"] .actions #more:not(:active):not(:hover) { color: var(--ink); background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .07)); border: 1px solid rgba(255, 255, 255, .18); border-top-color: rgba(255, 255, 255, .34); box-shadow: 0 3px 8px -3px rgba(0, 0, 0, .55); }
@@ -2211,7 +2232,7 @@
   /* What is meant to stand out keeps the highlighter here too (the GPU card's "loads by itself when a problem comes"); it had once been made grey small print */
   :root[data-skin="classic"] .rail .facts mark.key { padding: 0; margin: 0; }
   /* The GPU's two gauges on one line: their names, their pictures on one foot, what is under them */
-  :root[data-skin="classic"] .rail .gpu-viz { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; margin-top: 7px; padding: 7px 10px; }
+  :root[data-skin="classic"] .rail .gpu-viz { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; margin-top: 7px; padding: 0; }
   :root[data-skin="classic"] .rail .gpu-viz > div:not(.foot) { display: grid; grid-template-rows: auto 18px auto; align-content: start; min-width: 0; }
   :root[data-skin="classic"] .rail .gpu-viz .k { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin: 0 !important; font-size: 11.5px; line-height: 1.4; color: var(--graphite); }
   :root[data-skin="classic"] .rail .gpu-viz .k b { font-size: 13px; font-weight: 720; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -2562,7 +2583,10 @@
   :root[data-skin="classic"] .rail .usage .bars-key { margin-top: 6px; }
   :root[data-skin="classic"] .rail .usage-sub { margin-top: 10px; padding-top: 8px; }
   :root[data-skin="classic"] .rail .usage-err { margin-top: 6px; }
-  :root[data-skin="classic"] .rail .gpu-viz { margin-top: 10px; padding: 10px 12px; }
+  /* The GPU's readings written on the card as its other rows are, set apart by the space over them: no well, no frame round them */
+  :root[data-skin="classic"] .rail .gpu-viz { margin-top: 12px; padding: 0; background: none; box-shadow: none; border-radius: 0; }
+  /* its warmth and power one more row under the gauges, by the space over it: the one rule on the card is the figures' under it */
+  :root[data-skin="classic"] .rail .gpu-viz .foot { border-top: 0; padding-top: 6px; }
 
   /* The agent's profile: who is signed in, as a profile. Not a yellow initial that stood out, not a dark well, not a bare line */
   :root[data-skin="classic"] .rail .agent-viz { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 10px; }
@@ -2718,7 +2742,8 @@
   :root[data-skin="classic"] .rail #card-agent .agent-viz + .facts { grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); column-gap: 12px; }
   :root[data-skin="classic"] .rail #card-agent .agent-viz + .facts > .fact:nth-child(n+3) { grid-column: 1 / -1; }
   :root[data-skin="classic"] .rail .usage-top { grid-template-columns: calc(var(--col-name) + var(--col-gap)) calc(55% + 5.4px - var(--col-name) - var(--col-gap)) calc(var(--col-name) + var(--col-gap)) minmax(0, 1fr); }
-  :root[data-skin="classic"] .rail .gpu-viz { grid-template-columns: calc(55% - 7.4px) minmax(0, 1fr); column-gap: 14px; }
+  /* its second gauge on the second half's line, 55 % and 5.4 px in, as the second figure of the tiles under it (.usage-top) */
+  :root[data-skin="classic"] .rail .gpu-viz { grid-template-columns: calc(55% - 8.6px) minmax(0, 1fr); column-gap: 14px; }
   /* the screen's and the sound's first values at 66 too: at 55 % a monitor's size fits before the second half */
   :root[data-skin="classic"] .rail .card:not(.engine) .fact dt { min-width: var(--col-name); }
 
@@ -2813,11 +2838,12 @@
         </div>
         <h3 data-t>Motion</h3>
         <div class="seg" id="motion-seg">
-          <button type="button" data-motion="on" data-t>Full</button><button type="button" data-motion="system" title="Follows the Windows animation setting" data-t data-t-title>Auto</button><button type="button" data-motion="off" data-t>None</button>
+          <button type="button" data-motion="on" data-t>Full</button><button type="button" data-motion="system" title="Follows the system's reduced motion setting" data-t data-t-title>Auto</button><button type="button" data-motion="off" data-t>None</button>
         </div>
         <h3 data-t>Language</h3>
+        <!-- the languages in the order Solver settings > Speech gives the same choices -->
         <div class="seg" id="lang-seg">
-          <button type="button" data-lang="auto" title="Follows the browser's language" data-t data-t-title>Auto</button><button type="button" data-lang="en" lang="en">English</button><button type="button" data-lang="ko" lang="ko">한국어</button>
+          <button type="button" data-lang="auto" title="Follows the browser's language" data-t data-t-title>Auto</button><button type="button" data-lang="ko" lang="ko">한국어</button><button type="button" data-lang="en" lang="en">English</button>
         </div>
         <hr />
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>

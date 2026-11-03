@@ -26,12 +26,12 @@ body:
     id: how
     attributes:
       label: How it went
-      description: Did it start without changes? How long did the first answer to an easy question take (the panel's card shows it)? Anything you had to change?
+      description: Did it start without changes? How long did the first answer to an easy question take (the local model's card shows it)? What did you have to change?
     validations:
       required: true
   - type: textarea
     id: hardware
     attributes:
       label: What Sidenote found
-      description: From a checkout, the output of `python -m server.hardware --json`, or of `./sidenote doctor`. With the app, the local model's card in the panel (its model and GPU lines).
+      description: The output of `./sidenote doctor`, or from a checkout of `python3 -m server.hardware --json`. With the app, the local model's card in the panel (its model and GPU lines).
       render: text

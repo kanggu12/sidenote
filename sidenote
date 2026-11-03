@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sidenote control script: the one command to remember. Run `./sidenote help`.
-# The server runs in a container (docker compose); the screen/sound capture client is a
-# Windows program, started from here through WSL interop. It runs windowless with a tray icon and
+# The server runs in a container (docker compose). The screen and sound capture program runs in Windows Python,
+# started from here through WSL interop, or on a Linux desktop of its own. It runs windowless with a tray icon and
 # is ended from that icon or with `./sidenote capture-stop`; with --console it stays in the
 # terminal and Ctrl+C ends it.
 set -euo pipefail
@@ -70,6 +70,10 @@ PY
 COMPOSE_FILE="$(setting COMPOSE_FILE "")"
 [ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="compose.yaml:docker/compose.$(gpu_vendor).yaml"
 export COMPOSE_FILE
+# The CI check before a deploy is for maintainers: only with SIDENOTE_CI_GATE=1 (the environment or .env) does `up`
+# ask gh what CI said of the commit. Without it nothing here asks gh, and no command prints a CI line.
+CI_GATE="$(setting SIDENOTE_CI_GATE 0 | tr -d '[:space:]')"
+ci_gate_on() { [ "$CI_GATE" = 1 ]; }
 LOCAL_MODEL="$(setting SIDENOTE_LOCAL_MODEL auto)"            # auto: the largest measured model that fits the GPU
 BUSY_MODEL="$(setting SIDENOTE_LOCAL_BUSY_MODEL auto)"         # for while the GPU is busy; auto: the model's smaller one
 # The models `llm pull` fetches when none are named: the ones set, or for "auto" the largest measured model that fits
@@ -121,6 +125,24 @@ esac
 # Every message is written once in both languages, English first: `L "Server stopped." "서버를 멈췄습니다."` prints
 # the one UI_LANG picks. Functions cut out of this file by the tests need it defined as well (tests/ci_gate.py).
 L() { if [ "$UI_LANG" = ko ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+
+# With no NVIDIA or AMD GPU that has room for the smallest measured model, the same line wherever it comes up (llm pull,
+# install, doctor, status), and in full once in one command's output: the agent solves, the local model is not used,
+# and the smallest model can still run on the CPU, slowly (README, "What it runs on"). $1 is the level to print it at.
+NOFIT_SAID=0
+no_fit() {
+  if [ "$NOFIT_SAID" = 1 ]; then   # said already in this output: its first words only
+    "$1" "$(L "Local model: not used, no GPU fits it" "이 PC의 모델: 쓰지 않음, 맞는 GPU 없음")"; return 0
+  fi
+  NOFIT_SAID=1
+  if [ "$AGENT" = off ]; then      # and no agent either: then nothing solves, which is not a choice to leave quiet
+    "$1" "$(L "Local model: no GPU fits it, and the agent is off (SIDENOTE_AGENT=off), so nothing solves. ./sidenote llm pull gemma4:e2b runs it on the CPU, slowly" \
+              "이 PC의 모델: 맞는 GPU 없음, 에이전트도 꺼 둠 (SIDENOTE_AGENT=off): 풀 엔진 없음. ./sidenote llm pull gemma4:e2b로 CPU에서 느리게 실행 가능")"
+  else
+    "$1" "$(L "Local model: not used, no GPU fits it (no NVIDIA or AMD GPU with more than 6 GB). The agent solves every problem. Optional: ./sidenote llm pull gemma4:e2b, on the CPU, slowly" \
+              "이 PC의 모델: 쓰지 않음, 맞는 GPU 없음 (6GB를 넘는 NVIDIA나 AMD GPU 없음). 에이전트가 모든 문제를 풂. 원하면 ./sidenote llm pull gemma4:e2b (CPU에서 느리게)")"
+  fi
+}
 
 if [ -t 1 ]; then B=$'\e[1m'; G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; D=$'\e[2m'; N=$'\e[0m'
 else B='' G='' R='' Y='' D='' N=''; fi
@@ -177,7 +199,7 @@ in_image() {
   # the report in this terminal's language: the container does not see the host's locale (server/i18n.py cli_lang)
   if running; then docker exec -e SIDENOTE_LANG="$UI_LANG" sidenote python -m server.report "$@"
   else
-    docker image inspect sidenote:local >/dev/null 2>&1 || die "$(L "No image yet. Run ./sidenote up first" "이미지가 없습니다. 먼저 ./sidenote up")"
+    docker image inspect sidenote:local >/dev/null 2>&1 || die "$(L "No image yet. Run ./sidenote up first" "이미지가 없습니다. 먼저 ./sidenote up을 실행하세요")"
     docker run --rm -e TZ="${TZ:-Asia/Seoul}" -e SIDENOTE_LANG="$UI_LANG" -v "$LOG_PATH:/data/logs:ro" --entrypoint python sidenote:local -m server.report "$@"
   fi
 }
@@ -219,7 +241,23 @@ log_capture() {   # stdin -> terminal and capture.log, checking the size every 1
   done
 }
 
-docker_up() { docker info >/dev/null 2>&1 || die "$(L "Cannot connect to Docker. Check that Docker is running." "Docker에 연결할 수 없습니다. Docker가 켜져 있는지 확인하세요.")"; }
+# Why Docker cannot be used, as one line in this terminal's language, read from what `docker info` writes to stderr:
+# a user outside the docker group gets "permission denied" on the socket, which no restart of Docker mends; anything
+# else is said with Docker's own first line. Prints nothing and succeeds when Docker answers.
+docker_why() {
+  local err
+  err="$(docker info 2>&1 >/dev/null)" && return 0                     # stdout is the client's own details: not wanted
+  if grep -qi "permission denied" <<<"$err"; then
+    L "Docker refuses this user (permission denied on its socket). Add it to the docker group: sudo usermod -aG docker \$USER, then log out and in again." \
+      "Docker가 이 사용자를 거부합니다 (소켓 권한 없음). 이 사용자를 docker 그룹에 추가하고(sudo usermod -aG docker \$USER) 로그아웃했다가 다시 로그인하세요."
+  else
+    L "Cannot connect to Docker. Check that Docker is running." "Docker에 연결할 수 없습니다. Docker가 켜져 있는지 확인하세요."
+    err="$(grep -m1 -v '^[[:space:]]*$' <<<"$err" | cut -c1-200 || true)"   # Docker's first line, cut to fit a line
+    [ -z "$err" ] || printf ' (%s)' "$err"
+  fi
+  return 1
+}
+docker_up() { local why; why="$(docker_why)" || die "$why"; }
 
 clients() { health | json 'd["capture"]["clients"]' 2>/dev/null || echo 0; }
 
@@ -250,15 +288,15 @@ capture_follow() {
   # (under set -e a /health that takes too long just after a deploy would otherwise end ./sidenote up, saying nothing)
   theirs="$(health | json '((d.get("capture") or {}).get("caps") or {}).get("code", "")' 2>/dev/null)" || return 0
   if [ -z "$theirs" ]; then
-    warn "$(L "The capture program runs old code. Press Restart in its tray icon once ${D}(after that it restarts by itself on a deploy)${N}" \
-              "캡처 프로그램이 예전 코드로 돌고 있습니다. 트레이 아이콘에서 다시 시작을 한 번 눌러 주세요 ${D}(그 뒤로는 배포 때 스스로 다시 시작합니다)${N}")"
+    warn "$(L "The capture program runs old code. Press Restart capture in its tray icon once ${D}(after that it restarts by itself on a deploy)${N}" \
+              "캡처 프로그램이 예전 코드로 실행 중입니다. 트레이 아이콘에서 캡처 다시 시작을 한 번 누르세요 ${D}(그 뒤로는 배포 때 자동으로 다시 시작합니다)${N}")"
   elif [ "$theirs" != "$mine" ]; then
     if curl -fsS --max-time 3 -X POST "$URL/capture/restart?quiet=1" >/dev/null 2>&1; then
       ok "$(L "The capture program restarts into the new code too, when the screen and the server are quiet" \
-              "캡처 프로그램도 새 코드로, 화면과 서버가 쉬는 때에 다시 시작합니다")"
+              "캡처 프로그램도 화면과 서버가 한가할 때 새 코드로 다시 시작합니다")"
     else
       warn "$(L "Could not ask the capture program to restart. Ask again with ./sidenote capture-restart" \
-                "캡처 프로그램에 다시 시작을 부탁하지 못했습니다. ./sidenote capture-restart 로 다시 부탁하세요")"
+                "캡처 프로그램에 다시 시작을 요청하지 못했습니다. ./sidenote capture-restart로 다시 요청하세요")"
     fi
   fi
 }
@@ -268,16 +306,17 @@ wait_idle() {
   [ "${UP_NOW:-0}" = 1 ] && return 0
   running && [ -n "$(in_use)" ] || return 0
   echo "  $(L "Sidenote is in use: it restarts once it is idle ${D}(--now to restart at once)${N}" \
-              "Sidenote를 쓰는 중이라 쉴 때까지 기다렸다가 다시 시작합니다 ${D}(바로 하려면 --now)${N}")"
+              "Sidenote를 사용 중이라 쉴 때까지 기다린 뒤 다시 시작합니다 ${D}(바로 하려면 --now)${N}")"
   local waited=0
   while [ -n "$(in_use)" ]; do
     sleep 15; waited=$((waited + 15))
     (( waited % 300 == 0 )) && echo "  ${D}$(L "waiting for $((waited / 60)) min" "$((waited / 60))분째 기다리는 중")${N}"
   done
-  echo "  $(L "Idle: restarting" "쉬고 있어 다시 시작합니다")"
+  echo "  $(L "Idle: restarting" "쉬는 중이라 다시 시작합니다")"
 }
 
 # What CI said of this commit: success, failure, running, or nothing when that cannot be known (no gh, not signed in, a commit not pushed yet).
+# Asked only with the gate on (ci_gate_on); tests/ci_gate.py runs it and ci_gate on their own, with a stand-in gh.
 ci_state() {
   command -v gh >/dev/null 2>&1 || return 0
   local sha; sha="$(git rev-parse HEAD 2>/dev/null)" || return 0
@@ -285,20 +324,21 @@ ci_state() {
     --jq 'if length == 0 then "" elif .[0].status != "completed" then "running" else .[0].conclusion end' 2>/dev/null || true
 }
 
-# The deploy's gate: a commit CI has failed does not go up unless asked (--no-ci). What CI has not seen goes up, and says so: uncommitted work, a commit still being
-# checked, a PC with no gh. Waiting for the answer is for --when-green. Never prompts for input.
+# The deploy's gate, with SIDENOTE_CI_GATE=1: a commit CI has failed does not go up unless asked (--no-ci). What CI has
+# not seen goes up, and says so: uncommitted work, a commit still being checked, a PC with no gh. Waiting for the
+# answer is for --when-green. Never prompts for input.
 ci_gate() {
   [ "${UP_NO_CI:-0}" = 1 ] && return 0
   local dirty="" state waited=0 limit="${CI_WAIT_LIMIT:-2400}" every="${CI_WAIT_EVERY:-30}"
   if [ -n "$(git status --porcelain 2>/dev/null | grep -vE '^\?\?' | head -1)" ]; then
     dirty=1
-    warn "$(L "Deploying uncommitted changes. CI has not checked this code." "커밋하지 않은 변경을 올립니다. CI를 거치지 않은 코드입니다.")"
+    warn "$(L "Deploying uncommitted changes. CI has not checked this code." "커밋하지 않은 변경을 배포합니다. CI를 거치지 않은 코드입니다.")"
   fi
   state="$(ci_state)"
   if [ "${UP_WHEN_GREEN:-0}" = 1 ] && [ -z "$dirty" ]; then   # what is not committed CI will never answer for
     until [ -n "$state" ] && [ "$state" != running ]; do
       (( waited >= limit )) && die "$(L "No CI result after $((limit / 60)) min. Not deployed. (--no-ci deploys anyway)" \
-                                         "CI 결과를 $((limit / 60))분 기다렸지만 나오지 않았습니다. 올리지 않았습니다. (--no-ci로 그냥 올릴 수 있습니다)")"
+                                         "CI 결과가 $((limit / 60))분 동안 나오지 않아 배포하지 않았습니다 (--no-ci면 그대로 배포)")"
       (( waited == 0 )) && echo "  $(L "Waiting for CI ${D}(this commit: $(git rev-parse --short HEAD))${N}" \
                                        "CI 결과를 기다립니다 ${D}(이 커밋: $(git rev-parse --short HEAD))${N}")"
       sleep "$every"; waited=$((waited + (every > 0 ? every : 1)))
@@ -306,14 +346,14 @@ ci_gate() {
     done
   fi
   case "$state" in
-    success) ok "$(L "CI passed this commit" "CI 통과한 커밋입니다") ${D}($(git rev-parse --short HEAD))${N}" ;;
-    running) warn "$(L "Deploying a commit CI is still checking ${D}(--when-green to wait)${N}" "CI가 아직 도는 중인 커밋을 올립니다 ${D}(기다리려면 --when-green)${N}")" ;;
+    success) ok "$(L "CI passed this commit" "CI를 통과한 커밋입니다") ${D}($(git rev-parse --short HEAD))${N}" ;;
+    running) warn "$(L "Deploying a commit CI is still checking ${D}(--when-green to wait)${N}" "CI가 아직 검사 중인 커밋을 배포합니다 ${D}(기다리려면 --when-green)${N}")" ;;
     failure|cancelled|timed_out|startup_failure)
       # With changes on top too: they may mend it, and then a commit will say so; until then the failure stands
       die "$(L "This commit failed CI ($state). Fix it first, or deploy anyway with ./sidenote up --no-ci" \
-               "이 커밋은 CI를 통과하지 못했습니다 ($state). 고친 뒤 올리거나, 그래도 올리려면 ./sidenote up --no-ci")" ;;
+               "이 커밋은 CI를 통과하지 못했습니다($state). 고친 뒤 배포하거나, 그대로 배포하려면 ./sidenote up --no-ci")" ;;
     *) if [ "${UP_WHEN_GREEN:-0}" = 1 ] && [ -z "$dirty" ]; then
-         die "$(L "The CI result is unknown (check the gh login and that the commit is pushed)." "CI 결과를 알 수 없습니다 (gh 로그인, 푸시 여부 확인).")"
+         die "$(L "The CI result is unknown (check the gh login and that the commit is pushed)." "CI 결과를 알 수 없습니다 (gh 로그인과 푸시 여부를 확인하세요).")"
        fi
        warn "$(L "The CI result is unknown ${D}(no gh, not signed in, or a commit not pushed yet)${N}" \
                  "CI 결과를 알 수 없습니다 ${D}(gh가 없거나 로그인 전, 또는 아직 푸시하지 않은 커밋)${N}")" ;;
@@ -324,15 +364,15 @@ ci_gate() {
 # ./sidenote qa [server|panel]: the same suites CI runs, on this PC, with the interpreters tests/README.md sets up
 cmd_qa() {
   local py="${PY:-.venv/bin/python}" pw="${PW:-.venv-panel/bin/python}"
-  [ -x "$py" ] || die "$(L "No Python for the server suites: $py (the setup in tests/README.md)" "서버 묶음용 파이썬이 없습니다: $py (tests/README.md의 준비 절차)")"
+  [ -x "$py" ] || die "$(L "No Python for the server suites: $py (the setup in tests/README.md)" "서버 테스트 묶음용 Python이 없습니다: $py (준비 방법은 tests/README.md)")"
   if [ "${1:-}" != server ]; then
-    [ -x "$pw" ] || die "$(L "No Python for the panel suites: $pw (the setup in tests/README.md)" "패널 묶음용 파이썬이 없습니다: $pw (tests/README.md의 준비 절차)")"
+    [ -x "$pw" ] || die "$(L "No Python for the panel suites: $pw (the setup in tests/README.md)" "패널 테스트 묶음용 Python이 없습니다: $pw (준비 방법은 tests/README.md)")"
   fi
   PY="$py" PW="$pw" tests/run.sh "$@"
 }
 
 cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./sidenote restart)
-  command -v docker >/dev/null || die "$(L "docker is not installed." "docker가 없습니다.")"
+  command -v docker >/dev/null || die "$(L "docker is not installed." "docker가 설치되어 있지 않습니다.")"
   docker_up
   ensure_dirs
   note_account
@@ -347,7 +387,7 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   local xv; xv="$(codex_version)"
   [ -n "$xv" ] && export SIDENOTE_CODEX_VERSION="$xv"
   echo "$(L "${B}Starting the server${N} ${D}(the first time, and after an agent CLI update, building the image takes a while)${N}" \
-            "${B}서버를 시작합니다${N} ${D}(처음이나 에이전트 CLI가 업데이트된 뒤에는 이미지를 만드느라 시간이 걸립니다)${N}")"
+            "${B}서버를 시작합니다${N} ${D}(처음과 에이전트 CLI 업데이트 뒤에는 이미지 빌드에 시간이 걸립니다)${N}")"
   local rc=0 out; out="$(mktemp)"
   # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
   # during it had the container replaced under it, the very thing the wait is there to prevent.
@@ -362,10 +402,16 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
     [ "$(docker inspect -f '{{.State.Running}}' sidenote 2>/dev/null)" = false ] && docker rm -f sidenote >/dev/null 2>&1
     if grep -qiE "address already in use|port is already allocated" "$out"; then
       rm -f "$out"; die "$(L "Another program is using port ${PORT}. Close it, or set another port in .env (SIDENOTE_PORT=8778, say) and run ./sidenote up" \
-                             "포트(${PORT})를 다른 프로그램이 쓰고 있습니다. 그 프로그램을 끄거나, .env에 SIDENOTE_PORT=8778 처럼 다른 포트를 적은 뒤 ./sidenote up")"
+                             "다른 프로그램이 포트(${PORT})를 쓰고 있습니다. 그 프로그램을 끄거나, .env에 다른 포트를 적은 뒤(예: SIDENOTE_PORT=8778) ./sidenote up을 실행하세요")"
+    fi
+    # The local model's container asks for the NVIDIA GPU (docker/compose.nvidia.yaml), and Docker on Linux reaches it
+    # only through the NVIDIA Container Toolkit: without it compose says only this, and exits 1
+    if grep -q "could not select device driver" "$out"; then
+      rm -f "$out"; die "$(L "Docker cannot reach the NVIDIA GPU: install the NVIDIA Container Toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), or run without the GPU: COMPOSE_FILE=compose.yaml:docker/compose.cpu.yaml in .env" \
+                             "Docker가 NVIDIA GPU를 쓸 수 없습니다: NVIDIA Container Toolkit을 설치하거나(https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), GPU 없이 실행하려면 .env에 COMPOSE_FILE=compose.yaml:docker/compose.cpu.yaml")"
     fi
     rm -f "$out"; die "$(L "Could not start the server (docker compose exit code $rc). See the messages above." \
-                           "서버를 띄우지 못했습니다 (docker compose 종료 코드 $rc). 위 메시지를 확인하세요.")"
+                           "서버를 시작하지 못했습니다 (docker compose 종료 코드 $rc). 위 메시지를 확인하세요.")"
   fi
   rm -f "$out"
   docker image prune -f --filter label=org.sidenote.image >/dev/null 2>&1 || true   # only this project's old builds
@@ -374,14 +420,14 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   until health >/dev/null; do
     if ! running; then   # it stopped while starting (a crash): say so now, not after minutes
       echo; docker logs --tail 15 sidenote 2>&1 | sed 's/^/  /'
-      die "$(L "The server stopped while starting. See the log above." "서버가 시작하다 멈췄습니다. 위 로그를 확인하세요.")"
+      die "$(L "The server stopped while starting. See the log above." "서버가 시작 중에 멈췄습니다. 위 로그를 확인하세요.")"
     fi
     if (( SECONDS - t0 > 240 )); then   # the first start loads the speech model: well under four minutes
       echo
       [ "$(docker inspect -f '{{.State.Health.Status}}' sidenote 2>/dev/null)" = healthy ] \
         && die "$(L "The server is up, but this PC cannot reach $URL. Start it again with ./sidenote down and ./sidenote up." \
-                    "서버는 켜졌는데 이 PC에서 $URL에 닿지 않습니다. ./sidenote down 후 ./sidenote up 으로 다시 띄우세요.")"
-      die "$(L "The server does not answer. See ./sidenote logs." "서버가 응답하지 않습니다. ./sidenote logs 로 확인하세요.")"
+                    "서버는 켜졌지만 이 PC에서 $URL에 연결되지 않습니다. ./sidenote down 뒤 ./sidenote up으로 다시 시작하세요.")"
+      die "$(L "The server does not answer. See ./sidenote logs." "서버가 응답하지 않습니다. ./sidenote logs로 확인하세요.")"
     fi
     printf '.'; sleep 1
   done
@@ -411,13 +457,13 @@ cmd_status() {
   local h; h="$(health || true)"
   echo
   if [ -z "$h" ]; then
-    if running; then warn "$(L "Server: starting  ${D}(./sidenote status again in a moment)${N}" "서버: 시작하는 중  ${D}(잠시 뒤 다시 ./sidenote status)${N}")"
-    else bad "$(L "Server: off (./sidenote up)" "서버: 꺼져 있음 (./sidenote up)")"; fi
+    if running; then warn "$(L "Server: starting  ${D}(./sidenote status again in a moment)${N}" "서버: 시작 중  ${D}(잠시 뒤 다시 ./sidenote status)${N}")"
+    else bad "$(L "Server: off (./sidenote up)" "서버: 꺼짐 (./sidenote up)")"; fi
     return 0
   fi
   ok "$(L "Server: running" "서버: 실행 중")  ${B}${URL}${N}"
-  # What is running against what is here, and what CI said of this commit
-  local built here state
+  # What is running against what is here
+  local built here
   built="$(echo "$h" | json 'd.get("build") or ""' 2>/dev/null)"
   # the same sum as the server's panel_build(): the panel's own files and its translation tables
   here="$(python3 -c '
@@ -429,16 +475,21 @@ for p in sorted(files, key=lambda p: p.relative_to(here).as_posix()):
     h.update(p.relative_to(here).as_posix().encode()); h.update(p.read_bytes())
 print(h.hexdigest()[:12])' 2>/dev/null)"
   if [ -n "$built" ] && [ -n "$here" ]; then
-    if [ "$built" = "$here" ]; then ok "$(L "Deploy: the panel running is this code's" "배포: 지금 코드의 패널이 떠 있습니다") ${D}($built)${N}"
-    else warn "$(L "Deploy: the panel running differs from this code" "배포: 떠 있는 패널이 지금 코드와 다릅니다") ${D}(./sidenote up)${N}"; fi
+    if [ "$built" = "$here" ]; then ok "$(L "Deploy: the running panel is this code's" "배포: 실행 중인 패널이 지금 코드와 같음") ${D}($built)${N}"
+    else warn "$(L "Deploy: the running panel differs from this code" "배포: 실행 중인 패널이 지금 코드와 다름") ${D}(./sidenote up)${N}"; fi
   fi
-  state="$(ci_state)"
-  case "$state" in
-    success) ok "$(L "CI: this commit passed" "CI: 이 커밋 통과") ${D}($(git rev-parse --short HEAD))${N}" ;;
-    running) warn "$(L "CI: this commit is being checked" "CI: 이 커밋 도는 중")" ;;
-    "") ;;
-    *) bad "$(L "CI: this commit failed ($state)" "CI: 이 커밋 실패 ($state)")" ;;
-  esac
+  # What CI said of this commit, only for a maintainer who turned the check on. Never a ✗: doctor's verdict is about
+  # this PC's setup, and a commit's CI is not part of it.
+  if ci_gate_on; then
+    local state; state="$(ci_state)"
+    case "$state" in
+      success) ok "$(L "CI: this commit passed" "CI: 이 커밋 통과") ${D}($(git rev-parse --short HEAD))${N}" ;;
+      running) warn "$(L "CI: this commit is being checked" "CI: 이 커밋 검사 중")" ;;
+      "") ;;
+      *) warn "$(L "CI: this commit failed ($state), so up refuses it ${D}(--no-ci deploys anyway)${N}" \
+                   "CI: 이 커밋 실패($state), up이 배포하지 않음 ${D}(--no-ci면 그대로 배포)${N}")" ;;
+    esac
+  fi
   # The two engines as "level|line" pairs: one engine down while the other answers is a warning. The program is read
   # from a quoted here-document (its English has apostrophes), the language comes as its argument, and stdin stays
   # the health JSON. read stops at the end of the document and says so with status 1: not a failure here.
@@ -454,31 +505,42 @@ name = (T("Agent (%s)", "에이전트(%s)") % product) if product else T("Agent"
 login = C.get("login") or "./sidenote login"
 down = "warn" if ready else "bad"
 if L.get("present"):
-    g = L.get("loaded")
-    gpu = (T("not on the GPU", "GPU에 올라가 있지 않음") if not g else "" if g.get("unknown")
-           else T("on the GPU", "GPU에 올라가 있음") + (" %s GB" % g["vram_gb"] if g.get("vram_gb") else ""))
-    B = L.get("busy")
-    if not L.get("on"): print(T("warn|This PC's model: off (the panel's Solving settings)", "warn|이 PC의 모델: 꺼 둠 (패널의 풀이 설정)"))
-    elif L.get("ok") and B: print(T("warn|This PC's model: solving with %s, short of GPU memory (%s is loaded again soon)",
-                                    "warn|이 PC의 모델: GPU 메모리가 모자라 %s로 푸는 중 (%s는 곧 다시 올려 봄)") % (B.get("model", ""), L.get("model", "")))
-    elif L.get("ok"): print(T("ok|This PC's model: connected (%s%s)", "ok|이 PC의 모델: 연결됨 (%s%s)") % (L.get("model", ""), ", " + gpu if gpu else ""))
-    elif L.get("missing"): print(T("%s|This PC's model: model %s not downloaded (./sidenote llm pull)",
-                                   "%s|이 PC의 모델: 모델 %s가 없음 (./sidenote llm pull)") % (down, L.get("model", "")))
-    else: print(T("%s|This PC's model: not responding (./sidenote llm logs)", "%s|이 PC의 모델: 응답 없음 (./sidenote llm logs)") % down)
+    model, g, B = L.get("model", ""), L.get("loaded"), L.get("busy")
+    # where the model is, in the panel's words: idle (off the GPU, it loads by itself with the next problem), on the
+    # GPU with the memory it holds, or only connected when the model server does not say (not Ollama)
+    where = ((T("idle", "대기 중"), model) if not g else (T("connected", "연결됨"), model) if g.get("unknown")
+             else (T("on GPU", "GPU에 올라감"), model + (", %s GB" % g["vram_gb"] if g.get("vram_gb") else "")))
+    if not L.get("on"): print(T("warn|Local model: off (Solver settings in the panel)", "warn|이 PC의 모델: 꺼 둠 (패널의 풀이 설정)"))
+    elif L.get("ok") and B: print(T("warn|Local model: GPU busy, a smaller model solves (now %s, %s again soon)",
+                                    "warn|이 PC의 모델: GPU 바쁨, 작은 모델로 푸는 중 (지금 %s, 곧 다시 %s)") % (B.get("model", ""), model))
+    elif L.get("ok"): print(T("ok|Local model: %s (%s)", "ok|이 PC의 모델: %s (%s)") % where)
+    # no GPU has room for it: the launcher's no_fit says so, in the words llm pull, install and doctor use
+    elif L.get("missing") and L.get("fits") is False: print("%s|NOFIT" % down)
+    elif L.get("missing"): print(T("%s|Local model: %s not downloaded (./sidenote llm pull)",
+                                   "%s|이 PC의 모델: %s 없음 (./sidenote llm pull)") % (down, model))
+    else: print(T("%s|Local model: not responding (./sidenote llm logs)", "%s|이 PC의 모델: 응답 없음 (./sidenote llm logs)") % down)
 if C.get("present"):
     how = {"claude.ai": T("this PC's %s login", "이 PC의 %s 로그인") % (product or name),
            "chatgpt": T("this PC's %s login (ChatGPT)", "이 PC의 %s 로그인(ChatGPT)") % (product or name),
-           "api-key": T("API key", "API 키"), "mock": T("mock, for tests", "목업, 시험용")}.get(C.get("method"), C.get("method") or "")
-    what = {"hard": T("Hard problems of the chosen types", "고른 유형의 어려운 문제"), "verify": T("Checks this PC's model's answers", "이 PC의 모델이 푼 답 확인"),
-            "all": T("Every problem found", "찾은 문제 모두")}.get(C.get("effective"), "")
-    sent = {"crop": T("problem crop", "문제 부분 화면"), "text": T("problem text", "문제 글"), "screen": T("whole screen", "화면 전체")}.get(C.get("payload"), "")
-    if C.get("mode") == "off": print(T("warn|%s: off (the panel's Solving settings)", "warn|%s: 꺼 둠 (패널의 풀이 설정)") % name)
-    elif C.get("ok"): print(T("ok|%s: connected (%s). %s, sends: %s", "ok|%s: 연결됨 (%s). %s, 보내는 것: %s") % (name, how, what, sent))
-    elif C.get("rejected"): print(T("%s|%s: login expired, rejected (%s)", "%s|%s: 로그인이 만료되어 거부됨 (%s)") % (down, name, login))
-    else: print(T("%s|%s: sign-in needed (%s)", "%s|%s: 로그인 필요 (%s)") % (down, name, login))
-if not ready: print(T("bad|No engine can answer (see above, or the panel's Solving settings)", "bad|풀 수 있는 엔진이 없습니다 (위 항목, 또는 패널의 풀이 설정)"))
+           "api-key": T("API key", "API 키"), "mock": T("mock, for tests", "테스트용 목업")}.get(C.get("method"), C.get("method") or "")
+    # what it takes and what leaves this PC, as the panel's agent card says them: the cut-out problem and the
+    # written-out text both come from the local model, so with it off or down the whole screen goes (payloadNow)
+    what = {"hard": T("hard problems of the chosen types", "고른 유형의 어려운 문제"),
+            "verify": T("a check of the local model's answers", "이 PC의 모델이 푼 답 확인"),
+            "all": T("every problem", "모든 문제")}.get(C.get("effective"), "")
+    pay = (C.get("payload") or "crop") if L.get("present") and L.get("on") and L.get("ok") else "screen"
+    sent = {"crop": T("the problem area only", "문제 부분만"), "text": T("the problem text only", "문제 글만"),
+            "screen": T("the whole screen", "화면 전체")}.get(pay, "")
+    jobs = ", ".join(p for p in ((T("takes %s", "맡기는 문제: %s") % what) if what else "",
+                                 (T("sends %s", "보내는 것: %s") % sent) if sent else "") if p)
+    if C.get("mode") == "off": print(T("warn|%s: off (Solver settings in the panel)", "warn|%s: 꺼 둠 (패널의 풀이 설정)") % name)
+    elif C.get("ok"): print(T("ok|%s: connected (%s)", "ok|%s: 연결됨 (%s)") % (name, how) + (", " + jobs if jobs else ""))
+    elif C.get("rejected"): print(T("%s|%s: login expired (%s)", "%s|%s: 로그인 만료 (%s)") % (down, name, login))
+    else: print(T("%s|%s: login needed (%s)", "%s|%s: 로그인 필요 (%s)") % (down, name, login))
+if not ready: print(T("bad|No engine can answer (see above, or Solver settings in the panel)", "bad|풀 수 있는 엔진 없음 (위 항목, 또는 패널의 풀이 설정)"))
 ENGINES
   while IFS='|' read -r level line; do
+    if [ "$line" = NOFIT ]; then no_fit "$level"; continue; fi   # the one no-GPU line, at the level the server's state calls for
     case "$level" in ok) ok "$line" ;; warn) warn "$line" ;; *) bad "$line" ;; esac
   done < <(echo "$h" | python3 -c "$engines" "$UI_LANG" 2>/dev/null)
   local n screen audio server_audio; n="$(echo "$h" | json 'd["capture"]["clients"]')"
@@ -496,10 +558,10 @@ ENGINES
     # Windows gave no process list. Nothing is connected, which is what the server knows; whether one is
     # running and reconnecting cannot be said, so it is not claimed.
     warn "$(L "Capture program: not connected (./sidenote capture)  ${D}(could not read the Windows process list)${N}" \
-              "캡처 프로그램: 연결 안 됨 (./sidenote capture)  ${D}(Windows의 프로세스 목록은 읽지 못했습니다)${N}")"
+              "캡처 프로그램: 연결 안 됨 (./sidenote capture)  ${D}(Windows 프로세스 목록을 읽지 못함)${N}")"
   elif [ "$procs" != "0" ]; then
     warn "$(L "Capture program: reconnecting  ${D}(one that is running connects within seconds)${N}" \
-              "캡처 프로그램: 다시 연결하는 중  ${D}(캡처 프로그램이 떠 있으면 몇 초 안에 붙습니다)${N}")"
+              "캡처 프로그램: 다시 연결 중  ${D}(실행 중이면 몇 초 안에 연결됨)${N}")"
   else
     warn "$(L "Capture program: not connected (./sidenote capture)" "캡처 프로그램: 연결 안 됨 (./sidenote capture)")"
   fi
@@ -508,7 +570,7 @@ ENGINES
     if [ "$(echo "$h" | json 'd["runner"]["ok"]')" = True ]; then ok "$(L "Code runner: ready" "코드 실행기: 준비됨")"
     elif [ "$(docker inspect -f '{{.State.Running}}' sidenote-runner 2>/dev/null)" = true ]; then
       bad "$(L "Code runner: not responding (./sidenote restart)" "코드 실행기: 응답 없음 (./sidenote restart)")"   # up leaves a running container alone
-    else bad "$(L "Code runner: off (./sidenote up)" "코드 실행기: 꺼져 있음 (./sidenote up)")"; fi
+    else bad "$(L "Code runner: off (./sidenote up)" "코드 실행기: 꺼짐 (./sidenote up)")"; fi
   fi
   echo
   echo "  $(L "Open the panel" "패널 열기"): ${B}${URL}${N}   ${D}($(L "or ./sidenote open" "또는 ./sidenote open"))${N}"
@@ -516,7 +578,7 @@ ENGINES
 
 cmd_logs() {
   docker_up
-  running || die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼진 동안의 기록은 ./sidenote events)")"
+  running || die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼져 있던 동안의 이벤트는 ./sidenote events)")"
   docker compose logs -f --tail 60 server
 }
 
@@ -526,17 +588,17 @@ cmd_login() {   # the cloud agent uses this PC's own login; this signs it in whe
     codex) login_codex ;;
     claude|claude-code|"") login_claude ;;
     anthropic-api) die "$(L "The Anthropic API uses ANTHROPIC_API_KEY in .env, not a login." "Anthropic API는 로그인 대신 .env의 ANTHROPIC_API_KEY를 씁니다.")" ;;
-    *) die "$(L "Unknown agent: $which (claude-code or codex)" "모르는 에이전트입니다: $which (claude-code 또는 codex)")" ;;
+    *) die "$(L "Unknown agent: $which (claude-code or codex)" "알 수 없는 에이전트입니다: $which (claude-code 또는 codex)")" ;;
   esac
   if health >/dev/null; then
-    echo "  $(L "The server picks up the new login within 20 seconds. Now:" "서버가 20초 안에 새 로그인을 알아챕니다. 지금 상태:")"; cmd_status
+    echo "  $(L "The server picks up the new login within 20 seconds. Now:" "서버가 20초 안에 새 로그인을 반영합니다. 지금 상태:")"; cmd_status
   else
-    echo "  $(L "Next: ./sidenote up" "이제 ./sidenote up")"
+    echo "  $(L "Next: ./sidenote up" "다음: ./sidenote up")"
   fi
 }
 
 login_claude() {   # this only signs Claude Code in when it is not
-  command -v claude >/dev/null || die "$(L "claude is not installed on this server. Install Claude Code first." "이 서버에 claude가 없습니다. Claude Code를 먼저 설치하세요.")"
+  command -v claude >/dev/null || die "$(L "Claude Code (claude) is not installed on this PC. Install Claude Code first." "이 PC에 Claude Code(claude)가 설치되어 있지 않습니다. 먼저 Claude Code를 설치하세요.")"
   local how rejected; how="$(claude_login)"
   rejected="$(health | json 'd["auth"].get("rejected", False)' 2>/dev/null || true)"
   if [ -n "$how" ] && [ "$rejected" != True ]; then
@@ -546,8 +608,8 @@ login_claude() {   # this only signs Claude Code in when it is not
     [ -t 0 ] || die "$(L "Run the login in a terminal: ./sidenote login (one step signs in in a browser)" \
                          "로그인은 터미널에서 직접 실행하세요: ./sidenote login (브라우저에서 로그인하는 단계가 있습니다)")"
     echo "${B}$(L "Claude Code login" "Claude Code 로그인")${N} ${D}($(L "sign in in the browser, and the server uses this login too" "브라우저에서 로그인하면 서버도 이 로그인을 씁니다"))${N}"
-    claude auth login || die "$(L "Could not sign in. Try ./sidenote login again" "로그인하지 못했습니다. 다시 ./sidenote login")"
-    how="$(claude_login)"; [ -n "$how" ] || die "$(L "Not signed in yet. Try ./sidenote login again" "아직 로그인되지 않았습니다. 다시 ./sidenote login")"
+    claude auth login || die "$(L "Could not sign in. Try ./sidenote login again" "로그인하지 못했습니다. ./sidenote login을 다시 실행하세요")"
+    how="$(claude_login)"; [ -n "$how" ] || die "$(L "Not signed in yet. Try ./sidenote login again" "아직 로그인되지 않았습니다. ./sidenote login을 다시 실행하세요")"
     ok "$(L "Signed in ($how)." "로그인했습니다 ($how).")"
   fi
 }
@@ -567,14 +629,14 @@ login_codex() {
   [ -t 0 ] || die "$(L "Run the login in a terminal: ./sidenote login codex" "로그인은 터미널에서 직접 실행하세요: ./sidenote login codex")"
   if command -v codex >/dev/null 2>&1; then
     echo "${B}$(L "Codex login" "Codex 로그인")${N} ${D}($(L "sign in in the browser, and the server uses this login too" "브라우저에서 로그인하면 서버도 이 로그인을 씁니다"))${N}"
-    codex login || die "$(L "Could not sign in. Try ./sidenote login codex again" "로그인하지 못했습니다. 다시 ./sidenote login codex")"
+    codex login || die "$(L "Could not sign in. Try ./sidenote login codex again" "로그인하지 못했습니다. ./sidenote login codex를 다시 실행하세요")"
   elif running; then
-    echo "${B}$(L "Codex login" "Codex 로그인")${N} ${D}($(L "no codex on this server, so the server's own Codex signs in: enter the code at the address it shows" \
-                                                             "이 서버에 codex가 없어 서버 안의 Codex로 합니다: 보여 주는 주소에서 코드를 넣으세요"))${N}"
-    docker exec -it sidenote codex login --device-auth || die "$(L "Could not sign in. Try ./sidenote login codex again" "로그인하지 못했습니다. 다시 ./sidenote login codex")"
+    echo "${B}$(L "Codex login" "Codex 로그인")${N} ${D}($(L "no codex on this PC, so the server's own Codex signs in: enter the code at the address it shows" \
+                                                             "이 PC에 codex가 없어 서버 안의 Codex로 로그인합니다: 보여 주는 주소에서 코드를 입력하세요"))${N}"
+    docker exec -it sidenote codex login --device-auth || die "$(L "Could not sign in. Try ./sidenote login codex again" "로그인하지 못했습니다. ./sidenote login codex를 다시 실행하세요")"
   else
-    die "$(L "No codex on this server, and the server is off. Run ./sidenote up, then ./sidenote login codex again" \
-             "이 서버에 codex가 없고 서버도 꺼져 있습니다. ./sidenote up 뒤에 다시 ./sidenote login codex")"
+    die "$(L "No codex on this PC, and the server is off. Run ./sidenote up, then ./sidenote login codex again" \
+             "이 PC에 codex가 없고 서버도 꺼져 있습니다. ./sidenote up 뒤에 ./sidenote login codex를 다시 실행하세요")"
   fi
   ok "$(L "Signed in." "로그인했습니다.")"
 }
@@ -608,11 +670,11 @@ capture_running() {
 # The capture program restarts itself into the capture.py on disk now, as from its tray's Restart (after a deploy
 # it does so by itself at a quiet moment: capture_follow; this is for now). Asked through the server, like capture-stop.
 cmd_capture_restart() {
-  health >/dev/null || die "$(L "The server is off, so the capture program cannot be asked. ./sidenote up" "서버가 꺼져 있어 캡처 프로그램에 부탁할 수 없습니다. ./sidenote up")"
+  health >/dev/null || die "$(L "The server is off, so the capture program cannot be asked. ./sidenote up" "서버가 꺼져 있어 캡처 프로그램에 요청할 수 없습니다. ./sidenote up")"
   local n; n="$(curl -fsS --max-time 3 -X POST "$URL/capture/restart" 2>/dev/null | json 'd.get("asked", 0)' 2>/dev/null || echo 0)"
   if [ "${n:-0}" -gt 0 ]; then
-    ok "$(L "Asked ${n} capture program$([ "$n" = 1 ] || echo s) to restart (it takes a few seconds)" "캡처 프로그램 ${n}개에 다시 시작을 부탁했습니다 (몇 초 걸립니다)")"
-  else warn "$(L "No capture program is connected. Start one with ./sidenote capture" "연결된 캡처 프로그램이 없습니다. ./sidenote capture 로 켜세요")"; fi
+    ok "$(L "Asked ${n} capture program$([ "$n" = 1 ] || echo s) to restart (it takes a few seconds)" "캡처 프로그램 ${n}개에 다시 시작을 요청했습니다 (몇 초 걸립니다)")"
+  else warn "$(L "No capture program is connected. Start one with ./sidenote capture" "연결된 캡처 프로그램이 없습니다. ./sidenote capture로 시작하세요")"; fi
 }
 
 cmd_capture_stop() {
@@ -623,7 +685,7 @@ cmd_capture_stop() {
     # (A window message does not do it: the tray library answers WM_CLOSE with nothing at all.)
     if ! health >/dev/null; then
       warn "$(L "The server is off, so the capture program cannot be asked. Ending it by force ${D}(its tray icon may stay for a moment)${N}" \
-                "서버가 꺼져 있어 캡처 프로그램에 부탁할 수 없습니다. 강제로 끕니다 ${D}(트레이 아이콘이 잠깐 남아 있을 수 있습니다)${N}")"
+                "서버가 꺼져 있어 캡처 프로그램에 요청할 수 없습니다. 강제로 끕니다 ${D}(트레이 아이콘이 잠깐 남아 있을 수 있습니다)${N}")"
     fi
     curl -fsS --max-time 3 -X POST "$URL/capture/quit" >/dev/null 2>&1 || true
     local n=0
@@ -641,12 +703,17 @@ cmd_capture_stop() {
   left="$(capture_running)"
   if [ "$left" = "?" ]; then   # the stop went out, but whether it worked cannot be read
     bad "$(L "Could not read the Windows process list, so whether a capture program is left is not known. Look for python.exe and pythonw.exe in Task Manager." \
-             "Windows의 프로세스 목록을 읽지 못해 캡처 프로그램이 남았는지 확인하지 못했습니다. 작업 관리자에서 python.exe와 pythonw.exe를 확인하세요.")"
+             "Windows 프로세스 목록을 읽지 못해 캡처 프로그램이 남았는지 확인하지 못했습니다. 작업 관리자에서 python.exe와 pythonw.exe를 확인하세요.")"
     return 1
   fi
   if [ "$left" != "0" ]; then   # how many, as the user guide says it does
-    bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running. End python.exe or pythonw.exe in Task Manager." \
-             "캡처 프로그램 ${left}개가 아직 남아 있습니다. 작업 관리자에서 python.exe나 pythonw.exe를 끄세요.")"
+    if [ "$ON_WSL" = 1 ]; then   # Windows processes: Task Manager is where a user ends them
+      bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running. End python.exe or pythonw.exe in Task Manager." \
+               "캡처 프로그램 ${left}개가 아직 남아 있습니다. 작업 관리자에서 python.exe나 pythonw.exe를 끄세요.")"
+    else                         # this desktop's own: the command line that names them
+      bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running. End it with: pkill -9 -f 'client/capture.py --server'" \
+               "캡처 프로그램 ${left}개가 아직 남아 있습니다. 끄려면: pkill -9 -f 'client/capture.py --server'")"
+    fi
     return 1
   fi
   [ "${1:-}" = quiet ] && return 0
@@ -671,7 +738,7 @@ check_win_args() {
   for a in "$@"; do
     [[ $a =~ $WIN_UNSAFE ]] || continue
     die "$(L "An option holding a character the Windows command line acts on (\" % & | < > ^) cannot be passed: $a. For a device name, type a part of it without that character (any part of the name finds it)." \
-             "Windows 명령줄이 따로 읽는 문자(\" % & | < > ^)가 든 옵션은 넘길 수 없습니다: $a. 장치 이름이면 그 문자가 없는 부분만 적으세요 (이름의 일부만 맞아도 찾습니다).")"
+             "Windows 명령줄이 특수하게 처리하는 문자(\" % & | < > ^)가 든 옵션은 넘길 수 없습니다: $a. 장치 이름이면 그 문자가 없는 부분만 적으세요 (이름의 일부만 맞아도 찾습니다).")"
   done
 }
 
@@ -739,21 +806,21 @@ cmd_capture() {
     health >/dev/null || cmd_up
   fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
-                                  "서버가 꺼져 있습니다. ./sidenote up 으로 먼저 켜거나, ./sidenote capture --up 으로 함께 켜세요.")"
-  win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-windows" \
-                                              "Windows에 Python(py)이 없습니다. python.org에서 설치 후 ./sidenote setup-windows")"
+                                  "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
+  win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
+                                              "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   local packages
-  packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-windows" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-windows")"
+  packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   # Two capture programs would send every screen twice. Windows' process list says whether one is running;
   # when it cannot be read ("?"), the server says whether one is connected, which is the one that would send.
   local procs; procs="$(capture_running)"
   if [ "$procs" = "?" ]; then
     [ "$(clients)" -gt 0 ] && die "$(L "The capture is already running (connected to the server). Quit it from the tray icon or with ./sidenote capture-stop" \
-                                         "캡처가 이미 실행 중입니다 (서버에 연결돼 있습니다). 트레이 아이콘에서 끝내거나 ./sidenote capture-stop")"
+                                         "캡처가 이미 실행 중입니다(서버에 연결됨). 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
     warn "$(L "Could not read the Windows process list. No capture program is connected to the server, so one is started." \
-              "Windows의 프로세스 목록을 읽지 못했습니다. 서버에 연결된 캡처 프로그램이 없어 시작합니다.")"
+              "Windows 프로세스 목록을 읽지 못했습니다. 서버에 연결된 캡처 프로그램이 없어 시작합니다.")"
   elif [ "$procs" != "0" ]; then
-    die "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop")"
+    die "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
   fi
   ensure_dirs
   rotate_capture_log
@@ -766,8 +833,8 @@ cmd_capture() {
     [ "$packages" = tray ] || tray=0
     for a in "${opts[@]}"; do if [ "$a" = --no-tray ]; then tray=0; fi; done
     if [ "$packages" != tray ]; then
-      warn "$(L "Starting without a tray icon: pystray is not in Windows Python ${D}(install: ./sidenote setup-windows)${N}. To end it: ${B}./sidenote capture-stop${N}" \
-                "트레이 아이콘 없이 시작합니다: Windows Python에 pystray가 없습니다 ${D}(설치: ./sidenote setup-windows)${N}. 끝낼 때는 ${B}./sidenote capture-stop${N}")"
+      warn "$(L "Starting without a tray icon: pystray is not in Windows Python ${D}(install: ./sidenote setup-capture)${N}. To end it: ${B}./sidenote capture-stop${N}" \
+                "트레이 아이콘 없이 시작합니다: Windows Python에 pystray가 없습니다 ${D}(설치: ./sidenote setup-capture)${N}. 끝낼 때는 ${B}./sidenote capture-stop${N}")"
     elif [ "$tray" = 0 ]; then
       warn "$(L "Starting without a tray icon (--no-tray). To end it: ${B}./sidenote capture-stop${N}" "트레이 아이콘 없이 시작합니다 (--no-tray). 끝낼 때는 ${B}./sidenote capture-stop${N}")"
     fi
@@ -796,7 +863,7 @@ cmd_capture() {
       n=$((n + 1)); sleep 0.5
     done
     if ! capture_started "$base"; then
-      bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 뜨지 않았습니다. ./sidenote capture --console 로 무엇이 막는지 보세요.")"
+      bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 시작되지 않았습니다. ./sidenote capture --console로 원인을 확인하세요.")"
       return 1
     fi
     if [ "$tray" = 1 ]; then
@@ -806,12 +873,12 @@ cmd_capture() {
       ok "$(L "Screen and sound capture started ${D}(no window and no tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(창도 트레이 아이콘도 없이)${N}")"
       echo "  $(L "To end it" "끝내기"): ${B}./sidenote capture-stop${N}"
     fi
-    echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "기록"): $LOG_PATH/capture.log"
+    echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
     return 0
   fi
   echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it. The panel turns the screen and the sound on and off separately)${N}" \
             "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C. 패널에서 화면과 소리를 따로 켜고 끌 수 있습니다)${N}")"
-  echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "기록"): $LOG_PATH/capture.log"
+  echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
   term_title "Sidenote Capture"
   trap 'cmd_capture_stop quiet || true; term_title ""; echo; echo "  $(L "Capture ended." "캡처를 끝냈습니다.")"' EXIT
   trap 'exit 0' INT TERM
@@ -824,7 +891,7 @@ cmd_capture() {
     | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture) || true
 }
 
-# A Linux desktop: the capture program runs here, from the virtual environment ./sidenote setup-windows makes on Linux,
+# A Linux desktop: the capture program runs here, from the virtual environment ./sidenote setup-capture makes on Linux,
 # reading the X11 screen (mss) and the speaker sound through PulseAudio or PipeWire's PulseAudio (soundcard). The same
 # options as on WSL; --up and --console are this launcher's own.
 here_py() { printf '%s' "$CAPTURE_VENV/bin/python"; }
@@ -836,11 +903,15 @@ here_packages() {
 if any(u.find_spec(n) is None for n in ('mss', 'soundcard', 'numpy', 'PIL', 'websocket')): sys.exit(1)
 print('tray' if u.find_spec('pystray') else 'notray')" 2>/dev/null
 }
-cmd_setup_capture() {
+setup_capture_here() {
   echo "${B}$(L "Installing the capture packages" "캡처 패키지를 설치합니다")${N} ($CAPTURE_VENV)"
-  [ -x "$(here_py)" ] || python3 -m venv "$CAPTURE_VENV" \
-    || die "$(L "Could not make a virtual environment. Install python3-venv (on Ubuntu: sudo apt install python3-venv) and run this again." \
-                "가상 환경을 만들지 못했습니다. python3-venv를 설치한 뒤 다시 실행하세요 (Ubuntu: sudo apt install python3-venv).")"
+  # Without python3-venv, `python3 -m venv` fails halfway and leaves a python with no pip behind; a later run would
+  # take that for a finished environment. One that cannot run pip is made again from nothing (--clear).
+  if ! "$(here_py)" -m pip --version >/dev/null 2>&1; then
+    python3 -m venv --clear "$CAPTURE_VENV" && "$(here_py)" -m pip --version >/dev/null 2>&1 \
+      || die "$(L "Could not make a virtual environment with pip. Install python3-venv (on Ubuntu: sudo apt install python3-venv) and run ./sidenote setup-capture again." \
+                  "pip가 든 가상 환경을 만들지 못했습니다. python3-venv를 설치한 뒤(Ubuntu: sudo apt install python3-venv) ./sidenote setup-capture를 다시 실행하세요.")"
+  fi
   "$(here_py)" -m pip install -q -r client/requirements.txt 2>&1 | tail -3
 }
 cmd_capture_here() {
@@ -852,18 +923,18 @@ cmd_capture_here() {
       *) opts+=("$a"); if [ "$a" = --once ]; then console=1; fi ;;
     esac
   done
-  packages="$(here_packages)" || { cmd_setup_capture; packages="$(here_packages)"; } \
-    || die "$(L "The capture packages did not install. ./sidenote setup-windows shows why." "캡처 패키지가 설치되지 않았습니다. ./sidenote setup-windows 로 이유를 보세요.")"
+  packages="$(here_packages)" || { setup_capture_here; packages="$(here_packages)"; } \
+    || die "$(L "The capture packages did not install. ./sidenote setup-capture shows why." "캡처 패키지가 설치되지 않았습니다. ./sidenote setup-capture로 원인을 확인하세요.")"
   for a in "${opts[@]}"; do
     case "$a" in --list-monitors|--help|-h) "$(here_py)" -X utf8 -u client/capture.py "${opts[@]}"; return 0 ;; esac
   done
   [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
-                                    "여기에는 X11 화면이 없습니다 (DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽습니다: 데스크톱 세션에서 실행하세요.")"
+                                    "X11 화면이 없습니다(DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽으니 데스크톱 세션에서 실행하세요.")"
   if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
-                                  "서버가 꺼져 있습니다. ./sidenote up 으로 먼저 켜거나, ./sidenote capture --up 으로 함께 켜세요.")"
+                                  "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
   [ "$(capture_running)" = 0 ] || die "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" \
-                                            "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop")"
+                                            "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
   if [ -n "${WAYLAND_DISPLAY:-}" ]; then
     warn "$(L "A Wayland session: the screen is read through X11 (XWayland), which may show only X11 windows. If the panel shows a blank screen, log in to an X11 session." \
               "Wayland 세션입니다: 화면을 X11(XWayland)로 읽어 X11 창만 보일 수 있습니다. 패널에 빈 화면이 보이면 X11 세션으로 로그인하세요.")"
@@ -884,13 +955,13 @@ cmd_capture_here() {
     capture_started "$base" && break
     n=$((n + 1)); sleep 0.5
   done
-  capture_started "$base" || { bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 뜨지 않았습니다. ./sidenote capture --console 로 무엇이 막는지 보세요.")"; return 1; }
+  capture_started "$base" || { bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 시작되지 않았습니다. ./sidenote capture --console로 원인을 확인하세요.")"; return 1; }
   if [ "$packages" = tray ]; then
-    ok "$(L "Screen and sound capture started ${D}(a tray icon, where the desktop shows them)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(데스크톱이 보여 주는 곳에 트레이 아이콘)${N}")"
+    ok "$(L "Screen and sound capture started ${D}(a tray icon, where the desktop shows them)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(트레이 아이콘은 데스크톱의 알림 영역에)${N}")"
   else
     ok "$(L "Screen and sound capture started ${D}(no tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(트레이 아이콘 없이)${N}")"
   fi
-  echo "  $(L "To end it" "끝내기"): ${B}./sidenote capture-stop${N}   $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "기록"): $LOG_PATH/capture.log"
+  echo "  $(L "To end it" "끝내기"): ${B}./sidenote capture-stop${N}   $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
 }
 
 cmd_llm() {   # the local LLM: pull, list, logs
@@ -899,27 +970,28 @@ cmd_llm() {   # the local LLM: pull, list, logs
     pull)
       shift; local models=("$@")
       if [ ${#models[@]} -eq 0 ]; then
-        mapfile -t models < <(models_to_pull)
-        if [ ${#models[@]} -eq 0 ] || [ -z "${models[0]}" ]; then
-          warn "$(L "No model fits this PC's GPU ${D}(no NVIDIA or AMD GPU, or 6 GB of memory or less)${N}" \
-                    "이 PC의 GPU에는 맞는 모델이 없습니다 ${D}(NVIDIA나 AMD GPU가 없거나 메모리가 6GB 이하)${N}")"
-          echo "     $(L "The agent solves every problem. To download one anyway: ${B}./sidenote llm pull gemma4:e2b${N}" \
-                       "에이전트가 모든 문제를 풉니다. 그래도 받으려면: ${B}./sidenote llm pull gemma4:e2b${N}")"
+        # a GPU that could not be read is not a GPU that is too small: only the second is the no-GPU case
+        local names; names="$(models_to_pull)" \
+          || die "$(L "Could not read this PC's GPU (server/hardware.py). Name the model: ./sidenote llm pull gemma4:e4b" \
+                      "이 PC의 GPU를 읽지 못했습니다(server/hardware.py). 모델 이름을 적으세요: ./sidenote llm pull gemma4:e4b")"
+        if [ -z "$names" ]; then
+          no_fit warn   # the words install, doctor and status use for the same case
           return 0
         fi
+        mapfile -t models <<<"$names"
       fi
       # sidenote-<model> is <model> with a larger batch (compose.yaml: llm-pull), made right after the pull.
-      echo "$(L "${B}Downloading this PC's model${N}: ${models[*]} ${D}(tens of GB a model; only this download container uses the internet)${N}" \
-                "${B}이 PC의 모델을 받습니다${N}: ${models[*]} ${D}(모델 하나에 수십 GB, 인터넷은 이 받기 컨테이너만 씁니다)${N}")"
+      echo "$(L "${B}Downloading the local model${N}: ${models[*]} ${D}(a few GB to tens of GB; only this download container uses the internet)${N}" \
+                "${B}이 PC의 모델을 받습니다${N}: ${models[*]} ${D}(수 GB에서 수십 GB, 인터넷은 이 받기 컨테이너만 씁니다)${N}")"
       docker compose --profile tools run --rm --no-deps llm-pull "${models[@]}" 2>&1 | grep -vE "^\s*$|pulling [0-9a-f]{12}" | sed 's/^/  /'
       # an if, not &&: with the server down the pull still succeeded (set -e would end on the failed test)
-      if health >/dev/null; then echo "  $(L "The server picks up the model within 20 seconds." "서버가 20초 안에 모델을 알아챕니다.")"; fi ;;
+      if health >/dev/null; then echo "  $(L "The server picks up the model within 20 seconds." "서버가 20초 안에 모델을 반영합니다.")"; fi ;;
     list)
       if docker ps --format '{{.Names}}' | grep -qx sidenote-llm; then docker exec sidenote-llm ollama list
       else docker compose --profile tools run --rm --no-deps --entrypoint sh llm-pull -c 'ollama serve >/dev/null 2>&1 & i=0; until ollama list >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -lt 120 ] || exit 1; sleep 0.5; done; ollama list'; fi ;;
     logs) docker compose logs -f --tail 60 llm ;;
     *) die "$(L "Usage: ./sidenote llm pull [model ...] | list | logs   (model now: $LOCAL_MODEL, while the GPU is busy: $BUSY_MODEL)" \
-                "사용법: ./sidenote llm pull [모델 ...] | list | logs   (지금 모델: $LOCAL_MODEL, GPU 가 바쁠 때: $BUSY_MODEL)")" ;;
+                "사용법: ./sidenote llm pull [모델 ...] | list | logs   (지금 모델: $LOCAL_MODEL, GPU가 바쁠 때: $BUSY_MODEL)")" ;;
   esac
 }
 
@@ -929,7 +1001,7 @@ cmd_gpu() {   # give the GPU back while you need it yourself, and take it again
 }
 
 cmd_open() {
-  health >/dev/null || die "$(L "The server is off. Run ./sidenote up first" "서버가 꺼져 있습니다. 먼저 ./sidenote up")"
+  health >/dev/null || die "$(L "The server is off. Run ./sidenote up first" "서버가 꺼져 있습니다. 먼저 ./sidenote up을 실행하세요")"
   local opened=1
   if [ "$ON_WSL" = 0 ]; then xdg-open "$URL" >/dev/null 2>&1 || opened=0
   else (cd /mnt/c && cmd.exe /c start "" "$URL" >/dev/null 2>&1) || opened=0; fi
@@ -944,42 +1016,65 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   # would otherwise take for this one.
   local with_models=0
   [ "${1:-}" = "--with-models" ] && with_models=1
-  echo "$(L "${B}Installing Sidenote${N} ${D}(steps already done are skipped)${N}" "${B}Sidenote를 설치합니다${N} ${D}(이미 된 단계는 건너뜁니다)${N}")"
+  echo "$(L "${B}Installing Sidenote${N} ${D}(steps already done are skipped)${N}" "${B}Sidenote를 설치합니다${N} ${D}(이미 끝난 단계는 건너뜁니다)${N}")"
   echo
   echo "${B}1/4${N} $(L "Server" "서버")"
-  if health >/dev/null; then ok "$(L "Already running" "이미 실행 중입니다")"; else cmd_up; fi
+  if health >/dev/null; then ok "$(L "Already running" "이미 실행 중")"; else cmd_up; fi
   echo
   if [ "$ON_WSL" = 0 ]; then echo "${B}2/4${N} $(L "Capture packages" "캡처 패키지")"
   else echo "${B}2/4${N} $(L "Windows capture packages" "Windows 캡처 패키지")"; fi
   # Done only when the tray icon's pystray is there too: it joined client/requirements.txt after the
   # first setups, and a check of the five capture packages alone skipped this step on those for good. pip
   # installs what is missing and leaves what is there as it is.
-  local packages
-  if [ "$ON_WSL" = 0 ]; then packages="$(here_packages)" || packages=""; else packages="$(win_packages 2>/dev/null)" || packages=""; fi
-  if [ "$packages" = tray ]; then
-    ok "$(L "Already installed" "이미 설치돼 있습니다")"
+  # A step that cannot be done is said and the others still run, so doctor at the end lists all that is left: without
+  # Windows Python, cmd.exe's "'py' is not recognized" used to end the install here, with no word of python.org.
+  local packages="" winpy=1
+  if [ "$ON_WSL" = 1 ] && ! win py -3 --version >/dev/null; then winpy=0; fi
+  if [ "$ON_WSL" = 0 ]; then packages="$(here_packages)" || packages=""
+  elif [ "$winpy" = 1 ]; then packages="$(win_packages 2>/dev/null)" || packages=""; fi
+  if [ "$winpy" = 0 ]; then
+    bad "$(L "No Python for Windows (py). Install it from python.org, then ./sidenote setup-capture" \
+             "Windows용 Python(py) 없음: python.org에서 설치한 뒤 ./sidenote setup-capture")"
+  elif [ "$packages" = tray ]; then
+    ok "$(L "Already installed" "이미 설치됨")"
   else
-    cmd_setup_windows
+    # in a subshell, so a setup that stops (die) ends this step and not the install
+    ( cmd_setup_capture ) || bad "$(L "The capture packages did not install (see above)" "캡처 패키지 설치 실패 (위 메시지 참고)")"
   fi
   echo
-  echo "${B}3/4${N} $(L "This PC's model" "이 PC의 모델")"
+  echo "${B}3/4${N} $(L "Local model" "이 PC의 모델")"
   if [ "$ANALYZER" != local ]; then
-    ok "$(L "This server uses the agent only (SIDENOTE_ANALYZER=$ANALYZER): no model to download" "이 서버는 에이전트만 씁니다 (SIDENOTE_ANALYZER=$ANALYZER): 받을 모델이 없습니다")"
+    ok "$(L "Agent only (SIDENOTE_ANALYZER=$ANALYZER): no model to download" "에이전트만 사용 (SIDENOTE_ANALYZER=$ANALYZER): 받을 모델 없음")"
   elif [ "$with_models" = 1 ]; then
     cmd_llm pull
   elif [ -n "$(cmd_llm list 2>/dev/null | grep -E "gemma4|${LOCAL_MODEL%%:*}" || true)" ]; then
-    ok "$(L "Already downloaded" "이미 받아 뒀습니다")"
+    ok "$(L "Already downloaded" "이미 받아 둠")"
   else
-    # Tens of gigabytes: never started without being asked for, only pointed at.
-    local want; want="$(models_to_pull | head -1 || true)"
-    warn "$(L "Not downloaded yet. ${B}./sidenote llm pull${N} ${D}(the model for this GPU: ${want}, a few GB to tens of GB)${N}" \
-              "아직 안 받았습니다. ${B}./sidenote llm pull${N} ${D}(GPU에 맞는 모델: ${want}, 수 GB에서 수십 GB)${N}")"
-    echo "     $(L "Until then the agent solves every problem." "받기 전까지는 에이전트가 모든 문제를 풉니다.")"
+    # Tens of gigabytes: never started without being asked for, only pointed at. With no GPU that fits there is
+    # nothing to point at, and the line llm pull would print says so; a GPU that could not be read is not that case.
+    local want read=1
+    want="$(models_to_pull)" || read=0
+    want="${want%%$'\n'*}"
+    if [ "$read" = 1 ] && [ -z "$want" ]; then
+      no_fit warn
+    else
+      local which=""
+      [ -z "$want" ] || which=" ${D}($(L "the model for this GPU: ${want}, a few GB to tens of GB" "이 GPU에 맞는 모델: ${want}, 수 GB에서 수십 GB"))${N}"
+      warn "$(L "Not downloaded yet: ${B}./sidenote llm pull${N}" "아직 받지 않음: ${B}./sidenote llm pull${N}")$which"
+      if [ "$AGENT" = off ]; then echo "     $(L "Until then nothing solves: the agent is off (SIDENOTE_AGENT=off)." "받기 전까지는 풀 엔진 없음: 에이전트도 꺼 둠 (SIDENOTE_AGENT=off)")"
+      else echo "     $(L "Until then the agent solves every problem." "받기 전까지는 에이전트가 모든 문제를 풂")"; fi
+    fi
   fi
   echo
   echo "${B}4/4${N} $(L "Desktop shortcut" "바탕화면 바로가기")"
-  if [ "$ON_WSL" = 0 ]; then ok "$(L "Not on Linux: ${B}./sidenote capture --up${N} starts the server and the capture together" "Linux에서는 없음: ${B}./sidenote capture --up${N} 이 서버와 캡처를 함께 시작합니다")"
-  else cmd_shortcut; fi
+  if [ "$ON_WSL" = 0 ]; then
+    ok "$(L "Made on WSL only. Here ${B}./sidenote capture --up${N} starts the server and the capture together" \
+            "WSL에서만 만듦. 여기서는 ${B}./sidenote capture --up${N}이 서버와 캡처를 함께 시작")"
+  elif [ "$winpy" = 0 ]; then
+    warn "$(L "Skipped: the shortcut runs Python for Windows (step 2)" "건너뜀: 바로가기는 Windows용 Python으로 실행 (2단계)")"
+  else
+    ( cmd_shortcut ) || true   # a shortcut that cannot be made says why; doctor still runs
+  fi
   echo
   cmd_doctor
 }
@@ -996,7 +1091,7 @@ cmd_version() {   # what is actually installed and running, in one place
   # Each label as it prints, the padding included: English pads to 16 columns as the Korean does.
   printf '  %s%s\n' "$(L 'Source          ' '소스            ')" "${commit:-$(L "(not a git repository)" "(git 저장소 아님)")}"
   local img; img="$(docker image inspect sidenote:local --format '{{slice .Id 7 19}}  {{slice .Created 0 10}}' 2>/dev/null || true)"
-  printf '  %s%s\n' "$(L 'Server image    ' '서버 이미지     ')" "${img:-$(L "not built yet" "아직 만들지 않음")}"
+  printf '  %s%s\n' "$(L 'Server image    ' '서버 이미지     ')" "${img:-$(L "not built yet" "아직 빌드하지 않음")}"
   printf '  %s%s\n' "$(L 'Panel build     ' '패널 빌드       ')" \
     "$(curl -fsS --max-time 3 "$URL/health" 2>/dev/null | json 'd.get("build") or "-"' 2>/dev/null || L "server off" "서버 꺼짐")"
   local cv; cv="$(claude_version)"   # empty when this PC has no Claude Code, shown as "-"
@@ -1012,7 +1107,7 @@ cmd_version() {   # what is actually installed and running, in one place
     printf '  %s%s\n' "$(L 'Models pulled   ' '받아 둔 모델    ')" \
       "$(cmd_llm list 2>/dev/null | tail -n +2 | awk '$1 ~ /^sidenote-/ {print $1}' | paste -sd" " - || echo '-')"
   else
-    printf '  %s%s\n' "$(L 'Models pulled   ' '받아 둔 모델    ')" "$(L "- (the model server is off, ./sidenote llm list)" "- (모델 서버가 꺼져 있음, ./sidenote llm list)")"
+    printf '  %s%s\n' "$(L 'Models pulled   ' '받아 둔 모델    ')" "$(L "- (the model server is off, ./sidenote llm list)" "- (모델 서버 꺼짐, ./sidenote llm list)")"
   fi
   printf '  %s%s\n' "$(L 'Log folder      ' '로그 폴더       ')" "$LOG_PATH"
 }
@@ -1026,29 +1121,44 @@ cmd_uninstall() {   # take back everything this project put on the PC
   echo "  $(L "Containers: " "컨테이너: ")$(docker ps -a --filter name=sidenote --format '{{.Names}}' | paste -sd' ' - || true)"
   echo "  $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local"
   echo "  $(L "Volumes:    " "볼륨:     ")$(docker volume ls --format '{{.Name}}' | grep '^sidenote_' | paste -sd' ' - || true)"
-  echo "  $(L "Shortcut:   Sidenote Capture.lnk on the desktop" "바로가기: 바탕화면 Sidenote Capture.lnk")"
+  # the shortcut is made on WSL only, on the Windows desktop; the capture packages of a Linux desktop are in a venv here
+  if [ "$ON_WSL" = 1 ]; then echo "  $(L "Shortcut:   Sidenote Capture.lnk on the Windows desktop" "바로가기: Windows 바탕화면의 Sidenote Capture.lnk")"; fi
+  if [ -d "$CAPTURE_VENV" ]; then echo "  $(L "Capture packages: " "캡처 패키지: ")$CAPTURE_VENV"; fi
   echo "  $(L "Logs:       " "로그:     ")$LOG_PATH"
   echo "  ${D}$(L "(the models are in the volume sidenote_llm-models: tens of GB, downloaded again once removed)" "(모델은 볼륨 sidenote_llm-models 안에 있습니다: 수십 GB, 지우면 다시 받아야 합니다)")${N}"
+  # ~/.claude and ~/.codex are mounted into the server, but they are Claude Code's and Codex's own: their login and
+  # settings on this PC, which those CLIs keep using after Sidenote is gone
+  echo "  ${D}$(L "(kept either way: ~/.claude and ~/.codex, the login folders Claude Code and Codex use on this PC too)" \
+                  "(어느 쪽이든 그대로 둠: ~/.claude, ~/.codex. 이 PC의 Claude Code와 Codex도 쓰는 로그인 폴더)")${N}"
   if [ "$purge" != 1 ]; then
     echo
     warn "$(L "Nothing removed. To remove it all: ${B}./sidenote uninstall --yes${N}" "아무것도 지우지 않았습니다. 정말 지우려면 ${B}./sidenote uninstall --yes${N}")"
     return 0
   fi
   echo
-  cmd_capture_stop quiet || true          # the Windows program first: it is the only thing outside docker
-  cmd_shortcut --remove >/dev/null 2>&1 || true
+  cmd_capture_stop quiet || true          # the capture program first: it is the only thing outside docker
+  # cmd_shortcut ends the script (die) where there is no WSL, which stopped the removal here on Linux
+  if [ "$ON_WSL" = 1 ]; then ( cmd_shortcut --remove >/dev/null 2>&1 ) || true; fi
   local rc=0
   docker compose --profile '*' down -v --remove-orphans 2>&1 | sed 's/^/  /' || rc=$?
   docker image rm -f sidenote:local sidenote-runner:local >/dev/null 2>&1 || true
-  if [ "$rc" = 0 ]; then ok "$(L "Removed the containers, images, volumes and shortcut." "컨테이너, 이미지, 볼륨, 바로가기를 지웠습니다.")"
-  else warn "$(L "Could not remove the containers and volumes (Docker may be off). Start Docker and run this again." \
-                  "컨테이너와 볼륨을 지우지 못했습니다(Docker가 꺼져 있을 수 있습니다). Docker를 켠 뒤 다시 실행하세요.")"; fi
+  local venv=0; if [ -d "$CAPTURE_VENV" ]; then rm -rf "$CAPTURE_VENV" && venv=1; fi
+  if [ "$rc" = 0 ]; then
+    if [ "$ON_WSL" = 1 ]; then ok "$(L "Removed the containers, images, volumes and shortcut." "컨테이너, 이미지, 볼륨, 바로가기를 지웠습니다.")"
+    elif [ "$venv" = 1 ]; then ok "$(L "Removed the containers, images, volumes and capture packages." "컨테이너, 이미지, 볼륨, 캡처 패키지를 지웠습니다.")"
+    else ok "$(L "Removed the containers, images and volumes." "컨테이너, 이미지, 볼륨을 지웠습니다.")"; fi
+  else
+    warn "$(L "Could not remove the containers and volumes (Docker may be off). Start Docker and run this again." \
+              "컨테이너와 볼륨을 지우지 못했습니다(Docker가 꺼져 있을 수 있습니다). Docker를 켠 뒤 다시 실행하세요.")"
+  fi
   echo "  $(L "Logs kept: $LOG_PATH ${D}(delete them yourself if they are not needed)${N}" "로그는 남겼습니다: $LOG_PATH ${D}(필요 없으면 직접 지우세요)${N}")"
 }
 
 cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it takes one click
   local distro="${WSL_DISTRO_NAME:-}"
-  [ -n "$distro" ] || die "$(L "The WSL distribution's name is not known (WSL_DISTRO_NAME)." "WSL 배포판 이름을 알 수 없습니다 (WSL_DISTRO_NAME).")"
+  # a Windows shortcut, which runs this checkout through wsl.exe: there is none to make on a Linux desktop
+  [ -n "$distro" ] || die "$(L "The desktop shortcut is a Windows one, made from WSL. Here ./sidenote capture --up starts the server and the capture." \
+                               "바탕화면 바로가기는 WSL에서 만드는 Windows용입니다. 여기서는 ./sidenote capture --up이 서버와 캡처를 함께 시작합니다.")"
   local name="Sidenote Capture.lnk"
   local old_names=("Sidenote 캡처.lnk")   # names this command used before
   local desktop; desktop="$(winps "[Environment]::GetFolderPath('Desktop')" | tr -d '\r' | head -1)"
@@ -1077,8 +1187,8 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   # pyw.exe by its full path: the shortcut runs with Explorer's PATH, which need not be the one seen here.
   local pyw; pyw="$(winps "(Get-Command pyw.exe -ErrorAction SilentlyContinue).Source" | head -1)"
   # Without it the shortcut would have nothing to run, and a double click would do nothing at all.
-  [ -n "$pyw" ] || die "$(L "No Python launcher (pyw.exe) on Windows, so no shortcut can be made. Install Python for Windows from python.org, then ./sidenote setup-windows and ./sidenote shortcut" \
-                             "Windows에 Python 런처(pyw.exe)가 없어 바로가기를 만들 수 없습니다. python.org에서 Windows용 Python을 설치한 뒤 ./sidenote setup-windows 와 ./sidenote shortcut")"
+  [ -n "$pyw" ] || die "$(L "No Python launcher (pyw.exe) on Windows, so no shortcut can be made. Install Python for Windows from python.org, then ./sidenote setup-capture and ./sidenote shortcut" \
+                             "Windows에 Python 런처(pyw.exe)가 없어 바로가기를 만들 수 없습니다. python.org에서 Windows용 Python을 설치한 뒤 ./sidenote setup-capture와 ./sidenote shortcut을 실행하세요")"
   local launch; launch="$(wslpath -w "$PWD/client/launch.pyw")"   # this checkout's copy, read from WSL's share
   # The two paths in double quotes for the Windows command line, so one with spaces stays one argument; the
   # distribution name has none (WSL allows letters, digits, '.', '_' and '-'). capture.py's path must not be in
@@ -1088,7 +1198,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   winps "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$lnk');
          \$s.TargetPath = '$(ps_quote "$pyw")';
          \$s.Arguments = '$(ps_quote "$args")';
-         \$s.Description = '$(L "Sidenote: start screen and sound capture (quit from the tray icon)" "Sidenote: 화면과 소리 캡처 시작 (트레이 아이콘에서 끕니다)")';
+         \$s.Description = '$(L "Sidenote: start screen and sound capture (quit from the tray icon)" "Sidenote: 화면과 소리 캡처 시작 (끄기는 트레이 아이콘에서)")';
          \$s.IconLocation = \"\$env:SystemRoot\\System32\\shell32.dll,16\";
          \$s.Save()" >/dev/null
   if [ -n "$(winps "if (Test-Path -LiteralPath '$lnk') { 'y' }")" ]; then
@@ -1101,17 +1211,22 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
       fi
     done
     echo "  $(L "A double click starts the server and the capture with no window, and a tray icon appears in the notification area." \
-                "두 번 누르면 창 없이 서버와 캡처가 함께 시작되고, 알림 영역에 트레이 아이콘이 나타납니다.")"
+                "두 번 클릭하면 창 없이 서버와 캡처가 함께 시작되고, 알림 영역에 트레이 아이콘이 나타납니다.")"
     echo "  ${D}$(L "(the first time and after an update, building the server image takes a few minutes. A start that fails says why in a message box)" \
-                    "(처음이나 업데이트한 뒤에는 서버 이미지를 만드느라 몇 분 걸립니다. 시작하지 못하면 그 이유를 메시지 상자로 알려 줍니다)")${N}"
-    echo "  $(L "Quit from the tray icon. To remove the shortcut: ./sidenote shortcut --remove" "끝낼 땐 트레이 아이콘에서 종료. 지울 땐 ./sidenote shortcut --remove")"
+                    "(처음과 업데이트 뒤에는 서버 이미지 빌드에 몇 분 걸립니다. 시작하지 못하면 그 이유를 메시지 상자로 알려 줍니다)")${N}"
+    echo "  $(L "Quit from the tray icon. To remove the shortcut: ./sidenote shortcut --remove" "끝내기는 트레이 아이콘에서. 바로가기 삭제: ./sidenote shortcut --remove")"
   else
     die "$(L "Could not make the shortcut." "바로가기를 만들지 못했습니다.")"
   fi
 }
 
-cmd_setup_windows() {
-  if [ "$ON_WSL" = 0 ]; then cmd_setup_capture; return; fi
+# ./sidenote setup-capture (setup-windows is its older name): the capture program's packages, into Windows Python on WSL
+# (pip --user) and into the virtual environment .venv-capture on a Linux desktop
+cmd_setup_capture() {
+  if [ "$ON_WSL" = 0 ]; then setup_capture_here; return; fi
+  # Asked first, as capture does: without it cmd.exe's own "'py' is not recognized" was all that was said
+  win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
+                                              "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   local req; req="$(wslpath -w "$PWD/client/requirements.txt")"
   echo "${B}$(L "Installing the capture packages into Windows Python" "Windows Python에 캡처 패키지를 설치합니다")${N} ($req)"
   (cd /mnt/c && cmd.exe /c py -3 -m pip install --user -r "$req" 2>&1 | tr -d '\r' | tail -3)
@@ -1121,14 +1236,14 @@ cmd_doctor() {
   echo "${B}$(L "Checks" "점검")${N}"
   local v
   FAILS=0
-  if ! command -v docker >/dev/null; then bad "$(L "docker not installed" "docker 없음")"
+  if ! command -v docker >/dev/null; then bad "$(L "docker not installed" "docker 설치 안 됨")"
   elif v="$(docker version --format '{{.Server.Version}}' 2>/dev/null)" && [ -n "$v" ]; then ok "docker $v"
-  else bad "$(L "Cannot connect to Docker (Docker is off)" "Docker에 연결할 수 없음 (Docker가 꺼져 있습니다)")"; fi
+  else local why; why="$(docker_why)" || true; bad "${why:-$(L "Cannot connect to Docker" "Docker에 연결할 수 없음")}"; fi
   docker image inspect sidenote:local >/dev/null 2>&1 && ok "$(L "Image sidenote:local" "이미지 sidenote:local")" \
-    || warn "$(L "No image (./sidenote up builds it)" "이미지 없음 (./sidenote up 이 만듭니다)")"
-  local how
+    || warn "$(L "No image (./sidenote up builds it)" "이미지 없음 (./sidenote up이 빌드)")"
+  local how usable=1
   if [ "$ANALYZER" = local ]; then
-    ok "$(L "Solving: this PC's model ($LOCAL_MODEL) and the agent ($AGENT)" "풀이: 이 PC의 모델 ($LOCAL_MODEL)과 에이전트 ($AGENT)")"
+    ok "$(L "Solving: the local model ($LOCAL_MODEL) and the agent ($AGENT)" "풀이: 이 PC의 모델($LOCAL_MODEL)과 에이전트($AGENT)")"
     local gpu; gpu="$(python3 - <<'PY' 2>/dev/null
 import sys
 sys.path.insert(0, "server")
@@ -1137,34 +1252,43 @@ gpu = hardware.best(hardware.detect())
 print(f"{gpu.name}, {gpu.memory_gb:.0f} GB ({gpu.vendor})" if gpu else "")
 PY
 )"
-    if [ -n "$gpu" ]; then ok "GPU: $gpu ${D}(${COMPOSE_FILE#compose.yaml:})${N}"
-    else warn "$(L "No NVIDIA or AMD GPU found: the local model runs on the CPU, slowly ${D}(${COMPOSE_FILE#compose.yaml:})${N}" \
-                   "NVIDIA나 AMD GPU를 찾지 못함: 이 PC의 모델이 CPU에서 느리게 돕니다 ${D}(${COMPOSE_FILE#compose.yaml:})${N}")"; fi
+    # what auto would pull (nothing when no GPU has room for the smallest model, ? when the GPU could not be read), and
+    # whether the server's local model answers all the same: one set by name, or one pulled anyway for the CPU
+    local file="${COMPOSE_FILE#compose.yaml:}" fit answers=0
+    fit="$(models_to_pull 2>/dev/null || echo "?")"
+    [ "$(health | json '((d.get("engines") or {}).get("local") or {}).get("ok", False)' 2>/dev/null)" = True ] && answers=1
+    if [ -n "$gpu" ]; then ok "GPU: $gpu ${D}($file)${N}"
+    elif [ "$LOCAL_MODEL" != auto ] || [ "$answers" = 1 ]; then
+      warn "$(L "GPU: no NVIDIA or AMD GPU found, so the local model runs on the CPU, slowly" "GPU: NVIDIA나 AMD GPU 없음, 이 PC의 모델은 CPU에서 느리게 실행") ${D}($file)${N}"
+    else warn "$(L "GPU: no NVIDIA or AMD GPU found" "GPU: NVIDIA나 AMD GPU 없음") ${D}($file)${N}"; fi
+    # auto, nothing fits and no model answers anyway: the no-GPU line, as llm pull says it
+    if [ "$LOCAL_MODEL" = auto ] && [ -z "$fit" ] && [ "$answers" = 0 ]; then usable=0; no_fit warn; fi
   fi
-  # With the local LLM, the agent is the second engine: without a login the local model solves everything.
-  local nologin=bad; [ "$ANALYZER" = local ] && nologin=warn
+  # With the local LLM, the agent is the second engine: without a login the local model solves everything. With no
+  # local model to fall back on, a missing login leaves nothing to solve.
+  local nologin=bad; [ "$ANALYZER" = local ] && [ "$usable" = 1 ] && nologin=warn
   case "$AGENT" in
     codex)
       how="$(codex_login)"
-      if [ -n "$how" ]; then ok "Codex $(codex_version): $(L "signed in ($how). The server uses this login" "로그인됨 ($how). 서버가 이 로그인을 씁니다")"
+      if [ -n "$how" ]; then ok "Codex $(codex_version): $(L "signed in ($how), and the server uses this login" "로그인됨 ($how), 서버도 이 로그인 사용")"
       else "$nologin" "$(L "Codex not signed in (./sidenote login codex)" "Codex 로그인 안 됨 (./sidenote login codex)")"; fi ;;
     claude-code)
       how="$(claude_login)"
-      if ! command -v claude >/dev/null; then "$nologin" "$(L "Claude Code (claude) not installed (install it first)" "Claude Code(claude) 없음 (먼저 설치)")"
-      elif [ -n "$how" ]; then ok "Claude Code $(claude_version): $(L "signed in ($how). The server uses this login" "로그인됨 ($how). 서버가 이 로그인을 씁니다")"
+      if ! command -v claude >/dev/null; then "$nologin" "$(L "Claude Code (claude) not installed on this PC (install it first)" "Claude Code(claude) 설치 안 됨 (먼저 설치)")"
+      elif [ -n "$how" ]; then ok "Claude Code $(claude_version): $(L "signed in ($how), and the server uses this login" "로그인됨 ($how), 서버도 이 로그인 사용")"
       else "$nologin" "$(L "Claude Code not signed in (./sidenote login)" "Claude Code 로그인 안 됨 (./sidenote login)")"; fi ;;
     anthropic-api)
       if [ -n "$(setting ANTHROPIC_API_KEY "")" ]; then ok "$(L "Anthropic API: key set (.env)" "Anthropic API: 키 있음 (.env)")"
-      else "$nologin" "$(L "Anthropic API: no ANTHROPIC_API_KEY in .env" "Anthropic API: .env에 ANTHROPIC_API_KEY가 없음")"; fi ;;
-    off) warn "$(L "Agent: off (SIDENOTE_AGENT=off): this PC's model solves alone" "에이전트: 꺼 둠 (SIDENOTE_AGENT=off): 이 PC의 모델만 풉니다")" ;;
+      else "$nologin" "$(L "Anthropic API: no ANTHROPIC_API_KEY in .env" "Anthropic API: .env에 ANTHROPIC_API_KEY 없음")"; fi ;;
+    off) warn "$(L "Agent: off (SIDENOTE_AGENT=off), the local model solves alone" "에이전트: 꺼 둠 (SIDENOTE_AGENT=off), 이 PC의 모델만 풂")" ;;
   esac
   if [ "$ON_WSL" = 0 ]; then
     local here; here="$(here_packages)" || here=""
     case "$here" in
       tray|notray) ok "$(L "Capture packages installed" "캡처 패키지 설치됨") ${D}($CAPTURE_VENV)${N}" ;;
-      *) bad "$(L "Capture packages missing (./sidenote setup-windows installs them here)" "캡처 패키지 없음 (./sidenote setup-windows 가 여기에 설치합니다)")" ;;
+      *) bad "$(L "Capture packages missing (./sidenote setup-capture)" "캡처 패키지 없음 (./sidenote setup-capture)")" ;;
     esac
-    [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에는 X11 화면이 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작하세요")"
+    [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에 X11 화면 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작")"
   elif win py -3 --version >/dev/null; then
     ok "Windows Python: $(win py -3 --version | tail -1)"
     local packages; packages="$(win_packages)" || packages=""   # "tray", "notray", or nothing when one is missing
@@ -1172,12 +1296,12 @@ PY
       tray) ok "$(L "Capture packages installed" "캡처 패키지 설치됨")" ;;
       # The program runs without pystray, only with no icon: windowless it then has neither a window nor an icon.
       notray) ok "$(L "Capture packages installed" "캡처 패키지 설치됨")"
-              warn "$(L "No tray icon package (pystray): it runs without an icon (./sidenote setup-windows)" "트레이 아이콘 패키지(pystray) 없음: 아이콘 없이 돌아갑니다 (./sidenote setup-windows)")" ;;
-      *) bad "$(L "Capture packages missing (./sidenote setup-windows)" "캡처 패키지 없음 (./sidenote setup-windows)")" ;;
+              warn "$(L "No tray icon package (pystray): it runs without an icon (./sidenote setup-capture)" "트레이 아이콘 패키지(pystray) 없음: 아이콘 없이 실행됨 (./sidenote setup-capture)")" ;;
+      *) bad "$(L "Capture packages missing (./sidenote setup-capture)" "캡처 패키지 없음 (./sidenote setup-capture)")" ;;
     esac
   else
-    bad "$(L "No Windows Python (py) (install Python for Windows from python.org, then ./sidenote setup-windows)" \
-             "Windows Python(py) 없음 (python.org에서 Windows용 Python을 설치한 뒤 ./sidenote setup-windows)")"
+    bad "$(L "No Windows Python (py) (install Python for Windows from python.org, then ./sidenote setup-capture)" \
+             "Windows Python(py) 없음 (python.org에서 Windows용 Python 설치 뒤 ./sidenote setup-capture)")"
   fi
   if [ -d "$LOG_PATH" ]; then
     local used days; used="$(du -sh "$LOG_PATH" 2>/dev/null | cut -f1)"; days="$(setting SIDENOTE_LOG_DAYS 14)"
@@ -1191,36 +1315,39 @@ PY
 cmd_help() {   # the same text in each language, English first
   if [ "$UI_LANG" != ko ]; then
     cat <<EOF
-${B}Sidenote${N}: solves the problems on your screen and in its sound in real time, with this PC's model and a cloud agent (Claude Code, Codex), and writes the answers in a panel.
+${B}Sidenote${N}: solves the problems on your screen and in its sound in real time, with the local model and a cloud agent (Claude Code, Codex), and writes the answers in a panel.
+
+  Start here: ./sidenote install, then ./sidenote llm pull, then ./sidenote capture --up
 
   ${B}Start and stop${N}
     ./sidenote install        First install: server, capture packages, shortcut, checks (--with-models adds the models)
-    ./sidenote version        Versions of what is installed
+    ./sidenote version        Versions of the installed parts
     ./sidenote up             Start the server (builds the image the first time). In use, it waits until idle, then restarts
     ./sidenote up --now       Restart at once, without waiting
-                              A commit that failed CI does not go up. --when-green: wait for CI and go up when it passes, --no-ci: go up anyway
-    ./sidenote qa [server|panel]  Run the suites CI runs, on this PC (the results table: results.md in the output folder)
-    ./sidenote capture        Start Windows screen and sound capture (runs windowless with a tray icon, and this command returns at once.
-                              To end it: Quit in the tray icon, or ./sidenote capture-stop)
-                              Options: --monitor 2   --list-monitors   --stitch (joins a long problem as you scroll;
-                                    the monitor and scroll joining are also in the panel's Solving settings)
-                                    --no-audio   --audio-device "part of the device name"
+    ./sidenote capture        Start the screen and sound capture: in Windows Python on WSL, on this desktop on Linux.
+                              It runs with a tray icon, and this command returns at once.
+                              To end it: Quit in the tray icon, or ./sidenote capture-stop
+                              Options: --up (starts the server first)   --monitor 2   --list-monitors
+                                    --stitch (joins a long problem as you scroll)   --no-auto-stitch (never joins by itself)
+                                    (the monitor and scroll joining are also in Solver settings in the panel)
+                                    --no-audio   --audio-device "part of the device name"   --no-tray (no tray icon)
                                     --console (runs in this terminal, Ctrl+C ends it)   --once (sends one screen and ends)
                                     --no-auto-update (does not restart itself when new code is deployed)
-    ./sidenote capture-restart  Restart the capture program now (into capture.py as it is now; after a deploy it does so by itself when quiet)
+    ./sidenote capture-restart  Restart the capture program now, into capture.py as it is (after a deploy it restarts by itself when quiet)
     ./sidenote open           Open the panel in the browser  ($URL)
     ./sidenote down           Stop everything
     ./sidenote restart        Restart the server (enough after changing .env or the code)
 
   ${B}First time${N}
     ./sidenote login [codex]  Check the agent's login (Claude Code, or Codex with codex. Uses this PC's own login)
-    ./sidenote setup-windows  Install the capture packages on the Windows side
-    ./sidenote shortcut       Make a desktop shortcut that starts the capture (--remove removes it)
+    ./sidenote setup-capture  Install the capture packages: into Windows Python on WSL, into .venv-capture on Linux
+                              (setup-windows is the same command)
+    ./sidenote shortcut       On WSL, make a Windows desktop shortcut that starts the capture (--remove removes it)
     ./sidenote llm pull       Download the model that fits this PC's GPU, or the ones named (a few GB to tens of GB)
     ./sidenote llm list|logs  Downloaded models, the model server's log
 
-  ${B}Status and records${N}
-    ./sidenote status         Server, login, capture and code runner status
+  ${B}Status and logs${N}
+    ./sidenote status         Server, local model, agent, capture and code runner status
     ./sidenote stats          Answers, tokens, cost, response times and the last error since the server started (--json)
     ./sidenote events         Recent events (-n 50, --errors for errors and stalls only)
     ./sidenote report         Summary by day and for the whole period (first token by engine, agent cost, GPU busy, example checks) (--days 30, --json)
@@ -1228,7 +1355,15 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote doctor         Check the install
     ./sidenote capture-stop   End a capture program that is left running
     ./sidenote uninstall      List what was made on this PC (--yes removes it)
-    ./sidenote gpu off|on     Turn this PC's model off while the GPU does other work, and on again (while off the agent solves everything, and a limit does not load the model again)
+    ./sidenote gpu status     Whether the local model holds the GPU now
+    ./sidenote gpu off|on     Free the GPU for other work, and take it back (while off the agent solves everything, and a limit does not load the model again)
+
+  ${B}For maintainers${N}
+    ./sidenote qa [server|panel]  Run the suites CI runs, on this PC (the results table: results.md in the output folder)
+    SIDENOTE_CI_GATE=1 in .env    up asks GitHub (gh) what CI said of this commit and does not deploy one that failed;
+                                  status and doctor show the CI line. Off by default
+    ./sidenote up --when-green    With the gate on: wait for CI, and deploy when it passes
+    ./sidenote up --no-ci         With the gate on: deploy without asking CI
 
   Log folder: $LOG_PATH
 EOF
@@ -1237,44 +1372,55 @@ EOF
   cat <<KOHELP
 ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우드 에이전트(Claude Code, Codex)가 실시간으로 풀어 패널에 적어 줍니다.
 
+  처음에는 순서대로: ./sidenote install, ./sidenote llm pull, ./sidenote capture --up
+
   ${B}시작과 끝${N}
     ./sidenote install        처음 설치: 서버, 캡처 패키지, 바로가기, 점검 (--with-models면 모델까지)
-    ./sidenote version        지금 깔려 있는 것들의 버전
-    ./sidenote up             서버 시작 (처음엔 이미지를 만듭니다). 쓰는 중이면 쉴 때까지 기다렸다가 다시 시작
+    ./sidenote version        설치된 구성 요소의 버전
+    ./sidenote up             서버 시작 (처음에는 이미지 빌드). 사용 중이면 쉴 때까지 기다린 뒤 다시 시작
     ./sidenote up --now       기다리지 않고 바로 다시 시작
-                              CI가 실패한 커밋은 올리지 않습니다. --when-green: CI 결과를 기다렸다가 통과하면 올림, --no-ci: 그냥 올림
-    ./sidenote qa [server|panel]  CI가 돌리는 테스트 묶음을 이 PC에서 그대로 실행 (결과표: 출력 폴더의 results.md)
-    ./sidenote capture        Windows 화면과 소리 캡처 시작 (창 없이 트레이 아이콘으로 돌고, 이 명령은 바로 끝납니다.
-                              끝내기는 트레이 아이콘의 끝내기나 ./sidenote capture-stop)
-                              옵션: --monitor 2   --list-monitors   --stitch (긴 문제를 스크롤로 모음,
-                                    모니터와 스크롤 이어 붙이기는 패널의 풀이 설정에서도 바꿉니다)
-                                    --no-audio   --audio-device "장치 이름 일부"
-                                    --console (이 터미널에서 돌고 Ctrl+C로 끝)   --once (한 장만 보내고 끝)
-                                    --no-auto-update (새 코드를 배포해도 스스로 다시 시작하지 않음)
-    ./sidenote capture-restart  캡처 프로그램을 지금 다시 시작 (지금 capture.py로. 배포하면 쉬는 때에 스스로도 함)
+    ./sidenote capture        화면과 소리 캡처 시작: WSL에서는 Windows Python으로, Linux에서는 이 데스크톱에서 실행.
+                              트레이 아이콘으로 실행되고 이 명령은 바로 끝남.
+                              끝내기: 트레이 아이콘의 끝내기, 또는 ./sidenote capture-stop
+                              옵션: --up (서버부터 시작)   --monitor 2   --list-monitors
+                                    --stitch (긴 문제를 스크롤하며 이어 붙임)   --no-auto-stitch (자동으로 이어 붙이지 않음)
+                                    (모니터와 스크롤 이어 붙이기는 패널의 풀이 설정에서도 변경)
+                                    --no-audio   --audio-device "장치 이름 일부"   --no-tray (트레이 아이콘 없음)
+                                    --console (이 터미널에서 실행, Ctrl+C로 끝냄)   --once (화면 한 장만 보내고 끝냄)
+                                    --no-auto-update (새 코드를 배포해도 자동으로 다시 시작하지 않음)
+    ./sidenote capture-restart  캡처 프로그램을 지금의 capture.py로 바로 다시 시작 (배포 뒤에는 한가할 때 자동으로 다시 시작)
     ./sidenote open           패널을 브라우저로 열기  ($URL)
     ./sidenote down           모두 멈추기
-    ./sidenote restart        서버를 다시 시작 (.env나 코드를 바꾼 뒤에도 이것으로 충분)
+    ./sidenote restart        서버 다시 시작 (.env나 코드를 바꾼 뒤에도 이것으로 충분)
 
   ${B}처음 한 번${N}
-    ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 씁니다)
-    ./sidenote setup-windows  Windows 쪽 캡처 패키지 설치
-    ./sidenote shortcut       바탕화면에 캡처 시작 바로가기 만들기 (--remove로 지움)
+    ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 사용)
+    ./sidenote setup-capture  캡처 패키지 설치: WSL에서는 Windows Python에, Linux에서는 .venv-capture에
+                              (setup-windows도 같은 명령)
+    ./sidenote shortcut       WSL에서 캡처를 시작하는 Windows 바탕화면 바로가기 만들기 (--remove로 삭제)
     ./sidenote llm pull       이 PC의 GPU에 맞는 모델 받기, 이름을 적으면 그 모델 (수 GB에서 수십 GB)
     ./sidenote llm list|logs  받아 둔 모델, 모델 서버 로그
 
-  ${B}상태와 기록${N}
-    ./sidenote status         서버, 로그인, 캡처, 코드 실행기 상태
+  ${B}상태와 로그${N}
+    ./sidenote status         서버, 이 PC의 모델, 에이전트, 캡처, 코드 실행기 상태
     ./sidenote stats          서버를 켠 뒤의 답 수, 토큰, 비용, 응답 시간, 마지막 오류 (--json)
-    ./sidenote events         최근 기록 (-n 50, --errors 오류와 멈춘 일만)
-    ./sidenote report         날짜별 요약과 기간 전체(엔진별 첫 글자, 에이전트 비용, GPU 바쁨, 예제 검사) (--days 30, --json)
+    ./sidenote events         최근 이벤트 (-n 50, --errors는 오류와 멈춘 일만)
+    ./sidenote report         날짜별 요약과 기간 전체 (엔진별 첫 토큰, 에이전트 비용, GPU 바쁨, 예제 검사) (--days 30, --json)
     ./sidenote logs           서버 로그 실시간 보기
     ./sidenote doctor         설치 점검
     ./sidenote capture-stop   남아 있는 캡처 프로그램 끄기
-    ./sidenote uninstall      이 PC에서 만든 것 목록 (--yes를 붙여야 실제로 지웁니다)
-    ./sidenote gpu off|on     GPU를 다른 작업에 쓰는 동안 이 PC 모델 끄기, 다시 켜기 (끈 동안은 에이전트가 모두 풀고, 한도에 닿아도 다시 올리지 않습니다)
+    ./sidenote uninstall      이 PC에 만든 것 목록 (--yes를 붙이면 삭제)
+    ./sidenote gpu status     이 PC의 모델이 지금 GPU를 쓰는지 보기
+    ./sidenote gpu off|on     다른 작업을 위해 GPU 비우기, 다시 쓰기 (끈 동안은 에이전트가 모두 풀고, 한도에 닿아도 모델을 다시 올리지 않음)
 
-  기록 폴더: $LOG_PATH
+  ${B}개발자용${N}
+    ./sidenote qa [server|panel]  CI가 실행하는 테스트 묶음을 이 PC에서 실행 (결과표: 출력 폴더의 results.md)
+    .env의 SIDENOTE_CI_GATE=1     up이 GitHub(gh)에 이 커밋의 CI 결과를 묻고 실패한 커밋은 배포하지 않음.
+                                  status와 doctor에 CI 줄 표시. 기본은 꺼짐
+    ./sidenote up --when-green    CI 검사를 켰을 때: CI 결과를 기다렸다가 통과하면 배포
+    ./sidenote up --no-ci         CI 검사를 켰을 때: CI를 묻지 않고 배포
+
+  로그 폴더: $LOG_PATH
 KOHELP
 }
 
@@ -1288,23 +1434,31 @@ case "${1:-help}" in
         --now) UP_NOW=1 ;;
         --no-ci) UP_NO_CI=1 ;;
         --when-green) UP_WHEN_GREEN=1 ;;
-        *) die "$(L "Unknown option: $a (./sidenote up [--now] [--no-ci] [--when-green])" "모르는 옵션입니다: $a (./sidenote up [--now] [--no-ci] [--when-green])")" ;;
+        *) die "$(L "Unknown option: $a (./sidenote up [--now] [--no-ci] [--when-green])" "알 수 없는 옵션입니다: $a (./sidenote up [--now] [--no-ci] [--when-green])")" ;;
       esac
     done
-    ci_gate     # asked of a deploy, before its build; a restart or an install has its own reasons and is not held up
+    # Asked of a deploy, before its build, and only with the gate on; a restart or an install has its own reasons and
+    # is not held up. --when-green asks for CI by name: without the gate that is refused, not deployed unchecked.
+    if ci_gate_on; then ci_gate
+    elif [ "${UP_WHEN_GREEN:-0}" = 1 ] && [ "${UP_NO_CI:-0}" != 1 ]; then
+      die "$(L "--when-green waits for CI, and the CI check is off. Turn it on with SIDENOTE_CI_GATE=1 in .env" \
+               "--when-green은 CI 결과를 기다리는데 CI 검사가 꺼져 있습니다. .env에 SIDENOTE_CI_GATE=1을 적어 켜세요")"
+    fi
     cmd_up ;;
   qa) shift; cmd_qa "$@" ;;
   down|stop) cmd_down ;;
   restart) running || die "$(L "The server is off. ./sidenote up" "서버가 꺼져 있습니다. ./sidenote up")"; [ "${2:-}" = --now ] && UP_NOW=1
-    # Not held up: a restart has its own reasons. But it builds what is here, and says so if that has failed
-    case "$(ci_state)" in
-      failure|cancelled|timed_out|startup_failure)
-        warn "$(L "This commit failed CI. Restarting with the code as it is." "이 커밋은 CI를 통과하지 못했습니다. 지금 코드로 다시 시작합니다.")" ;;
-    esac
+    # Not held up: a restart has its own reasons. But it builds what is here, and with the gate on says so if that has failed
+    if ci_gate_on; then
+      case "$(ci_state)" in
+        failure|cancelled|timed_out|startup_failure)
+          warn "$(L "This commit failed CI. Restarting with the code as it is." "이 커밋은 CI를 통과하지 못했습니다. 지금 코드로 다시 시작합니다.")" ;;
+      esac
+    fi
     cmd_up recreate ;;
   status) cmd_status ;;
   stats) shift
-    running || die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼진 동안의 기록은 ./sidenote events)")"
+    running || die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼져 있던 동안의 이벤트는 ./sidenote events)")"
     in_image stats "$@" ;;
   events) shift; in_image events "$@" ;;
   report) shift; in_image report "$@" ;;
@@ -1317,7 +1471,7 @@ case "${1:-help}" in
   llm) shift; cmd_llm "$@" ;;
   gpu) shift; cmd_gpu "${1:-status}" ;;
   doctor) cmd_doctor ;;
-  setup-windows) cmd_setup_windows ;;
+  setup-capture|setup-windows) cmd_setup_capture ;;   # setup-windows: the name it had when capture ran on Windows only
   shortcut) shift; cmd_shortcut "$@" ;;
   help|-h|--help) cmd_help ;;
   *) printf '%s%s: %s%s\n\n' "$R" "$(L "Unknown command" "알 수 없는 명령입니다")" "$1" "$N" >&2; cmd_help; exit 1 ;;

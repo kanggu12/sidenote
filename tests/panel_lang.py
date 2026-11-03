@@ -172,14 +172,18 @@ def group_korean(br, s):
     p = Page(br, s, [], locale="ko-KR", query="?lang=en")
     check("?lang=en gives the English page in a Korean browser", p.js(words)[:2] == ["en", "Pause"], p.js(words))
     p.close()
-    # The particle after a word searched for, in its quotes: by the word's last letter, as the Korean always read
+    # A word searched for and not found is said with no particle after it: a Latin word's ("GPU", read 지피유) is not told by its letters
     p = Page(br, s, english_rows(), locale="ko-KR")
     said = {}
     for typed in ("큐", "스택", "GPU"):
         p.js("(v) => { const q = $('hist-q'); q.value = v; q.dispatchEvent(new Event('input', { bubbles: true })); }", typed)
         p.wait(150)
         said[typed] = p.js("() => $('hist-nomatch').textContent")
-    check("the particle after a quoted word goes by the word", said == {"큐": "'큐'가 든 답 없음", "스택": "'스택'이 든 답 없음", "GPU": "'GPU'이 든 답 없음"}, said)
+    check("a word searched for and not found is said with no particle after it",
+          said == {"큐": "'큐' 검색 결과 없음", "스택": "'스택' 검색 결과 없음", "GPU": "'GPU' 검색 결과 없음"}, said)
+    # The particle after a Hangul word goes by its last letter, inside its quotes and past a bracketed aside
+    picked = p.js("(ws) => ws.map((w) => w + particle(w, '이/가'))", ["'큐'", "'스택'", "스택 (2)"])
+    check("the particle after a quoted word goes by the word", picked == ["'큐'가", "'스택'이", "스택 (2)이"], picked)
     no_errors(p, "korean")
     p.close()
 
@@ -193,7 +197,7 @@ def group_menu(br, s):
     p = Page(br, s, [], locale="ko-KR")
     check("a Korean browser: the menu's Language stands at Auto", p.js(words) == ["ko", "일시정지", None, ["auto"]], p.js(words))
     names = p.js("() => [...document.querySelectorAll('#lang-seg button')].map((b) => b.textContent.trim())")
-    check("the choices are Auto in the panel's language, and each language in its own words", names == ["자동", "English", "한국어"], names)
+    check("the choices are Auto in the panel's language, and each language in its own words, in the Speech setting's order", names == ["자동", "한국어", "English"], names)
     p.page.click("#more")
     with p.page.expect_navigation():
         p.page.click("#lang-seg button[data-lang='en']")
