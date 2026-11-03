@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 168" width="860" height="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="1271 empty screens looked at on the GPU; 1.2 s median; 97% kept off the paid agent">
+<rect x="0.0" y="0" width="204.5" height="168" rx="12" fill="#151b23" stroke="#3d444d"/>
+<rect x="18.0" y="62" width="103.0" height="16" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(14 0)"/>
+<text x="20.0" y="74" font-size="40" font-weight="800" fill="#f0f6fc">1,271</text>
+<text x="20.0" y="112" font-size="14" font-weight="600" fill="#f0f6fc">empty screens checked</text>
+<text x="20.0" y="134" font-size="13" fill="#9198a1">on the GPU, no API tokens</text>
+<rect x="218.5" y="0" width="204.5" height="168" rx="12" fill="#151b23" stroke="#3d444d"/>
+<rect x="236.5" y="62" width="103.0" height="16" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(14 0)"/>
+<text x="238.5" y="74" font-size="40" font-weight="800" fill="#f0f6fc">1.2 s</text>
+<text x="238.5" y="112" font-size="14" font-weight="600" fill="#f0f6fc">median to decide</text>
+<text x="238.5" y="134" font-size="13" fill="#9198a1">there is nothing to solve</text>
+<rect x="437.0" y="0" width="204.5" height="168" rx="12" fill="#151b23" stroke="#3d444d"/>
+<rect x="455.0" y="62" width="65.0" height="16" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(14 0)"/>
+<text x="457.0" y="74" font-size="40" font-weight="800" fill="#f0f6fc">97%</text>
+<text x="457.0" y="112" font-size="14" font-weight="600" fill="#f0f6fc">kept off the paid agent</text>
+<text x="457.0" y="134" font-size="13" fill="#9198a1">841 of 865 since Oct 28</text>
+<rect x="655.5" y="0" width="204.5" height="168" rx="12" fill="#151b23" stroke="#3d444d"/>
+<rect x="673.5" y="62" width="103.0" height="16" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(14 0)"/>
+<text x="675.5" y="74" font-size="40" font-weight="800" fill="#f0f6fc">15.0k</text>
+<text x="675.5" y="112" font-size="14" font-weight="600" fill="#f0f6fc">tokens per empty screen</text>
+<text x="675.5" y="134" font-size="13" fill="#9198a1">when the agent saw every screen</text>
+</svg>

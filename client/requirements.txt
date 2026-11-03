@@ -1,0 +1,10 @@
+# The capture program's packages, the same on Windows and Linux:
+#   py -m pip install -r requirements.txt         (Windows, its own Python, not WSL's)
+#   python3 -m pip install -r requirements.txt    (Linux, in a virtual environment)
+mss>=9.0,<11
+soundcard>=0.4.3,<0.5
+numpy>=1.24,<3
+pillow>=10.0,<14
+websocket-client>=1.7,<2
+# The icon in the notification area (the program runs without it, with --no-tray or if absent).
+pystray>=0.19,<0.20

@@ -1,0 +1,24 @@
+{{- if and .Values.search.enabled .Values.networkPolicy.enabled }}
+# compose.yaml publishes no port for SearXNG: the server is the one client. Only the server's pods may
+# connect here. Its own connections out to the search engines stay open, as in compose.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "searxng") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "searxng") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "searxng") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

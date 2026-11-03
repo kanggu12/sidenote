@@ -1,0 +1,21 @@
+{{- if and .Values.server.persistence.enabled (not .Values.server.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "sidenote.server.claimName" . }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "server") | nindent 4 }}
+  annotations:
+    # helm uninstall leaves the logs and the saved panel settings behind, as ./sidenote uninstall
+    # leaves the log folder. Delete the claim with kubectl to remove them.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.server.persistence.accessModes | nindent 4 }}
+  {{- with (include "sidenote.storageClass" .Values.server.persistence) }}
+  {{- . | nindent 2 }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.server.persistence.size }}
+{{- end }}

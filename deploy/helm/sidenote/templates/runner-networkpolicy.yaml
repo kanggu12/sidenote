@@ -1,0 +1,28 @@
+{{- if and .Values.runner.enabled .Values.networkPolicy.enabled }}
+# compose.yaml runs the code runner with `network_mode: none`. The code it runs comes from a model's
+# reading of a screen, so the pod may open no connection at all (no egress rule, not even DNS), and
+# only the server's pods may connect to it, on the runner's port. This holds only where the network
+# plugin enforces NetworkPolicy (README.md, "Code runner isolation").
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "runner") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "runner") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "runner") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.runner.port }}
+  egress: []
+{{- end }}

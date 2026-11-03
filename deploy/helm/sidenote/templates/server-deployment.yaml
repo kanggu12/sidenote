@@ -1,0 +1,209 @@
+{{- include "sidenote.validate" . -}}
+{{- $loginDir := include "sidenote.agent.loginDir" . }}
+{{- $codexCopy := and .Values.agent.auth.existingSecret (eq (toString .Values.agent.provider) "codex") }}
+{{- $claudeFetch := eq (toString .Values.agent.provider) "claude-code" }}
+# The analysis server and the browser panel (compose service "server"): it takes the capture
+# program's screens and sound on /ingest and solves them with the local LLM and the agent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "server") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "server") | nindent 4 }}
+spec:
+  # One server: it keeps the screen, the speech and the panel connections in memory, and its data
+  # volume is ReadWriteOnce. Recreate stops the old pod before the new one mounts that volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "server") | nindent 8 }}
+      annotations:
+        # A token given in the values (runner.token, runner.existingSecret) rolls both pods when it changes: they read
+        # it from the environment at start, and one restarted alone refused every run (the random default is left
+        # out, or every render without a cluster would roll them)
+        checksum/runner-token: {{ printf "%s/%s" (toString .Values.runner.token) .Values.runner.existingSecret | sha256sum | trunc 16 }}
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # No Kubernetes API token: nothing in the pod talks to the cluster. No Service variables either:
+      # the server reads SIDENOTE_* variables, and Services named sidenote-* would add some of theirs.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.server.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or $codexCopy $claudeFetch }}
+      initContainers:
+      {{- end }}
+      {{- if $claudeFetch }}
+        # Claude Code into the pod: the image's own when it has one, else the pinned release, checked against its manifest
+        - name: claude-code
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.server.image) | quote }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              if [ -x /usr/local/bin/claude ]; then cp /usr/local/bin/claude /opt/agent-bin/claude; exit 0; fi
+              base="https://downloads.claude.ai/claude-code-releases/{{ .Values.agent.claudeCodeVersion }}"
+              sum="$(curl -fsSL --retry 3 "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"]["linux-x64"]["checksum"])')"
+              curl -fsSL --retry 3 -o /opt/agent-bin/claude "$base/linux-x64/claude"
+              echo "$sum  /opt/agent-bin/claude" | sha256sum -c -
+              chmod 755 /opt/agent-bin/claude
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: agent-bin
+              mountPath: /opt/agent-bin
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
+      {{- if $codexCopy }}
+      # Codex writes into its home as it works (a refreshed sign-in, its own records), which a Secret mount cannot
+      # take. The login is copied into the pod's home, in memory, at every start; a refresh lasts the pod's life and
+      # the Secret keeps what it was given.
+        - name: codex-home
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.server.image) | quote }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - mkdir -p /root/.codex && cp -L /etc/sidenote/agent-login/* /root/.codex/ && chmod 700 /root/.codex && chmod 600 /root/.codex/*
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: home
+              mountPath: /root
+            - name: agent-login
+              mountPath: {{ $loginDir }}
+              readOnly: true
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.server.image) | quote }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8777
+              protocol: TCP
+          env:
+            {{- include "sidenote.server.env" . | trim | nindent 12 }}
+            {{- if $claudeFetch }}
+            - name: SIDENOTE_AGENT_BIN
+              value: /opt/agent-bin/claude
+            {{- end }}
+          # The image's own HEALTHCHECK, run inside the container: the server refuses a request from
+          # outside its pod (SIDENOTE_TRUST_GATEWAY=0, values.yaml, server.probes).
+          startupProbe:
+            exec:
+              command:
+                {{- include "sidenote.server.healthCommand" . | nindent 16 }}
+            {{- toYaml .Values.server.probes.startup | nindent 12 }}
+          readinessProbe:
+            exec:
+              command:
+                {{- include "sidenote.server.healthCommand" . | nindent 16 }}
+            {{- toYaml .Values.server.probes.readiness | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                {{- include "sidenote.server.healthCommand" . | nindent 16 }}
+            {{- toYaml .Values.server.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /root
+            {{- if $claudeFetch }}
+            - name: agent-bin
+              mountPath: /opt/agent-bin
+              readOnly: true
+            {{- end }}
+            - name: data
+              mountPath: /data/logs
+              subPath: logs
+            - name: data
+              mountPath: /data/hf
+              subPath: hf
+            {{- if and $loginDir (not $codexCopy) }}
+            - name: agent-login
+              mountPath: {{ $loginDir }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if $claudeFetch }}
+        - name: agent-bin
+          emptyDir:
+            sizeLimit: 512Mi
+        {{- end }}
+        # compose.yaml's tmpfs mounts over the read-only root filesystem, in memory as there. /root
+        # holds the CLI's own config; /root/.claude is the login mount below, or a folder in here.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        - name: home
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        # Logs, saved panel settings and the speech model cache (compose: the log folder and hf-cache).
+        - name: data
+          {{- if .Values.server.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "sidenote.server.claimName" . }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.server.persistence.size }}
+          {{- end }}
+        {{- if $loginDir }}
+        # The agent's login from agent.auth.existingSecret, read-only: the pod cannot change the
+        # Secret, and the CLI cannot save a refreshed token into it (README.md, "Agent login").
+        - name: agent-login
+          secret:
+            secretName: {{ .Values.agent.auth.existingSecret | quote }}
+            # 0400: readable by root, the server's user, and nobody else.
+            defaultMode: 256
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

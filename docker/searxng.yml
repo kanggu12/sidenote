@@ -1,0 +1,36 @@
+# SearXNG for sidenote's local LLM (compose service "searxng"). Only the analysis server talks to
+# it, over the compose network, and asks for JSON; nothing is published on the host. The secret
+# key comes from SEARXNG_SECRET, made fresh on every start (compose.yaml).
+use_default_settings:
+  engines:
+    remove: [ahmia, torch]   # Tor-only engines; they fail to load without Tor
+
+# Off by default in this SearXNG release, on here so a search still finds pages while some engines turn this PC
+# away. After a day of benches, the default ones answered as brave "too many requests", duckduckgo
+# a CAPTCHA and wikidata a timeout, leaving google cse alone. Asked one at a time, bing and yahoo answered; qwant
+# and google (the engine that reads google.com) were turned away, so they stay off; mojeek and startpage are not
+# loaded in this release.
+engines:
+  - name: bing
+    disabled: false
+  - name: yahoo
+    disabled: false
+
+general:
+  instance_name: "sidenote search"
+  enable_metrics: false
+
+search:
+  formats: [html, json]
+  autocomplete: ""
+  default_lang: "auto"
+  safe_search: 0
+
+server:
+  limiter: false          # one internal client, no public traffic to rate-limit
+  public_instance: false
+  image_proxy: false      # results are read as text; no images are fetched
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 6.0

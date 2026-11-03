@@ -1,0 +1,30 @@
+# The local model on an AMD GPU with ROCm (Linux with the amdgpu driver; Docker on Windows cannot reach an AMD GPU,
+# so there Ollama for Windows runs outside Docker and SIDENOTE_LOCAL_URL points at it).
+# ./sidenote picks this file when it finds an AMD GPU; by hand: COMPOSE_FILE=compose.yaml:compose.amd.yaml
+services:
+  llm:
+    image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}-rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - ${SIDENOTE_RENDER_GID:-render}
+    # Ollama, and beside it the first AMD card's readings from the amdgpu driver's own files every two seconds, in the
+    # line nvidia-smi gives on NVIDIA: used and total memory (MiB), load (%), temperature (C) and power (W).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while :; do
+          for d in /sys/class/drm/card*/device; do
+            [ "$$(cat $$d/vendor 2>/dev/null)" = 0x1002 ] || continue
+            used=$$(cat $$d/mem_info_vram_used 2>/dev/null || echo 0); total=$$(cat $$d/mem_info_vram_total 2>/dev/null || echo 0)
+            busy=$$(cat $$d/gpu_busy_percent 2>/dev/null || echo 0)
+            temp=$$(cat $$d/hwmon/hwmon*/temp1_input 2>/dev/null | head -n 1); power=$$(cat $$d/hwmon/hwmon*/power1_average 2>/dev/null | head -n 1)
+            echo "$$((used / 1048576)), $$((total / 1048576)), $$busy, $$((${temp:-0} / 1000)), $$((${power:-0} / 1000000))" > /gpu/now.tmp && mv -f /gpu/now.tmp /gpu/now.csv
+            break
+          done
+          sleep 2
+        done &
+        exec /bin/ollama serve

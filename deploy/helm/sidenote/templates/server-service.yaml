@@ -1,0 +1,17 @@
+# The panel and the capture program's WebSocket (/ingest). ClusterIP by default: reached with
+# kubectl port-forward, as compose publishes it on the host's 127.0.0.1 only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "server") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "server") | nindent 4 }}
+spec:
+  type: {{ .Values.server.service.type }}
+  selector:
+    {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.server.service.port }}
+      targetPort: http
+      protocol: TCP

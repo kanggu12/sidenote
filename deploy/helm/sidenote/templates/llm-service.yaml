@@ -1,0 +1,18 @@
+{{- if .Values.llm.enabled }}
+# Ollama's OpenAI-compatible API, for the server's SIDENOTE_LOCAL_URL (http://<this>:11434/v1).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "llm") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sidenote.selectorLabels" (dict "context" . "component" "llm") | nindent 4 }}
+  ports:
+    - name: http
+      port: 11434
+      targetPort: http
+      protocol: TCP
+{{- end }}

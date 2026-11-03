@@ -1,0 +1,66 @@
+/* The panel's typefaces, served by the server from vendor/fonts (fetched and checksum-verified when
+   the image is built: docker/vendor.json). Pretendard for everything, Instrument Sans for the wordmark and display lines. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url(vendor/fonts/PretendardVariable.woff2) format("woff2-variations"), url(vendor/fonts/PretendardVariable.woff2) format("woff2");
+}
+/* Pretendard for the Korean in code only: in the code font list a whole Pretendard took the place of the fixed-width
+   font while JetBrains Mono was not there yet (or at all), and the code came out proportional, its indentation guides
+   cutting through the letters. Hangul only, the rest falls through to a monospace. */
+@font-face {
+  font-family: "Pretendard Hangul";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url(vendor/fonts/PretendardVariable.woff2) format("woff2-variations"), url(vendor/fonts/PretendardVariable.woff2) format("woff2");
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+@font-face {
+  font-family: "Instrument Sans";
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  src: url(vendor/fonts/InstrumentSans-latin.woff2) format("woff2-variations"), url(vendor/fonts/InstrumentSans-latin.woff2) format("woff2");
+  unicode-range: U+0000-024F, U+2000-206F, U+20A0-20BF, U+2190-21FF;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-weight: 600 800;
+  font-style: normal;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(vendor/fonts/BricolageGrotesque-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The code in an answer. Vendored so a block reads the same on every machine: without it Windows
+   falls back to Consolas, Linux to whatever the browser picks, and the same answer looks different
+   on each. Latin only, since the comments in a Korean answer fall back to Pretendard. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url(vendor/fonts/JetBrainsMono-400.woff2) format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url(vendor/fonts/JetBrainsMono-700.woff2) format("woff2");
+}
+/* The comments in code are set in italic, the face drawn for it: with only the upright ones here the browser
+   slanted the upright letters, which is not what an editor shows. The Korean in a comment, from Pretendard,
+   which has no italic, is slanted by the browser. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  src: url(vendor/fonts/JetBrainsMono-400-italic.woff2) format("woff2");
+}

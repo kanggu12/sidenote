@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 366" width="906" height="366" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="The screen settles and the capture program sends a frame; the server covers faces and checks whether the problem is new; the local model's fast pass, about a second on the GPU, decides: nothing to solve, answered at once, or a hard problem for the cloud agent or the local model's thinking pass; a code answer is then run on the problem's examples">
+<rect x="0" y="118" width="150" height="104" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="14" y="147.45" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,136">Screen settles</text>
+<text x="14" y="166.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,136">the capture</text>
+<text x="14" y="183.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,136">program sends</text>
+<text x="14" y="201.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,136">one frame</text>
+<rect x="174" y="118" width="150" height="104" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="188" y="147.45" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="188,310">New problem?</text>
+<text x="188" y="166.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="188,310">faces covered,</text>
+<text x="188" y="183.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="188,310">then compared</text>
+<text x="188" y="201.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="188,310">with the last one</text>
+<rect x="348" y="118" width="150" height="104" rx="10" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="362" y="147.45" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="362,484">Fast pass</text>
+<text x="362" y="166.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="362,484">the local model</text>
+<text x="362" y="183.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="362,484">reads what kind</text>
+<text x="362" y="201.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="362,484">and where it is</text>
+<path d="M150.5,170 L166.5,170" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M173.5,170 L164.5,174.5 L164.5,165.5 Z" fill="#818b98" data-tip="173.5,170"/>
+<path d="M324.5,170 L340,170" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M347,170 L338.0,174.5 L338.0,165.5 Z" fill="#818b98" data-tip="347,170"/>
+<rect x="546" y="8" width="354" height="70" rx="10" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="560" y="37.95" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="560,886">Nothing to solve</text>
+<text x="560" y="56.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,886">decided on your GPU in a second, no tokens</text>
+<rect x="546" y="92" width="354" height="70" rx="10" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="560" y="121.95" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="560,886">Answered at once</text>
+<text x="560" y="140.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,886">short questions, in a second or two</text>
+<rect x="546" y="176" width="180" height="76" rx="10" fill="#f6f8fa" stroke="#eb6834" stroke-width="2"/>
+<text x="560" y="200.2" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="560,712">Cloud agent</text>
+<text x="560" y="219" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,712">when it would</text>
+<text x="560" y="236.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,712">answer sooner</text>
+<rect x="546" y="270" width="180" height="76" rx="10" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="560" y="294.2" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="560,712">Thinking pass</text>
+<text x="560" y="313" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,712">on your GPU,</text>
+<text x="560" y="330.5" font-size="12.5" fill="#59636e" text-anchor="start" data-box="560,712">otherwise</text>
+<rect x="756" y="216" width="144" height="90" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="770" y="238.45" font-size="14" font-weight="600" fill="#1f2328" text-anchor="start" data-box="770,886">Code checked</text>
+<text x="770" y="257.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="770,886">run on the</text>
+<text x="770" y="274.75" font-size="12.5" fill="#59636e" text-anchor="start" data-box="770,886">problem's own</text>
+<text x="770" y="292.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="770,886">examples</text>
+<path d="M499,170 L522,170" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M522,43 L522,308" fill="none" stroke="#818b98" stroke-width="1.6"/>
+<path d="M522,43 L538,43" fill="none" stroke="#2a78d6" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M545,43 L536.0,47.5 L536.0,38.5 Z" fill="#2a78d6" data-tip="545,43"/>
+<path d="M522,127 L538,127" fill="none" stroke="#2a78d6" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M545,127 L536.0,131.5 L536.0,122.5 Z" fill="#2a78d6" data-tip="545,127"/>
+<path d="M522,214 L538,214" fill="none" stroke="#eb6834" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M545,214 L536.0,218.5 L536.0,209.5 Z" fill="#eb6834" data-tip="545,214"/>
+<path d="M522,308 L538,308" fill="none" stroke="#2a78d6" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M545,308 L536.0,312.5 L536.0,303.5 Z" fill="#2a78d6" data-tip="545,308"/>
+<path d="M727,214 L742,214 L742,246 L748.5,246" fill="none" stroke="#eb6834" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M755.5,246 L746.5,250.5 L746.5,241.5 Z" fill="#eb6834" data-tip="755.5,246"/>
+<path d="M727,308 L742,308 L742,276 L748.5,276" fill="none" stroke="#2a78d6" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M755.5,276 L746.5,280.5 L746.5,271.5 Z" fill="#2a78d6" data-tip="755.5,276"/>
+<rect x="0" y="343" width="22" height="10" rx="3" fill="#f6f8fa" stroke="#2a78d6" stroke-width="2"/>
+<text x="30" y="352" font-size="12" fill="#59636e" text-anchor="start" data-box="30,900">on your GPU: no tokens</text>
+<rect x="209.2" y="343" width="22" height="10" rx="3" fill="#f6f8fa" stroke="#eb6834" stroke-width="2"/>
+<text x="239.2" y="352" font-size="12" fill="#59636e" text-anchor="start" data-box="239.2,900">your cloud agent: paid per use</text>
+</svg>

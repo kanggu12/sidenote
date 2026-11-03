@@ -1,0 +1,7 @@
+# The local model with no GPU: Ollama on the processor. Slow for the larger models; ./sidenote picks this file when it
+# finds no NVIDIA or AMD GPU and a local model is still wanted, otherwise the cloud agent solves every problem.
+# By hand: COMPOSE_FILE=compose.yaml:compose.cpu.yaml
+services:
+  llm:
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "void"   # the image would otherwise look for an NVIDIA GPU on a host whose default runtime has one

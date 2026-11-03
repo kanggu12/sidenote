@@ -1,0 +1,75 @@
+# The desktop app (desktop/): Sidenote as one folder with its own Python, built with PyInstaller on Windows and on
+# Linux. Each build is started with --check, which runs its server with stand-in models and fails when the build left
+# something out. The zips are kept with the run; a version tag attaches them to the GitHub release (release.yml).
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "server/**"
+      - "client/**"
+      - "panel/**"
+      - "docker/vendor.json"
+      - "docker/fetch_vendor.py"
+      - "docker/constraints.txt"
+      - "tests/desktop_check.py"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "server/**"
+      - "client/**"
+      - "panel/**"
+      - "docker/vendor.json"
+      - "docker/fetch_vendor.py"
+      - "docker/constraints.txt"
+      - "tests/desktop_check.py"
+      - ".github/workflows/desktop.yml"
+  workflow_call:       # release.yml builds the zips it attaches with this
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: the app on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"          # the server image's Python
+          cache: pip
+          cache-dependency-path: |
+            server/requirements*.txt
+            client/requirements.txt
+            desktop/requirements-build.txt
+            docker/constraints.txt
+      - name: The server's packages, pinned as the image pins them, and the capture program's
+        shell: bash
+        run: |
+          python -m pip install -r server/requirements.txt -r server/requirements-audio.txt -c docker/constraints.txt
+          python -m pip install -r client/requirements.txt     # the capture program, part of the app on both
+          python -m pip install -r desktop/requirements-build.txt
+      - name: The panel's libraries, checked against their checksums
+        run: python docker/fetch_vendor.py docker/vendor.json panel/vendor
+      - name: The desktop suite, from the checkout
+        run: python tests/desktop_check.py
+      - name: Build, then start the build with --check
+        run: python desktop/build.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Sidenote-${{ runner.os }}
+          path: dist/Sidenote-*.zip
+          retention-days: 14

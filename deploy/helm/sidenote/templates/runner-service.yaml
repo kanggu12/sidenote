@@ -1,0 +1,19 @@
+{{- if .Values.runner.enabled }}
+# The runner's TCP port, for the server's SIDENOTE_RUNNER_URL. The NetworkPolicy beside it lets the
+# server's pods in and nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "runner") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "runner") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sidenote.selectorLabels" (dict "context" . "component" "runner") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.runner.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

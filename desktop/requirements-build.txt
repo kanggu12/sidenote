@@ -1,0 +1,2 @@
+# What desktop/build.py needs on top of the server's and the capture program's packages.
+pyinstaller==6.21.0

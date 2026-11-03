@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+scratch/
+/models/
+*.log
+.env
+panel/vendor/
+/dist/
+/build/
+/.venv-capture/
+/.venv-panel

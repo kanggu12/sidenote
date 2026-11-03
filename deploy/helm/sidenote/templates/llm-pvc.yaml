@@ -1,0 +1,22 @@
+{{- if and .Values.llm.enabled (not .Values.llm.persistence.existingClaim) }}
+# The downloaded model weights (compose volume llm-models), shared by the LLM pod and the model-pull Job.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "sidenote.llm.claimName" . }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm") | nindent 4 }}
+  annotations:
+    # Tens of GB: helm uninstall leaves them, as ./sidenote uninstall removes nothing without --yes.
+    # Delete the claim with kubectl to remove the models.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.llm.persistence.accessModes | nindent 4 }}
+  {{- with (include "sidenote.storageClass" .Values.llm.persistence) }}
+  {{- . | nindent 2 }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.llm.persistence.size }}
+{{- end }}

@@ -1,0 +1,301 @@
+---
+# sidenote analysis server. Drive it with ./sidenote (up, down, status, logs) rather than compose
+# directly: ./sidenote also passes in this PC's Claude Code version.
+name: sidenote   # the project name stays the same if the folder is renamed (volumes, network)
+services:
+  server:
+    build:
+      context: .
+      args:
+        # The cloud agents' CLIs, at this PC's own versions when it has them (./sidenote up passes them), since
+        # each shares its login folder with the PC's own copy.
+        CLAUDE_VERSION: ${SIDENOTE_CLAUDE_VERSION:-2.1.307}
+        CODEX_VERSION: ${SIDENOTE_CODEX_VERSION:-0.165.0}
+    image: sidenote:local
+    container_name: sidenote
+    # Started by `./sidenote up` and stopped by `./sidenote down` only; Docker starting does not bring
+    # it back (no resident program on this PC).
+    restart: "no"
+    ports:
+      # Loopback only: the panel has no login and shows thumbnails of your screen. The
+      # Windows capture client and browser reach it as 127.0.0.1 (WSL forwards/shares it).
+      - "127.0.0.1:${SIDENOTE_PORT:-8777}:8777"
+    # Optional settings (SIDENOTE_FAST=1, SIDENOTE_SPEECH_LANG=ko, ...) go in a .env file next to this
+    # one; it is git-ignored.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Asia/Seoul}   # log times in local time
+      SIDENOTE_LOG_DIR: /data/logs
+      # Writes the screen behind a "nothing to solve" to the log folder, for working out why.
+      SIDENOTE_DEBUG_FRAMES: ${SIDENOTE_DEBUG_FRAMES-}
+      # Speech is decoded on the CPU. The decoder's own pool is capped in code
+      # (SIDENOTE_WHISPER_THREADS, server/transcriber.py); these cap the libraries underneath it
+      # and stop their idle threads from spinning. Measured: eight cores held for 95
+      # minutes, which is exactly the lag this tool is supposed to save the user.
+      OMP_NUM_THREADS: ${SIDENOTE_WHISPER_THREADS:-4}
+      OMP_WAIT_POLICY: PASSIVE
+      # Fixed inside the container whatever .env says: SIDENOTE_PORT in .env moves the host port
+      # above, and who can reach it is decided by that 127.0.0.1 binding.
+      SIDENOTE_PORT: "8777"
+      SIDENOTE_HOST: 0.0.0.0
+      # The CLIs in here are helpers for this server: no self-update, no telemetry or error reports.
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      # The code runner (service below), through its socket in the runner-sock volume: it has no
+      # network. Empty turns the "run this solution" feature off.
+      SIDENOTE_RUNNER_URL: ${SIDENOTE_RUNNER_URL-unix:///sock/runner.sock}
+    networks:
+      - default      # the agent's CLI here reaches its vendor (claude.ai, chatgpt.com)
+      - llmnet       # and the local LLM (SIDENOTE_ANALYZER=local), which has no internet
+    volumes:
+      - hf-cache:/data/hf     # whisper models, downloaded once (~0.5 GB for `small`)
+      - runner-sock:/sock     # the code runner's socket
+      - gpu-stat:/gpu:ro      # what the GPU is doing, written by the llm service: the panel's chart
+      # server.log, events.jsonl (and capture.log from ./sidenote capture): each rotated by
+      # size (5 MB x 5 files) and rotated files deleted after 14 days (see server/telemetry.py).
+      - ${SIDENOTE_LOG_PATH:-${HOME}/.local/state/sidenote/logs}:/data/logs
+      # This PC's Claude Code login. The CLI here is one more Claude Code process on the PC: a token
+      # refresh takes Claude Code's own lock in this folder, so it does not race the PC's sessions.
+      # It loads none of the PC's settings, plugins, MCP servers or skills and saves no sessions
+      # (server/agents.py: claude_args).
+      - ${HOME}/.claude:/root/.claude
+      # Claude Code's own copies of ~/.claude.json, read-only, for who is signed in now (server/agents.py: _signed_in_email). The folder
+      # is hidden under /root/.claude by the tmpfs below, so it is mounted again where the server reads it.
+      - ${HOME}/.claude/backups:/host/claude-backups:ro
+      # This PC's Codex login, for SIDENOTE_AGENT=codex (`./sidenote login codex` writes it). The CLI here loads
+      # none of the PC's Codex config or rules and keeps no sessions (server/agents.py: codex_args).
+      - ${HOME}/.codex:/root/.codex
+    # Docker's own copy of stdout is capped too (json-file grows forever by default).
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    # Hardening: nothing but CHOWN (the entrypoint hands folders from older images back to root),
+    # no privilege gain, a read-only root filesystem with small scratch areas, a process cap.
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+      - /root:size=256m
+      # Over the shared ~/.claude: the CLI here keeps its config backups and its process registry to
+      # itself. Each start would otherwise add a backup of its own empty config to the PC's
+      # backups/, which keeps only the newest five (measured: one real backup pushed out per start).
+      - /root/.claude/backups:size=16m
+      - /root/.claude/sessions:size=16m
+    pids_limit: 512
+    # Whisper on CPU plus the agent's CLI; capped so a runaway cannot starve the host.
+    mem_limit: 8g
+    cpus: ${SIDENOTE_CPUS:-8}
+    # No core dumps: WSL hands them to a helper that writes them into the Windows temp folder
+    # (hundreds of MB for one node crash). A limit of exactly 1 is what makes the kernel skip them.
+    ulimits:
+      core: 1
+
+  # Runs the code from a solution and returns its real output. Isolated: no network at all, a
+  # read-only root filesystem, process and memory capped, and every compile and every run under a
+  # user of its own, which is all the four capabilities below are for (docker/runner.py). Each run
+  # also gets CPU, memory and file rlimits and a timeout.
+  runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.runner
+    image: sidenote-runner:local
+    container_name: sidenote-runner
+    restart: "no"
+    # An init process reaps the processes a run forks and leaves (a fork() exam question): without
+    # it they stay as zombies and use up the process limit until C/C++ cannot compile any more.
+    init: true
+    # No network at all: the server reaches it through the socket in the runner-sock volume, which
+    # only root (the runner here, the server there) may open.
+    network_mode: none
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      RUNNER_SOCKET: /sock/runner.sock
+    volumes:
+      - runner-sock:/sock
+    # Root of the container with four capabilities, for the runner alone: it starts each compile and
+    # each run of an input as a user of its own (SETUID, SETGID), hands it its folder (CHOWN) and
+    # stops what it leaves (KILL). The runs are those users, with none.
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      # mode=1777 so the runs' users can write here (a tmpfs over the image's /work is root's
+      # otherwise), and exec because the compiled a.out runs from /work (Docker tmpfs is noexec
+      # by default). The runner empties both, and /dev/shm and /dev/mqueue, after every run.
+      - /work:size=256m,mode=1777,exec
+      - /tmp:size=64m,mode=1777
+      # the runs' output files, which only the runner may open. Larger than the 64 MB a compile may write
+      # (COMPILE_FILE_CAP), so that limit is what stops it, not a full mount.
+      - /out:size=96m,mode=0700
+    pids_limit: 128
+    mem_limit: 1g
+    memswap_limit: 1g   # no swap: a runaway program meets the limit instead of swapping the PC
+    cpus: 2
+    ulimits:
+      core: 1           # no core dumps into the Windows temp folder (see the server above)
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
+  # The local LLM for SIDENOTE_ANALYZER=local (the default): Ollama. Started only in that mode (./sidenote up adds
+  # the "local" profile). It sits on an internal network with no route to the internet, so screens and transcripts
+  # sent to it cannot leave the PC; models come in through the separate llm-pull service below (./sidenote llm pull).
+  # Which GPU it runs on comes from one more file beside this one, which ./sidenote picks by the GPU it finds
+  # (COMPOSE_FILE): compose.nvidia.yaml, compose.amd.yaml, or compose.cpu.yaml for none. Each also writes the GPU's
+  # readings for the panel's chart into the gpu-stat volume, one line every two seconds.
+  llm:
+    image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}
+    container_name: sidenote-llm
+    entrypoint: ["/bin/ollama", "serve"]
+    profiles: [local]
+    restart: "no"
+    networks:
+      - llmnet
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      # A screenshot is a few thousand tokens and the prompt about two thousand; 16k leaves room
+      # for scroll-stitched tiles and the answer.
+      OLLAMA_CONTEXT_LENGTH: ${SIDENOTE_LOCAL_CONTEXT:-16384}
+      # The model stays in GPU memory this long after the last answer, then frees it.
+      OLLAMA_KEEP_ALIVE: ${SIDENOTE_LOCAL_KEEP_ALIVE:-30m}
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      # Two slots, each keeping its own prompt, so the fast pass's survives a thinking pass. With one slot
+      # the thinking pass's prompt (thinking on differs from its first tokens) or the code check's example
+      # reading replaced the fast pass's, and the next screen waited while the runtime swapped 650 to 870 MiB
+      # of state with system memory: a screen with nothing to solve took 1.0 to 1.7 s after a problem instead
+      # of 0.7 s. Each slot costs about 740 MiB of GPU memory. Three slots (one more for the
+      # example reading) were fast in one run and made every request slower in a later one (a new screen 1.6
+      # to 1.9 s, its prompt processed three times slower; the cause was not found, DESIGN-local-first.md
+      # section 10); two measured 0.65 to 0.9 s, or 1.3 to 1.5 s for the first screen after a thinking pass
+      # and its example check. Idle slots are not copied to system memory on every new request (that copy
+      # was the delay).
+      OLLAMA_NUM_PARALLEL: ${SIDENOTE_LOCAL_SLOTS:-2}
+      LLAMA_ARG_CACHE_IDLE_SLOTS: "false"
+      OLLAMA_NOPRUNE: "1"
+      OLLAMA_NO_CLOUD: "1"   # no cloud models or lookups (the network has no route out anyway)
+      # Let a screenshot use up to this many image tokens (Ollama's packaging caps gemma4 at 512, which
+      # blurs small code text; the model takes up to 1120). Read by the llama-server Ollama runs.
+      LLAMA_ARG_IMAGE_MAX_TOKENS: ${SIDENOTE_LOCAL_IMAGE_TOKENS:-1120}
+    volumes:
+      - llm-models:/root/.ollama
+      - gpu-stat:/gpu
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 24g
+    # Loading and hashing a model, and any CPU fallback, are capped: the answer itself runs on the
+    # GPU, so this costs nothing in speed and keeps the PC usable while a model is being pulled (the
+    # pull itself runs in llm-pull below, under the same cap).
+    cpus: ${SIDENOTE_LLM_CPUS:-8}
+    ulimits:
+      core: 1           # no core dumps into the Windows temp folder (see the server above)
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Web search for the local LLM (SIDENOTE_ANALYZER=local, switched in the panel): SearXNG, a metasearch engine that asks
+  # several search engines and needs no API key. Reached by the server only (no published port);
+  # it is the one part of the local setup that goes out to the internet.
+  searxng:
+    image: searxng/searxng:${SIDENOTE_SEARXNG_VERSION:-2026.10.7-6671d89be}
+    container_name: sidenote-searxng
+    profiles: [local]
+    restart: "no"
+    networks:
+      - default
+    # A fresh secret on every start; nothing else is configured by environment.
+    entrypoint: ["/bin/sh", "-c", "export SEARXNG_SECRET=\"$$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)\"; exec /usr/local/searxng/entrypoint.sh"]
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      FORCE_OWNERSHIP: "false"
+    volumes:
+      - searxng-conf:/etc/searxng                               # named, so a recreate reuses it
+      - ./docker/searxng.yml:/etc/searxng/settings.yml:ro       # the settings themselves, read-only
+    tmpfs:
+      - /var/cache/searxng:size=64m,uid=977,gid=977
+      - /tmp:size=64m
+    user: "977:977"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    pids_limit: 128
+    mem_limit: 512m
+    ulimits:
+      core: 1
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
+  # One-off model download: ./sidenote llm pull [model]. The only container that touches the
+  # internet for the local LLM; it writes into the same model volume and exits. A name like
+  # sidenote-gemma4:26b pulls gemma4:26b and makes sidenote-gemma4:26b from it with a larger batch:
+  # Ollama's default batch of 512 caps an image at 512 tokens, which blurs small code text on a
+  # screenshot (measured: 1152 gives 627 image tokens, 21.9 of 23 GB on a 24 GB card).
+  llm-pull:
+    image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}
+    profiles: [tools]
+    restart: "no"
+    networks:
+      - default
+    volumes:
+      - llm-models:/root/.ollama
+    entrypoint:
+      - sh
+      - -c
+      - |
+        ollama serve >/dev/null 2>&1 &
+        until ollama list >/dev/null 2>&1; do sleep 0.5; done
+        for m in "$$@"; do
+          case "$$m" in
+            sidenote-*)
+              base="$${m#sidenote-}"
+              ollama pull "$$base" || exit 1
+              printf 'FROM %s\nPARAMETER num_batch 1152\n' "$$base" > /tmp/Modelfile
+              ollama create "$$m" -f /tmp/Modelfile || exit 1 ;;
+            *) ollama pull "$$m" || exit 1 ;;
+          esac
+        done
+        ollama list
+      - pull
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # The same CPU cap as the llm service above. A pull checks the sha256 of tens of gigabytes as they
+    # arrive and `ollama create` reads the model once more, and the cap there was written to keep the PC
+    # usable while a model is being pulled, which happens in this container: it had no cap of its own.
+    cpus: ${SIDENOTE_LLM_CPUS:-8}
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "1"
+
+networks:
+  default:
+  llmnet:
+    internal: true   # the server and the local LLM only
+
+volumes:
+  searxng-conf:   # the search engine's own config dir (its image declares it; named so recreates
+  #                 do not leave an empty anonymous volume behind each time)
+  hf-cache:
+  runner-sock:   # the code runner's Unix socket, shared by the server and the runner
+  gpu-stat:     # one line about the GPU, from the llm service to the server
+  llm-models:   # downloaded local LLM weights (tens of GB per model)

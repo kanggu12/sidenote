@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea for Sidenote.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other ways you considered
+  - type: checkboxes
+    id: fair
+    attributes:
+      label: Fair use
+      options:
+        - label: This is not meant to hide Sidenote from a proctor, an exam or a screen share.
+          required: true

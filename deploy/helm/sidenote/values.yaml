@@ -1,0 +1,394 @@
+# Values for the sidenote chart.
+#
+# The chart runs the stack that the repository's compose.yaml runs, with the same hardening:
+#   server   the analysis server and the browser panel (image built from Dockerfile)
+#   runner   the code runner, with no network (image built from docker/Dockerfile.runner)
+#   llm      the local vision LLM (Ollama), and a Job that downloads its models
+#   search   the web search the local LLM uses (SearXNG)
+# The capture program stays outside the cluster, on the PC with the screen, and connects to the server's WebSocket
+# (NOTES.txt and README.md say how). Put your own settings in a file of your own and pass it with
+# -f; everything you leave out keeps the value below.
+
+# Replace the chart name in object names (nameOverride), or the whole prefix (fullnameOverride). By
+# default objects are named after the release: "sidenote-server" for a release called "sidenote".
+nameOverride: ""
+fullnameOverride: ""
+
+# Secrets for pulling images from a private registry, in the form Kubernetes uses:
+#   imagePullSecrets:
+#     - name: my-registry
+# You build the sidenote and sidenote-runner images from this repository and push them yourself
+# (README.md, "Images").
+imagePullSecrets: []
+
+# The time zone of the log times, given to the containers as TZ (compose.yaml has the same default).
+timezone: Asia/Seoul
+
+# NetworkPolicies that keep the components apart, as compose.yaml's networks do: the code runner
+# reaches nothing and only the server reaches it, the local LLM reaches nothing and only the server
+# reaches it, the search engine is reached by the server only, and no pod may connect to the server
+# (kubectl port-forward is not affected). They take effect only where the cluster's network plugin
+# enforces NetworkPolicy (Calico, Cilium and others; flannel alone does not).
+# false removes the code runner's network isolation.
+networkPolicy:
+  enabled: true
+
+# The coding agent the server asks for the problems that need reasoning (the repository's README.md,
+# "Choosing the cloud agent").
+agent:
+  # claude-code    the Claude Code CLI in the server image, signed in with a login from the Secret
+  # codex          the Codex CLI, signed in with a login from the Secret
+  # anthropic-api  the Anthropic API, with an API key from the Secret
+  # off            no agent: the local LLM solves everything
+  provider: claude-code
+  # The model the agent answers with. Empty: the agent's own default.
+  model: ""
+  # How hard the agent thinks, for example low, medium, high, xhigh or max for Claude Code.
+  # Empty: the agent's own default.
+  effort: ""
+  # The Claude Code release a pod fetches when it starts, when its image carries none (the published images do not:
+  # Claude Code is Anthropic's to distribute). Checked against the release's manifest. Used for claude-code only.
+  claudeCodeVersion: "2.1.307"
+  auth:
+    # The name of an existing Secret in the release's namespace (README.md, "Agent login"):
+    #   claude-code    the login files of ~/.claude (.credentials.json), mounted read-only at
+    #                  /root/.claude; or a key CLAUDE_CODE_OAUTH_TOKEN holding a token from
+    #                  `claude setup-token`, given to the server as that environment variable
+    #   codex          auth.json from ~/.codex, mounted read-only at /root/.codex
+    #   anthropic-api  a key ANTHROPIC_API_KEY, given to the server as that environment variable
+    # Empty: the agent has no login, and the panel shows it as signed out.
+    existingSecret: ""
+
+server:
+  image:
+    # Built from the repository's Dockerfile and pushed where the cluster can pull it.
+    repository: sidenote
+    # Empty: the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Server settings as environment variables: any SIDENOTE_* setting in docs/README.md section 12
+  # (server/config.py explains each one). Quote every value. The server reads them as strings, and
+  # Helm writes a large unquoted number such as 1000000 as 1e+06.
+  # The chart points SIDENOTE_RUNNER_URL, SIDENOTE_LOCAL_URL and SIDENOTE_SEARCH_URL at its own
+  # components, and sets SIDENOTE_ANALYZER when the local LLM is off; a value here replaces the
+  # chart's. Refused here: SIDENOTE_HOST, SIDENOTE_PORT, SIDENOTE_LOG_DIR and HF_HOME (the Service
+  # and the mounts depend on them), SIDENOTE_AGENT, SIDENOTE_AGENT_MODEL and SIDENOTE_AGENT_EFFORT
+  # (use the agent block), and ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN (use
+  # agent.auth.existingSecret, so no key is written into a values file).
+  env: {}
+  #   SIDENOTE_SPEECH_LANG: "ko"
+  #   SIDENOTE_WHISPER_THREADS: "4"   # also sets OMP_NUM_THREADS, as compose.yaml does
+
+  service:
+    # ClusterIP, reached through kubectl port-forward (NOTES.txt). The panel has no login, so keep it
+    # off NodePort and LoadBalancer.
+    type: ClusterIP
+    port: 8777
+
+  # One volume for the server's logs, the panel's saved settings (.settings.json, kept beside the
+  # logs) and the speech model it downloads on its first start (about 0.5 GB for the default "small").
+  # enabled: false uses an emptyDir instead, and all of that starts over whenever the pod is replaced.
+  # helm uninstall leaves the claim in place; delete it with kubectl when you no longer want it.
+  persistence:
+    enabled: true
+    # An existing claim to use instead of creating one.
+    existingClaim: ""
+    # Empty: the cluster's default StorageClass. "-": no class (a volume you provisioned yourself).
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+
+  # compose.yaml caps the server at 8 CPUs and 8 GB of memory. The memory-backed scratch folders
+  # (/tmp 512 MiB, /root 256 MiB) count against the memory limit, as tmpfs does in compose.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "8"
+      memory: 8Gi
+
+  # Probe timing. Each probe runs the image's own health check inside the container (python asking
+  # http://127.0.0.1:8777/health). The server answers only requests addressed to 127.0.0.1 or
+  # localhost that come from its own pod (the chart sets SIDENOTE_TRUST_GATEWAY=0), which a kubelet
+  # probe over the pod network is not.
+  probes:
+    # The first start downloads the speech model before /health answers: up to 10 minutes here.
+    startup:
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 60
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    # 4 minutes, longer than SIDENOTE_STALL_EXIT_SEC (180 s): the server's own watchdog writes the
+    # stacks of a stuck server and ends it first, and this restarts it only when that did not happen.
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 12
+
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # RuntimeDefault is the container runtime's own seccomp profile, the one Docker gives compose's
+  # containers by default.
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+  # As compose.yaml: root of the container (the agent's login files belong to root), every
+  # capability dropped but CHOWN (the entrypoint hands the data folders back to root), no privilege
+  # gain, and a read-only root filesystem with memory-backed /tmp and /root.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+      add: [CHOWN]
+
+runner:
+  # false: no code runner, and the panel shows no run button (SIDENOTE_RUNNER_URL is empty).
+  enabled: true
+  image:
+    # Built from docker/Dockerfile.runner and pushed where the cluster can pull it.
+    repository: sidenote-runner
+    # Empty: the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # The token the server and the runner share. Empty: the chart makes one at the first install and keeps it on
+  # upgrades, which needs the cluster to look in (lookup). helm template, --dry-run and GitOps tools that render
+  # without a cluster (Argo CD, Flux) made a new one at every render, and the pods kept the old one until they
+  # restarted, so every run was refused. Set one of these there: the token itself, or a Secret of your own with a
+  # "token" key (the chart then makes none).
+  token: ""
+  existingSecret: ""
+  # The TCP port the runner listens on (RUNNER_PORT). compose.yaml gives it a Unix socket in a volume
+  # it shares with the server, which two pods cannot share; NetworkPolicy keeps this port to the
+  # server (README.md, "Code runner isolation").
+  port: 8000
+  # Each runner takes one run at a time; more replicas take more runs at once.
+  replicaCount: 1
+  # compose.yaml: 2 CPUs and 1 GB of memory, with no swap. Kubernetes nodes run without swap unless
+  # set up for it; on a node with LimitedSwap, set the requests equal to the limits so the pod is
+  # Guaranteed and cannot swap. The memory-backed /work (256 MiB), /tmp (64 MiB) and /out (96 MiB)
+  # count against the memory limit, as their tmpfs does in compose.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  # Each probe runs the image's own health check (runner.py --health). A runner that could not clean
+  # up after a run reports itself unhealthy, and the liveness probe restarts it.
+  probes:
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 2
+    liveness:
+      periodSeconds: 30
+      timeoutSeconds: 3
+      failureThreshold: 2
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  # As compose.yaml: root of the container with four capabilities, for the runner alone. It starts
+  # every compile and every run as a user of its own (SETUID, SETGID), hands it its folder (CHOWN)
+  # and stops what it leaves (KILL); the runs themselves have none.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+      add: [SETUID, SETGID, CHOWN, KILL]
+
+llm:
+  # false: no local LLM. The server then needs an agent (agent.provider) or another OpenAI-compatible
+  # model server, named in server.env.SIDENOTE_LOCAL_URL.
+  enabled: true
+  image:
+    repository: ollama/ollama
+    # The version compose.yaml pins (SIDENOTE_OLLAMA_VERSION).
+    tag: "0.40.5"
+    pullPolicy: IfNotPresent
+  # GPUs for the model, as the cluster's device plugin names them: nvidia.com/gpu for "nvidia" (the NVIDIA device
+  # plugin), amd.com/gpu for "amd" (the AMD GPU device plugin, with the ROCm build of the image). The model is chosen by
+  # the GPU's memory (server.env.SIDENOTE_LOCAL_MODEL "auto"; set SIDENOTE_LOCAL_VRAM_GB there, as the server cannot
+  # read the GPU from its own pod). 0 runs the model on the CPU, which is slow for the larger models.
+  gpu: 1
+  gpuVendor: nvidia
+  # A RuntimeClass for GPU pods when the cluster needs one, for example "nvidia" on k3s with the
+  # NVIDIA container toolkit. Empty: the cluster's default runtime.
+  runtimeClassName: ""
+  # Ollama's settings as compose.yaml gives them (its comments explain the numbers). The names in the
+  # comments are the compose variables that set them there.
+  env:
+    OLLAMA_CONTEXT_LENGTH: "16384"       # SIDENOTE_LOCAL_CONTEXT
+    OLLAMA_KEEP_ALIVE: "30m"             # SIDENOTE_LOCAL_KEEP_ALIVE
+    OLLAMA_MAX_LOADED_MODELS: "1"
+    OLLAMA_NUM_PARALLEL: "2"             # SIDENOTE_LOCAL_SLOTS
+    LLAMA_ARG_CACHE_IDLE_SLOTS: "false"
+    OLLAMA_NOPRUNE: "1"
+    OLLAMA_NO_CLOUD: "1"
+    LLAMA_ARG_IMAGE_MAX_TOKENS: "1120"   # SIDENOTE_LOCAL_IMAGE_TOKENS
+  # The models volume, tens of GB per model. The model-pull Job writes into it while the LLM pod has
+  # it mounted, so with ReadWriteOnce the Job runs on the LLM pod's node. helm uninstall leaves the
+  # claim in place; delete it with kubectl when you no longer want the models.
+  persistence:
+    # An existing claim to use instead of creating one.
+    existingClaim: ""
+    # Empty: the cluster's default StorageClass. "-": no class (a volume you provisioned yourself).
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi
+  # compose.yaml: 24 GB of memory and 8 CPUs (SIDENOTE_LLM_CPUS). The answers run on the GPU, so the
+  # CPU cap costs nothing in speed; it bounds loading a model and any fallback to the CPU.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "8"
+      memory: 24Gi
+  probes:
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 6
+  podAnnotations: {}
+  nodeSelector: {}
+  # GPU nodes are often tainted. The model-pull Job uses this nodeSelector and these tolerations too,
+  # to reach the LLM pod's node. It asks for no GPU, so it does not get a toleration the cluster may
+  # add to GPU pods by itself: list that toleration here, for example
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+  tolerations: []
+  affinity: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  # As compose.yaml: every capability dropped and no privilege gain. The root filesystem stays
+  # writable, as in compose; the models are on their own volume.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: [ALL]
+
+  # The model download: compose.yaml's llm-pull service, as a Helm hook Job that runs after every
+  # install and upgrade while this is on. It is the one part of the local LLM that reaches the
+  # internet (its NetworkPolicy allows DNS and the ports below), and it writes into the models volume.
+  # Off by default: Helm waits for a hook Job to finish, a first download is tens of GB, and with
+  # Helm's default --timeout of 5 minutes the install would fail. Turn it on with a long timeout:
+  #   helm upgrade --install sidenote deploy/helm/sidenote -f my-values.yaml \
+  #     --set llm.pull.enabled=true --timeout 2h
+  # Once the models are on the volume, a run takes seconds.
+  pull:
+    enabled: false
+    # The models to pull. A name sidenote-<model> pulls <model> and makes sidenote-<model> from it
+    # with a larger batch (compose.yaml says why). Empty: the server's SIDENOTE_LOCAL_MODEL and
+    # SIDENOTE_LOCAL_BUSY_MODEL from server.env, as `./sidenote llm pull` takes them. For "auto", their
+    # default, the largest measured model that fits server.env.SIDENOTE_LOCAL_VRAM_GB and its smaller
+    # one: sidenote-gemma4:26b and sidenote-gemma4:e4b for 24 GB (also when it is not set), the e4b
+    # and the e2b for 12 to 16 GB, the e2b alone for 8 GB.
+    models: []
+    # Where the Job may connect besides DNS: the model registry and its download hosts, over HTTPS.
+    # Narrow the addresses, or add a proxy's port, to fit your network.
+    egressCIDRs:
+      - 0.0.0.0/0
+    egressPorts:
+      - 443
+    # The LLM's CPU cap, and no memory limit, as compose.yaml has it.
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "8"
+    # Give up after this many seconds, and try again this many times after a failure.
+    activeDeadlineSeconds: 21600
+    backoffLimit: 3
+    # A finished Job, with its log, is deleted after this many seconds, or when the next one starts.
+    ttlSecondsAfterFinished: 86400
+    # Empty: run on the LLM pod's node, which a ReadWriteOnce volume needs. Give an affinity of your
+    # own here when the models volume is ReadWriteMany.
+    affinity: {}
+
+search:
+  # false: no web search for the local LLM (SIDENOTE_SEARCH_URL is empty).
+  enabled: true
+  image:
+    repository: searxng/searxng
+    # The version compose.yaml pins (SIDENOTE_SEARXNG_VERSION).
+    tag: "2026.10.7-6671d89be"
+    pullPolicy: IfNotPresent
+  # SearXNG's whole settings.yml. Empty: files/searxng.yml, a copy of docker/searxng.yml.
+  settings: ""
+  # More environment variables for SearXNG, for example GRANIAN_HOST: "0.0.0.0" on nodes without
+  # IPv6, where it cannot listen on "::" as the image asks.
+  env: {}
+  # compose.yaml: 512 MB of memory and no CPU limit.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  probes:
+    startup:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 24
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 30
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # fsGroup 977: the cache folder belongs to the searxng group, as compose's tmpfs does.
+  podSecurityContext:
+    fsGroup: 977
+    seccompProfile:
+      type: RuntimeDefault
+  # As compose.yaml: the image's searxng user (977), every capability dropped, no privilege gain and
+  # a read-only root filesystem.
+  securityContext:
+    runAsUser: 977
+    runAsGroup: 977
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]

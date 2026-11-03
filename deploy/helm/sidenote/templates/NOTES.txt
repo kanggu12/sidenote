@@ -1,0 +1,65 @@
+{{- $server := include "sidenote.componentName" (dict "context" . "component" "server") -}}
+{{- $ns := .Release.Namespace -}}
+Sidenote is installed as release {{ .Release.Name }} in namespace {{ $ns }}.
+
+Open the panel
+  The panel has no login and shows your screen, so the server takes connections from inside its own
+  pod only. Forward its port to the machine you sit at:
+
+    kubectl --namespace {{ $ns }} port-forward svc/{{ $server }} 8777:{{ .Values.server.service.port }}
+
+  and open http://127.0.0.1:8777 in a browser on that machine. Keep the forward on 127.0.0.1, the
+  default: --address 0.0.0.0 would open the panel to your network.
+
+Connect the capture program
+  It sends the screen and the sound to ws://127.0.0.1:8777/ingest, its default address. Run the
+  port-forward above on the PC with the screen (on Windows, or in WSL on that PC: Windows reaches
+  WSL's localhost), then start the program as usual: from the repository,
+
+    ./sidenote capture
+
+  or from the release's sidenote-capture zip, on Windows or on a Linux desktop with X11,
+
+    py -3 capture.py --server ws://127.0.0.1:8777/ingest
+    python3 capture.py --server ws://127.0.0.1:8777/ingest
+
+  A port-forward ends when the pod behind it is replaced (an upgrade, a restart). Run it again; the
+  capture program and the panel reconnect by themselves.
+{{- if .Values.llm.enabled }}
+
+The local model
+{{- if .Values.llm.pull.enabled }}
+  The model-pull Job has put {{ include "sidenote.llm.pullModels" . | fromJsonArray | join ", " }} on the models volume. Its log:
+
+    kubectl --namespace {{ $ns }} logs job/{{ include "sidenote.componentName" (dict "context" . "component" "llm-pull") }}
+{{- else }}
+  No model has been downloaded by this release (llm.pull.enabled is false). Until one is there the
+  agent solves everything, if it is signed in. Download the models, tens of GB, with:
+
+    helm upgrade {{ .Release.Name }} deploy/helm/sidenote --namespace {{ $ns }} --reuse-values \
+      --set llm.pull.enabled=true --timeout 2h
+{{- end }}
+{{- if eq (int .Values.llm.gpu) 0 }}
+
+  llm.gpu is 0: the model runs on the CPU, which is far too slow for the default model.
+{{- end }}
+{{- end }}
+{{- $provider := toString .Values.agent.provider }}
+{{- if and (ne $provider "off") (not .Values.agent.auth.existingSecret) }}
+
+The agent
+  agent.provider is {{ $provider }} but agent.auth.existingSecret is empty, so the agent has no login
+  and the panel shows it as signed out. README.md, "Agent login", says how to make the Secret.
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+
+Isolation
+  The NetworkPolicies of this release (the code runner reaches nothing, the local LLM reaches
+  nothing, only the server reaches either) take effect only if the cluster's network plugin enforces
+  NetworkPolicy.
+{{- else }}
+
+Isolation
+  networkPolicy.enabled is false: the code runner, which runs code a model read off a screen, can
+  reach the network, and any pod can reach the runner and the local LLM.
+{{- end }}

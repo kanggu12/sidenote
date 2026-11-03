@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work as the docs say.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ./sidenote up
+        2. Open a practice problem on the screen
+        3. ...
+  - type: dropdown
+    id: install
+    attributes:
+      label: How Sidenote runs
+      options:
+        - Windows app
+        - Linux app
+        - Docker on Linux or WSL (./sidenote up)
+        - Helm chart on Kubernetes
+        - From source (uvicorn)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: OS, GPU and its memory
+      placeholder: Windows 11, NVIDIA RTX 4070 12 GB
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Local model and cloud agent
+      placeholder: gemma4:e4b, Claude Code
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of ./sidenote doctor
+      description: With the app, the local model's card in the panel (its model and GPU lines). From a checkout, the output of `python3 -m server.hardware`. Remove anything private.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "The lines around the problem. With the app: `server.log`, `app.log` and `capture.log` in its data folder's `logs` (`%LOCALAPPDATA%\\Sidenote\\logs` on Windows, `~/.local/share/sidenote/logs` on Linux). With Docker: `./sidenote events --errors`. Please do not attach screenshots with private content."
+      render: text

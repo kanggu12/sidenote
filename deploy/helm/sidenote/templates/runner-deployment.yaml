@@ -1,0 +1,150 @@
+{{- if .Values.runner.enabled }}
+{{- $image := include "sidenote.image" (dict "context" . "image" .Values.runner.image) }}
+# The code runner (docker/runner.py): runs the code from a solution and returns its real output. Its
+# own Deployment, so it shares neither the server's network nor its processes: a sidecar would.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "runner") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "runner") | nindent 4 }}
+spec:
+  replicas: {{ .Values.runner.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "runner") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "runner") | nindent 8 }}
+      annotations:
+        # A token given in the values (runner.token, runner.existingSecret) rolls both pods when it changes: they read
+        # it from the environment at start, and one restarted alone refused every run (the random default is left
+        # out, or every render without a cluster would roll them)
+        checksum/runner-token: {{ printf "%s/%s" (toString .Values.runner.token) .Values.runner.existingSecret | sha256sum | trunc 16 }}
+        {{- with .Values.runner.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # The runner reads RUNNER_PORT, and a Service named "runner" in the namespace would set it to
+      # tcp://<address>:<port>; it is set below either way, but no Service variables come in at all.
+      enableServiceLinks: false
+      # compose.yaml's `init: true`: with one process namespace for the pod, the pause container is
+      # PID 1 and reaps the processes a run forks and leaves behind (a fork() exam question). Without
+      # an init they stay as zombies and use up the process limit until C and C++ cannot compile.
+      shareProcessNamespace: true
+      {{- with .Values.runner.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # The modes compose gives the tmpfs mounts: /work and /tmp writable by every run's user and
+        # sticky, so no run can remove another's files, and /out (the runs' output files) the
+        # runner's alone. The mode the kubelet gives an emptyDir depends on its medium, so it is set
+        # here rather than assumed.
+        - name: scratch-modes
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          command: ["sh", "-c", "chmod 1777 /work /tmp && chmod 0700 /out"]
+          # Root owns the emptyDir folders, so changing their modes needs no capability.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          # Requests equal to limits, so the pod's QoS class follows the runner's own resources.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+            - name: out
+              mountPath: /out
+      containers:
+        - name: runner
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            # No RUNNER_SOCKET: without it the runner listens on this TCP port. A Unix socket works
+            # only in a volume both sides mount, which pods on different nodes cannot share.
+            - name: RUNNER_PORT
+              value: {{ .Values.runner.port | quote }}
+            # Over TCP the port is open to anything that can reach it, the runs this pod starts among them: a /run
+            # must carry this token, which the server has too. The runner drops it from its environment at start.
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sidenote.runner.tokenSecret" . | quote }}
+                  key: token
+          ports:
+            - name: http
+              containerPort: {{ .Values.runner.port }}
+              protocol: TCP
+          # The image's own HEALTHCHECK: it asks /health over the loopback interface.
+          readinessProbe:
+            exec:
+              command: ["python3", "-I", "/app/runner.py", "--health"]
+            {{- toYaml .Values.runner.probes.readiness | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["python3", "-I", "/app/runner.py", "--health"]
+            {{- toYaml .Values.runner.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.runner.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.runner.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+            - name: out
+              mountPath: /out
+      volumes:
+        # compose.yaml's tmpfs mounts, in memory as there. /work must allow running files (the
+        # compiled a.out runs from it), which an emptyDir does. The runner empties all three, and
+        # /dev/shm and /dev/mqueue, after every run.
+        - name: work
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        # Larger than the 64 MB a compile may write (COMPILE_FILE_CAP in runner.py), so that limit
+        # stops a compile before the folder fills up.
+        - name: out
+          emptyDir:
+            medium: Memory
+            sizeLimit: 96Mi
+      {{- with .Values.runner.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.runner.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.runner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,108 @@
+{{- if and .Values.llm.enabled .Values.llm.pull.enabled }}
+{{- $models := include "sidenote.llm.pullModels" . | fromJsonArray }}
+# compose.yaml's llm-pull service (./sidenote llm pull) as a hook: after every install and upgrade it
+# pulls the models into the models volume and exits. Helm waits for it, so give helm a --timeout
+# long enough for the download (values.yaml, llm.pull).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "llm-pull") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm-pull") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    # The last Job stays, with its log, until the next one replaces it or its TTL ends.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.llm.pull.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.llm.pull.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.llm.pull.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "llm-pull") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.llm.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # The models volume is mounted by the LLM pod at the same time; a ReadWriteOnce volume can be
+      # shared only on one node, so by default the Job runs where the LLM pod runs.
+      affinity:
+        {{- if .Values.llm.pull.affinity }}
+        {{- toYaml .Values.llm.pull.affinity | nindent 8 }}
+        {{- else }}
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "sidenote.selectorLabels" (dict "context" . "component" "llm") | nindent 18 }}
+              topologyKey: kubernetes.io/hostname
+        {{- end }}
+      {{- with .Values.llm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.llm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: pull
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.llm.image) | quote }}
+          imagePullPolicy: {{ .Values.llm.image.pullPolicy }}
+          # compose.yaml's script, unchanged: a server of its own on the same volume, then each model.
+          # A name sidenote-<model> pulls <model> and makes sidenote-<model> from it with a larger
+          # batch (Ollama's default batch of 512 caps an image at 512 tokens).
+          command:
+            - sh
+            - -c
+            - |
+              ollama serve >/dev/null 2>&1 &
+              until ollama list >/dev/null 2>&1; do sleep 0.5; done
+              for m in "$@"; do
+                case "$m" in
+                  sidenote-*)
+                    base="${m#sidenote-}"
+                    ollama pull "$base" || exit 1
+                    printf 'FROM %s\nPARAMETER num_batch 1152\n' "$base" > /tmp/Modelfile
+                    ollama create "$m" -f /tmp/Modelfile || exit 1 ;;
+                  *) ollama pull "$m" || exit 1 ;;
+                esac
+              done
+              ollama list
+            - pull
+            {{- range $models }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            # The Job's own server listens inside the pod only.
+            - name: OLLAMA_HOST
+              value: "127.0.0.1:11434"
+            # A starting Ollama server deletes partial downloads unless told not to; this keeps them,
+            # so a Job that timed out or was retried resumes where the last one stopped.
+            - name: OLLAMA_NOPRUNE
+              value: "1"
+            # No GPU for a download (see the LLM Deployment for why "void").
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
+          resources:
+            {{- toYaml .Values.llm.pull.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.llm.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "sidenote.llm.claimName" . }}
+{{- end }}

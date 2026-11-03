@@ -1,0 +1,105 @@
+{{- if .Values.llm.enabled }}
+{{- $gpu := int .Values.llm.gpu }}
+{{- $amd := eq (.Values.llm.gpuVendor | default "nvidia") "amd" }}
+{{- $image := deepCopy .Values.llm.image }}
+{{- if and $amd (not (hasSuffix "-rocm" (toString $image.tag))) }}
+{{- $_ := set $image "tag" (printf "%s-rocm" (toString $image.tag)) }}
+{{- end }}
+# The local vision LLM for the server's local analyzer (compose service "llm"): Ollama, on the GPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "llm") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm") | nindent 4 }}
+spec:
+  # One model server on one GPU, with a ReadWriteOnce models volume: Recreate stops the old pod
+  # before the new one takes the GPU and the volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "llm") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "llm") | nindent 8 }}
+      {{- with .Values.llm.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # Ollama reads OLLAMA_* variables, and a Service named "ollama" would add some of its own.
+      enableServiceLinks: false
+      {{- with .Values.llm.runtimeClassName }}
+      runtimeClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.llm.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ollama
+          image: {{ include "sidenote.image" (dict "context" . "image" $image) | quote }}
+          imagePullPolicy: {{ .Values.llm.image.pullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            {{- if and (eq $gpu 0) (not $amd) }}
+            # The image sets NVIDIA_VISIBLE_DEVICES=all. On a node whose default runtime is NVIDIA's,
+            # a pod that requests no GPU would then see every GPU; "void" gives it none.
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "void"
+            {{- end }}
+            {{- include "sidenote.envFromMap" .Values.llm.env | trim | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 11434
+              protocol: TCP
+          # The kubelet's probes come from the pod's own node, which a NetworkPolicy does not block.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.llm.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.llm.probes.liveness | nindent 12 }}
+          resources:
+            {{- $resources := deepCopy (.Values.llm.resources | default dict) }}
+            {{- if gt $gpu 0 }}
+            {{- $limits := get $resources "limits" | default dict }}
+            {{- $_ := set $limits (ternary "amd.com/gpu" "nvidia.com/gpu" $amd) $gpu }}
+            {{- $_ := set $resources "limits" $limits }}
+            {{- end }}
+            {{- toYaml $resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.llm.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "sidenote.llm.claimName" . }}
+      {{- with .Values.llm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.llm.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.llm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

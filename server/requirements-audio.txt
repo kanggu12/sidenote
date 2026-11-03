@@ -1,0 +1,4 @@
+# Optional: enable real-time speech transcription (heavy; downloads a model).
+# Install on top of requirements.txt to turn the audio path on (SIDENOTE_TRANSCRIBER=auto).
+faster-whisper>=1.0
+numpy>=1.24

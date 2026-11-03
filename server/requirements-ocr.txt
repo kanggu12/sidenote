@@ -1,0 +1,34 @@
+# The text detector (PP-OCR through ONNX Runtime, CPU, pip-only, no system Tesseract). Not in the
+# image: it was measured against the free ink walk that grows a crop to its block of writing, and on
+# 102 recorded boxes it holds the whole problem on none more than the walk does (99 either way), for
+# about 1.2 s of CPU each time it is reached. It is here for a screen the ink walk cannot read, and
+# for the change-detection gate.
+#
+#   SIDENOTE_CROP_SNAP=detector    the crop grows the model's problem box to the block of writing
+#                                  it landed in (pipeline.grow_to_block); only the line boxes are
+#                                  used, never the text, so a Korean screen is fine
+#   SIDENOTE_GATE=auto|hybrid|ocr  two differently-worded problems on an identical template are
+#                                  told apart by their text (the text itself is Chinese and English
+#                                  only, so this one is of little use on a Korean screen)
+#
+# It goes into the image, not into a running container: the server runs read_only (compose.yaml),
+# so `docker exec pip install` cannot write site-packages, and anything that did get in would be
+# gone at the next `./sidenote up`. Add these four lines to the Dockerfile's pip step instead:
+#
+#       COPY ... server/requirements-ocr.txt ... /tmp/req/
+#       RUN pip install ... -r /tmp/req/requirements-ocr.txt -c /tmp/req/constraints.txt \
+#        && pip uninstall -y opencv-python \
+#        && pip install --force-reinstall --no-deps opencv-python-headless==5.0.0.93 \
+#        && python -c "import cv2, rapidocr_onnxruntime"
+#
+# The constraints file is not optional here: rapidocr asks for numpy>=1.19.5,<3 and would otherwise
+# be free to move the numpy and onnxruntime that faster-whisper is pinned against, and a transcriber
+# that stops loading is a strange way to find out. The uninstall is not optional either: rapidocr
+# asks for opencv-python, which is built against X11 and dies in this image with "libxcb.so.1:
+# cannot open shared object file"; the headless build is the same library without the window code,
+# and both write the same cv2 tree, so it has to go in last. The import at the end is what makes a
+# broken install fail the build instead of showing up as one warning line at the first crop.
+#
+# Pinned to what was measured, because the resolver is otherwise free to change the image quietly.
+rapidocr-onnxruntime==1.4.4
+numpy>=1.24

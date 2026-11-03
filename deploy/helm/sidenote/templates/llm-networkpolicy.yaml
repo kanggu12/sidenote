@@ -1,0 +1,28 @@
+{{- if and .Values.llm.enabled .Values.networkPolicy.enabled }}
+# compose.yaml puts the local LLM on an internal network (llmnet) with the server alone and no route
+# out, so the screens and transcripts sent to it cannot leave from there. The same here: only the
+# server's pods may connect, and the pod may open no connection at all. Models come in through the
+# model-pull Job, which has a policy of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "llm") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "llm") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 11434
+  egress: []
+{{- end }}

@@ -1,0 +1,116 @@
+{{- if .Values.search.enabled }}
+# Web search for the local LLM (compose service "searxng"): a metasearch engine that needs no API key.
+# Reached by the server only, and the one part of the local setup that goes out to the internet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "searxng") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "searxng") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "searxng") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "searxng") | nindent 8 }}
+      annotations:
+        # A changed settings.yml restarts the pod (SearXNG reads it at start only).
+        checksum/settings: {{ include (print $.Template.BasePath "/searxng-configmap.yaml") . | sha256sum }}
+        {{- with .Values.search.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # The image's entrypoint reads SEARXNG_PORT, which a Service named "searxng" would set to
+      # tcp://<address>:<port>.
+      enableServiceLinks: false
+      {{- with .Values.search.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: searxng
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.search.image) | quote }}
+          imagePullPolicy: {{ .Values.search.image.pullPolicy }}
+          # As compose.yaml: a fresh secret on every start, then the image's own entrypoint. "$$" is
+          # how Kubernetes writes a literal "$" in a command, so the shell receives $(head ...).
+          command:
+            - /bin/sh
+            - -c
+            - 'export SEARXNG_SECRET="$$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)"; exec /usr/local/searxng/entrypoint.sh'
+          env:
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            # The settings are a read-only ConfigMap, and the user is not root: nothing to hand over.
+            - name: FORCE_OWNERSHIP
+              value: "false"
+            {{- with .Values.search.env }}
+            {{- include "sidenote.envFromMap" . | trim | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # The kubelet's probes come from the pod's own node, which a NetworkPolicy does not block.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.search.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.search.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml .Values.search.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.search.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.search.securityContext | nindent 12 }}
+          volumeMounts:
+            # compose.yaml mounts docker/searxng.yml read-only as /etc/searxng/settings.yml; the
+            # entrypoint copies a template only when that file is missing.
+            - name: settings
+              mountPath: /etc/searxng
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/searxng
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: settings
+          configMap:
+            name: {{ include "sidenote.componentName" (dict "context" . "component" "searxng") }}
+        # compose.yaml's tmpfs mounts, in memory as there.
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      {{- with .Values.search.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.search.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.search.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

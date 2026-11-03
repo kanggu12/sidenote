@@ -1,0 +1,168 @@
+[
+ {
+  "url": "https://cdn.jsdelivr.net/npm/marked@18.1.0/lib/marked.umd.js",
+  "path": "marked.umd.js",
+  "sha256": "f424dcb508fdf93e0137a970cfce8f3207ea2e3f37eca5f7556a52875683632a"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/marked-cjk-friendly@0.1.2/dist/index.js",
+  "path": "marked-cjk-friendly.js",
+  "sha256": "122221aba03168512e65a31ec653a10082063d200d465b2b9f6e645d6b814dbf",
+  "classic": "markedCjkFriendly"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js",
+  "path": "purify.min.js",
+  "sha256": "c0845096a7c4a6741f362ac506c94c1c7d27dc603bcc1bf64a587f76f2dbe3a1"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js",
+  "path": "highlight.min.js",
+  "sha256": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js",
+  "path": "katex/katex.min.js",
+  "sha256": "dc84b296ec3e884de093158f760fd9d45b6c7abe58b5381557f4e138f46a58ae"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
+  "path": "mermaid.min.js",
+  "sha256": "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css",
+  "path": "katex/katex.min.css",
+  "sha256": "505d5f829022bb7b4f24dfee0aa1141cd7bba67afe411d1240335f820960b5c3"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_AMS-Regular.woff2",
+  "path": "katex/fonts/KaTeX_AMS-Regular.woff2",
+  "sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Caligraphic-Bold.woff2",
+  "path": "katex/fonts/KaTeX_Caligraphic-Bold.woff2",
+  "sha256": "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Caligraphic-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Caligraphic-Regular.woff2",
+  "sha256": "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Fraktur-Bold.woff2",
+  "path": "katex/fonts/KaTeX_Fraktur-Bold.woff2",
+  "sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Fraktur-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Fraktur-Regular.woff2",
+  "sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Main-Bold.woff2",
+  "path": "katex/fonts/KaTeX_Main-Bold.woff2",
+  "sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Main-BoldItalic.woff2",
+  "path": "katex/fonts/KaTeX_Main-BoldItalic.woff2",
+  "sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Main-Italic.woff2",
+  "path": "katex/fonts/KaTeX_Main-Italic.woff2",
+  "sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Main-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Main-Regular.woff2",
+  "sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Math-BoldItalic.woff2",
+  "path": "katex/fonts/KaTeX_Math-BoldItalic.woff2",
+  "sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Math-Italic.woff2",
+  "path": "katex/fonts/KaTeX_Math-Italic.woff2",
+  "sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_SansSerif-Bold.woff2",
+  "path": "katex/fonts/KaTeX_SansSerif-Bold.woff2",
+  "sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_SansSerif-Italic.woff2",
+  "path": "katex/fonts/KaTeX_SansSerif-Italic.woff2",
+  "sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_SansSerif-Regular.woff2",
+  "path": "katex/fonts/KaTeX_SansSerif-Regular.woff2",
+  "sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Script-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Script-Regular.woff2",
+  "sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Size1-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Size1-Regular.woff2",
+  "sha256": "6b47c40166b6dbe21a5dfca7718413f2147fd2399be1ba605d8ad39cedf25dfe"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Size2-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Size2-Regular.woff2",
+  "sha256": "d04c54219f9eaec6d4d4fd42dfb28785975a4794d6b2fc71e566b9cd6db842dd"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Size3-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Size3-Regular.woff2",
+  "sha256": "73d591271b1604960cb10bb90fee021670af7297017e0e98480b332d11f51995"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Size4-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Size4-Regular.woff2",
+  "sha256": "a4af7d414440a1c1790825cfb700cf9cf43b0f2c4b04f0ebc523011ad9853ec0"
+ },
+ {
+  "url": "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/fonts/KaTeX_Typewriter-Regular.woff2",
+  "path": "katex/fonts/KaTeX_Typewriter-Regular.woff2",
+  "sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2",
+  "path": "fonts/PretendardVariable.woff2",
+  "sha256": "9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4"
+ },
+ {
+  "url": "https://fonts.gstatic.com/s/bricolagegrotesque/v9/3y9K6as8bTXq_nANBjzKo3IeZx8z6up5BeSl9D4dj_x9PpZBMlGIInE.woff2",
+  "path": "fonts/BricolageGrotesque-latin.woff2",
+  "sha256": "a79fdb52d4a5c76552452f69202add96e287401fff03d3e8c0e38b4dcb5a99cd"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/@fontsource-variable/instrument-sans@5.2.8/files/instrument-sans-latin-wght-normal.woff2",
+  "path": "fonts/InstrumentSans-latin.woff2",
+  "sha256": "2ee17598a98d8a59e4df8152d015bec9ab8e4d5672cc0ab42bef806b568e3971"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.20/files/jetbrains-mono-latin-400-normal.woff2",
+  "path": "fonts/JetBrainsMono-400.woff2",
+  "sha256": "7c53386f55c866c1b4c9309c4bcf74eda10896aab3a1780b0af5cc4976e27a27"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.20/files/jetbrains-mono-latin-700-normal.woff2",
+  "path": "fonts/JetBrainsMono-700.woff2",
+  "sha256": "ed8b8f71b22bf3b6e1ec1cf9b24dd999785aae33d6256950c1f86c97e423b6ef"
+ },
+ {
+  "url": "https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.20/files/jetbrains-mono-latin-400-italic.woff2",
+  "path": "fonts/JetBrainsMono-400-italic.woff2",
+  "sha256": "e015e6ee9e646e853ad23ab7f6265c523fdc199cb37825cbf42e80749c122fb4"
+ }
+]

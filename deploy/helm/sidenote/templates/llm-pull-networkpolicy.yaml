@@ -1,0 +1,37 @@
+{{- if and .Values.llm.enabled .Values.llm.pull.enabled .Values.networkPolicy.enabled }}
+# The model-pull Job is the one part of the local LLM allowed out to the internet, as compose's
+# llm-pull is the only container of the local LLM that touches it: name lookups, and the model
+# registry and its download hosts on the ports in llm.pull.egressPorts. Nothing may connect to it.
+# A regular resource, so it is in place before the hook Job starts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "llm-pull") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "llm-pull") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "llm-pull") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # DNS, wherever the cluster's resolver is (a CoreDNS pod, or a node-local cache).
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        {{- range .Values.llm.pull.egressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        {{- range .Values.llm.pull.egressPorts }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}

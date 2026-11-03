@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 398" width="906" height="398" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="The app: Sidenote.exe starts the server, the capture program and the PC's own Ollama. Docker: ./sidenote up starts the server, llm, code runner and SearXNG containers, and the capture program runs on the desktop. Kubernetes: the chart creates the server, llm, runner and SearXNG pods, and the capture program runs on your PC through a port-forward">
+<text x="0" y="20" font-size="16" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="0,280">The app</text>
+<text x="0" y="42" font-size="12.5" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#9198a1" text-anchor="start" data-box="0,280">desktop/app.py</text>
+<rect x="30" y="62" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="44" y="82.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="44,266">Server</text>
+<text x="44" y="101.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="44,266">the app's own Python</text>
+<path d="M10,88 L22.5,88" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M29.5,88 L20.5,92.5 L20.5,83.5 Z" fill="#656c76" data-tip="29.5,88"/>
+<rect x="30" y="124" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="44" y="144.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="44,266">Capture program</text>
+<text x="44" y="163.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="44,266">screen and sound</text>
+<path d="M10,150 L22.5,150" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M29.5,150 L20.5,154.5 L20.5,145.5 Z" fill="#656c76" data-tip="29.5,150"/>
+<rect x="30" y="186" width="250" height="52" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
+<text x="44" y="206.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="44,266">Local model</text>
+<text x="44" y="225.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="44,266">the PC's own Ollama</text>
+<path d="M10,212 L22,212" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M29,212 L20.0,216.5 L20.0,207.5 Z" fill="#656c76" data-tip="29,212"/>
+<path d="M10,56 L10,212.0" fill="none" stroke="#656c76" stroke-width="1.6"/>
+<text x="310" y="20" font-size="16" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="310,590">Docker</text>
+<text x="310" y="42" font-size="12.5" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#9198a1" text-anchor="start" data-box="310,590">./sidenote, compose.yaml</text>
+<rect x="340" y="62" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="354" y="82.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="354,576">Server</text>
+<text x="354" y="101.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="354,576">a container</text>
+<path d="M320,88 L332.5,88" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M339.5,88 L330.5,92.5 L330.5,83.5 Z" fill="#656c76" data-tip="339.5,88"/>
+<rect x="340" y="124" width="250" height="52" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
+<text x="354" y="144.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="354,576">Local model</text>
+<text x="354" y="163.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="354,576">Ollama, the llm container</text>
+<path d="M320,150 L332,150" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M339,150 L330.0,154.5 L330.0,145.5 Z" fill="#656c76" data-tip="339,150"/>
+<rect x="340" y="186" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="354" y="206.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="354,576">Code runner</text>
+<text x="354" y="225.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="354,576">no network at all</text>
+<path d="M320,212 L332.5,212" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M339.5,212 L330.5,216.5 L330.5,207.5 Z" fill="#656c76" data-tip="339.5,212"/>
+<rect x="340" y="248" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="354" y="268.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="354,576">Web search</text>
+<text x="354" y="287.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="354,576">SearXNG</text>
+<path d="M320,274 L332.5,274" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M339.5,274 L330.5,278.5 L330.5,269.5 Z" fill="#656c76" data-tip="339.5,274"/>
+<path d="M320,56 L320,274.0" fill="none" stroke="#656c76" stroke-width="1.6"/>
+<rect x="340" y="324" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="354" y="344.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="354,576">Capture program</text>
+<text x="354" y="363.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="354,576">on the desktop, outside Docker</text>
+<text x="620" y="20" font-size="16" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="620,900">Kubernetes</text>
+<text x="620" y="42" font-size="12.5" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#9198a1" text-anchor="start" data-box="620,900">deploy/helm/sidenote</text>
+<rect x="650" y="62" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="664" y="82.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="664,886">Server</text>
+<text x="664" y="101.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="664,886">a pod</text>
+<path d="M630,88 L642.5,88" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M649.5,88 L640.5,92.5 L640.5,83.5 Z" fill="#656c76" data-tip="649.5,88"/>
+<rect x="650" y="124" width="250" height="52" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
+<text x="664" y="144.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="664,886">Local model</text>
+<text x="664" y="163.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="664,886">Ollama, the llm pod</text>
+<path d="M630,150 L642,150" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M649,150 L640.0,154.5 L640.0,145.5 Z" fill="#656c76" data-tip="649,150"/>
+<rect x="650" y="186" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="664" y="206.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="664,886">Code runner</text>
+<text x="664" y="225.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="664,886">a pod with no egress</text>
+<path d="M630,212 L642.5,212" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M649.5,212 L640.5,216.5 L640.5,207.5 Z" fill="#656c76" data-tip="649.5,212"/>
+<rect x="650" y="248" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="664" y="268.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="664,886">Web search</text>
+<text x="664" y="287.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="664,886">SearXNG</text>
+<path d="M630,274 L642.5,274" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M649.5,274 L640.5,278.5 L640.5,269.5 Z" fill="#656c76" data-tip="649.5,274"/>
+<path d="M630,56 L630,274.0" fill="none" stroke="#656c76" stroke-width="1.6"/>
+<rect x="650" y="324" width="250" height="52" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
+<text x="664" y="344.95" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="664,886">Capture program</text>
+<text x="664" y="363.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="664,886">on your PC, by port-forward</text>
+<rect x="0" y="375" width="22" height="10" rx="3" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
+<text x="30" y="384" font-size="12" fill="#9198a1" text-anchor="start" data-box="30,900">on your GPU: no tokens</text>
+</svg>

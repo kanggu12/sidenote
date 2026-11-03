@@ -1,0 +1,13 @@
+{{- if .Values.search.enabled }}
+# SearXNG's settings: search.settings, or files/searxng.yml (a copy of docker/searxng.yml). The
+# secret key is not in here: the container makes a fresh one on every start.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "searxng") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "searxng") | nindent 4 }}
+data:
+  settings.yml: |
+    {{- .Values.search.settings | default (.Files.Get "files/searxng.yml") | trimSuffix "\n" | nindent 4 }}
+{{- end }}

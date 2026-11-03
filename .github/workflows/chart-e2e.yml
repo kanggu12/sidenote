@@ -1,0 +1,67 @@
+# The Helm chart on a throwaway k3d cluster, with the images built from this commit (tests/k3d_check.sh): what only a
+# running cluster shows, such as the runner's NetworkPolicy, its token and the server trusting loopback alone. It
+# runs when the chart, the images or the code inside them change, and by hand; the local model stays off (no GPU).
+name: chart-e2e
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "docker/**"
+      - "server/**"
+      - "panel/**"
+      - "Dockerfile"
+      - "tests/k3d_check.sh"
+      - ".github/workflows/chart-e2e.yml"
+  workflow_dispatch:
+  workflow_call:       # release.yml runs it before it publishes anything
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chart-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  k3d:
+    name: the chart on k3d
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Room on the disk for two images, their copies inside the cluster and k3s
+        run: |
+          df -h /
+          # toolchains this job never uses; the runner is thrown away afterwards
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker image prune -af > /dev/null
+          df -h /
+      - uses: docker/setup-buildx-action@v4
+      - name: Server image, loaded into this runner's Docker (the ci workflow's build cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: sidenote:e2e
+          cache-from: type=gha,scope=server
+      - name: Code runner image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.runner
+          load: true
+          tags: sidenote-runner:e2e
+          cache-from: type=gha,scope=runner
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.4
+      - name: k3d, checked against the checksum its release publishes
+        run: |
+          curl -fsSL -o /tmp/k3d https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
+          echo "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0  /tmp/k3d" | sha256sum -c -
+          sudo install -m 0755 /tmp/k3d /usr/local/bin/k3d
+      - name: Install the chart on a throwaway cluster and check it
+        run: tests/k3d_check.sh sidenote:e2e sidenote-runner:e2e

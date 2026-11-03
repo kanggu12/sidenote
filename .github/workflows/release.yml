@@ -1,0 +1,111 @@
+# A version tag (v1.2.3) publishes a release: both images to the GitHub Container Registry, the Helm chart as an OCI
+# artifact and a .tgz, the desktop app for Windows and Linux (desktop.yml), and the capture program on its own as a
+# .zip, all attached to the GitHub release.
+#
+# The published server image carries the Codex CLI (Apache-2.0) and not Claude Code, which is Anthropic's to
+# distribute: the chart fetches Claude Code into the pod when it starts (WITH_CLAUDE_CODE below).
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write      # the GitHub release and its files
+  packages: write      # the images and the chart in ghcr.io
+
+jobs:
+  # any v*.*.* tag published images and `latest`, on a failing commit too
+  checks:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # what only a running cluster shows: a chart that renders can still not come up
+  chart:
+    uses: ./.github/workflows/chart-e2e.yml
+    permissions:
+      contents: read
+
+  # the desktop app, built and started with --check on each system; its zips come back as this run's artifacts
+  desktop:
+    uses: ./.github/workflows/desktop.yml
+    permissions:
+      contents: read
+
+  release:
+    needs: [checks, chart, desktop]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version and names
+        id: v
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          # Claude Code is Anthropic's to distribute: left out of the published image, fetched by a pod when it starts
+          build-args: |
+            WITH_CLAUDE_CODE=0
+          tags: |
+            ghcr.io/${{ steps.v.outputs.owner }}/sidenote:${{ steps.v.outputs.version }}
+            ghcr.io/${{ steps.v.outputs.owner }}/sidenote:latest
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+      - name: Code runner image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.runner
+          push: true
+          tags: |
+            ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner:${{ steps.v.outputs.version }}
+            ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner:latest
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.4
+      - name: Helm chart, versioned with the release and pointing at its images
+        run: |
+          # the packaged chart pulls this release's images from ghcr.io instead of the local names it ships with
+          sed -i -e "s#^    repository: sidenote\$#    repository: ghcr.io/${{ steps.v.outputs.owner }}/sidenote#" \
+            -e "s#^    repository: sidenote-runner\$#    repository: ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner#" \
+            deploy/helm/sidenote/values.yaml
+          test "$(grep -c "repository: ghcr.io/" deploy/helm/sidenote/values.yaml)" = 2
+          helm lint deploy/helm/sidenote
+          helm package deploy/helm/sidenote --version "${{ steps.v.outputs.version }}" \
+            --app-version "${{ steps.v.outputs.version }}" --destination dist
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "dist/sidenote-${{ steps.v.outputs.version }}.tgz" "oci://ghcr.io/${{ steps.v.outputs.owner }}/charts"
+      - name: The capture program on its own
+        run: |
+          mkdir -p dist/sidenote-capture
+          cp client/capture.py client/launch.pyw client/requirements.txt dist/sidenote-capture/
+          cp docs/capture-client.md dist/sidenote-capture/README.md
+          (cd dist && zip -r "sidenote-capture-${{ steps.v.outputs.version }}.zip" sidenote-capture)
+      - name: The desktop app's zips, built by the desktop job
+        uses: actions/download-artifact@v7
+        with:
+          pattern: Sidenote-*
+          path: dist/app
+          merge-multiple: true
+      - name: GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            dist/sidenote-${{ steps.v.outputs.version }}.tgz
+            dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
+            dist/app/Sidenote-*.zip

@@ -1,0 +1,195 @@
+# Checks every push and pull request: the server and capture-program suites in mock mode (no GPU, no network, no
+# agent login), the panel suites in a headless browser, both images built, and the Helm chart linted and rendered.
+# The qa job at the end is the one verdict: a release waits on it, and so does `./sidenote up` (docs/QA.md).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:       # release.yml runs these before it publishes anything
+  workflow_dispatch:
+  schedule:
+    - cron: "30 20 * * 0"   # weekly with nothing pushed: a browser, a pinned package or a runner image that has moved on shows here first
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax:
+    name: syntax of every language in the repo
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+      - name: Python compiles, the shell scripts parse, the panel's script parses
+        run: |
+          python -m compileall -q server client docker tests
+          python -m py_compile client/launch.pyw   # compileall leaves a .pyw out
+          # one file per bash -n: given two, bash checks the first and passes the second to it as an argument
+          for f in sidenote docker/entrypoint.sh tests/run.sh tests/launcher_args.sh tests/k3d_check.sh; do bash -n "$f"; done
+          node --check panel/app.js
+          node --check panel/theme.js
+          node --check panel/i18n.js
+          node --check panel/i18n/ko.js
+      - name: Every suite is in the runner's lists and in tests/README.md
+        run: tests/run.sh --check
+
+  server:
+    name: server and capture suites
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"          # the server image's Python
+          cache: pip
+          cache-dependency-path: |
+            server/requirements*.txt
+            docker/constraints.txt
+      - name: Install the server's dependencies, pinned as the image pins them
+        run: |
+          python -m pip install -r server/requirements.txt -r server/requirements-audio.txt -c docker/constraints.txt
+          # the capture program's suites import it with its socket client; its Windows-only packages are stood in for
+          python -m pip install websocket-client -c docker/constraints.txt
+      - name: Run the suites
+        env:
+          SIDENOTE_ANALYZER: mock         # canned engines: nothing reaches a model, a GPU or the network
+          SIDENOTE_TEST_OUT: ${{ runner.temp }}/sidenote-tests
+        run: tests/run.sh server
+      - name: Keep the logs and the table of what ran
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-results
+          path: |
+            ${{ runner.temp }}/sidenote-tests/logs
+            ${{ runner.temp }}/sidenote-tests/results.md
+            ${{ runner.temp }}/sidenote-tests/cases.md
+          retention-days: 14
+
+  panel:
+    name: panel suites (headless browser)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            tests/requirements-panel.txt
+            server/requirements.txt
+            docker/constraints.txt
+      - name: Install Playwright and its Chromium, and the server's packages
+        run: |
+          # the panel suites ask the server's own code for the settings message and the prompt examples (PY)
+          python -m pip install -r tests/requirements-panel.txt -r server/requirements.txt -c docker/constraints.txt
+          python -m playwright install --with-deps chromium
+      - name: The panel's libraries, fetched and checked against their pinned checksums as the image build does
+        run: python docker/fetch_vendor.py docker/vendor.json panel/vendor
+      - name: Run the suites
+        env:
+          SIDENOTE_TEST_OUT: ${{ runner.temp }}/sidenote-tests
+        run: tests/run.sh panel
+      - name: Keep the logs, the table of what ran and the screens to look at
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: panel-results
+          path: |
+            ${{ runner.temp }}/sidenote-tests/logs
+            ${{ runner.temp }}/sidenote-tests/results.md
+            ${{ runner.temp }}/sidenote-tests/cases.md
+            ${{ runner.temp }}/sidenote-tests/shots
+          retention-days: 14
+
+  images:
+    name: build the images
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: sidenote:ci
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+      - name: Code runner image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.runner
+          push: false
+          tags: sidenote-runner:ci
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.4
+      - name: Lint and render with each agent
+        run: |
+          helm lint deploy/helm/sidenote
+          for agent in claude-code codex anthropic-api off; do
+            helm template sidenote deploy/helm/sidenote --set agent.provider=$agent > /tmp/rendered-$agent.yaml
+          done
+          helm template sidenote deploy/helm/sidenote --set llm.enabled=false --set search.enabled=false > /tmp/rendered-min.yaml
+          helm template sidenote deploy/helm/sidenote --set llm.pull.enabled=true > /tmp/rendered-pull.yaml
+      - name: The models the pull Job takes, against server/models.py
+        run: |
+          # for "auto", by the GPU memory given: the chart repeats the tiers, so a change there must reach it
+          for gb in 4 6.4 6.6 8 9.4 9.6 12 16 22.4 22.6 24 48; do
+            want="$(python3 -c "import sys; sys.path.insert(0, 'server'); import models; p = models.fits($gb); print(' '.join(models.wanted(p.name)) if p else '')")"
+            got="$(helm template sidenote deploy/helm/sidenote --set llm.pull.enabled=true --set-string server.env.SIDENOTE_LOCAL_VRAM_GB=$gb \
+              | sed -n '/^            - pull$/,/^          env:/p' | sed -n 's/^            - "\(.*\)"$/\1/p' | paste -sd ' ')"
+            echo "$gb GB: chart [$got], server/models.py [$want]"
+            [ "$got" = "$want" ]
+          done
+          # "auto" written out is the server's default, not a model's name
+          helm template sidenote deploy/helm/sidenote --set llm.pull.enabled=true \
+            --set-string server.env.SIDENOTE_LOCAL_MODEL=auto > /tmp/pull-auto.yaml
+          if grep -q '^            - "auto"$' /tmp/pull-auto.yaml; then echo "the pull Job would pull a model named auto"; exit 1; fi
+      - name: Validate the rendered manifests
+        run: |
+          # the release archive, checked against the checksum v0.6.7 publishes before it is unpacked
+          curl -fsSL -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          echo "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          /tmp/kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered-*.yaml
+
+  qa:
+    name: QA gate
+    if: always()
+    needs: [syntax, server, panel, images, chart]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          lines = ["### QA gate", "", "| Job | Result |", "|---|---|"] + [f"| {k} | {v['result']} |" for k, v in needs.items()]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          bad = [k for k, v in needs.items() if v["result"] != "success"]
+          print("failed:" if bad else "all jobs passed", *bad)
+          sys.exit(1 if bad else 0)
+          PY

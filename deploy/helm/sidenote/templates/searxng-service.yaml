@@ -1,0 +1,18 @@
+{{- if .Values.search.enabled }}
+# SearXNG's JSON search, for the server's SIDENOTE_SEARCH_URL (http://<this>:8080/search).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "searxng") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "searxng") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sidenote.selectorLabels" (dict "context" . "component" "searxng") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- end }}

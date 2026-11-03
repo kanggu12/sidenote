@@ -1,0 +1,346 @@
+"""Runtime settings: every stage of the pipeline can be switched from the panel.
+
+Each setting has a default taken from the environment (config.py), a kind the panel draws a control
+for, a label and one line of help (English in the code, translated by server/i18n.py when the settings are sent),
+and the settings it depends on.
+Values the panel changes are kept in `.settings.json` beside the logs, so they survive a restart; the
+screen and sound switches and pause stay in `.switches.json` (server/app.py), as before.
+
+Nothing here talks to the network or the GPU: the server reads `SETTINGS.get(key)` when it needs a
+value, so a change applies to the next analysis without a restart.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from . import telemetry
+from .config import CONFIG, agent_name
+from .i18n import t
+
+log = logging.getLogger("sidenote.settings")
+
+SOLVE_TYPES = ["mcq", "short", "essay", "coding", "algorithm", "work", "math", "diagram", "other"]
+# Settings that last for one run of the server and are never written to the settings file. The drawn region: a
+# region drawn on one screen and left set hid every problem that came after it, twice (the second time, a
+# region drawn the day before kept the models on a patch of desktop icons while a problem sat beside it).
+NOT_KEPT = {"roi_box"}
+# An agent model chosen by version before the list named families: the family it belongs to, so the choice of Opus
+# stays a choice of Opus and follows its next release.
+FAMILY = {"claude-opus": "opus", "claude-sonnet": "sonnet", "claude-haiku": "haiku"}
+# Keys a settings file written before the cloud agent was general may hold, and what each is called now.
+RENAMED = {"claude_mode": "agent_mode", "claude_payload": "agent_payload", "claude_hard_types": "agent_hard_types",
+           "claude_model_name": "agent_model_name", "claude_effort": "agent_effort",
+           "claude_hourly_usd": "agent_hourly_usd", "claude_confirm": "agent_confirm"}
+TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay", "coding": "Coding",
+              "algorithm": "Algorithm", "work": "Practical", "math": "Math", "diagram": "Diagram", "other": "Other"}
+
+
+@dataclass
+class Setting:
+    key: str
+    kind: str                      # bool | choice | multi | box | int
+    default: Any
+    section: str
+    label: str
+    help: str = ""
+    options: list = field(default_factory=list)   # choice / multi: [(value, label)]
+    needs: list = field(default_factory=list)     # keys that must be on (truthy) for this one to apply
+    # choice: one line per option, shown for the option in force. A paragraph that explains four
+    # options at once is read by nobody: the panel shows the line for what is chosen now.
+    opt_help: dict = field(default_factory=dict)
+
+    def valid(self, v: Any) -> bool:
+        if self.kind == "bool":
+            return isinstance(v, bool)
+        if self.kind == "choice":
+            return any(v == o[0] for o in self.options)
+        if self.kind == "multi":
+            allowed = {o[0] for o in self.options}
+            return isinstance(v, list) and all(x in allowed for x in v) and len(set(v)) == len(v)
+        if self.kind == "box":
+            if v is None:
+                return True
+            return (isinstance(v, list) and len(v) == 4 and all(isinstance(x, (int, float)) for x in v)
+                    and 0 <= v[0] < v[2] <= 1 and 0 <= v[1] < v[3] <= 1
+                    and v[2] - v[0] >= 0.02 and v[3] - v[1] >= 0.02)
+        if self.kind == "int":
+            return isinstance(v, int) and not isinstance(v, bool) and any(v == o[0] for o in self.options)
+        return False
+
+
+def _defs() -> list[Setting]:
+    """Every setting with its words in the current language: called again for each settings message (Settings.meta),
+    so a panel that changed the language gets the new words."""
+    local_default = CONFIG.analyzer in ("local", "mock")
+    # With the local model, the cloud agent (server/agents.py) solves the types in agent_hard_types (algorithm, coding,
+    # math, and work, essay and other, whose local answers were found shallow) and any problem
+    # the local model would be local_slow_ratio times as slow to start answering (pipeline.Speed), and is given only the
+    # problem (signed out, it stays out; docs/DESIGN-local-first.md, section 13); without the local model, the agent is
+    # the only engine and solves everything from the screen, as before.
+    agent_default = "hard" if local_default else "all"
+    payload_default = "crop" if local_default else "screen"
+    name = agent_name()   # as the panel shows it; the Korean sentences say it, the English ones say "the agent"
+    if CONFIG.agent == "codex":
+        # Codex's models change with its releases: its own pick, or the one the environment names
+        models = [("", t("As Codex picks"))]
+        efforts = [("", t("Default")), ("low", t("Low")), ("medium", t("Medium")), ("high", t("High"))]
+    else:
+        # Family names, not versions: the agent takes `opus`, `sonnet` and `haiku` as the newest model of each, so a
+        # new release (Opus 6 after Opus 5.5) is used without a change here. A version is pinned through
+        # SIDENOTE_AGENT_MODEL (claude-opus-5-5), which the list then offers as well.
+        models = [("", t("As the agent picks", agent=name)), ("opus", t("Latest Opus (smartest)")),
+                  ("sonnet", t("Latest Sonnet (fast)")), ("haiku", t("Latest Haiku (fastest)"))]
+        efforts = [("", t("Default")), ("low", t("Low")), ("medium", t("Medium")), ("high", t("High")),
+                   ("xhigh", t("Very high")), ("max", t("Max"))]
+    if CONFIG.agent_model and all(CONFIG.agent_model != m for m, _ in models):
+        models.append((CONFIG.agent_model, CONFIG.agent_model))   # the environment's own choice is always offered
+    if CONFIG.agent_effort and all(CONFIG.agent_effort != e for e, _ in efforts):
+        efforts.append((CONFIG.agent_effort, CONFIG.agent_effort))
+    return [
+        # solving
+        Setting("local_llm", "bool", local_default, "solve", t("This PC's model"),
+                t("The model that solves on this PC's GPU. Off: the agent solves everything", agent=name)),
+        Setting("local_think", "choice", CONFIG.local_think, "solve", t("Think before answering"),
+                t("Auto: thinks first only on problems that need working out, such as multiple choice, calculations "
+                  "and code. Always: slower, works out every problem"),
+                [("auto", t("Auto")), ("always", t("Always")), ("never", t("Never"))], ["local_llm"]),
+        Setting("local_model", "choice", CONFIG.local_model, "solve", t("Model"),
+                t("One of the pulled models. Auto: the largest that fits the GPU's memory"),
+                [("auto", t("Auto (fits the GPU)"))] + ([(CONFIG.local_model, CONFIG.local_model)] if CONFIG.local_model != "auto" else []),
+                ["local_llm"]),
+        Setting("local_busy_model", "choice", CONFIG.local_busy_model, "solve", t("Model when the GPU is busy"),
+                t("When a busy GPU slows it below half speed, this model solves instead. Back to the usual model after "
+                  "{sec} s", sec=f"{CONFIG.local_busy_hold_sec:g}"),
+                [("", t("Don't switch")), ("auto", t("Auto (a smaller model)"))]
+                + ([(CONFIG.local_busy_model, CONFIG.local_busy_model)] if CONFIG.local_busy_model not in ("", "auto") else []),
+                ["local_llm"]),
+        Setting("web_search", "bool", bool(CONFIG.search_url), "solve", t("Web search"),
+                t("Looks up recent facts and options it is unsure of. The search words go to a search engine"),
+                needs=["local_llm"]),
+        Setting("web_fetch", "bool", bool(CONFIG.search_url), "solve", t("Read pages"),
+                t("Reads a page when the search summary is not enough (public addresses only)"),
+                needs=["local_llm", "web_search"]),
+        # the cloud agent
+        Setting("agent_mode", "choice", agent_default, "agent", t("Problems the agent solves", agent=name),
+                t("Signed out (for the API, with no key), the agent counts as off", agent=name),
+                [("off", t("Off")), ("verify", t("Check answers")), ("hard", t("Hard problems")), ("all", t("All"))],
+                opt_help={
+                    "off": t("The agent is not used. Only this PC's model solves", agent=name),
+                    "verify": t("This PC's model solves and the agent checks the answer. If they differ, the fixed "
+                                "solution is added", agent=name),
+                    "hard": t("Only 'Types the agent solves' go to the agent, the rest to this PC's model (to the agent "
+                              "when it would be over 1.5 times slower). If the agent fails, this PC's model", agent=name),
+                    "all": t("The agent solves every problem found", agent=name),
+                }),
+        Setting("agent_payload", "choice", payload_default, "agent", t("What is sent to the agent", agent=name),
+                t("A spoken problem sends only the question's words (and the screen with Whole screen). Written-out "
+                  "words of a problem not found on the screen that hold resident registration, phone, card or account "
+                  "numbers are not sent: this PC's model solves. A coding problem also sends the language read off "
+                  "the screen"),
+                [("crop", t("Problem area")), ("text", t("Problem text")), ("screen", t("Whole screen"))],
+                opt_help={
+                    "crop": t("Sends only the problem, cut at full resolution. When it cannot be found, the written-out "
+                              "text"),
+                    "text": t("Sends only the written-out text. A picture that cannot be written out goes as the problem "
+                              "area"),
+                    "screen": t("Sends the whole screen, the windows beside the problem too"),
+                }),
+        Setting("agent_hard_types", "multi", ["algorithm", "coding", "math", "work", "essay", "other"], "agent",
+                t("Types the agent solves", agent=name),
+                t("The types 'Hard problems' hands to the agent. This PC's model thinks and answers the rest (the "
+                  "agent when it would be over 1.5 times slower). Default: Algorithm, Coding, Math, Practical, Essay, "
+                  "Other", agent=name),
+                [(k, t(TYPE_NAMES[k])) for k in SOLVE_TYPES]),
+        # The model and how hard it thinks: the environment sets where they start, the panel moves
+        # them from there, and the next problem starts a CLI with the new ones.
+        Setting("agent_model_name", "choice", CONFIG.agent_model, "agent", t("Agent model", agent=name),
+                t("Empty: as the agent is set up. Latest: the newest model of that family. To pin one, "
+                  "SIDENOTE_AGENT_MODEL", agent=name), models),
+        Setting("agent_effort", "choice", CONFIG.agent_effort, "agent", t("Thinking effort"),
+                t("Higher is stronger on hard problems, slower and dearer"), efforts),
+        Setting("agent_hourly_usd", "choice", CONFIG.agent_hourly_usd, "agent", t("Hourly cost limit"),
+                t("When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still "
+                  "go. Does not apply to Codex signed in with ChatGPT; Codex with an API key is estimated from tokens"),
+                [(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]),
+        # The rule: with the agent at a limit, the answers come from this PC's model where they
+        # can, not from another agent. With that model switched on it answers then already; this is for one switched off.
+        Setting("local_fallback", "bool", True, "agent", t("This PC's model stands in at a limit"),
+                t("When the agent reaches a limit or is signed out, this PC's model, switched off, solves instead. Off "
+                  "the GPU once the agent can be asked again", agent=name)),
+        # A reply without the head is the agent declining a screen, or answering nothing. On, this PC's model, already
+        # loaded, solves the same screen (pipeline.solve); off, or with that model off, the agent's reply is the card.
+        Setting("local_on_decline", "bool", True, "agent", t("This PC's model answers when the agent declines", agent=name),
+                t("When the agent declines a screen or answers nothing, this PC's model solves it instead. Off: the "
+                  "agent's reply is shown as it came", agent=name), needs=["local_llm"]),
+        Setting("agent_confirm", "bool", False, "agent", t("Confirm before sending"),
+                t("Shows what goes to the agent first, and sends it only on Send. Not sent when not pressed within 2 "
+                  "minutes", agent=name)),
+        # screen processing
+        Setting("history_keep", "bool", True, "screen", t("Keep answers"),
+                t("Keeps answers and their screens on the server for {days} days (up to {mb} MB). Off: new answers are "
+                  "not kept. Clear them with Clear history in the menu", days=f"{CONFIG.history_days:g}",
+                  mb=f"{CONFIG.history_mb:g}")),
+        Setting("face_mask", "bool", True, "screen", t("Cover faces"),
+                t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
+        Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),
+                t("Solves again only when the answer's problem area changes. Off: on every screen change")),
+        Setting("roi", "bool", True, "screen", t("Zoom in on the problem"),
+                t("When thinking, also gives the problem cut at full resolution. Better with small text"),
+                needs=["local_llm"]),
+        Setting("roi_box", "box", None, "screen", t("Drawn region"),
+                t("Looks only inside the region drawn on the screen card. Clear it to see the whole screen")),
+        Setting("roi_windows", "bool", True, "screen", t("Cut at window edges"),
+                t("Cuts at the edges of the problem's window so the windows beside it stay out. Off: only adds a margin "
+                  "to the area the model gave"), needs=["local_llm"]),
+        Setting("extract", "bool", True, "screen", t("Write out the problem text"),
+                t("This PC's model writes the problem out as text. Used to send text to the agent and to check the "
+                  "examples", agent=name), needs=["local_llm"]),
+        # code
+        Setting("run_button", "bool", True, "code", t("Run button"),
+                t("A run button on code answers (a separate container with no internet)")),
+        Setting("autocheck", "bool", True, "code", t("Check the examples"),
+                t("Runs the code of algorithm and coding answers on the problem's examples and adds the result (Python, "
+                  "Java, C++, JavaScript, TypeScript, Kotlin and Go: functions and standard input; C and Bash: "
+                  "standard input)"),
+                needs=["run_button", "local_llm", "extract"]),
+        # speech
+        Setting("voice_auto", "bool", CONFIG.voice_trigger, "speech", t("Solve spoken problems"),
+                t("When the speaker stops, what was said is solved as a problem. Off: shown only")),
+        Setting("whisper_hint", "bool", bool(CONFIG.whisper_hint), "speech", t("Technical term hints"),
+                t("Gives speech recognition technical terms in advance (Kubernetes, hash table and the like)")),
+        # Measured on 126 spans of real recordings: 32 of the 108 Korean ones were read as
+        # English by the automatic pick, and not one of the 18 English ones was read as Korean. The
+        # session's own evidence takes that down (server/transcriber.py), but pinning the language is
+        # the only thing that removes it, so the help says so.
+        Setting("speech_lang", "choice", CONFIG.speech_lang, "speech", t("Speech language"),
+                t("Auto picks Korean or English for each utterance and sometimes misreads short Korean. Pin it when "
+                  "only one is spoken"),
+                [("auto", t("Auto")), ("ko", "한국어"), ("en", "English")]),
+        # capture
+        Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
+                t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),
+        # The monitors themselves are only known once a capture program says hello, and the choice has to
+        # be there before that (a monitor chosen with nothing running is what the next start uses). So the
+        # list always holds every monitor at once and the first two, and a capture program that connects
+        # replaces it with the real ones. Without that, the panel's list held "1" alone with nothing connected,
+        # so all monitors could not be chosen at all.
+        Setting("monitor", "int", 1, "capture", t("Monitor"),
+                t("All monitors takes them as one picture and sees a problem on any of them. The screen with the "
+                  "panel is covered before it is sent"),
+                [(0, t("All monitors")), (1, t("Monitor {i}", i=1)), (2, t("Monitor {i}", i=2))]),
+        # resources
+        Setting("gpu_idle_min", "int", CONFIG.local_idle_min, "resource", t("Free the GPU when idle"),
+                t("Takes the model off the GPU this long after its last use. Loading it again takes some tens of "
+                  "seconds"),
+                [(0, t("At once")), (5, t("{n} min", n=5)), (10, t("{n} min", n=10)), (30, t("{n} min", n=30)),
+                 (-1, t("Keep loaded"))], ["local_llm"]),
+    ]
+
+
+def sections() -> list[tuple[str, str]]:
+    """The order the panel draws them in, with each section's title in the current language: what solves first, then
+    what it is given, then where that comes from (the monitor was at the bottom, under settings about the answers)."""
+    return [("solve", t("Solving")), ("agent", agent_name()),
+            ("screen", t("Screen")), ("capture", t("Capture")),
+            ("speech", t("Speech")), ("code", t("Code")), ("resource", "GPU")]
+
+
+class Settings:
+    """Current values with persistence. `get` never fails: an unknown or broken value falls back to
+    the default."""
+
+    def __init__(self, path: Path | None):
+        self.defs = {s.key: s for s in _defs()}
+        self.path = path
+        self.values: dict[str, Any] = {k: s.default for k, s in self.defs.items()}
+        self.dynamic_options: dict[str, list] = {}   # filled at runtime (models, monitors)
+        # Whether a setting switched off is to count as on for now, and why ("" for no): this PC's model standing in
+        # for the agent at its limit (Pipeline.standing_in). It changes what on() says and nothing the panel shows,
+        # so the switch keeps the value it was set to, and the settings that need it (the thinking, the web search, the
+        # smaller model on a busy GPU) work while it stands in as they do when it is switched on.
+        self.stand_in: Callable[[str], str] = lambda key: ""
+
+    def load(self) -> None:
+        if not self.path or not self.path.is_file():
+            return
+        try:
+            saved = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            log.warning("settings not restored (%s)", exc)
+            return
+        for k, v in saved.items():
+            k = RENAMED.get(k, k)   # a key written before the cloud agent could be other than the agent
+            if k == "agent_model_name" and isinstance(v, str):
+                v = FAMILY.get(v.rsplit("-", 2)[0], v) if v.startswith("claude-") else v   # a version once chosen
+            s = self.defs.get(k)
+            if k in NOT_KEPT:   # written by an older server: not brought back
+                continue
+            if s and (s.valid(v) or (s.kind in ("choice", "int") and k in ("local_model", "local_busy_model", "monitor"))):
+                self.values[k] = v
+        log.info("settings restored: %s", {k: v for k, v in self.values.items() if v != self.defs[k].default})
+
+    def save(self) -> None:
+        if not self.path:
+            return
+        try:
+            changed = {k: v for k, v in self.values.items() if v != self.defs[k].default and k not in NOT_KEPT}
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            log.warning("settings not saved (%s)", exc)
+
+    def get(self, key: str) -> Any:
+        return self.values.get(key, self.defs[key].default)
+
+    def on(self, key: str) -> bool:
+        """The setting and everything it needs are on (or standing in for it, stand_in)."""
+        return (bool(self.get(key)) or bool(self.stand_in(key))) and all(self.on(n) for n in self.defs[key].needs)
+
+    def options(self, key: str) -> list:
+        """The choices of a setting with their labels in the current language. One filled at runtime (set_options) may
+        carry a label as (English text, {placeholder: value}), which is filled in here."""
+        dynamic = self.dynamic_options.get(key)
+        if not dynamic:
+            return next((d.options for d in _defs() if d.key == key), self.defs[key].options)
+        return [(v, t(label[0], **label[1]) if isinstance(label, tuple) else t(label)) for v, label in dynamic]
+
+    def set(self, key: str, value: Any) -> tuple[bool, str]:
+        s = self.defs.get(key)
+        if s is None:
+            return False, t("Unknown setting")
+        if s.kind in ("choice", "int") and key in self.dynamic_options:
+            ok = any(value == o[0] for o in self.dynamic_options[key])
+        else:
+            ok = s.valid(value)
+        if not ok:
+            label = next((d.label for d in _defs() if d.key == key), s.label)   # in the language of now
+            return False, t("Not a value for '{label}'", label=label)
+        self.values[key] = value
+        self.save()
+        telemetry.event("setting", key=key, value=value if key != "roi_box" else (value and [round(x, 3) for x in value]))
+        return True, ""
+
+    def set_options(self, key: str, options: list) -> None:
+        self.dynamic_options[key] = options
+
+    def snapshot(self) -> dict:
+        return dict(self.values)
+
+    def meta(self) -> dict:
+        """What the panel needs to draw the settings sheet, its words in the current language (built again here, so a
+        changed language is sent with the next message)."""
+        words = {d.key: d for d in _defs()}
+        return {"sections": sections(),
+                "items": [{"key": s.key, "kind": s.kind, "section": s.section, "label": words[s.key].label,
+                           "help": words[s.key].help, "opt_help": words[s.key].opt_help,
+                           "options": self.options(s.key), "needs": s.needs, "default": s.default}
+                          for s in self.defs.values()]}
+
+
+SETTINGS = Settings(Path(telemetry.LOG_DIR) / ".settings.json" if telemetry.LOG_DIR else None)

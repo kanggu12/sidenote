@@ -1,0 +1,14 @@
+.venv
+.git
+scratch
+models
+client
+docs
+**/__pycache__
+**/*.pyc
+*.log
+.env
+sidenote
+compose.yaml
+README.md
+panel/vendor
