@@ -448,7 +448,8 @@ T = (lambda en, ko: ko) if sys.argv[1:] == ["ko"] else (lambda en, ko: en)   # t
 d = json.load(sys.stdin); e = d.get("engines") or {}
 L, C, ready = e.get("local") or {}, e.get("agent") or e.get("claude") or {}, e.get("ready", False)
 # the word in this terminal's language, not the server's label (that follows the panel's language)
-name = T("Agent", "에이전트") + ("(%s)" % C["product"] if C.get("product") else "")   # the one place it is named here
+product = C.get("product") or ""
+name = (T("Agent (%s)", "에이전트(%s)") % product) if product else T("Agent", "에이전트")   # the one place it is named here
 login = C.get("login") or "./sidenote login"
 down = "warn" if ready else "bad"
 if L.get("present"):
@@ -464,7 +465,8 @@ if L.get("present"):
                                    "%s|이 PC의 모델: 모델 %s가 없음 (./sidenote llm pull)") % (down, L.get("model", "")))
     else: print(T("%s|This PC's model: not responding (./sidenote llm logs)", "%s|이 PC의 모델: 응답 없음 (./sidenote llm logs)") % down)
 if C.get("present"):
-    how = {"claude.ai": T("this PC's %s login", "이 PC의 %s 로그인") % name, "chatgpt": T("this PC's %s login (ChatGPT)", "이 PC의 %s 로그인(ChatGPT)") % name,
+    how = {"claude.ai": T("this PC's %s login", "이 PC의 %s 로그인") % (product or name),
+           "chatgpt": T("this PC's %s login (ChatGPT)", "이 PC의 %s 로그인(ChatGPT)") % (product or name),
            "api-key": T("API key", "API 키"), "mock": T("mock, for tests", "목업, 시험용")}.get(C.get("method"), C.get("method") or "")
     what = {"hard": T("Hard problems of the chosen types", "고른 유형의 어려운 문제"), "verify": T("Checks this PC's model's answers", "이 PC의 모델이 푼 답 확인"),
             "all": T("Every problem found", "찾은 문제 모두")}.get(C.get("effective"), "")
