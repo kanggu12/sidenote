@@ -70,10 +70,12 @@ sentence also goes into `history.sqlite`.
   <img alt="One spoken question, across the capture program, the server, the transcriber, the local model, the agent
     and the panel. The capture program sends the speaker sound. Every 2 s the server asks the transcriber whether
     anyone is speaking in the last 20 s and gets the speech spans; 1.5 s of quiet ends an utterance, which the
-    transcriber writes down and the panel shows. With a question word it is solved now, otherwise after 6 s: the local
-    model runs the fast pass on the words. Answered at once, the answer comes back; when it needs reasoning and the
-    agent takes it, the agent gets the question part written out and streams the answer. The panel gets the answer,
-    then analysis_done" src="assets/diagram-voice-flow-light.svg" width="100%">
+    transcriber writes down with technical terms as hints, and the panel shows; with Keep what is heard on, the line
+    is kept on this PC. Speech that asks the listener nothing, a story, a tag such as right? or under 6 characters,
+    gets a muted note under its line saying why. A question is solved at once with a question word, otherwise after
+    6 s, and waits behind an answer being written: the local model runs the fast pass on the words; answered at once,
+    the answer comes back; when it needs reasoning and the agent takes it, the agent gets the question part written
+    out and streams the answer. The panel gets the answer, then analysis_done" src="assets/diagram-voice-flow-light.svg" width="100%">
 </picture>
 
 ## Who answers

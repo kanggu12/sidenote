@@ -1,12 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 568" width="906" height="568" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="A spoken problem: the capture program sends the speaker sound; every two seconds the server finds speech in it, and once a speaker pauses the transcriber writes the utterance down; a question word sends it to be solved at once, otherwise after six seconds of quiet; the local model's fast pass answers, or the agent gets the question written out; the answer reaches the panel">
-<path d="M825,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M675,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M525,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M375,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M225,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M75,44.5 V558" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<rect x="4" y="356" width="892" height="164" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
-<rect x="4" y="90" width="892" height="104" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 708" width="906" height="708" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="A spoken problem: the capture program sends the speaker sound; every two seconds the server finds speech in it, and once a speaker pauses the transcriber writes the utterance down, with technical terms as hints, and the line can be kept on this PC; speech that asks the listener nothing, such as a story or a tag question, gets a note under its line; a question is solved at once with a question word, otherwise after six seconds, and waits behind an answer being written; the local model's fast pass answers, or the agent gets the question written out; the answer reaches the panel">
+<path d="M825,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M675,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M525,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M375,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M225,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M75,44.5 V698" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
+<rect x="4" y="364" width="892" height="330" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
+<rect x="4" y="490" width="892" height="164" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
+<rect x="4" y="96" width="892" height="104" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
 <rect x="8" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
 <text x="22" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="22,128">Capture</text>
 <rect x="158" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
@@ -22,46 +23,56 @@
 <path d="M75,78 L217,78" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
 <path d="M224,78 L215.0,82.5 L215.0,73.5 Z" fill="#656c76" data-tip="224,78"/>
 <text x="150" y="71" font-size="12" fill="#9198a1" text-anchor="middle" data-box="81,219">the speaker sound</text>
-<text x="14" y="108" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Every 2 s, over the last 20 s; 1.5 s of quiet ends an utterance</text>
-<path d="M225,138 L367,138" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M374,138 L365.0,142.5 L365.0,133.5 Z" fill="#656c76" data-tip="374,138"/>
-<text x="300" y="131" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">is anyone speaking?</text>
-<path d="M375,172 H225" stroke="#656c76" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,172 L233,172" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,172 L235.0,167.5 L235.0,176.5 Z" fill="#656c76" data-tip="226,172"/>
-<text x="300" y="165" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the speech spans</text>
-<path d="M225,212 L367,212" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M374,212 L365.0,216.5 L365.0,207.5 Z" fill="#656c76" data-tip="374,212"/>
-<text x="300" y="205" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the utterance</text>
-<path d="M375,246 H225" stroke="#656c76" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,246 L233,246" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,246 L235.0,241.5 L235.0,250.5 Z" fill="#656c76" data-tip="226,246"/>
-<text x="300" y="239" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">its words</text>
-<path d="M225,280 L817,280" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M824,280 L815.0,284.5 L815.0,275.5 Z" fill="#656c76" data-tip="824,280"/>
-<text x="525" y="273" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">utterance</text>
-<path d="M225,308 h16 v12 h-9" fill="none" stroke="#656c76" stroke-width="1.5"/>
-<path d="M241,320 L232.5,320" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M225.5,320 L234.5,315.5 L234.5,324.5 Z" fill="#656c76" data-tip="225.5,320"/>
-<text x="249" y="318" font-size="12" fill="#9198a1" text-anchor="start" data-box="249,525">with a question word, now; else after 6 s</text>
-<path d="M225,344 L517,344" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M524,344 L515.0,348.5 L515.0,339.5 Z" fill="#3987e5" data-tip="524,344"/>
-<text x="375" y="337" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">fast pass on the words</text>
-<text x="14" y="374" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Answered at once</text>
-<path d="M525,404 H225" stroke="#3987e5" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,404 L233,404" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,404 L235.0,399.5 L235.0,408.5 Z" fill="#3987e5" data-tip="226,404"/>
-<text x="375" y="397" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">the answer</text>
-<path d="M10,422 H890" stroke="#3d444d" stroke-width="1" stroke-dasharray="4 4"/>
-<text x="14" y="436" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Needs reasoning, and the agent takes it</text>
-<path d="M225,464 L667,464" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M674,464 L665.0,468.5 L665.0,459.5 Z" fill="#d95926" data-tip="674,464"/>
-<text x="450" y="457" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">the question part, written out</text>
-<path d="M675,498 H225" stroke="#d95926" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,498 L233,498" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,498 L235.0,493.5 L235.0,502.5 Z" fill="#d95926" data-tip="226,498"/>
-<text x="450" y="491" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">the answer, streamed</text>
-<path d="M225,538 L817,538" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M824,538 L815.0,542.5 L815.0,533.5 Z" fill="#656c76" data-tip="824,538"/>
-<text x="525" y="531" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">the answer, then analysis_done</text>
+<text x="14" y="114" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Every 2 s, over the last 20 s; 1.5 s of quiet ends an utterance</text>
+<path d="M225,144 L367,144" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M374,144 L365.0,148.5 L365.0,139.5 Z" fill="#656c76" data-tip="374,144"/>
+<text x="300" y="137" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">is anyone speaking?</text>
+<path d="M375,178 H225" stroke="#656c76" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,178 L233,178" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M226,178 L235.0,173.5 L235.0,182.5 Z" fill="#656c76" data-tip="226,178"/>
+<text x="300" y="171" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the speech spans</text>
+<path d="M225,218 L367,218" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M374,218 L365.0,222.5 L365.0,213.5 Z" fill="#656c76" data-tip="374,218"/>
+<text x="300" y="211" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the utterance</text>
+<path d="M375,246 h16 v12 h-9" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<path d="M391,258 L382.5,258" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M375.5,258 L384.5,253.5 L384.5,262.5 Z" fill="#656c76" data-tip="375.5,258"/>
+<text x="399" y="256" font-size="12" fill="#9198a1" text-anchor="start" data-box="399,675">technical terms as hints</text>
+<path d="M375,282 H225" stroke="#656c76" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,282 L233,282" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M226,282 L235.0,277.5 L235.0,286.5 Z" fill="#656c76" data-tip="226,282"/>
+<text x="300" y="275" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">its words</text>
+<path d="M225,316 L817,316" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M824,316 L815.0,320.5 L815.0,311.5 Z" fill="#656c76" data-tip="824,316"/>
+<text x="525" y="309" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">utterance</text>
+<path d="M225,344 h16 v12 h-9" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<path d="M241,356 L232.5,356" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M225.5,356 L234.5,351.5 L234.5,360.5 Z" fill="#656c76" data-tip="225.5,356"/>
+<text x="249" y="354" font-size="12" fill="#9198a1" text-anchor="start" data-box="249,525">Keep what is heard: kept on this PC</text>
+<text x="14" y="382" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Not asked of the listener: a story, a tag such as "right?", or under 6 characters</text>
+<path d="M225,412 L817,412" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M824,412 L815.0,416.5 L815.0,407.5 Z" fill="#656c76" data-tip="824,412"/>
+<text x="525" y="405" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">a muted note under the line: why it was not taken</text>
+<path d="M10,430 H890" stroke="#3d444d" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="14" y="444" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Asked: with a question word at once, else after 6 s; behind an answer being written</text>
+<path d="M225,472 L517,472" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M524,472 L515.0,476.5 L515.0,467.5 Z" fill="#3987e5" data-tip="524,472"/>
+<text x="375" y="465" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">fast pass on the words</text>
+<text x="14" y="508" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Answered at once</text>
+<path d="M525,538 H225" stroke="#3987e5" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,538 L233,538" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M226,538 L235.0,533.5 L235.0,542.5 Z" fill="#3987e5" data-tip="226,538"/>
+<text x="375" y="531" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">the answer</text>
+<path d="M10,556 H890" stroke="#3d444d" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="14" y="570" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Needs reasoning, and the agent takes it</text>
+<path d="M225,598 L667,598" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M674,598 L665.0,602.5 L665.0,593.5 Z" fill="#d95926" data-tip="674,598"/>
+<text x="450" y="591" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">the question part, written out</text>
+<path d="M675,632 H225" stroke="#d95926" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,632 L233,632" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M226,632 L235.0,627.5 L235.0,636.5 Z" fill="#d95926" data-tip="226,632"/>
+<text x="450" y="625" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">the answer, streamed</text>
+<path d="M225,672 L817,672" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M824,672 L815.0,676.5 L815.0,667.5 Z" fill="#656c76" data-tip="824,672"/>
+<text x="525" y="665" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">the answer, then analysis_done</text>
 </svg>
