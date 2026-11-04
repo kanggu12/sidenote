@@ -69,6 +69,8 @@ from .pipeline import (CONFIRM_TIMEOUT, GpuBusy, Hooks, NoSolver, NotSent, Pipel
                        followup, retry_request)
 from .settings import SETTINGS
 from .transcriber import NullTranscriber, UtteranceTracker, make_transcriber
+from .updates import RELEASES
+from .version import VERSION
 
 logging.basicConfig(
     level=logging.INFO,
@@ -2258,6 +2260,17 @@ async def stage(seq: int, name: str, detail: str, restart: bool = False, thought
                      **({"thought": thought} if thought else {})})
 
 
+def update_status() -> dict | None:
+    """The newer release the panels are told of (server/updates.py): none while this server may not ask, or while the
+    panel's "Check for new versions" is off, whatever an earlier check found."""
+    return RELEASES.found if RELEASES.allowed() and SETTINGS.get("update_check") else None
+
+
+async def publish_update() -> None:
+    """Every panel told what is known of a newer release now; a panel that connects later gets it with its status."""
+    await broadcast({"type": "status", "update": update_status()})
+
+
 @functools.lru_cache(maxsize=1)
 def panel_build() -> str:
     """What the panel's own files add up to. A panel that reconnects to a server built from other
@@ -2309,6 +2322,9 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
         STATE.agent_model = ""   # the card shows the new choice until an answer says which model it ran on
         app.state.cli_task.cancel()   # what it found out is about the old choice
         app.state.cli_task = asyncio.create_task(learn_agent_cli())
+    elif key == "update_check":
+        RELEASES.poke()           # on: the check asks now unless it asked within the day; off: no request from here on
+        await publish_update()    # off hides a release already found, and on shows it again
     elif key == "speech_lang":
         tr = app.state.transcriber
         if hasattr(tr, "language"):
@@ -2936,12 +2952,16 @@ def create_app() -> FastAPI:
         app.state.gpu_task = asyncio.create_task(gpu_watch())
         app.state.cli_task = asyncio.create_task(learn_agent_cli())
         app.state.runner_task = asyncio.create_task(runner_watch())
+        # whether a newer release is out: a minute from now, then once a day, while the switch and the environment let it
+        app.state.update_task = asyncio.create_task(RELEASES.run(lambda: bool(SETTINGS.get("update_check")),
+                                                                 publish_update))
         try:
             yield
         finally:
             stop_watchdog()     # closing down is not a stall: the armed timer would end it mid-way
             telemetry.event("server_stop", analyses=STATE.analyses_done)
             keep_for_restart(app.state.detector)
+            app.state.update_task.cancel()
             app.state.prune_task.cancel()
             app.state.gpu_task.cancel()
             app.state.cli_task.cancel()
@@ -2973,6 +2993,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             {
                 "ok": True,
+                "version": VERSION,       # which release this server's code is (server/version.py)
                 "build": panel_build(),   # which panel this server serves (./sidenote version)
                 "analyzer": CONFIG.analyzer,
                 "agent": CONFIG.agent,
@@ -3220,6 +3241,9 @@ def create_app() -> FastAPI:
                     "engines": panel_engines(),
                     "build": panel_build(),   # a panel left open on an older build says so
                     "desktop": CONFIG.desktop,   # the desktop app's server: directions name the app, not ./sidenote
+                    "version": VERSION,          # shown in the gear menu
+                    "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
+                    "update": update_status(),   # a newer release found before this panel opened, or None
                 }
             )
         )

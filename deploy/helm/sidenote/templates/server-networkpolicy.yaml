@@ -2,7 +2,8 @@
 # compose.yaml publishes the server on the host's 127.0.0.1 only. Here no pod may open a connection
 # to it. kubectl port-forward and the probes reach the server from inside its own pod, so this policy
 # does not affect them. The server's own connections out (the agent, the speech model download, the
-# pages the local LLM reads) stay open, as in compose.
+# pages the local LLM reads, the daily check for a newer release on api.github.com:443) stay open, as
+# in compose: this policy names no egress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

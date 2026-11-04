@@ -79,6 +79,7 @@ server:
   env: {}
   #   SIDENOTE_SPEECH_LANG: "ko"
   #   SIDENOTE_WHISPER_THREADS: "4"   # also sets OMP_NUM_THREADS, as compose.yaml does
+  #   SIDENOTE_UPDATE_CHECK: "0"      # no daily request to api.github.com for a newer release (a cluster with no way out)
 
   service:
     # ClusterIP, reached through kubectl port-forward (NOTES.txt). The panel has no login, so keep it

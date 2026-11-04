@@ -21,6 +21,7 @@ from typing import Any, Callable
 from . import telemetry
 from .config import CONFIG, agent_name
 from .i18n import t
+from .updates import allowed as update_allowed
 
 log = logging.getLogger("sidenote.settings")
 
@@ -142,6 +143,11 @@ def _defs() -> list[Setting]:
         Setting("web_fetch", "bool", bool(CONFIG.search_url), "solve", t("Read pages"),
                 t("Reads a page when the search summary is not enough (public addresses only)"),
                 needs=["local_llm", "web_search"]),
+        # Beside the searches, the one other request this server makes of the internet by itself (server/updates.py). On
+        # wherever the environment allows the check, as the search is where there is a search server: with
+        # SIDENOTE_UPDATE_CHECK=0 (or in mock mode) it starts off, nothing turns it on, and the panel says why.
+        Setting("update_check", "bool", update_allowed(), "solve", t("Check for new versions"),
+                t("Asks GitHub once a day for the latest release. Only Sidenote's version goes out")),
         # the cloud agent
         Setting("agent_mode", "choice", agent_default, "agent", t("Problems the agent solves", agent=name),
                 t("Signed out (for the API, with no key), the agent counts as off", agent=name),

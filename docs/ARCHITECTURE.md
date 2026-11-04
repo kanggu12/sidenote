@@ -137,6 +137,7 @@ measurements.
 | Logs and reports | `server/telemetry.py`, `server/report.py` | Log rotation and retention, `event()` records, the totals for `/stats`; `./sidenote stats`, `events` and `report` | `event`, `totals` |
 | Safety nets | `server/forksafe.py`, `server/watchdog.py` | Keeps `fork()` away from the speech decoder's native threads (such a fork once wedged the server for 95 minutes); writes every thread's stack to `stall.txt` and ends the server when the event loop stops turning | `spawn_guard`, `start` |
 | Translations | `server/i18n.py`, `server/locale/` | The server's words in English and Korean | `t` |
+| Version and releases | `server/version.py`, `server/updates.py` | The one version (`VERSION`), which `/health`, the panel, `./sidenote version` and the release workflow read; the check for a newer release on GitHub, a minute after the start and then once a day | `ReleaseCheck.run` |
 | Tools | `server/control.py`, `server/probe.py`, `server/mock_capture.py`, `server/ocr_gate.py` | `./sidenote gpu off`, `on` and `status` over the panel's own WebSocket; a check of a real engine with one image; a capture stand-in that sends made-up screens; the optional OCR gate, not in the image | `gpu`, `main` |
 | Panel | `panel/` | Plain HTML, CSS and JavaScript with no build step: `index.html` (structure and style), `app.js`, `theme.js`, `i18n.js` and `i18n/ko.js`, and the pinned libraries in `vendor/`. `?demo=1` shows it with samples and no server | `handle` in `app.js` |
 | Capture program | `client/capture.py`, `client/launch.pyw` | The screen, the speaker sound and the window list, on Windows and on Linux with X11: `SendGate`, `ScrollStitcher`, `Sender` and the tray menu | `main` |
@@ -154,7 +155,7 @@ write no core dumps ([note 39](DECISIONS.md#note-39)).
 
 | Part | Service, container | Port | Networks | May reach | Reached by |
 |:---|:---|:---|:---|:---|:---|
-| Server | `server`, `sidenote` | 8777, published on `127.0.0.1` only (`SIDENOTE_PORT` moves the host side) | `default`, `llmnet` | the agent's service (claude.ai, chatgpt.com or the Anthropic API), the local model, SearXNG, public web pages, the runner's socket | the capture program and the panel through the published port; `PeerGuard` takes only that port's gateway and the container itself |
+| Server | `server`, `sidenote` | 8777, published on `127.0.0.1` only (`SIDENOTE_PORT` moves the host side) | `default`, `llmnet` | the agent's service (claude.ai, chatgpt.com or the Anthropic API), the local model, SearXNG, public web pages, the runner's socket, api.github.com for the latest release | the capture program and the panel through the published port; `PeerGuard` takes only that port's gateway and the container itself |
 | Local model | `llm`, `sidenote-llm` (Ollama) | 11434, not published | `llmnet` (`internal: true`) | nothing | the server |
 | Web search | `searxng`, `sidenote-searxng` | 8080, not published | `default` | the search engines | the server |
 | Code runner | `runner`, `sidenote-runner` | none: `/sock/runner.sock` in the `runner-sock` volume, which only root may open | none (`network_mode: none`) | nothing | the server, through the socket |
@@ -238,7 +239,7 @@ one is logged as lost (code 1009).
 
 | Type | When | Main fields |
 |:---|:---|:---|
-| `status` | everything on connect, then the keys that changed | `analyzer`, `paused`, `lang`, `audio`, `voice`, `can_ask`, `run_enabled` (the runner configured and responding, and **Run button** on), `runner`, `engines` (each engine's state; for the agent its `provider`, `label`, `short`, `login`, `effective` mode, payload, model, effort, `brake` and `limit_until`; for the local model `stand_in`) |
+| `status` | everything on connect, then the keys that changed | `analyzer`, `paused`, `lang`, `audio`, `voice`, `can_ask`, `run_enabled` (the runner configured and responding, and **Run button** on), `runner`, `engines` (each engine's state; for the agent its `provider`, `label`, `short`, `login`, `effective` mode, payload, model, effort, `brake` and `limit_until`; for the local model `stand_in`), `version`, `update_check` (false when `SIDENOTE_UPDATE_CHECK=0` or mock mode leaves the check nothing to do), `update` (a newer release, `version` and `url`, or null; sent again when the check or **Check for new versions** changes it) |
 | `settings` | `meta` and `values` on connect, then the changed `values` | `meta` (sections and items), `values`, `options` (a list of choices that changed: the pulled models, the monitors) |
 | `capture` | on connect, on a change, and at most every 5 s while frames and sound arrive | `clients`, `info`, `last_frame`, `last_audio`, `screen_on`, `audio_on`, `caps`, `empty_run` and `quiet_sec` (the watching slowed by answers that found nothing) |
 | `usage` | on connect and after each answer | `answers`, `empty` (analyses with nothing to solve), `tokens_in`, `tokens_out`, `cost_usd`, `errors`, `elapsed_p50`, `first_token_p50`, `first_token_avg`, `tps_avg`, `last_error` |
@@ -286,7 +287,7 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | Route | What it gives |
 |:---|:---|
 | `GET /` | the panel, and its files on every other path |
-| `GET /health` | the state: the analyzer, the agent and its label, sign-in, capture, pause, `runner` (configured and responding), `activity` (what runs) |
+| `GET /health` | the state: `version`, the analyzer, the agent and its label, sign-in, capture, pause, `runner` (configured and responding), `activity` (what runs) |
 | `GET /stats` | totals, recent response times and log size |
 | `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` |
 | `POST /capture/quit`, `POST /capture/restart` | asks the capture program to end or to restart (`./sidenote capture-stop`, a deploy); refused from a page |
@@ -320,6 +321,7 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 | The host | a container gone wrong | all capabilities dropped but the few each needs, `no-new-privileges`, read-only roots, caps on processes, memory and CPUs, no core dumps | `compose.yaml`, the chart's `values.yaml` ([39](DECISIONS.md#note-39)) |
 | The settings, the capture program and the server itself | a page in the browser posting to the server | no HTTP endpoint changes a setting; the two that end or restart the capture program refuse an Origin other than the server's own; `/server/stop` takes only the token the app gave the server | `server/app.py` |
 | The account the agent signs in as | the logs and the status pages | it goes only to the panel (`panel_engines`), not to `/health`, `/stats` or the logs | `server/app.py` ([97](DECISIONS.md#note-97)) |
+| The panel, and what this PC tells GitHub | a reply to the release check that is not a release, or a page it links to elsewhere | the request carries no token and only Sidenote's version; of the reply only the tag's three numbers reach the panel, and its page only when it is under this repository's releases (checked by the server and again by the panel); drafts and pre-releases never count; `SIDENOTE_UPDATE_CHECK=0` makes no request | `server/updates.py`, `releaseLink` in `panel/app.js` |
 
 ## Limits and next steps
 

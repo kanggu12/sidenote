@@ -2719,6 +2719,45 @@ function placeBands() {
 }
 addEventListener("resize", placeBands);
 addEventListener("scroll", () => schedule("bands", placeBands), { passive: true });
+// ---------- the version, and a newer release ----------
+// The server's release (status.version) stands at the foot of the gear menu. A newer one, found by the server's check of
+// GitHub (server/updates.py, status.update), is one line in the band: its number, a link to its release notes, and a key
+// that hides it for that version in this browser. The link is used only when it is one of this repository's releases.
+const NOTES_PREFIX = "https://github.com/kanggu12/sidenote/releases/";
+const UPDATE_HIDDEN_KEY = "sidenote-update-hidden";   // the version whose notice was closed here
+const hiddenNow = new Set();   // closed on this page: the key works where the browser keeps nothing
+const CLOSE_MARK = mark('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>', 2.2);   // the settings sheet's close key's drawing
+function releaseLink(url) {
+  if (typeof url !== "string" || !url.startsWith(NOTES_PREFIX)) return "";
+  const tail = url.slice(NOTES_PREFIX.length);
+  // Plain path segments only: no query, fragment, quote or space, and no "." or ".." that the browser would resolve out of the releases
+  const plain = /^[A-Za-z0-9._~+-]+(\/[A-Za-z0-9._~+-]+)*$/.test(tail) && !tail.split("/").some((s) => s === "." || s === "..");
+  return plain ? url : "";
+}
+function updateHidden(version) {
+  if (hiddenNow.has(version)) return true;
+  try { return localStorage.getItem(UPDATE_HIDDEN_KEY) === version; } catch (_) { return false; }
+}
+function hideUpdate(version) {
+  hiddenNow.add(version);
+  try { localStorage.setItem(UPDATE_HIDDEN_KEY, version); } catch (_) {}   // a newer version than this one shows again
+  renderAlerts();
+}
+function updateBand() {
+  const u = status.update;
+  // Three numbers, as the server writes them; not while the switch is off (at once, before the server says so) or once hidden here
+  if (wsState !== "up" || !u || !/^\d+\.\d+\.\d+$/.test(u.version || "") || settingsValues.update_check === false || updateHidden(u.version)) return "";
+  const href = releaseLink(u.url), hide = t("Hide for this version");
+  return alertHtml("info", `<b>${t("Sidenote {version} is out", { version: u.version })}</b>`
+    + (href ? ` <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${t("Release notes")}</a>` : ""),
+    `<button type="button" class="btn sm icon" data-act="update-hide" data-version="${u.version}" title="${hide}" aria-label="${hide}">${CLOSE_MARK}</button>`);
+}
+function renderVersion() {
+  // a release's number, with a pre-release or build part when the code carries one; anything else is not shown
+  const v = typeof status.version === "string" && /^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/.test(status.version) ? status.version : "";
+  $("menu-about").hidden = !v;
+  $("menu-ver").textContent = v ? t("Version {version}", { version: v }) : "";
+}
 function renderAlerts() {
   const out = [];
   if (!demo && wsState === "down") {
@@ -2795,6 +2834,7 @@ function renderAlerts() {
   if (paused) {
     out.push(alertHtml("warn", t("{title} No automatic analysis · {redo} takes the current screen only", { title: `<b>${t("Paused")}</b>`, redo: REDO_KEY() })));
   }
+  out.push(updateBand());   // a newer release, last: only worth knowing ("" when there is none to show)
   setHtml("alerts", out.join(""));   // redrawn every few seconds: a diff keeps the focus where it was
   $("alerts").querySelectorAll(".msg").forEach((m) => { m.title = m.textContent.trim(); });   // cut to a line in the bar: all of it on the pointer
   placeBands();
@@ -4794,6 +4834,9 @@ function handle(m) {
       if (m.can_ask !== undefined) status.canAsk = !!m.can_ask;   // a restarted server has nothing to ask about
       if (m.run_enabled !== undefined) status.runEnabled = !!m.run_enabled;
       if (m.runner !== undefined) status.runner = !!m.runner;
+      if (m.version !== undefined) { status.version = m.version; renderVersion(); }   // this server's release, in the gear menu
+      if (m.update !== undefined) status.update = m.update;   // a newer release, or null: one line in the band (updateBand)
+      if (m.update_check !== undefined) status.updateCheck = m.update_check !== false;   // false: the environment turned the check off
       renderAll();
       break;
     case "capture": {
@@ -4967,6 +5010,7 @@ const UNAVAILABLE = {
   local_llm: () => !eng()?.local?.present && t("The server was started without the local model (SIDENOTE_ANALYZER)"),
   web_search: noSearch, web_fetch: noSearch, agent_mode: noAgent, agent_payload: noAgent, agent_hard_types: noAgent,
   agent_confirm: noAgent, run_button: noRunner, autocheck: noRunner, voice_auto: noAudio, whisper_hint: noAudio,
+  update_check: () => status.updateCheck === false && t("Version check off (SIDENOTE_UPDATE_CHECK)"),
 };
 const ACTIVE_WHEN = {   // prerequisites that are not plain switches
   agent_payload: (v) => v.agent_mode !== "off", agent_confirm: (v) => v.agent_mode !== "off",
@@ -5678,6 +5722,7 @@ document.addEventListener("click", (e) => {
   if (act?.dataset.act === "draw") { closeSettings(); startDrawing(); }
   if (act?.dataset.act === "roi-clear") clearRoi();
   if (act?.dataset.act === "reload") location.reload();
+  if (act?.dataset.act === "update-hide") hideUpdate(act.dataset.version || "");
   if (act?.dataset.act === "gpu") send({ type: "gpu_release" });
   if (act?.dataset.act === "gpu-load") gpuLoad();
   const cf = e.target.closest("[data-confirm]");

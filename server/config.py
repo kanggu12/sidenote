@@ -406,6 +406,14 @@ class Config:
     stall_warn_sec: float = env_float("SIDENOTE_STALL_WARN_SEC", 45)
     stall_exit_sec: float = env_float("SIDENOTE_STALL_EXIT_SEC", 180)
 
+    # The check for a newer release (server/updates.py): GitHub's latest release, a minute after the start and then once
+    # a day, with Sidenote's version in its User-Agent and nothing else. 0 turns it off for good, for an offline install:
+    # no request at all, and the panel's "Check for new versions" has nothing to turn on. Unset, it is on everywhere but
+    # in mock mode, which every suite and CI run in: there only 1 turns it on (a suite, against its stand-in for GitHub).
+    update_check: str = env_str("SIDENOTE_UPDATE_CHECK", "")
+    # Where it asks: this repository's latest release on GitHub's API; a suite points it at its stand-in
+    update_url: str = env_str("SIDENOTE_UPDATE_URL", "https://api.github.com/repos/kanggu12/sidenote/releases/latest")
+
     def __post_init__(self) -> None:
         # SIDENOTE_FAST fills in the agent's speed knobs only where the user left them at the
         # default, so an explicit SIDENOTE_AGENT_MODEL / SIDENOTE_AGENT_EFFORT always wins.
@@ -451,6 +459,12 @@ class Config:
         if self.local_think not in ("auto", "always", "never"):
             _ignored("SIDENOTE_LOCAL_THINK", self.local_think, "auto")
             self.local_think = "auto"
+        # the release check's switch as one of three: "1" on, "0" off for good, "" the default (on, but in mock mode)
+        update = self.update_check.strip().lower()
+        self.update_check = ("1" if update in ("1", "true", "yes", "on") else "0" if update in ("0", "false", "no", "off")
+                             else "")
+        if update and not self.update_check:
+            _ignored("SIDENOTE_UPDATE_CHECK", update, "")
         if self.fast and not os.environ.get("SIDENOTE_LOCAL_THINK", "").strip():
             self.local_think = "never"
         if self.fast:

@@ -43,6 +43,9 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v7
+      # before an image is built or anything is pushed: the tag is v and server/version.py's VERSION, as the chart is
+      - name: The tag, server/version.py and the chart name one version
+        run: python3 .github/check_version.py "$GITHUB_REF_NAME"
       - name: Version and names
         id: v
         run: |

@@ -329,6 +329,7 @@ notebook carry the same readings.
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest.
+  - At its foot, the version of Sidenote the server runs, such as **Version 0.1.0**.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
 
@@ -339,6 +340,11 @@ model is not downloaded or not answering, the agent is in use but needs signing 
 (expired), no engine can answer, the capture program is off, or analysis is paused. It stays under the top bar as the
 thread scrolls, and the right column stays under it. **Copy command** in an alert copies the command to type in the
 terminal.
+
+When a newer release of Sidenote is out, the alert bar says so in a band of its own, **Sidenote 0.1.2 is out**, with a
+**Release notes** link to the release's page on GitHub. Its close key hides it for that version in this browser, and the
+next release shows again. The server asks GitHub once a day (section 14); **Check for new versions** in **Solver
+settings** turns that off.
 
 If the server connection drops or the capture program stops while you are reading further down, a short notice also
 appears at the bottom of the screen. A solution that was being written when the connection dropped stays as far as it
@@ -909,16 +915,18 @@ What you can change, and where: the panel's **Solver settings** for the stages o
 environment) for the starting values and the rest.
 
 **Solver settings**, in the gear menu, switches every stage: the local model and when it thinks first, web search and
-page reading, the cloud agent (which problems, what is sent, confirm before sending), where the problem is cut out
-(the crop and the window edges), code checks, speech, capture, and when the GPU is released. A change applies to the
-next analysis and is kept across restarts (`.settings.json` in the log folder). A row that depends on a switched-off
-stage is grayed out, with the reason.
+page reading, the check for new versions, the cloud agent (which problems, what is sent, confirm before sending), where
+the problem is cut out (the crop and the window edges), code checks, speech, capture, and when the GPU is released. A
+change applies to the next analysis and is kept across restarts (`.settings.json` in the log folder). A row that depends
+on a switched-off stage is grayed out, with the reason.
 
 The sheet is in sections down the left: **Solving**, **Agent** (whichever agent the server uses), **Screen**,
 **Capture**, **Speech**, **Code** and **GPU**. **Speech language** is in the **Speech** section, not in the gear
 menu. The **Agent** section also holds three settings that used to be environment-only: **Agent model** (which model
 answers, or the one the agent picks by itself), **Thinking effort** (how hard it is told to think) and **Hourly cost
-limit** (what an hour of the agent may cost before automatic sending stops).
+limit** (what an hour of the agent may cost before automatic sending stops). **Check for new versions**, in **Solving**
+beside the two searches, has the server ask GitHub once a day whether a newer release is out (section 14); it is on by
+default, and with `SIDENOTE_UPDATE_CHECK=0` it is off and grayed out, with the reason.
 
 - Models follow new releases. For Claude Code and the Anthropic API the list offers the families `opus`, `sonnet` and
   `haiku`, each the newest release of its family, so a new release is used without a change; a version chosen there
@@ -980,6 +988,7 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_LOCAL_IDLE_MIN` | `10` | Minutes after the last local answer before the model leaves the GPU (`-1`: never) |
 | `SIDENOTE_LOCAL_SLOTS` | `2` | Requests the local model keeps its prompt for: the fast pass and the thinking pass, so a screen with nothing to solve stays at about 0.7 s after a problem (1.0 to 1.5 s with `1`; 1.3 to 1.5 s once after a thinking pass and its code check). Each slot takes about 740 MiB of GPU memory; `3` made every request slower when it was measured ([local-first design](DESIGN-local-first.md), section 10) |
 | `SIDENOTE_SEARCH_URL` | (the SearXNG container) | Web search for the local model. Empty turns it off |
+| `SIDENOTE_UPDATE_CHECK` | (not set) | `0`: the server never asks GitHub whether a newer release is out, and **Check for new versions** has nothing to turn on (an install with no internet). Not set, it asks once a day, except in mock mode (`SIDENOTE_ANALYZER=mock`), where only `1` turns it on |
 | `SIDENOTE_FAST` | `0` | `1`: the local model answers without thinking (faster, but multiple choice with a trap option and hidden calculation go wrong more often), and the CLI agent answers at low effort, Claude Code on the newest Sonnet (measured with Claude Code: the first token in about 0.6 seconds and the whole answer in about 3 seconds on a standard coding problem, about half of its default). `SIDENOTE_AGENT_MODEL` and `SIDENOTE_AGENT_EFFORT` still win |
 | `SIDENOTE_AGENT` | `claude-code` | The cloud agent: `claude-code` (the Claude Code CLI with this PC's login), `codex` (the Codex CLI with this PC's login), `anthropic-api` (`ANTHROPIC_API_KEY`) or `off` (no agent: the local model answers everything). Any case is read the same, and an unknown value runs as `claude-code`. `SIDENOTE_CLAUDE`, its earlier name, is read when this is not set (its `cli` and `api` mean `claude-code` and `anthropic-api`); with neither set, `SIDENOTE_ANALYZER=api` means `anthropic-api` |
 | `SIDENOTE_AGENT_MODEL` | (the agent's own default) | The model the CLI agent starts with: for Claude Code a family (`opus`, `sonnet`, `haiku`: the newest release of each) or a version that pins it (`claude-opus-5-5`), for Codex a model name. **Agent model** in the panel starts from it. `SIDENOTE_CLAUDE_MODEL`, its earlier name, is read when this is not set |
@@ -1140,6 +1149,7 @@ What leaves this PC, what can reach what, and what is kept.
 | Search queries | To search engines, through SearXNG | **Web search** is on and the local model searches; never with a number shaped like personal data |
 | Page reads | To that site | **Read pages** is on and the local model asks for a page; public addresses only, never with a number shaped like personal data |
 | What the agent is sent | To the agent's service: Anthropic for Claude Code and the Anthropic API, OpenAI for Codex | The agent is signed in and **Problems the agent solves** is not **Off**; in the form **What is sent to the agent** chooses |
+| The check for a newer release | To api.github.com: Sidenote's version, and this PC's address as any request carries it; nothing else | A minute after the server starts, then once a day, while **Check for new versions** is on (the default); never with `SIDENOTE_UPDATE_CHECK=0` |
 
 - With the agent signed in, the problems that need reasoning go to it by default (to Anthropic for Claude Code and the
   Anthropic API, to OpenAI for Codex), as only what **What is sent to the agent** allows: the problem's part of the
@@ -1151,8 +1161,14 @@ What leaves this PC, what can reach what, and what is kept.
   it could not write it out or the text holds a number shaped like personal data (a resident registration, phone,
   card or bank account number). While the local model is off or not answering, the agent gets every problem, as the
   whole screen (or the drawn region).
-- To keep everything but search queries and page reads on this PC, set **Problems the agent solves** to **Off**, or
-  `SIDENOTE_AGENT=off`.
+- To keep everything but search queries, page reads and the check for a newer release on this PC, set **Problems the
+  agent solves** to **Off**, or `SIDENOTE_AGENT=off`.
+- The check for a newer release is one GET of this repository's latest release on GitHub's API, with no account and no
+  token, its User-Agent naming Sidenote and its version. A newer release is shown in the panel's alert bar (section 5);
+  a draft or a pre-release never is. A failed check is not tried again before the next day's. It runs the same in the
+  app, with Docker and on Kubernetes. Switched off in the panel, it asks no more, across restarts too;
+  `SIDENOTE_UPDATE_CHECK=0` in `.env`, the app's environment or the chart's `server.env` makes no request at all, from
+  the first start.
 - With web search on (the default), the local model's search queries go to search engines through SearXNG: Brave,
   DuckDuckGo, Google's custom search, Bing, Yahoo, Wikipedia and Wikidata. These are SearXNG's defaults, with Bing and
   Yahoo turned on in `docker/searxng.yml` so that a search still finds pages while some engines turn this PC away.
@@ -1284,9 +1300,9 @@ What is pinned, so that a rebuild gives the same thing:
 - The capture program's packages are the one thing not pinned: on Windows they install into a Python this project
   does not own, and a pin there would fight whatever else uses it.
 
-`./sidenote version` prints all of it as it actually is: the source commit, the server image, the panel build the
-running server serves, Claude Code and Codex on this PC and in the container, the image tags, the models pulled and
-the log folder.
+`./sidenote version` prints all of it as it actually is: the version (`server/version.py`), the source commit, the
+server image, the panel build the running server serves, Claude Code and Codex on this PC and in the container, the
+image tags, the models pulled and the log folder.
 
 `./sidenote uninstall` lists everything this project put on the PC (the containers, images and volumes, the desktop
 shortcut on Windows, the capture packages on Linux) and removes it only with `--yes`. The models live in a volume of
@@ -1377,7 +1393,11 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 어둡게 | Dark | **Settings** menu |
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
 | 기록 지우기 | Clear history | **Settings** menu |
+| 버전 … | Version … | **Settings** menu, at its foot |
 | 새로고침 | Reload | alert bar, when a new version of the panel is ready |
+| Sidenote … 출시 | Sidenote … is out | alert bar, when a newer release is out |
+| 릴리스 노트 | Release notes | alert bar: the link to that release's page |
+| 이 버전 알림 숨기기 | Hide for this version | alert bar: the tooltip of the key that closes it |
 | 명령 복사 | Copy command | alert bar, error cards |
 | 자세한 오류 | Error details | error cards |
 | 서버 연결 끊김 | Server disconnected | alert bar |
@@ -1510,6 +1530,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | GPU가 바쁠 때 쓸 모델 | Model when the GPU is busy | **Solving** |
 | 웹 검색 | Web search | **Solving**; **Details**, as "Sent to Web search: …" |
 | 페이지 읽기 | Read pages; Page reading | **Solving**; **Details**, as "Sent to Page reading: …" |
+| 새 버전 확인 | Check for new versions | **Solving** |
+| 새 버전 확인 꺼짐 (SIDENOTE_UPDATE_CHECK) | Version check off (SIDENOTE_UPDATE_CHECK) | **Solving**, under **Check for new versions** when the environment turned the check off |
 | 에이전트가 푸는 문제 | Problems the agent solves | **Agent** |
 | 어려운 문제 | Hard problems | **Problems the agent solves** |
 | 답 검토 | Check answers | **Problems the agent solves** |

@@ -38,7 +38,7 @@ The newest suites hold the long, tangled cases:
   off, for what overflows, what is cut and what has gone that was promised to stay. It checks the contrast of every
   kind of text against the pixels behind it, and that every answer is drawn from its words with none lost, over
   samples in CI and over the bench's real answers where they are at hand.
-- `panel_layout.py` audits the page as laid out: 30 states of the column at 11 window sizes, 22 shapes of answer, and
+- `panel_layout.py` audits the page as laid out: 31 states of the column at 11 window sizes, 22 shapes of answer, and
   whatever opens over the page. It looks for words cut with no tooltip, words out of their box or the window, words
   over words or over a key, a row off its baseline by one to five pixels, a column off its edge, words off the middle
   of a key, one kind of box set two ways, and uneven gaps. It plants a defect of each kind and checks that it finds
@@ -75,7 +75,10 @@ held up. `up` also waits until the server is idle (`--now` skips the wait). `./s
 running panel is the code here, and with the gate on, what CI said of this commit.
 
 A version tag (`v1.2.3`) publishes: `release.yml` runs `ci.yml`, `chart-e2e.yml` and `desktop.yml` first, and
-publishes nothing if any of them fails.
+publishes nothing if any of them fails. Before tagging, set the release's number in `server/version.py` (`VERSION`)
+and in `deploy/helm/sidenote/Chart.yaml` (`version` and `appVersion`), and commit them. At its start the release job
+runs `.github/check_version.py`, which refuses a tag that is not `v` and that number, or a chart that says another,
+before an image is built or anything is pushed; `version_check.py` holds the two files to one number on every push.
 
 ## What no check here can say
 

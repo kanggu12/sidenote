@@ -1086,7 +1086,9 @@ cmd_version() {   # what is actually installed and running, in one place
   # own width does not know, so %-14s would leave a ragged column.
   row() { printf '  %s%s %s\n' "$1" "$(printf '%*s' $(( 18 - $2 )) '')" "$2$3"; }
   say() { printf '  %s\n' "$1"; }
-  echo "${B}Sidenote${N}"
+  # This code's version, from the one place that holds it, read as text (nothing is imported); left out if it is not there
+  local version; version="$(sed -n 's/^VERSION = "\([^"]*\)".*$/\1/p' server/version.py 2>/dev/null | head -1)" || true
+  echo "${B}Sidenote${version:+ $version}${N}"
   local commit; commit="$(git -C "$PWD" log -1 --format='%h %cd' --date=short 2>/dev/null || true)"
   # Each label as it prints, the padding included: English pads to 16 columns as the Korean does.
   printf '  %s%s\n' "$(L 'Source          ' '소스            ')" "${commit:-$(L "(not a git repository)" "(git 저장소 아님)")}"

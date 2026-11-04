@@ -245,7 +245,9 @@ Screens, crops and speech go to the local model and the speech recognizer on you
 problems that need reasoning go to it (to Anthropic for Claude Code and the API, to OpenAI for Codex), by default as
 only the problem's part of the screen. **What is sent to the agent** in **Solver settings** sends the problem's text
 or the whole screen instead, and **Problems the agent solves** set to **Off** sends nothing. Web search queries go
-through SearXNG. The details are in [Security and privacy](docs/README.md#14-security-and-privacy).
+through SearXNG, and once a day the server asks GitHub whether a newer release is out, sending only Sidenote's version
+(`SIDENOTE_UPDATE_CHECK=0` turns that off). The details are in
+[Security and privacy](docs/README.md#14-security-and-privacy).
 
 ## Documentation
 

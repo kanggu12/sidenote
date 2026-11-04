@@ -236,6 +236,52 @@ def group_readable(br, s):
         p.close()
 
 
+def group_release(br, s):
+    """The notice of a newer release, at every width from a phone's to a wide screen's, in both themes and in English and Korean:
+    inside its band and the window, on one line wherever the band leaves its words room (a phone's 360 and 390 px do not for the
+    English: there the link goes to a second line whole), its words as readable as the other bands', its close key big enough to
+    press. English is the longer of the two, and the one the room is measured against."""
+    if not T.group("the release notice at every width"):
+        return
+    upd = {"type": "status", "update": {"version": "0.1.2", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.1.2"}}
+    measure = """() => {
+      const a = [...document.querySelectorAll('#alerts .alert')].find((x) => x.querySelector('[data-act="update-hide"]'));
+      if (!a) return null;
+      const r = a.getBoundingClientRect(), msg = a.querySelector('.msg'), key = a.querySelector('[data-act="update-hide"]').getBoundingClientRect();
+      const link = a.querySelector('.msg a'), words = document.createRange();
+      words.selectNodeContents(msg);
+      const boxes = [...words.getClientRects()].filter((x) => x.width > 0);
+      const b = msg.querySelector('b').getBoundingClientRect(), c = getComputedStyle(msg.querySelector('b')).color.match(/[\\d.]+/g).map(Number);
+      return { band: [r.left, r.top, r.right, r.bottom], lines: new Set(boxes.map((x) => Math.round(x.top))).size,
+               out: boxes.some((x) => x.left < r.left - .5 || x.right > r.right + .5) || key.left < r.left || key.right > r.right + .5 || key.top < r.top || key.bottom > r.bottom + .5,
+               linkLines: link ? link.getClientRects().length : 0, key: [key.width, key.height], words: [Math.floor(b.left), Math.floor(b.top), Math.ceil(b.right), Math.ceil(b.bottom)], colour: c,
+               side: document.documentElement.scrollWidth - document.documentElement.clientWidth, W: innerWidth };
+    }"""
+    for locale in ("en-US", "ko-KR"):
+        for theme in ("dark", "light"):
+            for w in (360, 390, 414, 600, 768, 1000, 1001, 1280, 1440, 1920, 2560):
+                p = Page(br, s, [row(970, "essay", "문제", "답", "풀이")], w=w, h=900, theme=theme, settle=300, locale=locale)
+                p.send(upd)
+                p.js("() => { stick = false; window.scrollTo(0, 0); placeBands(); }")
+                p.wait(250)
+                m = p.js(measure)
+                name = f"{locale[:2]} {theme} {w}"
+                if not m:
+                    check(f"{name}: the notice is in the band", False)
+                    p.close()
+                    continue
+                check(f"{name}: inside its band and the window, the page not scrolled sideways",
+                      not m["out"] and m["band"][0] >= 0 and m["band"][2] <= m["W"] + .5 and m["side"] <= 0, m)
+                check(f"{name}: {'one line' if w >= 414 else 'its link whole, on a line of its own if need be'}",
+                      m["linkLines"] == 1 and (m["lines"] == 1 if w >= 414 else m["lines"] <= 2), m)
+                check(f"{name}: its close key is 24 px or more", min(m["key"]) >= 24, m["key"])
+                bg = h.background_of(br, p.page.screenshot(), m["words"])
+                ratio = contrast(m["colour"], bg)
+                check(f"{name}: its words read at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f} {m['colour']} on {bg}")
+                check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
+                p.close()
+
+
 def group_motion(br, s):
     if not T.group("less motion"):
         return
@@ -622,7 +668,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_matrix, group_study, group_shots):
+        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_release, group_matrix, group_study, group_shots):
             group(br, s)
         br.close()
     return T.end()

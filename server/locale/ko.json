@@ -319,5 +319,7 @@
  "First token (median)": "첫 토큰(중앙)",
  "Last {n}: response median {p50}, 90% {p90}, median to the first token {first}": "최근 {n}건: 응답 중앙값 {p50}, 90% {p90}, 첫 토큰까지 중앙값 {first}",
  "local model slow": "이 PC의 모델 느림",
- "Local model: {state}{stand_in}{where}": "이 PC의 모델: {state}{stand_in}{where}"
+ "Local model: {state}{stand_in}{where}": "이 PC의 모델: {state}{stand_in}{where}",
+ "Check for new versions": "새 버전 확인",
+ "Asks GitHub once a day for the latest release. Only Sidenote's version goes out": "하루 한 번 GitHub에서 최신 릴리스 확인. Sidenote 버전만 나감"
 }

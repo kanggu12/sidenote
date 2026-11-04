@@ -694,4 +694,10 @@ CATALOGS.ko = {
   "Notes for Anki: the question on the front, the answer line and its key point on the back": "Anki 카드: 앞면에 물음, 뒷면에 정답 한 줄과 요점",
   "Exported {n} answer (Anki)": "답 {n}개 내보냄 (Anki)",
   "Exported {n} answers (Anki)": "답 {n}개 내보냄 (Anki)",
+  // The version and a newer release
+  "Sidenote {version} is out": "Sidenote {version} 출시",
+  "Release notes": "릴리스 노트",
+  "Hide for this version": "이 버전 알림 숨기기",
+  "Version {version}": "버전 {version}",
+  "Version check off (SIDENOTE_UPDATE_CHECK)": "새 버전 확인 꺼짐 (SIDENOTE_UPDATE_CHECK)",
 };

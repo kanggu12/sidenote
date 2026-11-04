@@ -337,7 +337,7 @@ AUDIT = r"""
 """
 
 # The rows to read: each is a line of one kind of thing
-ROWS = ".src-top, .fact, .k, .usage-sub, .bars-key, .agent-who, .agent-scale, .h, .h-day, .card > h2, .hist-tools, .bar-in, .composer, .tools, .codebar, .meta, .set-row, .settings header, .row:not(:has(.md)), .run, .v-flow, .ct-head"
+ROWS = ".src-top, .fact, .k, .usage-sub, .bars-key, .agent-who, .agent-scale, .h, .h-day, .card > h2, .hist-tools, .bar-in, .composer, .tools, .codebar, .meta, .set-row, .settings header, .row:not(:has(.md)), .run, .v-flow, .ct-head, .alert:not(.confirm)"
 # The columns: [what, which edge, what it is, per what (none: the whole page), least, most]
 COLUMNS = [
     [".rail .card", "left", "the cards' left edge"], [".rail .card", "right", "the cards' right edge"],
@@ -544,9 +544,14 @@ def st_disconnected(p):
     p.drop()
 
 
+def st_update(p):
+    # a newer release found by the server: one line in the band, its link and its close key; the version in the menu
+    p.send({"type": "status", "version": "0.1.0", "update": {"version": "0.1.2", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.1.2"}})
+
+
 RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
                                            st_local_down, st_local_long, st_agent_off, st_agent_login, st_agent_expired, st_agent_gone, st_agent_limit, st_agent_brake, st_agent_forced, st_agent_long,
-                                           st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected)}
+                                           st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected, st_update)}
 SIZES = [(1920, 1080), (1920, 1300), (2560, 1440), (1440, 900), (1366, 768), (1280, 720), (1100, 800), (1001, 700), (1000, 800), (768, 1024), (390, 844)]
 if os.environ.get("LAYOUT_SIZES"):
     SIZES = [tuple(int(v) for v in x.split("x")) for x in os.environ["LAYOUT_SIZES"].split(",")]
@@ -638,7 +643,7 @@ def group_rail(br, s):
     for (w, hh) in SIZES:
         for name, fn in RAIL_STATES.items():
             # Every state at the one size most windows have, the hard ones on a phone, the fullest at every other size
-            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off", "skipping")) or name == "full"):
+            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off", "skipping", "update")) or name == "full"):
                 continue
             p = Page(br, s, many(), w=w, h=hh, settle=250)
             fn(p)
@@ -691,7 +696,8 @@ def group_overlays(br, s):
     found = []
     for (w, hh) in ((1920, 1080), (390, 844)):
         for name, act in (
-            ("menu", "() => document.getElementById('more').click()"),
+            # with the version the server says at its foot (app.js, renderVersion)
+            ("menu", "() => { handle({ type: 'status', version: '0.1.0' }); document.getElementById('more').click(); }"),
             ("settings", "() => { document.getElementById('more').click(); document.getElementById('open-settings').click(); }"),
             ("day_combo", "() => document.querySelectorAll('.hist-tools .combo-btn')[0]?.click()"),
             ("kind_combo", "() => document.querySelectorAll('.hist-tools .combo-btn')[1]?.click()"),
@@ -1670,13 +1676,38 @@ def group_recheck(br, s):
     p.close()
 
 
+def group_release(br, s):
+    """The notice of a newer release, audited at every width from a phone's to a wide screen's in both themes and in English and Korean
+    (the English words are the longer), at the top of the page (in the bar where it fits) and scrolled (floating under the bar): what the
+    audit finds on the band's own words, link and key."""
+    if not T.group("the release notice in the band"):
+        return
+    found = []
+    for locale in ("en-US", "ko-KR"):
+        for theme in ("dark", "light"):
+            for w, hh in ((360, 760), (390, 844), (414, 896), (768, 1024), (1000, 800), (1001, 700), (1366, 768), (1920, 1080), (2560, 1440)):
+                p = Page(br, s, many(), w=w, h=hh, theme=theme, settle=250, locale=locale)
+                st_update(p)
+                for at in ("top", "scrolled"):
+                    p.js("(y) => { stick = false; window.scrollTo(0, y); placeBands(); }", 0 if at == "top" else 900)
+                    p.wait(220)
+                    # the band's findings: its words, link and key, and anything over them (the rest of the page has its own states above)
+                    found += [g for g in audit(p, f"release, {at}", f"{w}x{hh} {theme} {locale[:2]}") if "alert" in g["where"] or "msg" in g["where"]]
+                shown = p.js("() => !!document.querySelector('#alerts [data-act=\"update-hide\"]')")
+                if not shown or p.errors:
+                    check(f"{locale[:2]} {theme} {w}x{hh}: the notice is drawn, and the page threw nothing", False, p.errors[:2])
+                p.close()
+    record(found)
+    report("the release notice", found)
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     s = Stand("layout")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays):
+        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays, group_release):
             group(br, s)
         br.close()
     if os.environ.get("AUDIT_REPORT"):
