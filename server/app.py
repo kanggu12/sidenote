@@ -708,9 +708,11 @@ def capture_status() -> dict:
 
 
 def control_message() -> str:
-    """What the capture program should do: the panel's switches, scroll stitching and the monitor."""
+    """What the capture program should do: the panel's switches, scroll stitching, the monitor, and the words of Skip
+    windows (it reads the window in front itself, and its title never comes here)."""
     return json.dumps({"type": "control", "screen": STATE.screen_on, "audio": STATE.audio_on,
-                       "stitch": bool(SETTINGS.get("stitch")), "monitor": int(SETTINGS.get("monitor"))})
+                       "stitch": bool(SETTINGS.get("stitch")), "monitor": int(SETTINGS.get("monitor")),
+                       "skip_windows": list(SETTINGS.get("skip_windows"))})
 
 
 async def send_control() -> None:
@@ -2284,7 +2286,7 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
         if key in SETTINGS.defs:
             await broadcast({"type": "settings", "values": {key: SETTINGS.get(key)}})
         return False, err
-    if key in ("stitch", "monitor"):
+    if key in ("stitch", "monitor", "skip_windows"):   # what the capture program does itself: it is told at once
         # A drawn region is a fraction of one screen: on another monitor, or on a screen stitched out of
         # all of them, it points somewhere else entirely. So it goes when the screen it was drawn on does.
         if key == "monitor" and old != value and SETTINGS.get("roi_box"):
@@ -3140,9 +3142,12 @@ def create_app() -> FastAPI:
                         if "flags" in data and SETTINGS.get("roi_box"):
                             await apply_setting(app, "roi_box", None)
                             await notice(t("Capture started anew: region cleared · sees the whole screen"))
-                    # "code": which capture.py it runs (./sidenote up compares it with the file it deployed)
+                    # "code": which capture.py it runs (./sidenote up compares it with the file it deployed);
+                    # "skipping": a window of Skip windows is in front, so no screen comes (never which window)
                     caps = {k: data[k] for k in ("screen", "audio", "audio_device", "monitor", "no_audio",
-                                                 "monitors", "code") if k in data}
+                                                 "monitors", "code", "skipping") if k in data}
+                    if "skipping" in caps:
+                        caps["skipping"] = caps["skipping"] is True   # a yes or a no, whatever a client sends
                     if caps:
                         STATE.capture_caps = {**STATE.capture_caps, **caps}
                     if isinstance(data.get("monitors"), list):   # the panel offers these

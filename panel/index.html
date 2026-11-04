@@ -1251,6 +1251,15 @@
      whole row, each pressed in while it is on (settingRow) */
   .set .seg.checks { grid-column: 1 / -1; justify-content: flex-start; margin: 4px 0 2px; }
   .set .ctl { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+  /* Free words (Skip windows): a text box under the label across the row, as the ticks of a list are. The dropdown's
+     box (.combo-btn: its height for one line, its edge, its ground and its words), pressed in as the contents' search
+     box is, since it is typed into; as tall as its lines (app.js, fitWords), and scrolled past six of them */
+  .set textarea.words { grid-column: 1 / -1; display: block; width: 100%; min-height: 30px; max-height: 122px; margin: 4px 0 2px;
+    padding: 5px 11px; border-radius: 8px; border: 1px solid var(--rule); background: var(--sheet-2); color: var(--ink);
+    box-shadow: var(--sunken); font: inherit; font-size: 13px; line-height: 18px; resize: none; overflow-y: auto; }
+  .set textarea.words:focus-visible { outline: none; border-color: var(--pen); }   /* inside its own edge: the pane would cut a ring outside it */
+  .set textarea.words:disabled { opacity: .45; box-shadow: none; }
+  :root[data-skin="classic"] .set textarea.words { border-radius: 5px; }           /* the Classic corners of the dropdown beside it */
 
   /* confirm before sending: what would go to the agent, in the foot of the page */
   /* A row of the sheet like the others, not a bordered, tinted, raised card inside it (a card in a card, and its

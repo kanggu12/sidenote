@@ -2242,6 +2242,9 @@ function screenState() {
   // browser's. Null when no frame has arrived yet, which is not an error, only a quiet start.
   const age = capture.last_frame ? fmtAgo(serverNow() - capture.last_frame) : null;
   const facts = [[t("Monitor"), monitorText()], [t("Last screen"), age || t("When the screen changes")]];
+  // A window of Skip windows is in front, so the capture program sends nothing: said as a caution, and never which
+  // window (its title stays in that program). It goes on by itself once the window is gone
+  if (caps.skipping) return card("warn", t("Skipped window"), facts, t("No screen is sent while it is in front · Skip windows in Solver settings"));
   // The watching slowed itself down: every answer in a row found nothing, so this is somebody
   // working rather than a problem waiting. A tool that quietly looks less often is worse than one
   // that keeps asking, so the card says it while it holds and says what brings it back.
@@ -5046,11 +5049,15 @@ function settingRow(item) {
   // one control in the sheet still drawn that way after the dropdowns stopped being <select>s.
   const multi = item.kind === "multi" ? `<div class="seg checks" role="group" aria-label="${escapeHtml(item.label)}">${item.options.map(([ov, ol]) =>
     `<button type="button" data-set="${escapeHtml(item.key)}" data-multi="${escapeHtml(ov)}" aria-pressed="${(v || []).includes(ov)}"${why || wsState !== "up" ? " disabled" : ""}>${escapeHtml(ol)}</button>`).join("")}</div>` : "";
+  // Free words (Skip windows): a text box under the label across the row, as the ticks of a list are, the words set
+  // apart by commas. Sent when Enter is pressed or the keyboard leaves it (wordsCommit)
+  const words = item.kind === "words" ? `<textarea class="words" rows="1" data-set="${escapeHtml(item.key)}" aria-label="${escapeHtml(item.label)}"
+    placeholder="${escapeHtml(t("Words, separated by commas"))}" spellcheck="false" autocomplete="off"${why || wsState !== "up" ? " disabled" : ""}>${escapeHtml((Array.isArray(v) ? v : []).join(", "))}</textarea>` : "";
   // the drawn box as it stands, set apart from the server's help after it: "none" alone, the help says what none means
   const extra = item.kind === "box" ? ` · ${t("Now: {box}", { box: v ? boxText(v) : t("none") })}` : "";
   const pick = (item.opt_help || {})[String(v)];
   return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, v, !!why)}</span>
-    ${multi}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
+    ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
     <p class="help">${escapeHtml(item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p></div>`;
 }
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
@@ -5058,6 +5065,7 @@ function settingRow(item) {
 function renderSettings() {
   const body = $("settings-body");
   if (!body || $("settings-overlay").hidden) return;
+  if (sheetBusy()) { sheetDue = true; return; }   // drawn once the press or the typing is over (sheetSettle)
   // The sheet is drawn again on every status message from the server, not only when something here
   // changed, and that replaces the row an open dropdown is in. The list goes back up afterwards on
   // the same row and the same choice: dropping it meant a model loading a second later shut a list
@@ -5101,6 +5109,7 @@ function renderSettings() {
     + `<div class="set-pane${moved ? " enter" : ""}" role="tabpanel" aria-label="${escapeHtml(secs.find(([x]) => x === sec)?.[1] || "")}">`
     + `${note ? `<p class="sec-note">${note}</p>` : ""}${rows}${gpu}</div>`;
   const pane = body.querySelector(".set-pane");
+  fitWords(body);                // a box of words as tall as its lines, before the pane's place is put back
   if (pane) pane.scrollTop = moved ? 0 : keep;
   if (focus) {
     // The same option, not the first one with that key.
@@ -5128,6 +5137,53 @@ function setSetting(key, value) {
   renderSettings(); renderShot();
   return true;
 }
+// ---------- a box of words in the sheet (Skip windows) ----------
+// The sheet is drawn again on every message from the server, and two moments wait for that: a press in it (the control
+// under the pointer replaced between the press and the release takes no click), and the keyboard in a box of words (a
+// redraw puts the caret back at the start and cuts a Korean syllable being put together)
+let sheetPress = false, sheetDue = false;
+function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.("#settings-body textarea.words"); }
+// The redraw that waited, once neither holds: after the focus has moved on (a Tab out of the box) or the click has landed
+function sheetSettle() { setTimeout(() => { if (sheetDue && !sheetBusy()) { sheetDue = false; renderSettings(); } }, 0); }
+$("settings-overlay").addEventListener("pointerdown", () => { sheetPress = true; }, true);
+for (const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, () => { if (sheetPress) { sheetPress = false; sheetSettle(); } }, true);
+// The words in a box: split at commas (and at line ends, for a list pasted one to a line), trimmed, none of them empty
+const wordsOf = (text) => text.split(/[,\n]/).map((w) => w.trim()).filter(Boolean);
+// Each box as tall as its lines, up to the stylesheet's limit (index.html, .set textarea.words)
+function fitWords(root = document) {
+  for (const box of root.querySelectorAll("#settings-body textarea.words")) {
+    box.style.height = "auto";                                                         // its own height first, so fewer lines shrink it
+    box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;   // then its lines, with its edges
+  }
+}
+// The words typed go to the server when they differ from what it holds; the sheet shows what it sends back
+function wordsCommit(box) {
+  const key = box.dataset.set, list = wordsOf(box.value);
+  if (JSON.stringify(list) === JSON.stringify(settingsValues[key] || [])) return;
+  if (send({ type: "setting", key, value: list })) settingsValues[key] = list;
+}
+$("settings-body").addEventListener("input", (e) => { if (e.target.matches?.("textarea.words")) fitWords(); });
+$("settings-body").addEventListener("keydown", (e) => {
+  const box = e.target.closest?.("textarea.words");
+  if (!box) return;
+  // Enter sends them, tidied as they are kept; not while a Korean syllable is being put together (that Enter is the IME's)
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    e.preventDefault();
+    box.value = wordsOf(box.value).join(", ");
+    wordsCommit(box);
+    fitWords();
+  }
+  // Escape puts back what the server holds; the sheet's own Escape then closes it, as it does from anywhere in it
+  else if (e.key === "Escape") box.value = (settingsValues[box.dataset.set] || []).join(", ");
+});
+// Leaving the box sends what was typed, and the redraw that waited comes once the focus has moved on
+$("settings-body").addEventListener("focusout", (e) => {
+  if (!e.target.matches?.("textarea.words")) return;
+  wordsCommit(e.target);
+  sheetDue = true;
+  sheetSettle();
+});
+window.addEventListener("resize", () => { if (!$("settings-overlay").hidden) fitWords(); });   // the lines wrap at another width
 let settingsOpener = null;
 function openSettings() {
   toggleMenu(false);
@@ -5149,7 +5205,7 @@ function closeSettings() {
   settingsOpener = null;
   back.focus({ preventScroll: true });
 }
-const CAN_FOCUS = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href]';
+const CAN_FOCUS = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href]';
 $("settings").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); closeSettings(); return; }
   if (e.key !== "Tab") return;
@@ -5224,7 +5280,7 @@ $("settings-body").addEventListener("click", (e) => {
   const tab = e.target.closest("[data-sec]");
   if (tab) { showSection(tab.dataset.sec); return; }
   const t = e.target.closest("[data-set]");
-  if (!t || t.disabled || t.tagName === "INPUT") return;
+  if (!t || t.disabled || t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;   // a box is typed into, not pressed
   const item = settingItem(t.dataset.set);
   if (!item) return;
   if (t.dataset.multi !== undefined) {

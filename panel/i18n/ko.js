@@ -137,6 +137,10 @@ CATALOGS.ko = {
   "When the screen changes": "화면이 바뀌면",
   "Watching quietly": "조용히 보는 중",
   "No problem {n} times in a row · small changes checked every {s} s. A window switch, a question or Reanalyze brings it back": "{n}번 연속 문제 없음 · 작은 변화는 {s}초마다 확인. 창 전환, 질문, 다시 분석이면 원래대로",
+  // Skip windows: the screen card while one is in front, and the box its words are typed into
+  "Skipped window": "창 건너뜀",
+  "No screen is sent while it is in front · Skip windows in Solver settings": "맨 앞에 있는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'",
+  "Words, separated by commas": "쉼표로 구분한 단어",
   "Receiving": "받는 중",
   "All monitors ({n})": "모든 모니터 {n}대",
   "All monitors": "모든 모니터",

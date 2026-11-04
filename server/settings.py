@@ -38,12 +38,18 @@ RENAMED = {"claude_mode": "agent_mode", "claude_payload": "agent_payload", "clau
            "claude_hourly_usd": "agent_hourly_usd", "claude_confirm": "agent_confirm"}
 TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay", "coding": "Coding",
               "algorithm": "Algorithm", "work": "Work", "math": "Math", "diagram": "Diagram", "other": "Other"}
+# Skip windows: while the window in front has one of these in its title or its program's name, the capture program
+# sends no screen at all. The common password managers and the browsers' private windows. client/capture.py keeps a
+# copy for the moments before the server's word arrives, and tests/capture_skip.py checks the two are the same.
+SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
+                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing"]
+WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each at most this many characters
 
 
 @dataclass
 class Setting:
     key: str
-    kind: str                      # bool | choice | multi | box | int
+    kind: str                      # bool | choice | multi | box | int | words
     default: Any
     section: str
     label: str
@@ -53,6 +59,13 @@ class Setting:
     # choice: one line per option, shown for the option in force. A paragraph that explains four
     # options at once is read by nobody: the panel shows the line for what is chosen now.
     opt_help: dict = field(default_factory=dict)
+
+    def clean(self, v: Any) -> Any:
+        """The value as it is kept: free words trimmed, with the empty ones dropped (a comma left at the end of what was
+        typed). Any other kind, and anything that is not a list of strings, comes back as it came, for valid() to judge."""
+        if self.kind == "words" and isinstance(v, list) and all(isinstance(x, str) for x in v):
+            return [x.strip() for x in v if x.strip()]   # each word trimmed, and the empty ones gone
+        return v
 
     def valid(self, v: Any) -> bool:
         if self.kind == "bool":
@@ -71,6 +84,9 @@ class Setting:
                     and v[2] - v[0] >= 0.02 and v[3] - v[1] >= 0.02)
         if self.kind == "int":
             return isinstance(v, int) and not isinstance(v, bool) and any(v == o[0] for o in self.options)
+        if self.kind == "words":   # cleaned first (clean): no word left empty or with spaces round it
+            return (isinstance(v, list) and len(v) <= WORDS_MAX
+                    and all(isinstance(x, str) and 0 < len(x) <= WORD_MAX and x == x.strip() for x in v))
         return False
 
 
@@ -188,6 +204,12 @@ def _defs() -> list[Setting]:
                   days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.history_mb:g}")),
         Setting("face_mask", "bool", True, "screen", t("Cover faces"),
                 t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
+        # The capture program gets the words in its control message (server/app.py, control_message) and reads the
+        # window in front itself: its title and its program's name never leave that program (client/capture.py).
+        Setting("skip_windows", "words", list(SKIP_WINDOWS), "screen", t("Skip windows"),
+                t("While the window in front has one of these words in its title or its program's name, no screen is "
+                  "sent at all. Comma-separated, any case. Windows and Linux with X11: on Wayland the window in front "
+                  "cannot be read. Sound capture goes on")),
         Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),
                 t("Solves again only when the answer's problem area changes. Off: on every screen change")),
         Setting("roi", "bool", True, "screen", t("Zoom in on the problem"),
@@ -281,6 +303,7 @@ class Settings:
             s = self.defs.get(k)
             if k in NOT_KEPT:   # written by an older server: not brought back
                 continue
+            v = s.clean(v) if s else v   # a file edited by hand: its words trimmed as the panel's are
             if s and (s.valid(v) or (s.kind in ("choice", "int") and k in ("local_model", "local_busy_model", "monitor"))):
                 self.values[k] = v
         log.info("settings restored: %s", {k: v for k, v in self.values.items() if v != self.defs[k].default})
@@ -315,12 +338,17 @@ class Settings:
         s = self.defs.get(key)
         if s is None:
             return False, t("Unknown setting")
+        value = s.clean(value)   # free words trimmed and the empty ones dropped, before they are judged
         if s.kind in ("choice", "int") and key in self.dynamic_options:
             ok = any(value == o[0] for o in self.dynamic_options[key])
         else:
             ok = s.valid(value)
         if not ok:
             label = next((d.label for d in _defs() if d.key == key), s.label)   # in the language of now
+            # words as the panel sends them, too many or one too long: the limits are what to say
+            if s.kind == "words" and isinstance(value, list) and all(isinstance(x, str) for x in value):
+                return False, t("'{label}' takes up to {n} words of up to {m} characters each", label=label,
+                                n=WORDS_MAX, m=WORD_MAX)
             return False, t("Not a value for '{label}'", label=label)
         self.values[key] = value
         self.save()

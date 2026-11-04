@@ -55,3 +55,22 @@ shows such icons: an AppIndicator, or the X11 tray.
 
 The program sends each frame as it is; the server covers the faces on it before anything reads it
 ([Security and privacy](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#14-security-and-privacy)).
+
+## Windows it does not send
+
+While the window in front has one of the words of **Skip windows** (**Solver settings** > **Screen**) in its title or
+in its program's name, in any case, the program takes no screenshot and sends no frame. The words come from the server
+with its other switches, on connect and on every change; until they arrive, it holds the server's default list (the
+common password managers and the browsers' private windows). Sound capture goes on.
+
+| System | The window in front | Its title | Its program's name |
+|:---|:---|:---|:---|
+| Windows | `GetForegroundWindow` | `GetWindowTextW` | the file name of its process (`QueryFullProcessImageNameW`), such as `Bitwarden.exe` |
+| Linux with X11 | the root window's `_NET_ACTIVE_WINDOW`, which the window manager keeps | `_NET_WM_NAME`, else `WM_NAME` | `WM_CLASS`, such as `keepassxc KeePassXC` |
+
+A Wayland session tells other programs nothing of its windows, so there nothing is skipped, and the log says so once.
+The window is looked at before each screenshot and again after it, so a window brought to the front while a screenshot
+was being taken does not go out in it. The title and the name stay in this program: the server hears only that a
+window is skipped, and the log says only when a skip started and ended. Meanwhile the line under **Open the panel**
+in the tray menu reads **Skipped window**, as does the screen card in the panel. Once the window is no longer in front
+the program captures again, and the same problem as before is not taken for a new screen.

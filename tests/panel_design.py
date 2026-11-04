@@ -521,6 +521,83 @@ def group_study(br, s):
         p.close()
 
 
+def group_skip(br, s):
+    """Skip windows: its box of words in the settings sheet, and the screen card while a window to skip is in front, in both
+    themes from 360 to 2560 px wide: inside the sheet and the card, every word in view, nothing cut, read at 4.5:1."""
+    if not T.group("skip windows: the box of words and the screen card"):
+        return
+    msg = support.settings_message()
+    words = msg["values"]["skip_windows"]
+    for theme in ("dark", "light"):
+        for w, hh in ((360, 740), (390, 844), (768, 1024), (1000, 800), (1280, 720), (1920, 1080), (2560, 1440)):
+            name = f"{theme} {w}x{hh}"
+            p = Page(br, s, [], w=w, h=hh, theme=theme, settle=300)
+            p.send(msg)
+            p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='screen']\").click(); }")
+            p.wait(250)
+            box = p.js("""() => { const b = document.querySelector('#settings textarea[data-set=skip_windows]'); if (!b) return null;
+                b.scrollIntoView({ block: 'nearest' });
+                const r = b.getBoundingClientRect(), sheet = document.getElementById('settings').getBoundingClientRect(),
+                      pane = document.querySelector('#settings .set-pane').getBoundingClientRect(), row = b.closest('.set').getBoundingClientRect();
+                return { inside: r.left >= pane.left - .5 && r.right <= pane.right + .5 && r.left >= sheet.left && r.right <= sheet.right,
+                         row: r.left >= row.left - .5 && r.right <= row.right + .5, all: b.scrollHeight <= b.clientHeight + 1, value: b.value,
+                         side: document.documentElement.scrollWidth - document.documentElement.clientWidth, h: Math.round(r.height),
+                         box: [Math.floor(r.left + 12), Math.floor(r.top + 6), Math.ceil(r.right - 12), Math.ceil(r.bottom - 6)],
+                         ink: getComputedStyle(b).color.match(/[\\d.]+/g).map(Number) }; }""")
+            if box is None:
+                check(f"{name}: the box of words is there", False)
+                p.close()
+                continue
+            check(f"{name}: the box of words stands inside the sheet, its pane and its row", box["inside"] and box["row"], box)
+            check(f"{name}: ...with every word of the default list in view, none scrolled away inside it",
+                  box["all"] and box["value"] == ", ".join(words), box)
+            check(f"{name}: ...and the page does not scroll sideways", box["side"] <= 0, box["side"])
+            ratio = contrast(box["ink"], h.background_of(br, p.page.screenshot(), box["box"]))
+            check(f"{name}: ...its words read at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f}")
+            # The screen card while a window to skip is in front
+            p.js("() => closeSettings()")
+            p.send({**h.CAPTURE, "now": p.js("() => Date.now() / 1000"), "last_frame": p.js("() => Date.now() / 1000") - 8,
+                    "caps": {**h.CAPTURE["caps"], "skipping": True}})
+            p.wait(250)
+            pill = p.js("""() => { const e = document.getElementById('pill-screen'); e.scrollIntoView({ block: 'center' });
+                const r = e.getBoundingClientRect(), card = e.closest('.card').getBoundingClientRect();
+                return { text: e.textContent, state: e.dataset.state, cut: e.scrollWidth > e.clientWidth + 1, inside: r.left >= card.left && r.right <= card.right,
+                         box: [Math.floor(r.left), Math.floor(r.top), Math.ceil(r.right), Math.ceil(r.bottom)], ink: getComputedStyle(e).color.match(/[\\d.]+/g).map(Number),
+                         note: document.querySelector('#st-screen .src-note')?.textContent || '', signal: document.getElementById('sig-screen').dataset.state }; }""")
+            p.wait(150)
+            check(f"{name}: the screen card says 'Skipped window' in the warn tone, the top bar's signal too",
+                  pill["text"] == "창 건너뜀" and pill["state"] == "warn" and pill["signal"] == "warn", pill)
+            check(f"{name}: ...whole, inside its card", not pill["cut"] and pill["inside"], pill)
+            ratio = contrast(pill["ink"], h.background_of(br, p.page.screenshot(), pill["box"]))
+            check(f"{name}: ...read at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f} {pill}")
+            if w == 1920:
+                check(f"{theme}: the card's note says nothing is sent and where the words are, without naming a window",
+                      pill["note"] == "맨 앞에 있는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'", pill["note"])
+            check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
+            p.close()
+    # The card's other states come first: the screen switched off, and no capture program, say so over a skip
+    p = Page(br, s, [], w=1920, h=1080, settle=300)
+    now = p.js("() => Date.now() / 1000")
+    got = []
+    for more in ({"screen_on": False}, {"clients": 0}, {}):
+        p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": True}, **more})
+        p.wait(120)
+        got.append(p.js("() => [document.getElementById('pill-screen').textContent, document.getElementById('pill-screen').dataset.state]"))
+    check("the screen switched off and no capture program are said over a skip; the skip otherwise",
+          got == [["꺼 둠", "off"], ["캡처 프로그램 꺼짐", "idle"], ["창 건너뜀", "warn"]], got)
+    p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": False}})
+    p.wait(120)
+    check("...and once the window is gone the card is receiving again", p.js("() => document.getElementById('pill-screen').textContent") == "받는 중")
+    p.close()
+    # In English, as the other pages are given it: the same words, and no Korean
+    p = Page(br, s, [], w=1920, h=1080, settle=300, locale="en-US")
+    p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": True}})
+    p.wait(150)
+    en = p.js("() => [document.getElementById('pill-screen').textContent, document.querySelector('#st-screen .src-note')?.textContent]")
+    check("in English the card reads 'Skipped window', and where the words are", en == ["Skipped window", "No screen is sent while it is in front · Skip windows in Solver settings"], en)
+    p.close()
+
+
 def group_shots(br, s):
     """The screens to look at, kept with the run: what no measure says, a person can see from CI's artifact without checking the commit out."""
     if not T.group("screens to look at"):
@@ -545,7 +622,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_matrix, group_study, group_shots):
+        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_matrix, group_study, group_shots):
             group(br, s)
         br.close()
     return T.end()

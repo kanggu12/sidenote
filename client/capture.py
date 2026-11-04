@@ -86,6 +86,12 @@ KO = {
     "To end it: Quit in the tray icon, or ./sidenote capture-stop on the server.": "끝내려면 트레이 아이콘의 끝내기, 또는 서버에서 ./sidenote capture-stop.",
     "The tray icon opens the panel and switches the screen and the sound on and off.": "트레이 아이콘에서 패널을 열고 화면과 소리를 켜고 끌 수 있습니다.",
     "Could not start again: {error}": "다시 시작하지 못했습니다: {error}",
+    # Skip windows: the tray's state line while one is in front, and what the console says of it (never which window)
+    "Skipped window": "창 건너뜀",
+    "A window to skip is in front: no screen is sent while it is": "건너뛸 창이 맨 앞에 있어 그동안 화면을 보내지 않습니다",
+    "The window to skip is no longer in front: capturing the screen again": "건너뛸 창이 더는 맨 앞에 없어 다시 화면을 받습니다",
+    "The window in front is one to skip, so nothing was sent (--once)": "맨 앞 창이 건너뛸 창이라 보내지 않았습니다 (--once)",
+    "The window in front cannot be read here ({why}), so no window is skipped": "여기서는 맨 앞 창을 읽을 수 없어 건너뛰는 창이 없습니다 ({why})",
     # the tray menu
     "Open the panel": "패널 열기",
     "Screen capture": "화면 캡처",
@@ -411,6 +417,188 @@ def hide_own(img: Image.Image, rects: list, mine: list) -> Image.Image:
                 if fx1 > fx0 and fy1 > fy0:
                     out.paste(img.crop((fx0, fy0, fx1, fy1)), (fx0, fy0))
     return out
+
+
+# ---------- Skip windows: the window in front, and whether no screen may go out while it is there ----------
+# While the window in front has one of the panel's words (Solver settings > Screen > Skip windows) in its title or in
+# its program's name, the screen loop grabs and sends nothing: a password manager or a private browser window is not
+# sent. The words come in the server's control message; this copy of the server's default list (server/settings.py,
+# SKIP_WINDOWS) holds until they do, and with an older server that sends none. What is read of the window stays in
+# this program: it goes neither to the server nor into the log, which says only that a skip started and ended.
+SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
+                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing"]
+
+
+def skip_words(words) -> list:
+    """The words as they are matched: trimmed, the empty ones dropped, and casefolded, so the match ignores case."""
+    return [w.strip().casefold() for w in words if isinstance(w, str) and w.strip()]
+
+
+def skip_match(front, words) -> bool:
+    """Whether the window in front, (title, program), has one of the words (from skip_words) in its title or in its
+    program's name. A window nothing is known of is no match."""
+    if not front or not words:
+        return False
+    title, program = (front[0] or "").casefold(), (front[1] or "").casefold()   # the same case as the words
+    return any(w in title or w in program for w in words)
+
+
+def _front_win32() -> tuple | None:
+    """The window in front on Windows: (its title, its program's file name, such as "Bitwarden.exe"). The name is ""
+    when the process cannot be opened for it; None when no window is in front at all."""
+    import ctypes
+    import ntpath   # a Windows path, whatever this runs on: the suites run it on Linux with Windows stood in for
+    from ctypes import wintypes
+
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    user32.GetForegroundWindow.restype = wintypes.HWND      # a handle, not the 32-bit int ctypes would assume
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None                                        # the lock screen, or a moment between two windows
+    n = min(max(0, user32.GetWindowTextLengthW(wintypes.HWND(hwnd))), 2047)   # its title's length, capped
+    title = ctypes.create_unicode_buffer(n + 1)
+    user32.GetWindowTextW(wintypes.HWND(hwnd), title, n + 1)
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))   # the process the window belongs to
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    process = kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION: its name, no more
+    program = ""
+    if process:
+        try:
+            path, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+            if kernel32.QueryFullProcessImageNameW(wintypes.HANDLE(process), 0, path, ctypes.byref(size)):
+                program = ntpath.basename(path.value)        # the file's name, its folder left out
+        finally:
+            kernel32.CloseHandle(wintypes.HANDLE(process))
+    return title.value, program
+
+
+class _X11Front:
+    """The window in front on an X11 desktop, read through libX11 with ctypes on a connection of its own (mss reaches
+    X11 for the screen the same way): the root window's _NET_ACTIVE_WINDOW, which the window manager keeps, then that
+    window's _NET_WM_NAME (else WM_NAME) for its title and its WM_CLASS for its program ("keepassxc KeePassXC")."""
+
+    ANY, WINDOW = 0, 33                       # AnyPropertyType, and XA_WINDOW, the type _NET_ACTIVE_WINDOW holds
+
+    def __init__(self, lib=None):
+        import ctypes
+        import ctypes.util
+
+        c = self.c = ctypes
+        if lib is None:                       # the library itself; the suites hand in a stand-in
+            lib = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+        self.x = lib
+        # The calls' shapes: pointers and XIDs are 64 bits wide here, which ctypes would otherwise cut to an int
+        lib.XOpenDisplay.restype, lib.XOpenDisplay.argtypes = c.c_void_p, [c.c_char_p]
+        lib.XDefaultRootWindow.restype, lib.XDefaultRootWindow.argtypes = c.c_ulong, [c.c_void_p]
+        lib.XInternAtom.restype, lib.XInternAtom.argtypes = c.c_ulong, [c.c_void_p, c.c_char_p, c.c_int]
+        lib.XGetWindowProperty.restype = c.c_int
+        lib.XGetWindowProperty.argtypes = [c.c_void_p, c.c_ulong, c.c_ulong, c.c_long, c.c_long, c.c_int, c.c_ulong,
+                                           c.POINTER(c.c_ulong), c.POINTER(c.c_int), c.POINTER(c.c_ulong),
+                                           c.POINTER(c.c_ulong), c.POINTER(c.c_void_p)]
+        lib.XFree.argtypes = [c.c_void_p]
+        lib.XSync.argtypes = [c.c_void_p, c.c_int]
+        lib.XSetErrorHandler.restype = c.c_void_p   # the handler it replaced, as an address
+        self.display = lib.XOpenDisplay(None)     # the one $DISPLAY names
+        if not self.display:
+            raise OSError("no X11 display")
+        self.root = lib.XDefaultRootWindow(self.display)
+        self.atoms = {name: lib.XInternAtom(self.display, name.encode(), False)
+                      for name in ("_NET_ACTIVE_WINDOW", "_NET_WM_NAME", "WM_NAME", "WM_CLASS")}
+        self.HANDLER = c.CFUNCTYPE(c.c_int, c.c_void_p, c.c_void_p)   # int handler(Display *, XErrorEvent *)
+        self.handler = self.HANDLER(self._on_error)   # held here: ctypes lets go of a callback nothing holds
+        self.handler_at = c.cast(self.handler, c.c_void_p).value
+        self.before = None                        # the handler this one stands in front of while it reads
+        self.failed = False                       # an error came back on this connection during this read
+
+    def _on_error(self, display, event) -> int:
+        """Xlib's error handler while this reads. Xlib's own ends the whole program on an error, and the window in front
+        can close between reading which it is and reading its title (BadWindow): such an error on this connection is
+        noted and the read comes to nothing. One on another connection goes to the handler that was there before."""
+        if display == self.display:
+            self.failed = True
+            return 0
+        return self.before(display, event) if self.before else 0
+
+    def _prop(self, win: int, name: str) -> tuple:
+        """(type, format, bytes) of a property of a window; (0, 0, b"") when it has none or it could not be read."""
+        c = self.c
+        kind, fmt, n, after, data = c.c_ulong(), c.c_int(), c.c_ulong(), c.c_ulong(), c.c_void_p()
+        status = self.x.XGetWindowProperty(self.display, win, self.atoms[name], 0, 1024, False, self.ANY, c.byref(kind),
+                                           c.byref(fmt), c.byref(n), c.byref(after), c.byref(data))
+        if status != 0 or not data.value:
+            return 0, 0, b""
+        try:
+            unit = {8: 1, 16: c.sizeof(c.c_short), 32: c.sizeof(c.c_long)}.get(fmt.value, 0)   # 32-bit items as longs
+            return kind.value, fmt.value, c.string_at(data.value, n.value * unit)
+        finally:
+            self.x.XFree(data)                    # Xlib's copy of it
+
+    def _window(self, win: int, name: str) -> int:
+        """A property that holds a window, as its id; 0 for none."""
+        kind, fmt, raw = self._prop(win, name)
+        size = self.c.sizeof(self.c.c_long)
+        if kind != self.WINDOW or fmt != 32 or len(raw) < size:
+            return 0
+        return int.from_bytes(raw[:size], sys.byteorder)
+
+    def _text(self, win: int, name: str) -> str:
+        """A property that holds text. _NET_WM_NAME is UTF-8; WM_NAME and WM_CLASS are Latin-1, or UTF-8 from a program
+        that wrote them so."""
+        kind, fmt, raw = self._prop(win, name)
+        if fmt != 8 or not raw:
+            return ""
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("latin-1")
+
+    def read(self) -> tuple | None:
+        """(title, program) of the window in front; None when none is, or when it closed as it was read."""
+        c, x = self.c, self.x
+        prev = x.XSetErrorHandler(self.handler)   # its errors are this reader's while it reads
+        self.before = self.HANDLER(prev) if prev and prev != self.handler_at else None
+        self.failed = False
+        try:
+            win = self._window(self.root, "_NET_ACTIVE_WINDOW")
+            if not win:
+                return None                       # nothing in front, or no window manager that says which
+            title = self._text(win, "_NET_WM_NAME") or self._text(win, "WM_NAME")
+            program = " ".join(part for part in self._text(win, "WM_CLASS").split("\0") if part)   # instance, class
+            x.XSync(self.display, False)          # an error still on its way comes in now, to this reader's handler
+            return None if self.failed else (title, program)
+        finally:
+            now = x.XSetErrorHandler(c.c_void_p(prev) if prev else None)   # the handler before goes back
+            if now and now != self.handler_at:    # another took its place meanwhile (a library starting up): it stays
+                x.XSetErrorHandler(c.c_void_p(now))
+
+
+class FrontWindow:
+    """The window in front, read the way this system allows. read() gives (title, program), or None when nothing can be
+    said now. Where it cannot be read at all, `why` says so, and no window is skipped there."""
+
+    def __init__(self):
+        self.x11, self.why = None, ""
+        if sys.platform == "win32":
+            return                                # read afresh on each look, with no connection to keep
+        if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+            self.why = "Wayland"                  # a Wayland session tells other programs nothing of its windows
+            return
+        try:
+            self.x11 = _X11Front()
+        except Exception as exc:                  # no libX11, or no display to open
+            self.why = f"{type(exc).__name__}: {exc}"
+
+    def read(self) -> tuple | None:
+        if self.why:                              # not readable here, or a read broke: nothing more is tried
+            return None
+        try:
+            if sys.platform == "win32":
+                return _front_win32()
+            return self.x11.read() if self.x11 is not None else None
+        except Exception as exc:                  # counted as no window known, and said once (screen_loop)
+            self.why, self.x11 = f"{type(exc).__name__}: {exc}", None
+            return None
 
 
 def _vstack(top: Image.Image, bottom: Image.Image) -> Image.Image:
@@ -743,8 +931,10 @@ class Sender:
         self.epoch = 0
         self._connected_once = False
         # What the panel asked for: the switches, scroll stitching and the monitor (the latter two start
-        # from this program's options and follow the panel's settings after that).
-        self.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1}
+        # from this program's options and follow the panel's settings after that), and the words of Skip windows,
+        # the server's default list until the server says its own.
+        self.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1,
+                      "skip_windows": skip_words(SKIP_WINDOWS)}
         self.caps: dict = {"screen": True}
         self._down = False        # the server is unreachable: said once, not on every retry
         self._last_try = 0.0
@@ -830,7 +1020,7 @@ class Sender:
 
     def _on_message(self, raw) -> None:
         """What the panel asked for: {"type": "control", "screen": bool, "audio": bool, "stitch": bool,
-        "monitor": int}."""
+        "monitor": int, "skip_windows": [str]}."""
         try:
             msg = json.loads(raw)
         except Exception:
@@ -860,6 +1050,12 @@ class Sender:
         if isinstance(m, int) and not isinstance(m, bool) and m >= 0 and m != self.wants["monitor"]:
             self.wants["monitor"] = m
             print(f"[control] monitor {m} (from the panel)")
+        words = msg.get("skip_windows")       # absent from an older server's message: the list held stays
+        if (isinstance(words, list) and all(isinstance(w, str) for w in words)
+                and skip_words(words) != self.wants.get("skip_windows")):
+            self.wants["skip_windows"] = skip_words(words)
+            # how many, not which: the log says nothing of what is skipped
+            print(f"[control] {len(self.wants['skip_windows'])} word(s) for windows to skip (from the panel)")
         self.told.set()
 
     def send(self, message: dict) -> None:
@@ -960,6 +1156,9 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
 
     said_down = False     # "waiting for the server" is said once, not on every poll
     hidden_said = False   # the panel being on screen is said once, not on every frame
+    front = None          # the window in front (FrontWindow), opened at the first look that has words to skip
+    said_why = False      # that the window in front cannot be read here is said once
+    skipping = False      # a window of Skip windows is in front: nothing is grabbed or sent while it is
     slowed = False        # looking less often because the screen stopped changing: said on each flip
     looks: list[float] = []            # how long each look took, for the cost line below
     look_t0 = look_cpu0 = 0.0          # start of the window those looks are counted over
@@ -1041,7 +1240,35 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if sender.epoch != my_epoch:
                         start_over()  # reconnected: re-send the current screen
                         my_epoch = sender.epoch
+                    # Skip windows: while the window in front is one the panel's words name, the screen is neither
+                    # grabbed nor sent. The change detection keeps what it last saw, so coming back to the same
+                    # problem is not a new screen. Only that a skip started and ended is said, never which window.
+                    words = sender.wants.get("skip_windows")
+                    skip = False
+                    if words:
+                        front = front or FrontWindow()   # opened only once there is something to look for
+                        skip = skip_match(front.read(), words)
+                        if front.why and not said_why:   # Wayland, no X11 display, or a read that broke: said once
+                            print("[screen] " + t("The window in front cannot be read here ({why}), so no window "
+                                                  "is skipped", why=front.why))
+                            said_why = True
+                    if skip != skipping:           # a skip starts or ends: the panel's card and the tray say so
+                        skipping = skip
+                        print("[screen] " + (t("A window to skip is in front: no screen is sent while it is") if skip else
+                                             t("The window to skip is no longer in front: capturing the screen again")))
+                        sender.set_caps(skipping=skip)
+                    if skip:
+                        if args.once:              # the one screen asked for may not be sent
+                            print("[screen] " + t("The window in front is one to skip, so nothing was sent (--once)"))
+                            stop.set()
+                            break
+                        stop.wait(period)          # looked at again on the next poll: capture goes on once it is gone
+                        continue
                     shot = sct.grab(monitor)
+                    # One brought to the front while the screen was being grabbed (a 4K grab takes a tenth of a
+                    # second): this grab is dropped, and the next look starts the skip
+                    if words and skip_match(front.read(), words):
+                        continue
                     if failing:
                         print("[screen] screen capture works again")
                         failing = False
@@ -1668,6 +1895,7 @@ rows, (cursor_x, cursor_y) = spec["rows"], spec["at"]
 BG, EDGE, TOP, INK, INK2, MUTED, DIM, HOVER, MARK, RULE = ("#26272b", "#4a4c53", "#8a8c93", "#e3e4e5", "#cbccce", "#b0b1b4", "#6f7177",
                                                            "#36373d", "#f2c744", "#3c3d43")
 OK, LIT, BAD, TRACK_ON, TRACK_OFF, KNOB = "#2eb67d", "#4cc08e", "#ff6b6b", "#1a8a5a", "#4d2528", "#f1f1f3"
+WARN = "#ffb066"                                            # the right column's warning in the dark Classic (Skipped window)
 # The marks a row can wear, the panel's own: the screen and the sound as on its capture card, the turn as on its Reanalyze key.
 # Each row names its mark ("mark"), and the state's row the colour of its pill ("tone"): the words are in either language and are never read
 MARKS = ("open", "screen", "sound", "restart", "quit")
@@ -1731,7 +1959,7 @@ def choices():
 
 
 SS = 3                                                      # drawn three times over and brought down: Tk draws its shapes unsmoothed on Windows
-TONE = {"on": LIT, "idle": MUTED, "down": BAD}              # the state's pill, as the panel's "● 받는 중": its dot and words
+TONE = {"on": LIT, "idle": MUTED, "down": BAD, "warn": WARN}   # the state's pill, as the panel's "● 받는 중": its dot and words
 
 
 def mix(a, b, t):
@@ -1740,7 +1968,7 @@ def mix(a, b, t):
     return "#%02x%02x%02x" % tuple(round(u * t + v * (1 - t)) for u, v in zip(a, b))
 
 
-PILL = {"on": mix(OK, BG, 0.16), "idle": mix(MUTED, BG, 0.1), "down": mix(BAD, BG, 0.14)}
+PILL = {"on": mix(OK, BG, 0.16), "idle": mix(MUTED, BG, 0.1), "down": mix(BAD, BG, 0.14), "warn": mix(WARN, BG, 0.16)}
 images = []                                                 # Tk forgets a picture nothing holds on to
 
 
@@ -1935,7 +2163,7 @@ root.mainloop()
 
 def marked(item, mark: str | None = None, tone=None):
     """A menu item with what the drawn menu needs besides its words: the mark it wears (one of TRAY_MENU's MARKS), or for
-    the state's row the colour of its pill ("on", "idle" or "down", a function of the item as pystray's own values may be)."""
+    the state's row the colour of its pill ("on", "idle", "down", "warn"; a function of the item as pystray's values may be)."""
     item.sidenote_mark, item.sidenote_tone = mark, tone
     return item
 
@@ -2107,16 +2335,23 @@ def start_tray(sender, stop: threading.Event, args):
             on.append(t("Sound"))
         return on
 
+    def skipped() -> bool:
+        """A window of Skip windows is in front, so no screen goes out (the screen loop says so in caps)."""
+        return bool(sender.wants.get("screen")) and bool(getattr(sender, "caps", {}).get("skipping"))
+
     def state_text(_item=None):
         if not sender.connected:
             # started by the desktop app, which starts the server itself: there is no ./sidenote to run
             return t("Not connected") if os.environ.get("SIDENOTE_SUPERVISED") == "1" else t("Not connected (./sidenote up)")
+        if skipped():                   # said as the panel's capture card says it, without naming the window
+            return t("Skipped window")
         on = taking()
         return t("Capturing: {what}", what=" · ".join(on) if on else t("nothing"))
 
     def state_tone(_item=None):
-        """The colour of the state's pill in the drawn menu, from the state itself: no server, nothing taken, or taking."""
-        return "down" if not sender.connected else "on" if taking() else "idle"
+        """The colour of the state's pill in the drawn menu, from the state itself: no server, a window skipped, nothing
+        taken, or taking."""
+        return "down" if not sender.connected else "warn" if skipped() else "on" if taking() else "idle"
 
     def toggle(which):
         def go(icon=None, _item=None):
@@ -2186,7 +2421,7 @@ def start_tray(sender, stop: threading.Event, args):
         changes; once a second is enough for a menu nobody holds open while it changes."""
         shown = None
         while not stop.is_set():
-            now = (sender.connected, bool(sender.wants.get("screen")), bool(sender.wants.get("audio")))
+            now = (sender.connected, bool(sender.wants.get("screen")), bool(sender.wants.get("audio")), skipped())
             if now != shown:
                 shown = now
                 try:

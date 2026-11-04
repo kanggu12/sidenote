@@ -155,7 +155,7 @@ AUDIT = r"""
   // A box of one size holding a thing bigger than itself, not through words: a picture, a mark, a key
   for (const e of document.querySelectorAll('.rail .card *, .bar-in *, .composer *, .settings *, .menu *')) {
     if (skip(e) || !shown(e)) continue;
-    if (!e.matches('button, input, .pill, .switch, img, .stat, .steps3, .meter, .bars, .gpu-viz, dd, dt, .h-tab')) continue;
+    if (!e.matches('button, input, textarea.words, .pill, .switch, img, .stat, .steps3, .meter, .bars, .gpu-viz, dd, dt, .h-tab')) continue;
     const r = e.getBoundingClientRect();
     if (!r.width) continue;
     const card = e.closest('.card, .bar-in, .composer, .menu, .settings');
@@ -186,7 +186,7 @@ AUDIT = r"""
       note('overlap', a.run.e, `over ${name(b.run.e)} "${b.run.text.trim().slice(0, 24)}" by ${ROUND(w)}x${ROUND(v)}`, a.run.text);
     }
   }
-  const things = [...document.querySelectorAll('button, input, .pill, .switch, img, .steps3, .combo-btn, svg, .bars, .meter')].filter((e) => !e.closest('.katex, .md svg, figure.viz-chart') && shown(e) && e.getBoundingClientRect().width > 1);
+  const things = [...document.querySelectorAll('button, input, textarea.words, .pill, .switch, img, .steps3, .combo-btn, svg, .bars, .meter')].filter((e) => !e.closest('.katex, .md svg, figure.viz-chart') && shown(e) && e.getBoundingClientRect().width > 1);
   for (const t of things) {
     const b = seenPart(t, t.getBoundingClientRect()), layer = layerOf(t);
     if (b.width < 1 || b.height < 1 || b.right < 0 || b.bottom < 0 || b.left > W || b.top > H) continue;
@@ -442,6 +442,10 @@ def st_three_monitors(p):
     capture(p, caps={**h.CAPTURE["caps"], "monitor": 3, "monitors": [[3840, 2160], [1440, 2560], [7680, 4320]]})
 
 
+def st_skipping(p):   # a window of Skip windows in front: the screen card's caution, with its note
+    capture(p, caps={**h.CAPTURE["caps"], "skipping": True})
+
+
 def st_local_loaded(p):
     status(p, eng(local={"loaded": {"model": "sidenote-gemma4:26b", "vram_gb": 16.2, "params": "26B", "quant": "Q4_K_M", "ctx": 32768}}))
 
@@ -540,7 +544,7 @@ def st_disconnected(p):
     p.drop()
 
 
-RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
+RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
                                            st_local_down, st_local_long, st_agent_off, st_agent_login, st_agent_expired, st_agent_gone, st_agent_limit, st_agent_brake, st_agent_forced, st_agent_long,
                                            st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected)}
 SIZES = [(1920, 1080), (1920, 1300), (2560, 1440), (1440, 900), (1366, 768), (1280, 720), (1100, 800), (1001, 700), (1000, 800), (768, 1024), (390, 844)]
@@ -634,7 +638,7 @@ def group_rail(br, s):
     for (w, hh) in SIZES:
         for name, fn in RAIL_STATES.items():
             # Every state at the one size most windows have, the hard ones on a phone, the fullest at every other size
-            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off")) or name == "full"):
+            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off", "skipping")) or name == "full"):
                 continue
             p = Page(br, s, many(), w=w, h=hh, settle=250)
             fn(p)
@@ -723,6 +727,17 @@ def group_overlays(br, s):
         p.wait(200)
         after = [g for g in p.js(AUDIT, OPTS) if g["kind"] == kind and (g["where"], g["detail"]) not in before]
         check(f"the audit finds a fault planted in {name} ({kind})", bool(after), after[:2])
+    # The settings sheet as the server fills it, on the Screen section with its box of words (Skip windows), from the narrowest
+    # window up: the state above opens the sheet before any settings have come
+    words = support.settings_message()
+    for (w, hh) in ((2560, 1440), (1920, 1080), (1366, 768), (768, 1024), (390, 844), (360, 740)):
+        p = Page(br, s, many(), w=w, h=hh, settle=300)
+        p.send(words)
+        p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='screen']\").click(); }")
+        p.wait(300)
+        found += audit(p, "settings_words", f"{w}x{hh}")
+        if p.errors:
+            check(f"settings_words {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()
     # An empty panel, and the first screen
     for (w, hh) in ((1920, 1080), (1366, 768), (390, 844)):
@@ -1302,6 +1317,19 @@ def group_audit(br, s):
             p.js(step)
         p.wait(260)
         after = [g for g in p.js(AUDIT, OPTS) if g["kind"] == kind and (g["where"], g["detail"]) not in before]
+        check(f"it finds {what} ({kind})", bool(after), after[:2])
+        p.close()
+    # The box of words in the settings sheet (Skip windows), which holds no words of the page's own for the rest to find
+    for kind, what, css in (("spill", "a box of words wider than its sheet", ".set textarea.words { width: 160% !important; }"),
+                            ("overlap", "a box of words over its row's name", ".set textarea.words { margin-top: -30px !important; }")):
+        p = Page(br, s, rows, w=1920, h=1300, settle=300)
+        p.send(support.settings_message())
+        p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='screen']\").click(); }")
+        p.wait(250)
+        before = {(g["where"], g["detail"]) for g in p.js(AUDIT, OPTS) if g["kind"] == kind}
+        p.js("(css) => { const st = document.createElement('style'); st.textContent = css; document.head.append(st); }", css)
+        p.wait(200)
+        after = [g for g in p.js(AUDIT, OPTS) if g["kind"] == kind and (g["where"], g["detail"]) not in before and "words" in g["where"]]
         check(f"it finds {what} ({kind})", bool(after), after[:2])
         p.close()
 

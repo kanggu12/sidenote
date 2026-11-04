@@ -221,7 +221,7 @@ the terminal instead, where Ctrl+C ends it; that is the way to see what stops it
 Clicking the icon opens the panel. Its menu, on the right button, has **Open the panel**, the **Screen capture** and
 **Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole
 app). The menu uses the panel's look: the same icons, the same status pill (green while it captures, red with no
-server) and the same switches.
+server, amber with **Skipped window** while a window named in **Skip windows** is in front) and the same switches.
 
 The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program runs as before and says so
 once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
@@ -484,7 +484,9 @@ is under the top bar.
 
 - **Capture**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
   arrived, which sound device). The **Screen capture** line reads **Watching quietly** while the watching has slowed
-  itself down after a run of answers that found nothing, and says what brings it back (section 8).
+  itself down after a run of answers that found nothing, and says what brings it back (section 8). It reads
+  **Skipped window**, in amber, while a window named in **Skip windows** is in front and no screen is sent; it never
+  says which window (section 12).
 - **Local model**: which model, whether it is on the GPU (**On GPU**, or **Idle** once the GPU was given back, with
   **Free the GPU** and **Load onto the GPU**), the GPU's load and memory, and what it has done today.
 - **Agent**, with a switch of its own (off keeps the mode it had, so on brings it back): the account it is signed in
@@ -572,6 +574,9 @@ The switches in the **Capture** card turn screen capture and sound capture on an
   what is waiting, so nothing recorded before that goes out after it.
 - While the screen cannot be captured, such as on the lock screen or while an administrator window is in front, the
   capture program retries every 2 seconds and sends the current screen once it can capture again.
+- While a window named in **Skip windows** (section 12) is in front, such as a password manager or a private browser
+  window, the capture program takes no screenshot and sends no screen; sound goes on, and the switch stays as it is.
+  When that window is no longer in front it captures again; the same problem as before is not taken for a new screen.
 - The panel itself is painted over before a screen is sent. What it shows is the answer to the screen behind it, so a
   screen with the panel on it would be a screen answering itself. The capture program finds the panel by its window
   title (which never leaves that program), paints its area gray and pastes back any window in front of it, so a
@@ -928,6 +933,22 @@ limit** (what an hour of the agent may cost before automatic sending stops).
 - The **Hourly cost limit** counts only an agent that reports a price. A Codex login reports none, so its answers do
   not count toward it; the brake on empty answers in a row holds for every agent.
 
+The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While the
+window in front has one of them in its title or in its program's name, in any case, the capture program sends no
+screen at all. By default the list names the common password managers (1Password, Bitwarden, KeePass, KeePassXC,
+LastPass, Dashlane, Keeper, Enpass, NordPass, Proton Pass) and the browsers' private windows (InPrivate, Incognito,
+Private Browsing).
+
+- A word matches any part of a title or a name, so `Keeper` also skips a page titled "ZooKeeper". Take out a word
+  that skips more than you want. **Reset to defaults** puts the default list back, with every other setting.
+- Enter, or leaving the box, saves the list. Each word is trimmed and an empty one dropped; the list holds up to 50
+  words of up to 60 characters each.
+- Only the window in front counts. A password manager left open behind another window is captured as any window is.
+- The capture program reads the window in front on Windows, and on Linux with X11 from what the window manager says
+  (`_NET_ACTIVE_WINDOW`). In a Wayland session it cannot read it, so nothing is skipped there, and its log says so
+  once.
+- Sound capture goes on while a window is skipped.
+
 ### The .env file
 
 `.env` sets the starting values, and the settings the panel does not have. Create a `.env` file in the repository's
@@ -1149,6 +1170,11 @@ What leaves this PC, what can reach what, and what is kept.
   120 ms at 4K). It covers most faces from about 64 px wide up and about half of the 32 px ones (an avatar), and
   leaves drawn figures alone, so a face in a black-and-white photo stays. For a screen that must not be read at all,
   switch the screen off or pause.
+- While a window named in **Skip windows** is in front (a password manager or a private browser window by default,
+  section 12), no screenshot is taken at all, so nothing of that screen reaches the server, a model or the agent. The
+  capture program reads the window's title and its program's name on this PC and keeps them there: they go neither to
+  the server nor into a log. The server hears only that a window is skipped, and `capture.log` and `events.jsonl` say
+  only when a skip started and ended.
 
 ### What can reach what
 
@@ -1462,6 +1488,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | GPU 비우기 | Free the GPU | **Local model**, the **GPU** section |
 | GPU에 올리기 | Load onto the GPU | **Local model**, the **GPU** section |
 | 조용히 보는 중 | Watching quietly | **Screen capture** |
+| 창 건너뜀 | Skipped window | **Screen capture**; the tray menu's state line |
 | 소리 없이 실행 중 | No sound | **Sound capture**, with `--no-audio` |
 | 캡처 프로그램 꺼짐 | Program off | **Screen capture** and **Sound capture**, with no capture program running |
 | 장치를 열지 못함 | Device error | **Sound capture**, when the sound device cannot be opened |
@@ -1507,6 +1534,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 기록 지우기 | Clear history | the menu |
 | 내보내기 | Export | **Contents** |
 | 얼굴 가리기 | Cover faces | **Screen** |
+| 건너뛸 창 | Skip windows | **Screen** |
 | 같은 문제 다시 풀지 않기 | Don't solve the same problem again | **Screen** |
 | 문제 부분 확대 | Zoom in on the problem | **Screen** |
 | 직접 그린 영역 | Drawn region | **Screen** |

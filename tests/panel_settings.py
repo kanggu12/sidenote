@@ -1,4 +1,5 @@
-"""The settings sheet: what its controls look like, and whether the dropdowns belong to the panel.
+"""The settings sheet: what its controls look like, whether the dropdowns belong to the panel, and what typing into its
+box of words (Skip windows) does.
 
     .venv-panel/bin/python tests/panel_settings.py [--shots]
 
@@ -340,6 +341,82 @@ def main():
                   {x["h"] for x in seg} == {x["h"] for x in combo}
                   and {x["radius"] for x in seg} == {x["radius"] for x in combo},
                   f"{seg[0]['h']}/{seg[0]['radius']} vs {combo[0]['h']}/{combo[0]['radius']}")
+
+        print("\n[a box of words: Skip windows]")
+        # A setting typed into (kind "words": free words, comma-separated), found by its key. Its look beside the
+        # dropdown, then what typing does while the server keeps redrawing the sheet, and what a press, Tab and Escape do
+        # after typing
+        look = """(sel) => { const e = document.querySelector(sel), c = getComputedStyle(e);
+            return {h: Math.round(e.getBoundingClientRect().height), radius: c.borderTopLeftRadius, edge: c.borderTopWidth + ' ' + c.borderTopColor,
+                    ground: c.backgroundColor, ink: c.color, font: c.fontSize}; }"""
+        pg.evaluate("() => { comboClose(false); document.querySelector(\"#settings [data-sec='solve']\").click(); }")
+        pg.wait_for_timeout(150)
+        combo = pg.evaluate(look, "#settings .combo-btn")
+        pg.evaluate("() => document.querySelector(\"#settings [data-sec='screen']\").click()")
+        pg.wait_for_timeout(200)
+        box = pg.evaluate("""() => { const b = document.querySelector('#settings textarea[data-set=skip_windows]'); if (!b) return null;
+            return {key: b.dataset.set, label: b.getAttribute('aria-label'), row: b.closest('.set').querySelector('.lbl').textContent,
+                    hint: b.placeholder, value: b.value, all: b.scrollHeight <= b.clientHeight + 1}; }""")
+        print(f"     {json.dumps(box, ensure_ascii=False)[:240]}")
+        check("Skip windows is a box of words in the Screen section, named for a screen reader as its row is",
+              bool(box) and box["key"] == "skip_windows" and box["label"] == box["row"] == "건너뛸 창", json.dumps(box, ensure_ascii=False))
+        check("...its hint in Korean", bool(box) and box["hint"] == "쉼표로 구분한 단어", box and box["hint"])
+        check("...holding the default list, every word of it in view", bool(box) and box["value"].startswith("1Password, Bitwarden")
+              and box["value"].endswith("Incognito, Private Browsing") and box["all"], json.dumps(box, ensure_ascii=False))
+        pg.evaluate("() => { const b = document.querySelector('#settings textarea[data-set=skip_windows]'); b.value = 'Bitwarden'; fitWords(); }")
+        one = pg.evaluate(look, "#settings textarea[data-set=skip_windows]")
+        print(f"     one line: {one}  the dropdown: {combo}")
+        check("...one line of it is the dropdown's box: its height, corners, edge, ground and words", one == combo, f"{one} vs {combo}")
+        pg.evaluate("() => renderSettings()")         # the list as it is kept, back in the box
+        pg.wait_for_timeout(100)
+        # what the panel sends, caught here: there is no server behind this page
+        pg.evaluate("() => { window.__words = []; window.__send = send; send = (m) => { window.__words.push(m); return true; }; }")
+        pg.click("#settings textarea[data-set=skip_windows]")
+        pg.keyboard.press("Control+End")
+        pg.keyboard.type(",  Bank ,, ")
+        pg.evaluate("() => { window.__box = document.querySelector('#settings textarea[data-set=skip_windows]'); renderSettings(); }")   # a message from the server meanwhile
+        kept = pg.evaluate("""() => { const b = document.querySelector('#settings textarea[data-set=skip_windows]');
+            return {same: b === window.__box, focus: document.activeElement === b, caret: b.selectionStart, end: b.value.length,
+                    typed: b.value.endsWith('Bank ,, '), sent: window.__words.length}; }""")
+        check("a redraw of the sheet while it is typed in keeps the box, the words, the caret and the keyboard",
+              kept["same"] and kept["focus"] and kept["typed"] and kept["caret"] == kept["end"] and kept["sent"] == 0, json.dumps(kept))
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(100)
+        sent = pg.evaluate("() => window.__words")
+        default = msg["values"]["skip_windows"]
+        check("Enter sends the words, each trimmed, with the empty ones dropped",
+              sent == [{"type": "setting", "key": "skip_windows", "value": default + ["Bank"]}], json.dumps(sent, ensure_ascii=False))
+        tidy = pg.evaluate("() => document.querySelector('#settings textarea[data-set=skip_windows]').value")
+        check("...and tidies the box to what is kept", tidy == ", ".join(default + ["Bank"]), tidy)
+        pg.keyboard.type(", Mail")
+        pg.evaluate("() => { window.__words = []; }")
+        # a real press on another control right after typing, held as a hand holds it: released at once it beat the redraw
+        pg.click("#settings [data-set='face_mask']", delay=120)
+        pg.wait_for_timeout(200)
+        keys = pg.evaluate("() => window.__words.map((m) => [m.key, m.value])")
+        check("a press on another control right after typing lands: the words go, then the switch",
+              [k for k, _ in keys] == ["skip_windows", "face_mask"] and keys[0][1][-1] == "Mail", json.dumps(keys, ensure_ascii=False))
+        pg.evaluate("() => { settingsValues.face_mask = true; window.__words = []; renderSettings(); }")   # the switch as it was
+        pg.click("#settings textarea[data-set=skip_windows]")
+        pg.keyboard.press("Control+End")
+        pg.keyboard.type(", Vault")
+        pg.keyboard.press("Tab")
+        pg.wait_for_timeout(200)
+        tab = pg.evaluate("() => ({sent: window.__words.map((m) => m.value[m.value.length - 1]), at: document.activeElement.dataset.set})")
+        check("Tab out of the box sends the words, and the keyboard is on the next control", tab["sent"] == ["Vault"] and tab["at"] == "dedupe",
+              json.dumps(tab))
+        pg.click("#settings textarea[data-set=skip_windows]")
+        pg.keyboard.type(", Nope")
+        pg.evaluate("() => { window.__words = []; }")
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(200)
+        esc = pg.evaluate("() => ({sent: window.__words.length, open: !document.getElementById('settings-overlay').hidden})")
+        check("Escape puts back what is kept, sends nothing and closes the sheet", esc == {"sent": 0, "open": False}, json.dumps(esc))
+        pg.evaluate("() => { send = window.__send; openSettings(); }")
+        pg.wait_for_timeout(200)
+        # back on the section with the longest list, where the checks below find their dropdown
+        pg.evaluate("(s) => document.querySelector(`#settings [data-sec=\"${s}\"]`).click()", longest["sec"] if longest else secs[0])
+        pg.wait_for_timeout(150)
 
         print("\n[the other things that drop down]")
         # the bar's own menu, which is the other list that opens over the page
