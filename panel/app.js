@@ -172,6 +172,12 @@ const ANSWER_MARK = mark('<rect x="4" y="3.5" width="12" height="17" rx="2.5"/><
   + '<path d="M16.5 12h4M18.5 10l2 2-2 2"/>');
 // A light bulb: a hint, the next part of the working (Practice)
 const HINT_MARK = mark('<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/>');
+// A star, for an answer kept past the history's limits: an outline, filled with the highlighter once starred (index.html, [data-star])
+const STAR_PATH = '<path d="M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.8l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z"/>';
+const STAR_MARK = mark(STAR_PATH);
+// The same star, small, before the words of a starred row of the contents; its word is for a screen reader
+const STAR_ROW = () => `<svg class="h-star" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round" aria-hidden="true">${STAR_PATH}</svg>`
+  + `<span class="sr-only">${t("Starred answer")}</span>`;
 // The code block's own copy button: the mark changes with the word, so the state is visible from
 // across the page and not only to whoever is reading the label.
 async function copyCode(from, btn) {
@@ -3377,6 +3383,16 @@ function entryWhen(it) {
   const d = new Date(it.ts);
   return `<time class="stamped">${fmtWhen(d.getTime())}</time>`;
 }
+// An answer that can be starred: finished, not failed or stopped (the server keeps only those), and with the server's own id
+const starrable = (it) => !it.live && !it.error && !it.stopped && it.meta != null && typeof it.id === "number";
+const starTitle = (it) => (it.starred ? t("Starred · press to unstar") : t("Star: kept when old answers are deleted, and listed under Starred in the contents"));
+// The star key drawn again on its own, for a star changed from this panel or another: the rest of the entry stays as it is
+function paintStar(it) {
+  const key = entryEl(it.id)?.querySelector(`:scope > .row.head [data-star]`);
+  if (!key) return;
+  key.setAttribute("aria-pressed", String(!!it.starred));
+  key.title = starTitle(it);
+}
 function entryHtml(it) {
   const kind = it.error ? `<span class="kind err">${t("Error")}</span>`
     : it.live && !it.head.type ? `<span class="kind live">${t("Analyzing")}</span>`
@@ -3393,6 +3409,8 @@ function entryHtml(it) {
   if (!it.live && !it.error && !hold) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
   if (ptextOffered(it)) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}" title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}</span></button>`);
   if (it.ptext?.text) tools.push(`<button class="btn sm ghost" data-copy-ptext="${it.id}" title="${t("Copy the problem text written out")}">${PTEXT_COPY_MARK}<span>${t("Copy problem text")}</span></button>`);
+  // The star leads the keys, so the others keep their places: on a whole answer the server keeps, by its id (a follow-up's stand-in parent has none)
+  if (starrable(it)) tools.unshift(`<button class="btn sm ghost" data-star="${it.id}" aria-pressed="${!!it.starred}" title="${starTitle(it)}">${STAR_MARK}<span>${t("Star")}</span></button>`);
   // An error says what went wrong on its first line, beside its label. Its head used to be the headline
   // row, which an error leaves empty (no buttons, and mostly nothing about how it came in), so the label
   // stood beside a blank line and the message began some 50 px further down. A half-written answer
@@ -4025,13 +4043,17 @@ function markedRow(text, words) {
 }
 let histQuery = "";   // what the index is narrowed to (the search field), lower-cased words
 let histDay = "", histKind = "", historyDays = [];   // the day and the kind chosen; the days the server keeps
+// Starred, chosen in the day list (its value STARRED): the starred answers of every day; and how many the server keeps
+const STARRED = "starred";
+let histStar = false, historyStarred = 0;
 const dayOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 function dayLabel(day) {
   const [y, m, d] = day.split("-").map(Number), now = new Date();
   return (y === now.getFullYear() ? t("{m}/{d}", { m, d }) : t("{y}/{m}/{d}", { y, m, d })) + (day === dayOf(now.getTime()) ? t(" (today)") : "");
 }
 const shownAnyway = new Set();   // answers written, or asked about, while a filter was on: they stay until the filter changes
-const inChoice = (it) => (!histDay || dayOf(it.ts) === histDay) && (!histKind || it.head.type === histKind) || shownAnyway.has(it.id);
+const inChoice = (it) => (!histDay || dayOf(it.ts) === histDay) && (!histKind || it.head.type === histKind) && (!histStar || !!it.starred)
+  || shownAnyway.has(it.id);
 // The thread shows what the contents list: an entry outside the day or the kind chosen is out of sight
 function applyChoice() {
   let shown = 0;
@@ -4039,13 +4061,15 @@ function applyChoice() {
     const it = items.get(id), el = entryEl(id);
     if (!it || !el) continue;
     // an answer being written, or being asked about, stays: a question would otherwise go into a hidden card
-    if ((histDay || histKind) && (it.live || it.turns.some((t) => turns.get(t)?.live))) shownAnyway.add(it.id);
+    if ((histDay || histKind || histStar) && (it.live || it.turns.some((t) => turns.get(t)?.live))) shownAnyway.add(it.id);
     el.hidden = !inChoice(it);
     if (!el.hidden) shown++;
   }
   const none = $("choice-none");     // the whole thread filtered away is said, not a blank page
-  none.hidden = !(thread.length && !shown && (histDay || histKind));
+  none.hidden = !(thread.length && !shown && (histDay || histKind || histStar));
 }
+// The Starred choice as the server's /history asks for it: only while it is chosen
+const starParam = () => (histStar ? { starred: 1 } : {});
 // A row of the server's history as the entry it was (server/history.py). What was asked of it goes on as it is.
 function restore(row) {
   const had = items.get(row.id);
@@ -4059,12 +4083,15 @@ function restore(row) {
         mended = true;
       }
     }
-    if (mended) renderEntry(had);
+    // A star changed while this page was away from the server (another panel, a dropped connection): the server's is the one
+    const restar = typeof row.starred === "boolean" && row.starred !== !!had.starred;
+    if (restar) had.starred = row.starred;
+    if (mended) renderEntry(had); else if (restar) paintStar(had);
     return false;
   }
   if (had) { had.turns.forEach((t) => turns.delete(t)); items.delete(row.id); entryEl(row.id)?.remove(); thread = thread.filter((id) => id !== row.id); }
   const it = newItem({ id: row.id, trigger: row.trigger, transcript: row.transcript, thumb: row.thumb });
-  it.ts = row.ts * 1000; it.raw = row.text || ""; it.live = false; it.shown = true; it.restored = true;
+  it.ts = row.ts * 1000; it.raw = row.text || ""; it.live = false; it.shown = true; it.restored = true; it.starred = !!row.starred;
   // Only a box the server says is what the crop took: one kept from before holds the model's first guess, often a part of the problem
   it.meta = row; it.region = (row.region_shown && row.region) || null; it.check = row.check || null; it.verify = row.verify || null; it.head = splitHead(it.raw, true);
   for (const t of row.turns || []) {
@@ -4084,6 +4111,7 @@ async function loadHistory(params = {}) {
     let added = false;
     for (const row of rows.answers || []) added = restore(row) || added;
     historyDays = days.days || [];
+    historyStarred = days.starred || 0;
     if (added) {
       thread.sort((a, b) => items.get(a).ts - items.get(b).ts);
       // Over the limit the oldest go, but not what this request just found: an old answer searched for was the first out
@@ -4104,12 +4132,12 @@ async function loadHistory(params = {}) {
 // view ended up at the answer the filter had left, a whole page from where it had been
 let placeBefore = null;
 function choiceChange(change) {
-  if (!histDay && !histKind && !stick) {
+  if (!histDay && !histKind && !histStar && !stick) {
     const line = window.innerHeight * 0.33, e = [...document.querySelectorAll(".entry:not([hidden])")].find((x) => x.getBoundingClientRect().bottom > line);
     placeBefore = e ? { id: idOf(e.dataset.id), top: e.getBoundingClientRect().top } : null;
   }
   keepPlace(() => { shownAnyway.clear(); change(); renderIndex(); });
-  if (!histDay && !histKind && placeBefore) {
+  if (!histDay && !histKind && !histStar && placeBefore) {
     const e = entryEl(placeBefore.id);
     if (e && !e.hidden && !stick) { autoUntil = Date.now() + 120; window.scrollBy(0, e.getBoundingClientRect().top - placeBefore.top); }
     placeBefore = null;
@@ -4117,7 +4145,7 @@ function choiceChange(change) {
   updateView();
 }
 function clearChoice() {
-  choiceChange(() => { histDay = ""; histKind = ""; $("hist-day").value = ""; $("hist-kind").value = ""; });
+  choiceChange(() => { histDay = ""; histKind = ""; histStar = false; $("hist-day").value = ""; $("hist-kind").value = ""; });
 }
 function fillChoices() {
   const day = $("hist-day"), kind = $("hist-kind");
@@ -4127,7 +4155,11 @@ function fillChoices() {
   const known = new Map(historyDays.map((d) => [d.day, d.n]));
   for (const [d, n] of here) known.set(d, Math.max(known.get(d) || 0, n));
   const dayList = [...known].sort((a, b) => (a[0] < b[0] ? 1 : -1));
-  const dayHtml = `<option value="">${t("All days")}</option>` + dayList.map(([d, n]) => {
+  // Starred stands first among the days, with how many: the server's count, or this page's while it has more. Offered while there
+  // are some, and while it is chosen, so the choice shows as it is
+  const stars = Math.max(historyStarred, [...items.values()].filter((it) => it.starred).length);
+  const starHtml = stars || histStar ? `<option value="${STARRED}" data-short="${escapeHtml(t("Starred"))}">${escapeHtml(t("Starred"))} · ${stars === 1 ? t("{n} answer", { n: stars }) : t("{n} answers", { n: stars })}</option>` : "";
+  const dayHtml = `<option value="">${t("All days")}</option>` + starHtml + dayList.map(([d, n]) => {
     const name = fmtDay(new Date(`${d}T12:00:00`).getTime());
     // From when to when, of the server's kept answers and those on this page
     const server = historyDays.find((x) => x.day === d), ts = [...items.values()].filter((it) => dayOf(it.ts) === d).map((it) => it.ts);
@@ -4135,13 +4167,13 @@ function fillChoices() {
     const span = ts.length ? ` · ${fmtClock(Math.min(...ts))} ~ ${fmtClock(Math.max(...ts))}` : "";
     return `<option value="${d}" data-short="${name}">${name} · ${n === 1 ? t("{n} answer", { n }) : t("{n} answers", { n })}${span}</option>`;
   }).join("");
-  if (day.dataset.html !== dayHtml) { day.dataset.html = dayHtml; day.innerHTML = dayHtml; day.value = histDay; }
+  if (day.dataset.html !== dayHtml) { day.dataset.html = dayHtml; day.innerHTML = dayHtml; day.value = histStar ? STARRED : histDay; }
   // The kinds of the day chosen, each with how many, as the days have theirs: every kind of every day was offered, and one picked for a day
   // that had none of it gave "0/22 맞는 답 없음". The kind already picked stays offered, so the choice shows as it is
   const perKind = new Map();
   for (const it of items.values()) {
     const t = it.head.type;
-    if (t && TYPE_LABEL[t] && (!histDay || dayOf(it.ts) === histDay)) perKind.set(t, (perKind.get(t) || 0) + 1);
+    if (t && TYPE_LABEL[t] && (!histDay || dayOf(it.ts) === histDay) && (!histStar || it.starred)) perKind.set(t, (perKind.get(t) || 0) + 1);
   }
   if (histKind && TYPE_LABEL[histKind] && !perKind.has(histKind)) perKind.set(histKind, 0);
   // the list names each kind in full, as the settings' types do; the closed button keeps the margin's short name
@@ -4160,7 +4192,7 @@ function renderIndex() {
   });
   applyChoice();
   fillChoices();
-  const narrowed = words.length || histDay || histKind;
+  const narrowed = words.length || histDay || histKind || histStar;
   $("hist-count").textContent = !thread.length ? "" : narrowed ? `${ids.length}/${thread.length}` : String(thread.length);
   const miss = $("hist-nomatch");
   miss.hidden = !(narrowed && !ids.length && thread.length);
@@ -4198,7 +4230,7 @@ function renderIndex() {
     }
     return `${head}<li><button class="h${it.error ? " err" : ""}${it.live ? " live" : ""}" data-id="${id}" title="${escapeHtml(text)}"
       data-kind="${it.error ? "" : escapeHtml(it.head.type || "")}">
-      <span class="hk">${escapeHtml(label)}</span><span class="ht">${markedRow(text, words)}</span><time>${fmtClock(it.ts)}</time></button></li>`;
+      <span class="hk">${escapeHtml(label)}</span><span class="ht">${it.starred ? STAR_ROW() : ""}${markedRow(text, words)}</span><time>${fmtClock(it.ts)}</time></button></li>`;
   }).join("");
   // On every status message the same rows came out, and writing them again cost a layout of the whole rail
   if (listEl.dataset.html !== listHtml) { listEl.dataset.html = listHtml; listEl.innerHTML = listHtml; }
@@ -4378,22 +4410,23 @@ let searchWait = 0;
 $("hist-q").addEventListener("input", (e) => {
   histQuery = e.target.value.toLowerCase(); renderIndex();
   clearTimeout(searchWait);
-  if (histQuery.trim()) searchWait = setTimeout(() => loadHistory({ q: histQuery, day: histDay, kind: histKind, limit: 60 }), 300);
+  if (histQuery.trim()) searchWait = setTimeout(() => loadHistory({ q: histQuery, day: histDay, kind: histKind, ...starParam(), limit: 60 }), 300);
 });
 $("hist-day").addEventListener("change", (e) => {
-  choiceChange(() => { histDay = e.target.value; });
-  if (histDay) loadHistory({ day: histDay, limit: 200 }).then(() => {
-    // Still in that day, the view stays. Otherwise today opens on its newest answer and an earlier day on its first
+  // Starred is one of the day list's choices: the starred answers of every day
+  choiceChange(() => { histStar = e.target.value === STARRED; histDay = histStar ? "" : e.target.value; });
+  if (histDay || histStar) loadHistory(histStar ? { starred: 1, limit: 200 } : { day: histDay, limit: 200 }).then(() => {
+    // Still in that day, the view stays. Otherwise today and Starred open on their newest answer and an earlier day on its first
     const now = items.get(viewId);
     if (now && inChoice(now)) return;
     const inDay = thread.filter((id) => inChoice(items.get(id)));
-    const to = histDay === dayOf(Date.now()) ? inDay[inDay.length - 1] : inDay[0];
+    const to = histStar || histDay === dayOf(Date.now()) ? inDay[inDay.length - 1] : inDay[0];
     if (to != null) goTo(to);
   });
 });
 $("hist-kind").addEventListener("change", (e) => {
   choiceChange(() => { histKind = e.target.value; });
-  if (histKind) loadHistory({ kind: histKind, day: histDay, limit: 60 });
+  if (histKind) loadHistory({ kind: histKind, day: histDay, ...starParam(), limit: 60 });
 });
 $("choice-reset").addEventListener("click", clearChoice);
 let ribbonAt;   // the answer the ribbon last fell on: undefined until the page has first been drawn, when nothing falls
@@ -4829,6 +4862,18 @@ function handle(m) {
     case "problem_text": {   // Problem text, for this panel's request
       const it = items.get(m.id);
       if (it) { it.ptext = m.error ? { error: m.error } : { text: m.text || "" }; if (entryEl(it.id)) renderEntry(it); }
+      break;
+    }
+    case "star": {   // an answer starred or unstarred, from this panel or another; with how many are starred now
+      if (typeof m.n === "number") historyStarred = m.n;
+      const it = items.get(idOf(m.id));
+      if (it) {
+        // Unstarred while Starred is chosen, it stays in view until the choice changes: it does not go from under the pointer that pressed it
+        if (histStar && it.starred && !m.starred) shownAnyway.add(it.id);
+        it.starred = !!m.starred;
+        paintStar(it);
+      } else if (m.starred && histStar) loadHistory({ starred: 1, limit: 200 });   // starred elsewhere, not on this page: Starred brings it in
+      renderIndex();
       break;
     }
     case "verify": {   // the verify mode: the agent's check of this local answer; what it sent joins the card's list
@@ -5595,6 +5640,9 @@ document.addEventListener("click", (e) => {
   // Practice's keys on an answer it keeps back: the next hint, or all of it
   const pk = e.target.closest(".entry [data-act='hint'], .entry [data-act='reveal']");
   if (pk) { const it = items.get(idOf(pk.closest(".entry").dataset.id)); if (pk.dataset.act === "hint") showHint(it, pk); else showAnswer(it, pk); }
+  // The star key asks the server, which keeps the star and tells every panel (the "star" message); offline, send() says so
+  const sk = e.target.closest("[data-star]");
+  if (sk) { const it = items.get(idOf(sk.dataset.star)); if (it) send({ type: "star", id: it.id, starred: !it.starred }); }
   const pt = e.target.closest("[data-ptext]");
   if (pt) { const it = items.get(idOf(pt.dataset.ptext)); if (it && send({ type: "problem_text", id: it.id })) { it.ptext = { pending: true }; renderEntry(it); } }
   const mm = e.target.closest("[data-meta]");
@@ -5636,6 +5684,7 @@ $("clear").onclick = () => {
   histQuery = ""; $("hist-q").value = "";   // a search left in the hidden field hid the next answer from the contents
   histDay = ""; histKind = ""; $("hist-day").value = ""; $("hist-kind").value = "";
   historyDays = [];
+  histStar = false; historyStarred = 0;   // the starred answers go with the rest (server/history.py, clear)
   toggleMenu(false); $("more").focus({ preventScroll: true }); renderThread(); renderAll();
 };
 // ---------- the keyboard ----------

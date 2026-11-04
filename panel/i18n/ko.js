@@ -550,6 +550,12 @@ CATALOGS.ko = {
   "Region cleared · watching the whole screen": "영역 해제 · 화면 전체를 봄",
   "Press again to clear": "한 번 더 누르면 지움",
   "No connection to the server, so the history cannot be cleared": "서버 연결이 없어 기록을 못 지움",
+  // Starred answers: the star key on an answer's head, its row in the contents, and the Starred choice of the day list
+  "Star": "별표",
+  "Star: kept when old answers are deleted, and listed under Starred in the contents": "별표: 오래된 답을 지울 때도 남고, 목차의 별표에 모임",
+  "Starred · press to unstar": "별표됨 · 누르면 해제",
+  "Starred answer": "별표한 답",
+  "Starred": "별표",
   "Time ran out: not sent": "시간이 지나 보내지 않음",
   "Connection lost: no result · run it again": "연결이 끊겨 결과 없음 · 다시 실행",
   "Connection status": "연결 상태",

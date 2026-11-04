@@ -327,7 +327,8 @@ notebook carry the same readings.
     when you ask ([Practice](#practice)). This browser keeps it.
   - **Solver settings** (section 12).
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
-  - **Clear history**, which takes a second press; an answer still being written stays.
+  - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
+    rest.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
 
@@ -354,6 +355,11 @@ whose screen the right column shows, on its line in the contents.
   answer**), and **Copy all** copies the whole solution; a copy button reads **Copied** for a moment after a
   press. Every code box and every table has **Copy** too. A table pasted into a spreadsheet or a document keeps its
   rows and columns, and pasted into plain text it comes as tab-separated lines.
+- **Star**, the first key on an answer's head, stars a finished answer: the star fills with the highlighter's yellow,
+  the answer's line in the contents shows a small star, and every panel that is open shows the same. A starred answer
+  is kept past the history's 90 days and size limit until it is unstarred, and the contents' **Starred** lists it.
+  Press the star again to unstar it. An answer the server did not keep (with **Keep answers** off) cannot be starred,
+  and a notice says so.
 - Headings, and a line that is only bold (a step such as "1. ..."), are written in the color of the problem's type,
   so the parts of a long solution can be found by eye. Bold words in the text are what the answer stresses, and wear
   the same yellow highlighter as the answer line. A table column of numbers is right-aligned. A range written with a
@@ -501,19 +507,24 @@ is under the top bar.
 - **Contents**: the list of solutions, nine lines of it at a time, more on a window tall enough for the whole column;
   it scrolls inside its card for the rest. Each day has an index tab saying how many it holds, which stays at the top
   of the list as it scrolls.
-  - Click a line to go to its answer. The arrow keys go down the list, and a row's tooltip has its whole text.
+  - Click a line to go to its answer. The arrow keys go down the list, and a row's tooltip has its whole text. A
+    starred answer's line starts with a small star.
   - The search box (**Find an answer**) looks through everything kept for the answers that hold every word you type,
     in what was asked, the answer, its follow-ups or what was heard.
   - The day and type lists show one day's or one type's answers in the notebook too. With a day chosen, the type list
     offers that day's types, each with how many.
-  - **Export** saves what is shown, as **Markdown** (one file, with what was asked and the follow-ups) or as notes for
-    **Anki** (a text file to import in Anki with File > Import, as the Basic note type: the question on the front, and
-    on the back the answer line and the solution's first part, tagged with the type and the day). Code and formulas
-    keep their text, and Anki draws the formulas.
+  - **Starred**, first in the day list once an answer is starred, shows the starred answers of every day, in the
+    contents and in the notebook; the type list then offers their types. An answer unstarred while **Starred** is
+    shown stays in view until the choice changes.
+  - **Export** saves what is shown (with **Starred** chosen, the starred answers), as **Markdown** (one file, with
+    what was asked and the follow-ups) or as notes for **Anki** (a text file to import in Anki with File > Import, as
+    the Basic note type: the question on the front, and on the back the answer line and the solution's first part,
+    tagged with the type and the day). Code and formulas keep their text, and Anki draws the formulas.
 
 The answers stay after a reload or a restart: the server keeps them, each with a small picture of its screen, in
 `history.sqlite` in the log folder, for 90 days and 200 MB at most, the oldest going first (`SIDENOTE_HISTORY_DAYS`,
-`SIDENOTE_HISTORY_MB`). **Keep answers** stops it, and **Clear history** in the menu empties it.
+`SIDENOTE_HISTORY_MB`). A starred answer stays past both until it is unstarred: the 200 MB counts the answers that are
+not starred. **Keep answers** stops it, and **Clear history** in the menu empties it, starred answers included.
 
 ### Keyboard shortcuts
 
@@ -872,6 +883,7 @@ With Docker, the logs are kept in `~/.local/state/sidenote/logs/`; the app keeps
 | `events.jsonl` | Analysis starts and ends, errors, follow-up questions, switch changes, capture connections: one JSON object per line |
 | `capture.log` | What the capture program printed |
 | `stall.txt` | Every thread's stack at the moment the server ended itself in a stall |
+| `history.sqlite` | The kept answers with their follow-ups and a small picture of their screen: 90 days and 200 MB at most, while a starred answer stays past both until it is unstarred (section 5) |
 | `server-console.log` | In the app: what the server printed, including why it did not start |
 | `ollama.log` | In the app: what Ollama printed, when the app started it |
 | `app.log` | In the app: what the app itself did |
@@ -1024,8 +1036,8 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_AGENT_BIN` | (`claude` or `codex`) | The command the server runs for a CLI agent. `SIDENOTE_CLAUDE_BIN`, its earlier name, is read when this is not set |
 | `SIDENOTE_CLAUDE_VERSION` | (this PC's Claude Code, else `2.1.307`) | The Claude Code version built into the server image. `./sidenote up` sets it from this PC's `claude --version` |
 | `SIDENOTE_CODEX_VERSION` | (this PC's Codex, else `0.165.0`) | The Codex CLI version built into the server image. `./sidenote up` sets it from this PC's `codex --version` |
-| `SIDENOTE_HISTORY_DAYS` | `90` | Days the answers are kept (section 5) |
-| `SIDENOTE_HISTORY_MB` | `200` | Size the kept answers may reach; past it the oldest go first |
+| `SIDENOTE_HISTORY_DAYS` | `90` | Days the answers are kept; a starred answer stays until it is unstarred (section 5) |
+| `SIDENOTE_HISTORY_MB` | `200` | Size the kept answers that are not starred may reach; past it the oldest of them go first |
 | `SIDENOTE_CPUS` | `8` | Cores the server may use (fewer on a machine with fewer: `./sidenote` brings this and `SIDENOTE_LLM_CPUS` down to what is there) |
 | `SIDENOTE_LLM_CPUS` | `8` | Cores the model server may use. Answers run on the GPU; this caps loading a model and any fallback to the CPU, and the model download (`./sidenote llm pull`) too |
 
@@ -1187,7 +1199,7 @@ What leaves this PC, what can reach what, and what is kept.
 ### What is kept
 
 - Full screen images are not saved. With **Keep answers** on, each answer keeps a small thumbnail of its screen in
-  `history.sqlite` (90 days, 200 MB at most).
+  `history.sqlite` (90 days, 200 MB at most; a starred answer until it is unstarred).
 - `events.jsonl` keeps the time, the type, the one-line answer, follow-up questions, the first 200 characters of the
   speech that set off an analysis (small talk included), the search words and page addresses, and the tokens and
   cost. It is deleted under the 14-day rule (section 11).
@@ -1195,8 +1207,9 @@ What leaves this PC, what can reach what, and what is kept.
   held. Everything the PC plays passes through, including other people's voices in a call, so the words are written
   to a file that lives for days only when asked for (`SIDENOTE_LOG_SPEECH=full`). The panel shows the live
   transcript either way, from memory.
-- **Clear history** in the menu deletes the kept answers (`history.sqlite`). It does not touch the log files: delete
-  those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data folder's `logs` with the app).
+- **Clear history** in the menu deletes the kept answers (`history.sqlite`), starred ones too. It does not touch the
+  log files: delete those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data folder's `logs`
+  with the app).
 - The browser keeps the panel's own choices (**Theme**, **Motion**, **Language**, **Practice**), and for **Practice**
   the numbers of the 400 newest answers it kept back, with how far each was opened, never their words. **Clear
   history** forgets those numbers too.
@@ -1360,6 +1373,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 복사됨 | Copied | a copy button after a press |
 | 복사 실패 | Copy failed | a copy button that could not copy |
 | 전체 복사 | Copy all | an answer's tools |
+| 별표 | Star | an answer's tools: stars or unstars it |
+| 별표됨 · 누르면 해제 | Starred · press to unstar | the tooltip of a starred answer's **Star** |
 | 접기 | Fold | an answer's tools |
 | 풀이 보기 | Show the solution | a folded answer |
 | 문제 글 | Problem text | an answer's tools; a choice of **What is sent to the agent** |
@@ -1486,6 +1501,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 한도로 쉼 | Resting at its limit | the agent's card |
 | 다시 보냄 | Sends again | the agent's card |
 | 답 찾기 | Find an answer | **Contents**, the search box |
+| 별표 | Starred | **Contents**, the day list: the starred answers of every day |
+| 저장된 기록에 없는 답이라 별표 못 함 | Not starred: this answer is not in the saved history | notice, after **Star** |
 | 답 기록 남기기 | Keep answers | **Screen** |
 | 기록 지우기 | Clear history | the menu |
 | 내보내기 | Export | **Contents** |

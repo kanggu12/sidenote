@@ -73,7 +73,9 @@ FULL, OFF, AGENT_OFF = "full", "capture gone", "agent off"
 def group_matrix(br, s):
     if not T.group("the column at every size"):
         return
-    rows = [row(200 + i, "mcq", f"이것은 꽤 길게 쓴 문제의 물음입니다 {i}" * 2, "답", "풀이", ago=1800 - i * 40, thumb=h.thumb(960, 540), region=[.2, .2, .6, .8]) for i in range(30)]
+    # two of the newest starred: their rows' stars are measured with the rest of the column, at every size
+    rows = [row(200 + i, "mcq", f"이것은 꽤 길게 쓴 문제의 물음입니다 {i}" * 2, "답", "풀이", ago=1800 - i * 40, thumb=h.thumb(960, 540), region=[.2, .2, .6, .8],
+                starred=i in (26, 29)) for i in range(30)]
     list_rows = {}
     for w in (1100, 1280, 1440, 1920, 2560):
         for hh in (620, 700, 768, 860, 950, 1040, 1200, 1440):
@@ -91,12 +93,15 @@ def group_matrix(br, s):
                     for (const card of rail.querySelectorAll('.card')) {
                       if (!card.offsetParent) continue;
                       const c = card.getBoundingClientRect();
-                      for (const e of card.querySelectorAll('button, input, .pill, .switch, dd, .stat, .h, .h-tab, time, h2')) {
-                        if (!e.offsetParent) continue;
+                      for (const e of card.querySelectorAll('button, input, .pill, .switch, dd, .stat, .h, .h-star, .h-tab, time, h2')) {
+                        if (!e.offsetParent && !(e instanceof SVGElement && e.getClientRects().length)) continue;   // a mark has no offsetParent
                         const r = e.getBoundingClientRect();
-                        if (r.width && (r.right > c.right + 0.5 || r.left < c.left - 0.5)) bad.push(e.tagName + '.' + e.className + ' ' + Math.round(r.right - c.right));
+                        if (r.width && (r.right > c.right + 0.5 || r.left < c.left - 0.5)) bad.push(e.tagName + '.' + (e.className.baseVal ?? e.className) + ' ' + Math.round(r.right - c.right));
                       }
                     }
+                    // the two starred rows' stars are there to be measured, so the list above cannot pass for want of them
+                    const stars = document.querySelectorAll('#history .h-star').length;
+                    if (stars !== 2) bad.push(`the starred rows' stars: ${stars} of 2`);
                     const rights = [...rail.querySelectorAll('.switch, .src-top .btn, #hist-export, #roi-draw')].filter((e) => e.offsetParent).map((e) => Math.round(e.getBoundingClientRect().right));
                     const list = document.getElementById('history'), lb = list.getBoundingClientRect();
                     const seen = [...list.querySelectorAll('.h')].filter((x) => { const r = x.getBoundingClientRect(); return r.bottom <= lb.bottom + 1 && r.top >= lb.top - 1; }).length;
@@ -189,7 +194,8 @@ def group_engines(br, s):
 def group_readable(br, s):
     if not T.group("what can be read and pressed"):
         return
-    rows = [row(300 + i, "algorithm", f"문제 {i}", "답", "- **이름**: 설명\n- **둘째**: 설명\n\n1. **단계**: 설명\n2. **다음**: 설명\n\n시간 O(N), 공간 O(1)\n", ago=90000 if i == 0 else 100 - i) for i in range(4)]
+    rows = [row(300 + i, "algorithm", f"문제 {i}", "답", "- **이름**: 설명\n- **둘째**: 설명\n\n1. **단계**: 설명\n2. **다음**: 설명\n\n시간 O(N), 공간 O(1)\n", ago=90000 if i == 0 else 100 - i,
+                starred=i == 2) for i in range(4)]
     words = {".src-name": "a source's name", ".fact dt": "a fact's name", ".fact dd": "a fact", ".stat b": "a figure", ".stat .k": "what a figure is", ".h .ht": "a row of the contents",
              ".h time": "a row's time", ".h-tab": "a day's tab", ".h-n": "a day's count", "#hist-count": "the contents' count", ".md .v-t": "a part's name", ".md .v-b": "a part's words",
              ".v-tick": "the scale's classes", ".combo-val": "a filter's words"}
@@ -222,6 +228,10 @@ def group_readable(br, s):
         small = p.js("""() => [...document.querySelectorAll('.rail button, .rail .switch, .rail input, .actions .btn')].filter((e) => { const r = e.getBoundingClientRect(); return e.offsetParent && (r.height < 24 || r.width < 24); })
                         .filter((e) => !e.closest('#history')).map((e) => e.id || e.className)""")
         check(f"{theme}: what is pressed in the column is 24 px or more", not small, small)
+        # A star's yellow alone is 1.5:1 on the light sheet: its outline is the ink of the words beside it, which read at 4.5:1 above
+        ink = p.js("""() => { const s = document.querySelector('#history .h-star'), k = document.querySelector('.entry [data-star][aria-pressed="true"]');
+            return s && k ? [getComputedStyle(s).stroke, getComputedStyle(s.parentElement).color, getComputedStyle(k.querySelector('svg')).stroke, getComputedStyle(k).color] : null; }""")
+        check(f"{theme}: a star's outline is the ink of the words beside it, on its row and on its key", bool(ink) and ink[0] == ink[1] and ink[2] == ink[3], ink)
         check(f"{theme}: the page threw nothing", not p.errors, p.errors[:2])
         p.close()
 

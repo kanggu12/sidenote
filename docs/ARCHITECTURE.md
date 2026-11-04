@@ -130,7 +130,7 @@ measurements.
 | Speech | `server/transcriber.py` | Silero VAD, faster-whisper, and the utterance splitter | `UtteranceTracker` |
 | Faces | `server/faces.py` | Finds faces (YuNet on onnxruntime) and paints them gray before anything reads the screen | `find`, `cover` |
 | Web search | `server/search.py` | `web_search` through SearXNG and `fetch_page` from public addresses only, for the local model; each shown on the panel and logged | `WebTools` |
-| History | `server/history.py` | The answers kept in SQLite with their follow-ups, code check and thumbnail | `History` |
+| History | `server/history.py` | The answers kept in SQLite with their follow-ups, code check, thumbnail and star | `History` |
 | Settings | `server/config.py`, `server/settings.py` | The `SIDENOTE_*` environment, and **Solver settings**: a default, a kind of control and the dependencies for each stage, kept in `.settings.json` and applied to the next analysis | `Config`, `Settings` |
 | Answer head | `server/heads.py` | Reads the `TYPE`, `ANSWER` and `REGION` lines every answer starts with, the same way as the panel | `head_start` |
 | Models and GPU | `server/models.py`, `server/hardware.py` | The model profiles, picked by the GPU's memory; finding the GPU and its readings. Standard library only, so the launcher can run them before anything is installed | `choose`, `detect` |
@@ -196,7 +196,7 @@ PersistentVolumeClaim on Kubernetes.
 | `server.log` | the server's log | rotated files deleted after 14 days (`SIDENOTE_LOG_DAYS`), at start and every 6 hours | 5 MB a file, 4 old files (`SIDENOTE_LOG_MAX_MB`, `SIDENOTE_LOG_FILES`; at least 64 KB and 1 file) |
 | `events.jsonl` | one line per event: an analysis's start and end (type, one-line answer, time to the first character, elapsed time, region, tokens, cost), cancels, errors, follow-ups, panel actions, capture connections, sign-in changes; no screen images | as `server.log` | as `server.log` |
 | `capture.log` | the capture program's log | deleted after 14 days without a line | under 4 MB, the older half dropped |
-| `history.sqlite` | the answers with their follow-ups, code check and a small thumbnail of their screen; nothing new with **Keep answers** off | 90 days (`SIDENOTE_HISTORY_DAYS`) | 200 MB (`SIDENOTE_HISTORY_MB`), counted in pages |
+| `history.sqlite` | the answers with their follow-ups, code check, a small thumbnail of their screen and whether each is starred; nothing new with **Keep answers** off. A file from 0.1.0 gains the `starred` column when the server opens it, its rows kept | 90 days (`SIDENOTE_HISTORY_DAYS`); a starred answer until it is unstarred | 200 MB (`SIDENOTE_HISTORY_MB`) for the answers that are not starred, counted in pages less the starred ones' bytes; the starred ones stay beside them, and the log says once when they alone are over it |
 | `.settings.json` | the values changed in **Solver settings** | until changed | a few values |
 | `.switches.json` | the screen and sound switches and pause | until changed | a few values |
 | `.speed.json` | the last 15 times to the first word of the thinking pass and of the agent (`pipeline.Speed`) | rolling | a few values |
@@ -257,6 +257,7 @@ one is logged as lost (code 1009).
 | `error` | an analysis fails | `id`, `text`, `hint` (`auth`, `limit`, `timeout`, `nosolver`) |
 | `transcript`, `utterance` | speech is written down | `text`, `lang` (`ko`, `en`) |
 | `notice` | a short notice | `text`, `level`, `of` (the answer it is about, brought into view when the notice is pressed) |
+| `star` | an answer is starred or unstarred, from any panel, to every panel | `id`, `starred`, `n` (how many answers are starred now) |
 
 An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its `analysis_start` and its
 `analysis_done`.
@@ -278,6 +279,7 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | `gpu_release`, `gpu_load`, `gpu_load_cancel` | giving the GPU back, **Load onto the GPU**, stopping that load | |
 | `llm_pull` | **Download** on the Local model card | `model` |
 | `history_clear` | **Clear history** | |
+| `star` | **Star** on an answer; refused with a `notice` to that panel alone when `history.sqlite` does not hold the answer | `id`, `starred` |
 
 ### HTTP
 
@@ -286,7 +288,7 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | `GET /` | the panel, and its files on every other path |
 | `GET /health` | the state: the analyzer, the agent and its label, sign-in, capture, pause, `runner` (configured and responding), `activity` (what runs) |
 | `GET /stats` | totals, recent response times and log size |
-| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `limit`), and the days that have some |
+| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` |
 | `POST /capture/quit`, `POST /capture/restart` | asks the capture program to end or to restart (`./sidenote capture-stop`, a deploy); refused from a page |
 | `POST /server/stop` | asks the server to close down by itself, as the app does when it quits (Windows has no SIGTERM); only with the token the app started the server with, in `X-Sidenote-Stop` |
 

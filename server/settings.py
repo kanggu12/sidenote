@@ -183,9 +183,9 @@ def _defs() -> list[Setting]:
                   "minutes", agent=name)),
         # screen processing
         Setting("history_keep", "bool", True, "screen", t("Keep answers"),
-                t("Keeps answers and their screens on the server for {days} days (up to {mb} MB). Off: new answers are "
-                  "not kept. Clear them with Clear history in the menu", days=f"{CONFIG.history_days:g}",
-                  mb=f"{CONFIG.history_mb:g}")),
+                t("Keeps answers and their screens on the server for {days} days (up to {mb} MB), and starred answers "
+                  "until they are unstarred. Off: new answers are not kept. Clear them with Clear history in the menu",
+                  days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.history_mb:g}")),
         Setting("face_mask", "bool", True, "screen", t("Cover faces"),
                 t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
         Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),

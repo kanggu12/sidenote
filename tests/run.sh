@@ -35,8 +35,8 @@ cd "$(dirname "$0")/.." || exit 2      # the repository's root, whatever folder 
 # which is tests/launcher_args.sh, run with bash.
 SERVER=(integ agent_first server_review worker_order voice_trigger lang_vote stall_guard capture_loop up_wait
         report_period capture_update capture_panel scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch
-        codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check ci_gate launcher_args)
-PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_scenarios panel_study panel_design panel_lang panel_layout)
+        codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check history_star ci_gate launcher_args)
+PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_scenarios panel_study panel_design panel_lang panel_layout)
 # What the suites import or start: not suites themselves
 HELPERS=(support panel_harness fake_claude fake_codex)
 

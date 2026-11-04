@@ -2101,6 +2101,15 @@ def clear_history() -> bool:
         return False
 
 
+def star_answer(seq: int, on: bool) -> tuple[bool, int]:
+    """Star or unstar a kept answer: whether the history holds it, and how many are starred now."""
+    try:
+        return HISTORY.star(seq, on), HISTORY.starred_count()
+    except Exception as exc:   # a file that cannot be written is said to the panel as an answer it does not hold
+        log.warning("analysis #%s: the star was not kept (%s)", seq, exc)
+        return False, 0
+
+
 PICTURES: set = set()   # the tasks keeping answers' pictures, held so that none is collected while it runs
 
 
@@ -3039,14 +3048,16 @@ def create_app() -> FastAPI:
         return JSONResponse({"asked": asked})
 
     @app.get("/history")
-    async def history_rows(day: str = "", q: str = "", kind: str = "", limit: int = 60):
-        """The answers kept, the newest first (server/history.py), for the panel's contents."""
-        rows = await asyncio.to_thread(HISTORY.query, day, q[:200], kind, limit)
+    async def history_rows(day: str = "", q: str = "", kind: str = "", limit: int = 60, starred: bool = False):
+        """The answers kept, the newest first (server/history.py), for the panel's contents; starred=1 for the starred only."""
+        rows = await asyncio.to_thread(HISTORY.query, day, q[:200], kind, limit, starred)
         return JSONResponse({"answers": rows})
 
     @app.get("/history/days")
     async def history_days():
-        return JSONResponse({"days": await asyncio.to_thread(HISTORY.days_list)})
+        # the days that have answers, and how many answers are starred (the contents' Starred choice)
+        return JSONResponse({"days": await asyncio.to_thread(HISTORY.days_list),
+                             "starred": await asyncio.to_thread(HISTORY.starred_count)})
 
     @app.get("/stats")
     async def stats() -> JSONResponse:
@@ -3314,6 +3325,24 @@ def create_app() -> FastAPI:
                     await reply({"type": "notice", "level": "info" if cleared else "warn",
                                  "text": t("Cleared, the saved history too") if cleared
                                  else t("Clearing the saved history failed")})
+                    continue
+                elif kind == "star":   # the star key on an answer's head: kept past the history's limits
+                    seq, on = data.get("id"), data.get("starred")
+                    # an answer's id is a number (a follow-up's parent drawn by the panel alone is not), the star a yes or no
+                    if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(on, bool):
+                        continue
+                    # On the history's own thread, after the write that keeps the answer: a star pressed as it ends is not lost
+                    held, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, star_answer, seq, on)
+                    if not held:   # refused: this panel is told why, and no panel changes
+                        await reply({"type": "notice", "level": "warn", "text":
+                                     t("Not unstarred: this answer is not in the saved history") if not on
+                                     else t("Not starred: Keep answers is off, so this answer was not saved")
+                                     if not SETTINGS.get("history_keep")
+                                     else t("Not starred: this answer is not in the saved history")})
+                        continue
+                    telemetry.event("star", id=seq, starred=on)
+                    # every panel shows it, with how many are starred for the contents' Starred choice
+                    await broadcast({"type": "star", "id": seq, "starred": on, "n": count})
                     continue
                 elif kind == "gpu_load":   # Load onto the GPU: the model on the GPU now, not at the next problem
                     local = ENGINES.local if ENGINES is not None else None

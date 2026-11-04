@@ -413,7 +413,9 @@ NONE = {"type": "usage", "answers": 0, "engines": {"local": {"answers": 0}, "age
 
 
 def many(n=30):
-    return [row(200 + i, ["mcq", "algorithm", "essay", "work", "code", "sql"][i % 6], f"이것은 꽤 길게 쓴 문제의 물음입니다 {i} " * 2, "답", "풀이", ago=86400 * (i // 7) + 1800 - i * 40, thumb=h.thumb(960, 540), region=[.2, .2, .6, .8]) for i in range(n)]
+    # two of today's starred, so every state audits the star key on a head and the star on a row of the contents
+    return [row(200 + i, ["mcq", "algorithm", "essay", "work", "code", "sql"][i % 6], f"이것은 꽤 길게 쓴 문제의 물음입니다 {i} " * 2, "답", "풀이", ago=86400 * (i // 7) + 1800 - i * 40, thumb=h.thumb(960, 540), region=[.2, .2, .6, .8],
+                starred=i in (2, 5)) for i in range(n)]
 
 
 def st_full(p):
@@ -1477,6 +1479,95 @@ def group_controls(br, s):
     c.close()
 
 
+STAR_WIDTHS = (360, 390, 768, 1000, 1001, 1100, 1280, 1366, 1440, 1920, 2560)
+# An answer's head with its star key, and a row of the contents with its star, as laid out
+STAR_LOOK = """(id) => {
+  const e = entryEl(id), tools = e.querySelector(':scope > .row.head .tools'), keys = [...tools.children].filter((b) => b.offsetParent);
+  const box = (x) => { const r = x.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+  const key = tools.querySelector('[data-star]');
+  if (!key) return { missing: true };   // said as a check that failed, not as an error that ends the suite
+  const svg = key.querySelector('svg'), ct = e.querySelector(':scope > .row.head > .ct');
+  const date = e.querySelector(':scope > .row.head time');
+  const p = document.createElement('i'); p.style.color = 'var(--hl-yellow)'; document.body.append(p); const token = getComputedStyle(p).color; p.remove();
+  // the answer's own inner edges: a head row laid out wider than the page carries its column out with it, so the column is no measure
+  const page = e.getBoundingClientRect(), pad = getComputedStyle(e);
+  const out = { keys: keys.map(box), first: keys[0] === key, key: box(key), svg: box(svg), ct: box(ct), date: box(date), W: innerWidth,
+                inner: { l: page.left + parseFloat(pad.paddingLeft), r: page.right - parseFloat(pad.paddingRight) },
+                fill: getComputedStyle(svg).fill, token, pressed: key.getAttribute('aria-pressed') };
+  const rowEl = document.querySelector(`#history .h[data-id="${id}"]`), star = rowEl?.querySelector('.h-star');
+  if (star) {
+    const ht = rowEl.querySelector('.ht'), words = document.createRange(), text = [...ht.childNodes].find((n) => n.nodeType === 3 && n.nodeValue.trim());
+    words.selectNodeContents(text);
+    const plain = [...document.querySelectorAll('#history .h')].find((x) => !x.querySelector('.h-star'));
+    out.row = { star: box(star), row: box(rowEl), ht: box(ht), time: box(rowEl.querySelector('time')), words: box(words), plainH: plain ? plain.getBoundingClientRect().height : null,
+                fill: getComputedStyle(star).fill };
+  }
+  return out;
+}"""
+
+
+def group_star(br, s):
+    """The star key on an answer's head, and the star on a starred row of the contents, at every width from 360 to 2560 in both themes: the
+    key is the size of the keys beside it, in their row and at their spacing, inside the page, its mark in its middle, filled with the
+    highlighter once starred; the row's star stands inside its row before the words, on their middle, and makes the row no taller."""
+    if not T.group("the star key, at every width"):
+        return
+    # the newest three stand open, the older two folded with Fold beside the star; 1951 and 1953 starred
+    rows = [row(1950 + i, "essay", f"이것은 꽤 길게 쓴 문제의 물음입니다 {i} " * 2, "답", "풀이", ago=900 - i * 30, starred=i in (1, 3)) for i in range(5)]
+    for theme in ("dark", "light"):
+        bad = {k: [] for k in ("size", "row", "gap", "inside", "mark", "fill", "line", "rowstar")}
+        for w in STAR_WIDTHS:
+            p = Page(br, s, rows, w=w, h=900, theme=theme, settle=350)
+            for i in (1951, 1953, 1954):   # folded and starred, open and starred, open and not
+                m, at = p.js(STAR_LOOK, i), f"{w} #{i}"
+                if m.get("missing"):
+                    bad["size"].append([at, "no star key"])
+                    continue
+                k, ks = m["key"], m["keys"]
+                # the same key as the others: a pressable square of their size, first in their row
+                if not (m["first"] and k["w"] >= 24 and k["h"] >= 24 and all(abs(x["w"] - k["w"]) <= .5 and abs(x["h"] - k["h"]) <= .5 for x in ks)):
+                    bad["size"].append([at, [(round(x["w"], 1), round(x["h"], 1)) for x in ks]])
+                if not all(abs(x["t"] - k["t"]) <= .5 for x in ks):
+                    bad["row"].append([at, [round(x["t"], 1) for x in ks]])
+                gaps = [round(b["l"] - a["r"], 1) for a, b in zip(ks, ks[1:])]
+                if gaps and max(gaps) - min(gaps) > .5:
+                    bad["gap"].append([at, gaps])
+                # inside the answer's writing, the answer's page and the window, at every width
+                if not (k["l"] >= m["ct"]["l"] - .5 and ks[-1]["r"] <= m["ct"]["r"] + .5 and k["l"] >= m["inner"]["l"] - .5
+                        and ks[-1]["r"] <= m["inner"]["r"] + .5 and m["ct"]["r"] <= m["inner"]["r"] + .5 and ks[-1]["r"] <= m["W"]):
+                    bad["inside"].append([at, round(k["l"], 1), round(ks[-1]["r"], 1), round(m["ct"]["r"], 1), round(m["inner"]["r"], 1)])
+                # its mark in its middle
+                if abs((m["svg"]["l"] + m["svg"]["r"]) / 2 - (k["l"] + k["r"]) / 2) > .5 or abs((m["svg"]["t"] + m["svg"]["b"]) / 2 - (k["t"] + k["b"]) / 2) > .5:
+                    bad["mark"].append([at, m["svg"], k])
+                starred = i != 1954
+                if (m["fill"] == m["token"]) != starred or m["pressed"] != str(starred).lower():
+                    bad["fill"].append([at, m["fill"], m["token"], m["pressed"]])
+                # the keys on the line of the date, unless the window is too narrow for both, and then on a line of their own under it
+                if not (abs((k["t"] + k["b"]) / 2 - (m["date"]["t"] + m["date"]["b"]) / 2) <= 1 or k["t"] >= m["date"]["b"]):
+                    bad["line"].append([at, k, m["date"]])
+                r = m.get("row")
+                if starred and not r:
+                    bad["rowstar"].append([at, "no star on its row"])
+                elif r:
+                    mid = lambda b: (b["t"] + b["b"]) / 2  # noqa: E731
+                    ok = (r["star"]["l"] >= r["ht"]["l"] - .5 and r["star"]["r"] <= r["words"]["l"] + .5 and r["star"]["l"] >= r["time"]["r"]
+                          and r["star"]["t"] >= r["row"]["t"] and r["star"]["b"] <= r["row"]["b"] and abs(mid(r["star"]) - mid(r["words"])) <= 1
+                          and r["plainH"] is not None and abs(r["row"]["h"] - r["plainH"]) <= .5 and r["fill"] == m["token"])
+                    if not ok:
+                        bad["rowstar"].append([at, r])
+            if p.errors:
+                check(f"{theme} {w}: the page threw nothing", False, p.errors[:2])
+            p.close()
+        check(f"{theme}: the star key is the keys' size, the first of them, pressable", not bad["size"], bad["size"][:3])
+        check(f"{theme}: ...in their row", not bad["row"], bad["row"][:3])
+        check(f"{theme}: ...at their spacing", not bad["gap"], bad["gap"][:3])
+        check(f"{theme}: ...inside the answer and the window, from 360 to 2560", not bad["inside"], bad["inside"][:3])
+        check(f"{theme}: ...its star in its middle", not bad["mark"], bad["mark"][:2])
+        check(f"{theme}: ...filled with the highlighter when starred, an outline when not", not bad["fill"], bad["fill"][:3])
+        check(f"{theme}: ...on the date's line, or a line of their own under it", not bad["line"], bad["line"][:2])
+        check(f"{theme}: a starred row's star stands before its words, inside the row, on the words' middle, the row no taller", not bad["rowstar"], bad["rowstar"][:2])
+
+
 def group_recheck(br, s):
     """What later fixes took away, or never brought to a 1920x1040 window: the question box when it is off, the GPU's line, the pause
     key, and a thread shorter than the right column. Each failed before its fix."""
@@ -1557,7 +1648,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_recheck, group_motion, group_rail, group_answers, group_overlays):
+        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays):
             group(br, s)
         br.close()
     if os.environ.get("AUDIT_REPORT"):

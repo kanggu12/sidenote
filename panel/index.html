@@ -513,6 +513,9 @@
   .headline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 30px; font-size: 13px; color: var(--graphite);
     word-break: keep-all; }
   .headline .tools { margin-left: auto; display: flex; gap: 4px; }
+  /* An answer's star key: its outline filled with the highlighter once the answer is starred, a mark on the answer as the
+     highlighter is. The outline keeps the key's ink, so the star reads on the light sheet, where the yellow alone does not */
+  .tools .btn[data-star][aria-pressed="true"] svg { fill: var(--hl-yellow); }
   @media (max-width: 420px) { .headline { flex-wrap: wrap; } }   /* or the folded row's buttons ran 8 px past the column */
   .asked { color: var(--ink-2); font-size: 14.5px; overflow-wrap: anywhere; word-break: keep-all; }
   .answer { display: flex; align-items: flex-start; gap: 10px; }
@@ -1101,6 +1104,8 @@
   .h[aria-current="true"] { background: linear-gradient(transparent 15%, var(--hl-row) 15%, var(--hl-row) 90%, transparent 90%); }
   .h .hk { font-size: 12px; font-weight: 700; color: var(--t, var(--graphite)); white-space: nowrap; }
   .h .ht { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* A starred row: the same star, small and filled, before its words and inside them, so it gives way with them at every width */
+  .h .h-star { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; fill: var(--hl-yellow); stroke: currentColor; }
   .h { outline-offset: -2px; }   /* the list scrolls, so the focus ring is drawn inside the row */
   .h[aria-current="true"] time { color: var(--ink-2); }
   .h[aria-current="true"] .ht, .h.err[aria-current="true"] .ht { color: var(--ink); }   /* beats .h.err .ht below */
@@ -1291,9 +1296,20 @@
        their own above them (52 px of head for every entry). An error's head holds its message, which
        needs the whole width, so it keeps the label above it. */
     .row.head:not(.err) { grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: center; }
+    /* Where the kind, the date and the keys do not fit one line (a folded answer's star, Fold and Copy all on a 360 px window), the keys
+       take a line of their own under them, at the right: as a grid's column they ran 8 px past the page. Where they fit, it is that grid */
+    .row.head:not(.err) { display: flex; flex-wrap: wrap; }
+    .row.head:not(.err) > .mg { flex: none; }
+    .row.head:not(.err) > .ct { flex: 1 1 0; min-width: min-content; }
     .turn { margin-left: 0; }
     .turn .row { margin-left: 0; }
     .short .hl { font-size: 30px; }
+  }
+  @media (max-width: 420px) {
+    /* On a phone the newest answer's three keys (the star, Copy all, Problem text) keep the head one line beside the kind and the
+       date: the date's trailing margin and 4 px of the gap go to them, and they still stand 12 px clear of the date */
+    .row.head:not(.err) { column-gap: 8px; }
+    .row.head:not(.err) > .mg time { margin-right: 0; }
   }
   /* Narrower than the bar's one row (754 px since the signals sit in their well; it is 780 here for a margin): the
      brand and the buttons keep the first row and the signals take a second one of their own. Left to wrap by itself

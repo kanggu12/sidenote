@@ -81,6 +81,7 @@ class Stand:
         shutil.copytree(PANEL, self.static)
         (self.static / "health").write_text('{"ok":true}')
         self.rows: list[dict] = []
+        self.asked: list[str] = []   # the query of each /history the page asked for, in order
         stand = self
 
         class H(SimpleHTTPRequestHandler):
@@ -92,7 +93,10 @@ class Stand:
                 url = urlparse(self.path)
                 if url.path == "/history":
                     q = parse_qs(url.query)
+                    stand.asked.append(url.query)
                     rows = sorted(stand.rows, key=lambda r: r["ts"], reverse=True)
+                    if q.get("starred"):   # the Starred choice: the starred answers only, as server/history.py gives them
+                        rows = [r for r in rows if r.get("starred")]
                     limit = int(q.get("limit", ["40"])[0])
                     return self._json({"answers": rows[:limit]})
                 if url.path == "/history/days":
@@ -102,7 +106,8 @@ class Stand:
                         e = days.setdefault(d, {"day": d, "n": 0, "first": r["ts"], "last": r["ts"]})
                         e["n"] += 1
                         e["first"], e["last"] = min(e["first"], r["ts"]), max(e["last"], r["ts"])
-                    return self._json({"days": sorted(days.values(), key=lambda x: x["day"], reverse=True)})
+                    return self._json({"days": sorted(days.values(), key=lambda x: x["day"], reverse=True),
+                                       "starred": sum(1 for r in stand.rows if r.get("starred"))})
                 return super().do_GET()
 
             def _json(self, data):
