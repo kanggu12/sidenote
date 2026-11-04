@@ -186,6 +186,19 @@ def group_practice(br, s):
     p.wait(200)
     txt = text_of(p, 14)
     check("the first step alone, numbered as it was", [w in txt for w in STEP_WORDS] == [True, False, False, False] and p.js("() => entryEl(14).querySelectorAll('.md ol > li').length") == 1, txt[-160:])
+    # A part headed by the answer is no hint: what starts with one has none, and one further down ends the hints before it
+    p.answer(15, "mcq", "정답부터 쓴 물음", "③", "## 정답: ③\n\n셋째가 맞습니다.\n\n## 까닭\n\n까닭 문단입니다.\n")
+    p.answer(16, "work", "정답을 끝에 쓴 물음", "끝 답", "## 살필 것\n\n첫째 살필 것입니다.\n\n## 다음 살필 것\n\n둘째 살필 것입니다.\n\n## 결론\n\n끝 답입니다.\n")
+    p.answer(17, "work", "답 낱말로 시작하는 제목", "열쇠", "## 답안 쓰는 법\n\n첫 문단입니다.\n\n## Answers in tables\n\n둘째 문단입니다.\n")
+    p.wait(300)
+    check("an answer that opens with a part headed by the answer offers only Show the answer", held_state(p, 15)["keys"] == ["reveal"] and held_state(p, 15)["count"] == "", held_state(p, 15))
+    check("headed by the answer further down: the hints end before that part", held_state(p, 16)["count"] == "힌트 2개", held_state(p, 16))
+    for _ in range(2):
+        p.js("() => entryEl(16).querySelector('[data-act=hint]').click()")
+        p.wait(150)
+    txt = text_of(p, 16)
+    check("...so all its hints leave the answer kept back", "둘째 살필 것입니다" in txt and "끝 답입니다" not in txt, txt[-200:])
+    check("a heading that only begins with such a word is an ordinary part", held_state(p, 17)["count"] == "힌트 2개", held_state(p, 17))
     # What the watching adds under it waits with it; the user's own follow-up shows
     now = p.js("() => Date.now() / 1000")
     p.send({"type": "analysis_start", "id": 15, "ts": now, "thumb": None, "transcript": "", "pages": 0, "trigger": "retry", "roi": None, "about": 14},

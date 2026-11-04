@@ -3353,10 +3353,18 @@ function answerCuts(md) {
   const cuts = [...new Set(starts.filter((s) => s > first))].sort((a, b) => a - b).filter(evenMath);
   return [...cuts, text.length];                              // each part ends where the next starts, the last at the end
 }
-// An answer's parts, worked out once for the text it has
+// A part headed by the answer itself ("## 정답: ③", "**Answer**"): no hint, it is what the hints lead up to
+const ANSWER_HEAD = /^\s*(?:#{1,6}\s+|\*\*)\s*(?:정답|해답|최종\s*답|답|결론|final\s+answer|answer|conclusion)(?=$|[\s:：*.])/i;
+// An answer's parts, worked out once for the text it has. The hints stop before a part headed by the answer: Show the
+// answer opens that one, so an answer that starts with it has no hints at all
 function practiceParts(it) {
   const body = it.head?.body || "";
-  if (it.cutsOf !== body) { it.cuts = answerCuts(body); it.cutsOf = body; }
+  if (it.cutsOf !== body) {
+    const cuts = answerCuts(body);
+    const stop = [0, ...cuts.slice(0, -1)].findIndex((from) => ANSWER_HEAD.test(body.slice(from, from + 80)));
+    it.cuts = stop < 0 ? cuts : cuts.slice(0, stop);
+    it.cutsOf = body;
+  }
   return it.cuts;
 }
 const hintsShown = (it) => Math.max(0, Math.min(practiceCards.get(String(it.id)) || 0, practiceParts(it).length));
