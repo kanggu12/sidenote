@@ -156,8 +156,9 @@ SYSTEM_PROMPT = """\
   다른 언어면 한국어로 옮겨 쓴다(풀이가 아니라 물음만). 앞의 ANSWER 줄은 이 줄의 언어를 따르지 않는다.
 - 그다음 줄부터 마크다운 본문.
 - 해설과 설명은 한국어로 쓴다. 코드, 식별자, 수식은 원문 그대로 둔다.
-- 문제가 영어로 되어 있거나 음성이 영어로 들어오면(한국어가 아니면), 그 사람이 그대로 적어 내거나 말할 것은
+- 화면의 문제가 영어로 되어 있으면(한국어가 아니면), 그 사람이 그대로 적어 내거나 말할 것은
   그 언어로 쓴다: ANSWER 줄, 답안 문단, 서술형 답, 코드 주석. 그 뒤의 해설은 한국어로 쓴다.
+- 음성으로 들어온 문제는 어느 언어로 들렸든 ANSWER 줄, 답안 문단, 해설을 모두 한국어로 쓴다. 용어, 명령, 코드는 원문 그대로 둔다.
 - 문제가 한국어면 ANSWER 줄과 답안도 한국어로 쓴다. `물음:` 줄은 넣지 않는다. 정답이 값, 용어, 코드면
   어느 쪽이든 그대로 쓴다.
 - 수식은 LaTeX(`$...$`, `$$...$$`)로 쓴다.
@@ -194,8 +195,8 @@ SYSTEM_PROMPT = """\
 LOCAL_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
     "퍼센트(0~100, 왼쪽 위가 0 0)로 쓴다", "0~1000 정규화 좌표(왼쪽 위가 0 0, 오른쪽 아래가 1000 1000)로 쓴다").replace(
     "`(1) ③  (2) 42` 처럼 이어 쓴다.",
-    "`(1) ③  (2) 42` 처럼 이어 쓴다. 한국어 문제면 요지, 접근법, 구성을 한국어로 쓰고(예: `해시맵으로 개수를 "
-    "세며 슬라이딩 윈도우, 시간 $O(N)$ / 공간 $O(N)$`), 영어 문제면 그 자리를 영어로 쓴다. 정답이 용어, 명령, "
+    "`(1) ③  (2) 42` 처럼 이어 쓴다. 한국어 문제나 음성으로 들어온 문제면 요지, 접근법, 구성을 한국어로 쓰고(예: `해시맵으로 개수를 "
+    "세며 슬라이딩 윈도우, 시간 $O(N)$ / 공간 $O(N)$`), 화면의 영어 문제면 그 자리를 영어로 쓴다. 정답이 용어, 명령, "
     "코드, 값이면 어느 쪽이든 그대로 쓴다.")
 assert LOCAL_SYSTEM_PROMPT.count("한국어로 쓰고") == 1 and "0~1000" in LOCAL_SYSTEM_PROMPT
 # A technical question list in a picture on a busy desktop was read as nothing to solve, by both models, in both passes.
@@ -269,9 +270,11 @@ ENGLISH_RULES = (
      "`ASKED: <무엇을 묻는지 영어(English) 한 줄로>`. 늘 쓴다. 문제가 영어면 한 줄로 줄여 쓰고,\n  다른 언어면 영어로 옮겨 쓴다"),
     ("- 해설과 설명은 한국어로 쓴다.", "- 해설과 설명은 영어(English)로 쓴다. 절 제목도 영어로 쓴다."),
     ("그 뒤의 해설은 한국어로 쓴다.", "그 뒤의 해설도 영어로 쓴다."),
+    ("- 음성으로 들어온 문제는 어느 언어로 들렸든 ANSWER 줄, 답안 문단, 해설을 모두 한국어로 쓴다.",
+     "- 음성으로 들어온 문제는 어느 언어로 들렸든 ANSWER 줄, 답안 문단, 해설을 모두 영어(English)로 쓴다."),
     ("- 문제가 한국어면 ANSWER 줄과 답안도 한국어로 쓴다.", "- 문제가 한국어여도 ANSWER 줄과 답안은 영어로 쓴다."),
-    ("한국어 문제면 요지, 접근법, 구성을 한국어로 쓰고(예: `해시맵으로 개수를 세며 슬라이딩 윈도우, 시간 $O(N)$ / 공간 $O(N)$`), "
-     "영어 문제면 그 자리를 영어로 쓴다.",
+    ("한국어 문제나 음성으로 들어온 문제면 요지, 접근법, 구성을 한국어로 쓰고(예: `해시맵으로 개수를 세며 슬라이딩 윈도우, 시간 $O(N)$ / 공간 $O(N)$`), "
+     "화면의 영어 문제면 그 자리를 영어로 쓴다.",
      "요지, 접근법, 구성을 영어로 쓴다(예: `Count with a hash map over a sliding window, time $O(N)$ / space $O(N)$`)."),
 )
 
@@ -299,6 +302,26 @@ INDEPENDENCE_NOTE = (
 )
 
 
+# What was heard is mostly somebody talking: a lecture, a meeting, a video, one person telling long technical stories. The
+# request used to say that all of it was the problem to solve, and five answers of seven in an hour of such speech answered
+# questions nobody had asked the listener. So what is and is not asked of the listener is said where the words are, in
+# the request, and it is the same for the first pass and the agent. Measured in docs/DECISIONS.md, note 106.
+SPEECH_RULE = ("아래는 스피커에서 들린 말(강의, 회의, 영상, 스터디)을 받아 적은 것입니다. 듣는 사람에게 묻는 기술 질문, 용어 질문, "
+               "소리 내어 읽는 문제가 있으면 그것을 풉니다. 긴 설명이나 이야기 뒤에 나온 질문도 풉니다. 말하는 사람이 자기 경험이나 "
+               "이야기를 들려주는 말은 풀 대상이 아닙니다. 그 안에서 남이 물었다고 전하는 물음, 말하는 사람이 스스로 답하는 물음, "
+               "말끝의 `맞죠?`, `그렇죠?`, `right?`, `you know?` 는 듣는 사람에게 묻는 말이 아닙니다. 그런 말뿐이면 풀 대상이 없는 "
+               "경우입니다.")
+
+
+def heard_request() -> str:
+    """What goes ahead of the words heard, for the first pass and the agent alike: SPEECH_RULE, and the answer's language where
+    the words are. Said only in the system prompt, the answer line stayed English in one answer in six and the body in one in
+    eight for English speech (note 106). The panel's language decides, as in the system prompt (in_answer_language)."""
+    lang = "영어(English)" if i18n.LANG == "en" else "한국어"
+    return (f"[음성으로 들어온 문제] {SPEECH_RULE} 들린 언어와 상관없이 ANSWER 줄과 본문을 모두 {lang}로 씁니다. 용어, 명령, 코드는 "
+            "원문 그대로 둡니다. 형식 규칙에 맞춰 풀이하세요.")
+
+
 def build_user_text(transcript: str, pages: int = 0, voice: bool = False, has_image: bool = True,
                     followup: dict | None = None, zoom: bool | str = False) -> str:
     if followup:
@@ -313,9 +336,8 @@ def build_user_text(transcript: str, pages: int = 0, voice: bool = False, has_im
             text += "\n\n함께 보낸 이미지는 그 문제의 화면입니다."
         return text
     if voice:
-        # The problem was read aloud: the transcript IS the problem; the screen, if any, is context.
-        text = ("[음성으로 들어온 문제] 아래는 음성으로 읽힌 문제/질문을 받아 적은 것입니다. 이것을 "
-                f"풀 대상으로 보고 형식 규칙에 맞춰 풀이하세요.\n{transcript}")
+        # What was heard: what it asks is the problem; the screen, if any, is context.
+        text = f"{heard_request()}\n{transcript}"
         if has_image:
             text += "\n\n함께 보낸 스크린샷은 지금 화면입니다. 음성 문제와 관련된 내용이 있으면 참고하세요."
         return text
@@ -359,8 +381,7 @@ def text_request(problem: str, note: str = "") -> str:
 
 
 def speech_request(question: str) -> str:
-    return ("[음성으로 들어온 문제] 아래는 말로 들어온 질문을 받아 적은 것입니다. 음성 인식 오류는 문맥으로 "
-            "바로잡아 읽으세요. 형식 규칙에 맞춰 풀이하세요. REGION 줄은 쓰지 않습니다.\n" + question)
+    return f"{heard_request()} 음성 인식 오류는 문맥으로 바로잡아 읽으세요. REGION 줄은 쓰지 않습니다.\n{question}"
 
 
 # The `verify` mode: after the local model answered, the agent gets the same problem (as the payload
@@ -515,8 +536,56 @@ def route_note(search: bool) -> str:
 
 ROUTE_RE = re.compile(r"^\s*ROUTE\s*:\s*(\w+)", re.I | re.M)
 ROUTE_LINE_RE = re.compile(r"^[ \t]*ROUTE[ \t]*:[^\n]*(\n|$)", re.I | re.M)   # the whole line, to drop it
+# The route's word written as the type (`TYPE: fast`), 4 or 5 spoken answers of 60: the answer is right, and the card would wear
+# the word as its kind. The note asking for the route (route_note) comes right after the words heard.
+TYPE_SLIP_RE = re.compile(r"^(\s*TYPE\s*:\s*)(?:fast|deep)\b", re.I)
+
+
+def without_route(text: str) -> str:
+    """What the fast pass wrote, for the panel: no ROUTE line, and no route's word where the type goes."""
+    return TYPE_SLIP_RE.sub(r"\1other", ROUTE_LINE_RE.sub("", text), count=1)
 TYPE_RE = re.compile(r"^\s*TYPE\s*:\s*(\w+)", re.I | re.M)
 REGION_LINE_RE = re.compile(r"^\s*REGION\s*:", re.I | re.M)
+
+
+EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]")
+
+
+class _HeadingMarks:
+    """Takes emoji from the front of the headings the local model writes, as they are streamed. It wrote them now and then (1 to 6
+    answers of 56 in a bench run, mostly the smaller models, a light bulb or a magnifier before a title). A rule in the prompt would be one more
+    rule, for something too rare to measure it on, so they go here: in front of the title on a line of `#`, or on one that
+    opens in bold as a heading does, outside code. Anywhere else a mark can be all a cell or an answer says (a check mark or a cross
+    in a table, `**Answer: X**`, a keycap that numbers a step), and stays."""
+
+    def __init__(self):
+        self.line = ""        # the start of the current line, enough to tell a heading and a code fence by
+        self.front = True     # nothing but the line's own marks so far: an emoji here is decoration
+        self.code = False     # inside a code block
+        self.eat_space = False   # the space after a mark that went goes with it
+
+    def feed(self, text: str) -> str:
+        out = []
+        for ch in text:
+            if ch == "\n":
+                if self.line.lstrip().startswith("```"):
+                    self.code = not self.code
+                self.line, self.front, self.eat_space = "", True, False
+                out.append(ch)
+                continue
+            if self.front and not self.code:
+                if EMOJI_RE.match(ch) and self.line.lstrip().startswith(("#", "**")):
+                    self.eat_space = True
+                    continue
+                if self.eat_space and ch == " ":
+                    continue
+                self.eat_space = False
+                if ch not in "#* \t":
+                    self.front = False
+            if len(self.line) < 8:
+                self.line += ch
+            out.append(ch)
+        return "".join(out)
 
 
 class _Deep(Exception):
@@ -562,7 +631,7 @@ class _RouteGate:
         t = TYPE_RE.search(head)
         if not t:
             return None if len(done) < 4 and len(self.buf) < 600 else True   # no TYPE line at all: deep
-        self.type = t.group(1).lower()
+        self.type = "other" if t.group(1).lower() in ("fast", "deep") else t.group(1).lower()
         if self.type == "none":
             return False
         r = ROUTE_RE.search(head)
@@ -601,7 +670,7 @@ class _RouteGate:
                 raise _Deep(self.buf)
             return
         self.open = True
-        out = ROUTE_LINE_RE.sub("", self.buf)
+        out = without_route(self.buf)
         if out:
             await self.on_delta(out)
 
@@ -618,7 +687,7 @@ class _RouteGate:
             if t and not self.type:
                 self.type = t.group(1).lower()
             self.open = True
-            out = ROUTE_LINE_RE.sub("", self.buf)
+            out = without_route(self.buf)
             if out.strip():
                 await self.on_delta(out)
 
@@ -661,8 +730,9 @@ EXTRACT_SCREEN = """\
 관계없는 메뉴, 버튼, 광고, 다른 창의 글, 타이머 같은 화면 장식은 뺀다. 풀이나 설명, 머리말은 쓰지 않는다.
 풀 문제가 없으면 `없음` 한 단어만 쓴다."""
 EXTRACT_SPEECH = """\
-아래는 음성 인식으로 받아 적은 말이다. 이 가운데 답해야 할 기술 질문이나 문제 부분만 골라, 인식 오류를 문맥으로 바로잡아
+아래는 음성 인식으로 받아 적은 말이다. 이 가운데 듣는 사람이 답해야 할 기술 질문이나 문제 부분만 골라, 인식 오류를 문맥으로 바로잡아
 그대로 옮겨 적는다. 앞뒤의 인사, 잡담, 질문과 무관한 말은 뺀다. 질문을 바꿔 말하거나 덧붙이지 않는다.
+말하는 사람의 경험담 속에서 남이 물었다고 전하는 물음, 스스로 답하는 물음, 말끝의 `맞죠?`, `right?` 는 질문이 아니다.
 기술 질문이 없으면 `없음` 한 단어만 쓴다."""
 EXTRACT_CASES = """\
 문제의 입출력 예와 채점 방식만 JSON 하나로 출력한다. JSON 밖에는 아무것도 쓰지 않는다.
@@ -688,6 +758,8 @@ EXTRACT_EDITOR = """\
 화면에 답을 써 넣는 코드 편집기가 있으면 그 편집기의 프로그래밍 언어 이름만 한 단어로 쓴다(예: Python, C++, Java, Kotlin,
 Go, JavaScript). 편집기 탭의 파일 이름, 언어 선택 상자, 편집기 안의 코드 틀로 안다. 코드 편집기가 없거나 언어를 알 수
 없으면 `없음` 한 단어만 쓴다."""
+# What extract gives when the model read what was heard and found no question in it (Pipeline._agent_payload)
+NO_QUESTION = "\0no question"
 # A problem with no examples on the screen (12 of 17 code checks in real use) had its code not run
 # at all. Asked on its own, after the examples were looked for and none found (one more form in the examples prompt
 # cost its other readings, EXTRACT_DESIGN): a few small inputs the problem allows, with no answers, since an answer
@@ -1070,6 +1142,7 @@ class LocalLlmAnalyzer:
         self.last_used = time.time()
         await self._ready(body["model"])
         first = None   # when the first generated token (answer, thinking or tool call) arrived
+        heading_marks = _HeadingMarks()   # no emoji in what it writes as headings
         alive, note = _FIRST_TOKEN.get(), _THOUGHT.get()
         thought_chars, noted = 0, time.time()
         self._streams += 1
@@ -1127,7 +1200,7 @@ class LocalLlmAnalyzer:
                             c["id"] = tc.get("id") or c["id"]
                             c["name"] = fn.get("name") or c["name"]
                             c["arguments"] += fn.get("arguments") or ""
-                        txt = delta.get("content")
+                        txt = heading_marks.feed(delta.get("content") or "")
                         if txt:
                             acc.append(txt)
                             await on_delta(txt)
@@ -1539,7 +1612,7 @@ class LocalLlmAnalyzer:
             else:
                 return FastResult(text=None, head=d.head, type=gate.type, route=gate.route, messages=messages,
                                   searches=trace, model=model)
-        out = ROUTE_LINE_RE.sub("", out)
+        out = without_route(out)
         # A fast answer that says what kind of problem it is and then answers nothing is not an answer: the
         # card would hold the head lines and nothing else (a GitHub issue asking for a version).
         # It is handed on to the thinking pass, as a problem it could not answer at once.
@@ -1639,9 +1712,12 @@ class LocalLlmAnalyzer:
 
     async def extract(self, images=(), speech: str = "") -> str:
         """The problem written out as text: from a crop of the screen, or the question part of what
-        was heard. "" when there is none."""
+        was heard. "" when there is none; for what was heard, NO_QUESTION when the model says so."""
         if speech:
             out = await self._plain(EXTRACT_SPEECH, (), "[받아 적은 말]\n" + speech, 1200)
+            # The model saying there is none, told apart from a reading that brought nothing (its tokens gone on thinking)
+            if out.strip("` \n") == "없음":
+                return NO_QUESTION
         else:
             out = await self._plain(EXTRACT_SCREEN, images, "이 이미지의 문제를 옮겨 적으세요.", 3000)
         return "" if out.strip("` \n") in ("없음", "") else out

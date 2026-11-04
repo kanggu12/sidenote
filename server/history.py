@@ -5,6 +5,10 @@ screen. It cannot grow for ever: rows older than SIDENOTE_HISTORY_DAYS go, and p
 first. A starred answer (the star key on its head) is not one of them: it stays until it is unstarred, and the size
 cap counts the rest. The panel's setting history_keep stops the keeping, and its Clear the history empties the file,
 starred answers included.
+
+What was heard, with Keep what is heard on, is a table of its own in the same file: one row a closed sentence, with its
+time, its length and its language. It goes with the answers by age, and has a size limit of its own
+(SIDENOTE_HEARD_MB) that the answers' cap does not count, so a long transcript never pushes an answer out.
 """
 from __future__ import annotations
 
@@ -17,11 +21,21 @@ from pathlib import Path
 
 log = logging.getLogger("sidenote.history")
 MAX_ROWS = 200   # what one request returns at most
+MAX_HEARD = 20000   # the lines of one day one request returns at most: its newest
+# What a row of the heard table is counted at: its time, length, day and language, its rowid and its entry in the index,
+# about 70 bytes, and its words twice. Rows fill a page in the order they come, and a page takes what fits: sentences of
+# 3 KB left a fifth of each page unused (measured), and of a little over 2 KB they would leave half. Counted high on purpose,
+# since the answers' cap takes this off the file's pages (prune): counted low, a long transcript would push answers out by
+# the difference, and counted high they only get a little more room.
+HEARD_ROW = 96
+HEARD_WORDS = 2
 
 
 class History:
-    def __init__(self, path, days: float = 90.0, max_mb: float = 200.0):
+    def __init__(self, path, days: float = 90.0, max_mb: float = 200.0, heard_mb: float = 20.0):
         self.days, self.max_bytes = days, int(max_mb * 1024 * 1024)
+        self.heard_max = int(heard_mb * 1024 * 1024)
+        self._heard_bytes: int | None = None   # what the heard table takes (heard_bytes), None until it has been summed
         self._lock = threading.Lock()
         self._db = None
         self._over = False   # the starred answers alone are over the size cap, and the log has said so
@@ -45,6 +59,9 @@ class History:
             self._db.execute("CREATE INDEX IF NOT EXISTS answers_day ON answers (day, ts)")     # the contents' two filters
             self._db.execute("CREATE INDEX IF NOT EXISTS answers_kind ON answers (kind, ts)")
             self._db.execute("CREATE INDEX IF NOT EXISTS answers_starred ON answers (starred, ts)")   # and the Starred choice
+            self._db.execute("CREATE TABLE IF NOT EXISTS heard (id INTEGER PRIMARY KEY, ts REAL NOT NULL, day TEXT NOT NULL,"
+                             " secs REAL NOT NULL, lang TEXT NOT NULL, words TEXT NOT NULL)")
+            self._db.execute("CREATE INDEX IF NOT EXISTS heard_day ON heard (day, ts)")   # one day's lines, and the days
             self._db.commit()
         except (sqlite3.Error, OSError) as exc:   # an answer is never lost to this: the panel only has less to look back on
             log.warning("no history (%s)", exc)
@@ -140,6 +157,72 @@ class History:
         # the star is the row's own column, not part of what was kept of the answer
         return [{**json.loads(data), "starred": bool(star)} for data, star in rows]
 
+    # ---------- what was heard (Keep what is heard) ----------
+
+    def add_heard(self, ts: float, secs: float, lang: str, text: str) -> None:
+        """One closed sentence: when it was heard, how long it took to say, the language it was written down in."""
+        if self._db is None or not text:
+            return
+        day = time.strftime("%Y-%m-%d", time.localtime(ts))
+        with self._lock:
+            self._db.execute("INSERT INTO heard (ts, day, secs, lang, words) VALUES (?, ?, ?, ?, ?)",
+                             (ts, day, round(secs, 2), lang or "", text))
+            # the sum is kept up as rows come, so a sentence every few seconds does not read the whole table each time
+            self._heard_bytes = self._heard_sum() if self._heard_bytes is None else (
+                self._heard_bytes + len(text.encode("utf-8")) * HEARD_WORDS + HEARD_ROW)
+            self._prune_heard(ts)
+            self._db.commit()
+
+    def _heard_sum(self) -> int:
+        """What the heard table is counted at, in bytes (HEARD_ROW). Called with the lock held."""
+        return self._db.execute("SELECT COALESCE(SUM(LENGTH(CAST(words AS BLOB))), 0) * ? + COUNT(*) * ? FROM heard",
+                                (HEARD_WORDS, HEARD_ROW)).fetchone()[0]
+
+    def _prune_heard(self, now: float) -> int:
+        """Rows past the age, then the oldest until the table fits its own limit. Called with the lock held."""
+        gone = 0
+        if self.days > 0:
+            # Rows come in order of time, so the first row says whether any is past the age: a look at one row
+            first = self._db.execute("SELECT ts FROM heard ORDER BY id LIMIT 1").fetchone()
+            if first and first[0] < now - self.days * 86400:
+                gone += self._db.execute("DELETE FROM heard WHERE ts < ?", (now - self.days * 86400,)).rowcount
+        if gone:
+            self._heard_bytes = None
+        if self.heard_max > 0:
+            if self._heard_bytes is None:
+                self._heard_bytes = self._heard_sum()
+            while self._heard_bytes > self.heard_max:
+                n = self._db.execute("DELETE FROM heard WHERE id IN (SELECT id FROM heard ORDER BY id LIMIT 64)").rowcount
+                if not n:   # none is left
+                    break
+                gone += n
+                self._heard_bytes = self._heard_sum()
+        return gone
+
+    def heard_any(self) -> bool:
+        """Whether anything heard is kept."""
+        if self._db is None:
+            return False
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM heard LIMIT 1").fetchone() is not None
+
+    def heard_days(self) -> list:
+        """[{"day", "n", "first", "last"}], the newest first: the days that hold what was heard."""
+        if self._db is None:
+            return []
+        with self._lock:
+            rows = self._db.execute("SELECT day, COUNT(*), MIN(ts), MAX(ts) FROM heard GROUP BY day ORDER BY day DESC").fetchall()
+        return [{"day": d, "n": n, "first": a, "last": b} for d, n, a, b in rows]
+
+    def heard_lines(self, day: str, limit: int = MAX_HEARD) -> list:
+        """One day's lines in the order they were said: [{"ts", "secs", "lang", "text"}]; of a longer day its newest."""
+        if self._db is None:
+            return []
+        with self._lock:
+            rows = self._db.execute("SELECT ts, secs, lang, words FROM heard WHERE day = ? ORDER BY ts DESC LIMIT ?",
+                                    (day, max(1, min(limit, MAX_HEARD)))).fetchall()
+        return [{"ts": ts, "secs": secs, "lang": lang, "text": text} for ts, secs, lang, text in reversed(rows)]
+
     def prune(self, now: float | None = None) -> int:
         """Rows past the age, then the oldest until the rest fits the cap; never a starred one. Returns how many went."""
         if self._db is None:
@@ -154,14 +237,18 @@ class History:
             # 5 MB cap held 16 MB. Pages in use, read after each batch instead of summing every row.
             used = lambda: (self._db.execute("PRAGMA page_count").fetchone()[0]  # noqa: E731
                             - self._db.execute("PRAGMA freelist_count").fetchone()[0]) * self._db.execute("PRAGMA page_size").fetchone()[0]
+            # What was heard goes by the same age, and fits its own limit, which is what keeps it from growing for ever
+            self._prune_heard(now)
             # The cap counts the answers that are not starred: the bytes the starred ones hold come off the pages in use
             # (summed only once the file is past the cap, which most writes are not), and the oldest of the rest go
-            # until the rest fits. A star then never costs the recent answers their room
+            # until the rest fits. A star then never costs the recent answers their room. What was heard comes off the
+            # same way, so a long transcript never costs them theirs either: it has its limit, and they have theirs
             starred = 0
             if self.max_bytes > 0 and used() > self.max_bytes:
                 starred = self._db.execute("SELECT COALESCE(SUM(LENGTH(CAST(data AS BLOB)) + LENGTH(CAST(words AS BLOB))), 0)"
                                            " FROM answers WHERE starred = 1").fetchone()[0]
-                while used() - starred > self.max_bytes:
+                heard = self._heard_bytes if self._heard_bytes is not None else self._heard_sum()
+                while used() - starred - heard > self.max_bytes:
                     n = self._db.execute("DELETE FROM answers WHERE id IN (SELECT id FROM answers WHERE starred = 0"
                                          " ORDER BY ts LIMIT 8)").rowcount
                     if not n:   # none of the rest is left
@@ -180,6 +267,8 @@ class History:
             return
         with self._lock:
             self._db.execute("DELETE FROM answers")
+            self._db.execute("DELETE FROM heard")
+            self._heard_bytes = 0
             self._db.commit()
             self._db.execute("VACUUM")
             self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")   # the deleted rows stood on in the WAL until then

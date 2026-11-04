@@ -362,7 +362,7 @@ def main():
               bool(box) and box["key"] == "skip_windows" and box["label"] == box["row"] == "건너뛸 창", json.dumps(box, ensure_ascii=False))
         check("...its hint in Korean", bool(box) and box["hint"] == "쉼표로 구분한 단어", box and box["hint"])
         check("...holding the default list, every word of it in view", bool(box) and box["value"].startswith("1Password, Bitwarden")
-              and box["value"].endswith("Incognito, Private Browsing") and box["all"], json.dumps(box, ensure_ascii=False))
+              and box["value"].endswith("Private Browsing, 시크릿, 사생활 보호") and box["all"], json.dumps(box, ensure_ascii=False))
         pg.evaluate("() => { const b = document.querySelector('#settings textarea[data-set=skip_windows]'); b.value = 'Bitwarden'; fitWords(); }")
         one = pg.evaluate(look, "#settings textarea[data-set=skip_windows]")
         print(f"     one line: {one}  the dropdown: {combo}")

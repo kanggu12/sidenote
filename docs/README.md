@@ -511,7 +511,12 @@ is under the top bar.
 - **This answer's screen** (the screen card): a thumbnail of the screen that produced the answer. The highlighted box
   is where the model found the problem. **Draw a region** limits what is looked at, and sent, to a region you drag on
   the current screen, until **Clear the region**.
-- **What is heard**: with sound on, recent speech runs by as text. KO and EN show the recognized language.
+- **What is heard**: with sound on, recent speech runs by as text. KO and EN show the recognized language. A sentence
+  that ended and was not taken says why in a muted line under it: **Too short · not solved**, **No question · not
+  solved** (the first pass found nothing asked in it) or **Part of a story · not solved** (a tag, or a question told
+  rather than asked). With **Keep what is heard** on, the key at the card's foot opens **What was heard**: one day's
+  sentences with the time of each, **Copy all**, and **Save as .md**. The gear menu holds the same item, for when the
+  sound is off and the card is gone. Both are there as long as anything is kept.
 - **Contents**: the list of solutions, nine lines of it at a time, more on a window tall enough for the whole column;
   it scrolls inside its card for the rest. Each day has an index tab saying how many it holds, which stays at the top
   of the list as it scrolls.
@@ -759,8 +764,10 @@ its screen is kept, as for follow-up questions; switching the screen off drops i
   on the 56 screens and spoken questions of the known-answer set: all 56 answers in English (none with more than 5%
   Korean outside code), 52 right where the Korean run had 51, and all 7 code answers passing.
 - In Korean, every explanation is Korean, whatever language the problem is in. What you would write down or say back
-  is in the problem's own language instead: for a problem on screen in English, or a question heard in English, the
-  answer line, the answer paragraph and the code come in English, while the explanation under them stays Korean.
+  is in the problem's own language instead: for a problem on screen in English, the answer line, the answer paragraph
+  and the code come in English, while the explanation under them stays Korean. A question heard is answered in the
+  panel's language whole, by the local model and the agent alike, whatever language it was heard in: terms, commands
+  and code stay as they are, and the rest follows the panel.
   Above the answer the card shows **Question**, one Korean line saying what the problem asks. It is written for a
   Korean problem too, so a problem read wrongly shows there. Measured on 24 problems (12 of them English statements
   from a public corpus): the answer in the right language 23 times, the explanation in Korean 24, the Korean line
@@ -818,14 +825,28 @@ How a question read out loud becomes a problem. Sound is used as input only; Sid
 - When speech ends and 1.5 seconds of quiet follow, the whole utterance is written down and analyzed, even if the
   screen did not change. The screen, if there is one, is used as context.
 - A problem may be read in several sentences: pauses shorter than 6 seconds join the sentences into one problem.
-- With a question phrase in Korean or English (such as "find", "choose", "explain", "what", "which" or "why"), it
-  solves as soon as the sentence ends. Speech without one (a lecture, small talk) is looked at once, after the speech
-  has paused for 6 seconds, so a lecture video playing in the background does not set off an analysis per sentence.
-  The phrase has to be in the last sentence spoken, or in an earlier sentence of the same unbroken run of speech, and
-  one run starts at most 3 analyses. Whatever is still being read is solved whole once you stop.
+- With a question mark, or a question or a task at the start of a clause in Korean or English (such as "what is",
+  "why does", "explain", "find" or "choose"), it solves as soon as the sentence ends. Speech without one (a lecture,
+  small talk) is looked at once, after the speech has paused for 6 seconds, so a lecture video playing in the
+  background does not set off an analysis per sentence. The phrase has to be in the last sentence spoken, or in an
+  earlier sentence of the same unbroken run of speech, and one run starts at most 3 analyses. Whatever is still being
+  read is solved whole once you stop.
+- Not all that sounds like a question asks one. A tag at the end of a clause ("right?", "you know?", "okay?", "yeah?",
+  "correct?", "isn't it?", and in Korean "그렇죠?", "맞죠?", "알죠?"), a question the speaker reports ("somebody asked,
+  could we have caught this?") and a stock rhetorical one ("guess what?") start nothing at once: they wait for the
+  pause as a remark does. The first pass, and the agent, are then told that a speaker telling a story asks the listener
+  nothing, so a story ends as nothing to solve, while a question that follows it, a term asked about or a quiz read
+  aloud is answered.
 - Sound shorter than 0.8 seconds is not written down at all: the speech model does not stay silent on a blip of noise,
-  but writes a sentence, usually in English.
-- Speech shorter than 12 characters ("yes, I see" in Korean, "okay") is not taken as a problem.
+  but writes a sentence, usually in English. If the live words show it anyway, **What is heard** says it was too short.
+- Speech shorter than 12 characters ("yes, I see" in Korean, "okay") is not taken as a problem. A sentence that looks
+  like a question is taken from 6 characters ("What's TCP?"). **What is heard** says when a sentence was not taken.
+- Speech that goes on while an answer is being written does not stop it. Once the answer has its first words it
+  finishes, and the newest speech waits and runs next: one waits, what is said in the same run of speech joins it, and
+  after a pause a newer problem takes its place. That run reads what came after what was answered, so a question already
+  answered is not answered again. The options of a quiz and a question that leans on the one before it ("and when does
+  it fail?") go with what they belong to. Before its first words a problem is still being read, and the longer version
+  replaces it.
 - The screen comes first. What is heard is mostly whatever the PC is playing, so a problem heard never interrupts an
   analysis of the screen: it waits, and runs as soon as that answer is written. A screen that has clearly moved on does
   take over from a problem heard, on the same terms as any other screen. Speech heard while paused or with the sound
@@ -837,7 +858,9 @@ How a question read out loud becomes a problem. Sound is used as input only; Sid
   goes the other way. Pinning the language removes the mistake: pin **한국어** (the choice is written in Korean in
   both languages) if that is all you speak to it. With **English** pinned, Korean speech is written down translated
   into English, so use **Auto** when the two are mixed.
-- The model corrects small transcription errors from the context.
+- The model corrects small transcription errors from the context. **Technical term hints** give the speech model
+  the words it is likely to mishear, a list for each speech language, and **Extra terms** adds your own in front of
+  them (section 12).
 
 ## 10. Long problems: joining while you scroll
 
@@ -894,7 +917,7 @@ With Docker, the logs are kept in `~/.local/state/sidenote/logs/`; the app keeps
 | `events.jsonl` | Analysis starts and ends, errors, follow-up questions, switch changes, capture connections: one JSON object per line |
 | `capture.log` | What the capture program printed |
 | `stall.txt` | Every thread's stack at the moment the server ended itself in a stall |
-| `history.sqlite` | The kept answers with their follow-ups and a small picture of their screen: 90 days and 200 MB at most, while a starred answer stays past both until it is unstarred (section 5) |
+| `history.sqlite` | The kept answers with their follow-ups and a small picture of their screen: 90 days and 200 MB at most, while a starred answer stays past both until it is unstarred (section 5). With **Keep what is heard** on, every sentence heard: 90 days and 20 MB at most |
 | `server-console.log` | In the app: what the server printed, including why it did not start |
 | `ollama.log` | In the app: what Ollama printed, when the app started it |
 | `app.log` | In the app: what the app itself did |
@@ -940,6 +963,25 @@ default, and with `SIDENOTE_UPDATE_CHECK=0` it is off and grayed out, with the r
   at once.
 - The **Hourly cost limit** counts only an agent that reports a price. A Codex login reports none, so its answers do
   not count toward it; the brake on empty answers in a row holds for every agent.
+
+The **Speech** section holds what shapes what is written down:
+
+- **Technical term hints** gives the speech model a list of technical terms before each sentence, one list for Korean
+  and one for English, chosen by the language the sentence is written down in.
+- **Extra terms** is a box of your own words, with commas between them, such as a product's name. They go ahead of the
+  built-in list, and also go when **Technical term hints** is off. The speech model keeps 223 tokens of hint and the
+  built-in lists take about 170, so past about 15 words of your own the end of the built-in list is cut, and past about
+  60 your own last words, and the log says so. The box holds up to 50 words of up to 60 characters each.
+- **Speech model** picks **small** (the default) or **medium**, both on the CPU. On the test PC `medium` costs about
+  16 s of CPU for each pass over the last 15 seconds of speech against about 8 s for `small`, and a sentence of 5 s
+  reaches the panel about 2.5 s later. It writes technical terms better: 133 of 146 right against 124.
+  A model not downloaded yet (about 1.5 GB for `medium`) is fetched the first time it is chosen, as `small` is at the
+  first start, while the model in use goes on hearing. If it cannot be had, the choice goes back and the panel says so.
+- **Keep what is heard** (off by default) saves every sentence that ends, with its time, its length and its language, in
+  `history.sqlite`. Everything heard passes through, other people and whatever is playing included. It stays on this PC.
+  It keeps working with **Solve spoken problems** off. It goes by the same age as the answers (`SIDENOTE_HISTORY_DAYS`)
+  and has a limit of its own, 20 MB, the oldest lines going first (`SIDENOTE_HEARD_MB`): the answers' 200 MB does not
+  count it, so a long transcript pushes no answer out. **Clear history** clears it with the answers.
 
 The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While the
 window in front has one of them in its title or in its program's name, in any case, the capture program sends no
@@ -1000,7 +1042,7 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_LANG` | (not set) | The language of the panel, the server's messages and the commands: `en` or `ko`. Not set, the panel follows the browser's first language and the server the last panel that connected, and the commands and the capture program follow the system's language. With English, the models are asked to write the whole answer in English |
 | `SIDENOTE_AUDIO` | `1` | `0` makes the server ignore sound |
 | `SIDENOTE_VOICE_TRIGGER` | `1` | `0` stops solving problems given by voice automatically (live speech is still shown) |
-| `SIDENOTE_WHISPER_MODEL` | `small` | Transcription model. `base` is lighter but makes more than twice as many errors on Korean |
+| `SIDENOTE_WHISPER_MODEL` | `small` | The speech model to start with. `base` is lighter but makes more than twice as many errors on Korean. Also **Speech model** in the panel, which offers this one too |
 | `SIDENOTE_SPEECH_GAP` | `6` | A pause longer than this (seconds) starts a new problem |
 | `SIDENOTE_UTTER_END` | `1.5` | This much quiet (seconds) ends an utterance |
 | `SIDENOTE_UTTER_MIN` | `0.8` | Shorter than this and the sound was a blip, not speech: it is never transcribed (the speech model writes a sentence anyway) |
@@ -1049,11 +1091,13 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_TRANSCRIBER` | `auto` | `auto` uses faster-whisper when it is installed, `null` turns speech off, `faster-whisper` requires it |
 | `SIDENOTE_WHISPER_COMPUTE` | `int8` | How the speech model computes (`int8`, `float32`, ...) |
 | `SIDENOTE_WHISPER_THREADS` | `4` | Cores the speech model may decode on. Left to itself it takes every core the container has |
-| `SIDENOTE_WHISPER_HINT` | (technical words) | Words given to the speech model so it spells them right. Empty turns the hint off |
+| `SIDENOTE_WHISPER_HINT` | (a list for each language) | Words given to the speech model so it spells them right: one text for both languages in place of the built-in lists. Empty turns the hint off |
 | `SIDENOTE_LOG_SPEECH` | `short` | What the log keeps about speech: `short` (how long, how many characters), `full` (the words too), `off` |
 | `SIDENOTE_TRANSCRIBE_INTERVAL` | `2.0` | Seconds between passes over the rolling audio window |
 | `SIDENOTE_TRANSCRIPT_WINDOW` | `15` | Seconds of speech the panel shows live |
 | `SIDENOTE_SPEECH_MIN_CHARS` | `12` | Shorter than this, what was heard is a remark, not a problem |
+| `SIDENOTE_SPEECH_QUESTION_CHARS` | `6` | The same for a sentence that looks like a question |
+| `SIDENOTE_HEARD_MB` | `20` | What **Keep what is heard** may take in `history.sqlite`; the oldest lines go first. It counts a line at about twice its words, so this is a bound on the file |
 | `SIDENOTE_SPEECH_CONTEXT` | `120` | Seconds of utterances that belong to one spoken problem |
 | `SIDENOTE_AUDIO_HISTORY` | `180` | Seconds of sound kept in memory (must hold a whole utterance) |
 | `SIDENOTE_UTTER_MAX` | `90` | Seconds before a long utterance is cut and carries on in the next one |
@@ -1146,6 +1190,7 @@ What leaves this PC, what can reach what, and what is kept.
 | What | Leaves the PC | When |
 |:---|:---|:---|
 | Screens, crops, the problem text, speech | Not by themselves: they go to the local model, the speech recognizer and the code runner | Always; what the agent is sent is the last row |
+| What is heard, kept | Never: it stays in `history.sqlite` on this PC, and the panel on this PC reads it | **Keep what is heard** is on |
 | Search queries | To search engines, through SearXNG | **Web search** is on and the local model searches; never with a number shaped like personal data |
 | Page reads | To that site | **Read pages** is on and the local model asks for a page; public addresses only, never with a number shaped like personal data |
 | What the agent is sent | To the agent's service: Anthropic for Claude Code and the Anthropic API, OpenAI for Codex | The agent is signed in and **Problems the agent solves** is not **Off**; in the form **What is sent to the agent** chooses |
@@ -1242,6 +1287,9 @@ What leaves this PC, what can reach what, and what is kept.
 
 - Full screen images are not saved. With **Keep answers** on, each answer keeps a small thumbnail of its screen in
   `history.sqlite` (90 days, 200 MB at most; a starred answer until it is unstarred).
+- With **Keep what is heard** on (off by default), every sentence heard is kept in `history.sqlite`, with its time, its
+  length and its language, for 90 days and 20 MB at most. Everything heard passes through, other people and whatever is
+  playing included. It stays on this PC; only what the agent is sent of a spoken problem ever leaves.
 - `events.jsonl` keeps the time, the type, the one-line answer, follow-up questions, the first 200 characters of the
   speech that set off an analysis (small talk included), the search words and page addresses, and the tokens and
   cost. It is deleted under the 14-day rule (section 11).
@@ -1249,9 +1297,9 @@ What leaves this PC, what can reach what, and what is kept.
   held. Everything the PC plays passes through, including other people's voices in a call, so the words are written
   to a file that lives for days only when asked for (`SIDENOTE_LOG_SPEECH=full`). The panel shows the live
   transcript either way, from memory.
-- **Clear history** in the menu deletes the kept answers (`history.sqlite`), starred ones too. It does not touch the
-  log files: delete those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data folder's `logs`
-  with the app).
+- **Clear history** in the menu deletes the kept answers (`history.sqlite`), starred ones too, and what was heard. It
+  does not touch the log files: delete those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data
+  folder's `logs` with the app).
 - The browser keeps the panel's own choices (**Theme**, **Motion**, **Language**, **Practice**), and for **Practice**
   the numbers of the 400 newest answers it kept back, with how far each was opened, never their words. **Clear
   history** forgets those numbers too.
@@ -1516,6 +1564,12 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 영역 그리기 | Draw a region | the screen card |
 | 영역 해제 | Clear the region | the screen card |
 | 들리는 말 | What is heard | a card in the right column |
+| 너무 짧음 · 풀지 않음 | Too short · not solved | under a sentence on **What is heard** |
+| 질문 없음 · 풀지 않음 | No question · not solved | under a sentence on **What is heard** |
+| 이야기 속 물음 · 풀지 않음 | Part of a story · not solved | under a sentence on **What is heard** |
+| 들린 말 기록 | What was heard | the key at the foot of **What is heard**, the gear menu, and the sheet they open |
+| 모두 복사 | Copy all | **What was heard** |
+| .md로 저장 | Save as .md | **What was heard** |
 | 목차 | Contents | a card in the right column |
 | 풀이 엔진 | Solving | a section of **Solver settings** |
 | 화면 처리 | Screen | a section of **Solver settings** |
@@ -1566,7 +1620,10 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 예제 자동 검증 | Check the examples | **Code** |
 | 말로 한 문제 자동 풀이 | Solve spoken problems | **Speech** |
 | 기술 용어 힌트 | Technical term hints | **Speech** |
+| 추가 용어 | Extra terms | **Speech** |
 | 음성 언어 | Speech language | **Speech** |
+| 음성 모델 | Speech model | **Speech** |
+| 들린 말 보관 | Keep what is heard | **Speech** |
 | 한국어 | 한국어 | **Speech language** (written in Korean in both languages, as **English** is in English) |
 | 스크롤 이어 붙이기 | Join scrolled screens | **Capture** |
 | 모니터 | Monitor | **Capture**; **Screen capture** |

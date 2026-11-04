@@ -53,9 +53,17 @@ the problem's own examples in the code runner, with one retry after a failed exa
 
 With **Solve spoken problems** on, the capture program streams the speaker sound, one second of 16 kHz PCM a message.
 Every 2 s Silero VAD reads the last 20 s; 1.5 s of quiet closes an utterance, which faster-whisper writes down whole as
-Korean or English (a span under 0.8 s is skipped, and under 12 characters it is not a problem). One with a question word
-is queued at once, up to 3 in one run of speech, and one without after a 6 s pause, behind any analysis of the screen.
-The agent gets the question part written out, and the screen only with **Whole screen**.
+Korean or English (a span under 0.8 s is skipped, and under 12 characters it is not a problem, under 6 when it looks
+like a question). One that asks something is queued at once, up to 3 in one run of speech, and one that does not after a
+6 s pause, behind any analysis of the screen: `question_kind` takes out a tag at the end of a clause, a reported
+question and a stock rhetorical one before it looks ([note 106](DECISIONS.md#note-106)). The first pass and the agent
+are told that a speaker telling a story asks the listener nothing (`SPEECH_RULE`). The agent gets the question part
+written out, and the screen only with **Whole screen**.
+
+A newer spoken problem replaces one that has written nothing yet. Once that one has written its first words it finishes,
+and the newest speech waits behind it, reading what came after what was answered (`after_the_answer`). A sentence that
+ended and was not taken tells the panel why (`utterance` with `why`). With **Keep what is heard** on, every closed
+sentence also goes into `history.sqlite`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-voice-flow-dark.svg">
@@ -197,7 +205,7 @@ PersistentVolumeClaim on Kubernetes.
 | `server.log` | the server's log | rotated files deleted after 14 days (`SIDENOTE_LOG_DAYS`), at start and every 6 hours | 5 MB a file, 4 old files (`SIDENOTE_LOG_MAX_MB`, `SIDENOTE_LOG_FILES`; at least 64 KB and 1 file) |
 | `events.jsonl` | one line per event: an analysis's start and end (type, one-line answer, time to the first character, elapsed time, region, tokens, cost), cancels, errors, follow-ups, panel actions, capture connections, sign-in changes; no screen images | as `server.log` | as `server.log` |
 | `capture.log` | the capture program's log | deleted after 14 days without a line | under 4 MB, the older half dropped |
-| `history.sqlite` | the answers with their follow-ups, code check, a small thumbnail of their screen and whether each is starred; nothing new with **Keep answers** off. A file from 0.1.0 gains the `starred` column when the server opens it, its rows kept | 90 days (`SIDENOTE_HISTORY_DAYS`); a starred answer until it is unstarred | 200 MB (`SIDENOTE_HISTORY_MB`) for the answers that are not starred, counted in pages less the starred ones' bytes; the starred ones stay beside them, and the log says once when they alone are over it |
+| `history.sqlite` | the answers with their follow-ups, code check, a small thumbnail of their screen and whether each is starred; nothing new with **Keep answers** off. A file from 0.1.0 gains the `starred` column when the server opens it, its rows kept. With **Keep what is heard** on, a table of its own (`heard`): one row a closed sentence, with its time, its length and its language | 90 days (`SIDENOTE_HISTORY_DAYS`); a starred answer until it is unstarred; what was heard goes by the same age | 200 MB (`SIDENOTE_HISTORY_MB`) for the answers that are not starred, counted in pages less the starred ones' bytes and what was heard; the starred ones stay beside them, and the log says once when they alone are over it. What was heard has its own 20 MB (`SIDENOTE_HEARD_MB`), the oldest going first |
 | `.settings.json` | the values changed in **Solver settings** | until changed | a few values |
 | `.switches.json` | the screen and sound switches and pause | until changed | a few values |
 | `.speed.json` | the last 15 times to the first word of the thinking pass and of the agent (`pipeline.Speed`) | rolling | a few values |
@@ -256,7 +264,8 @@ one is logged as lost (code 1009).
 | `problem_text`, `thumb` | the answer to the panel's request, to that panel only | `id` and `text` or `error`; `url` (the current screen to draw a box on), `ts`, `live` |
 | `run_started`, `run_result` | a run from a code box, to the panel that sent it only | `id`, `lang`, `ok`, `stage` (`run`, `compile`), `exit`, `stdout`, `stderr` (each with a `_truncated` flag), `timed_out`, `output_limited`, `elapsed`, or `error` |
 | `error` | an analysis fails | `id`, `text`, `hint` (`auth`, `limit`, `timeout`, `nosolver`) |
-| `transcript`, `utterance` | speech is written down | `text`, `lang` (`ko`, `en`) |
+| `transcript` | the live window is written down | `text`, `lang` (`ko`, `en`), `waiting`, `pending` |
+| `utterance` | a sentence ended, or the first pass found nothing to solve in what was heard | `text`, `lang`; `why` when it was not taken: `short` (under the limit, or sound too short to write down that the live words show), `told` (it only sounds like a question), `none` (nothing asked) |
 | `notice` | a short notice | `text`, `level`, `of` (the answer it is about, brought into view when the notice is pressed) |
 | `star` | an answer is starred or unstarred, from any panel, to every panel | `id`, `starred`, `n` (how many answers are starred now) |
 
@@ -289,7 +298,8 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | `GET /` | the panel, and its files on every other path |
 | `GET /health` | the state: `version`, the analyzer, the agent and its label, sign-in, capture, pause, `runner` (configured and responding), `activity` (what runs) |
 | `GET /stats` | totals, recent response times and log size |
-| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` |
+| `GET /heard` | what was heard and kept: `days` (each with `day`, `n`, `first`, `last`), `day`, and the `lines` of that day or the newest (`ts`, `secs`, `lang`, `text`; of a longer day its last 20,000) |
+| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` and whether anything heard is kept (`heard`) |
 | `POST /capture/quit`, `POST /capture/restart` | asks the capture program to end or to restart (`./sidenote capture-stop`, a deploy); refused from a page |
 | `POST /server/stop` | asks the server to close down by itself, as the app does when it quits (Windows has no SIGTERM); only with the token the app started the server with, in `X-Sidenote-Stop` |
 

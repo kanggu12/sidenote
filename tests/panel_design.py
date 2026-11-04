@@ -644,6 +644,69 @@ def group_skip(br, s):
     p.close()
 
 
+HEARD_KEPT = {"days": [{"day": "2026-11-04", "n": 30, "first": 1793800000, "last": 1793803000}, {"day": "2026-11-03", "n": 2, "first": 1793700000, "last": 1793700100}], "day": "2026-11-04",
+              "lines": [{"ts": 1793800000 + i * 75, "secs": 3.0, "lang": "ko", "text": t} for i, t in enumerate(
+                  ["So we drained the node first and waited for the pods to move to the other two workers.", "커널을 올리고 다시 부팅한 다음에 노드를 돌려놓았습니다.", "GTID가 뭔가요?"] * 10)]}
+
+
+def group_heard(br, s):
+    """What the spoken side adds, in both themes from 360 to 2560 px wide: the note under a sentence and the key on What is heard,
+    the sheet of what was kept, and Extra terms and the speech model in the Speech section."""
+    if not T.group("what is heard: the note, the key, the sheet and the Speech section"):
+        return
+    s.heard = HEARD_KEPT
+    msg = support.settings_message()
+    msg["values"]["speech_keep"] = True
+    for theme in ("dark", "light"):
+        for w, hh in ((360, 740), (390, 844), (768, 1024), (1000, 800), (1280, 720), (1920, 1080), (2560, 1440)):
+            name = f"{theme} {w}x{hh}"
+            p = Page(br, s, [], w=w, h=hh, theme=theme, settle=300)
+            p.send(msg)
+            p.send({"type": "transcript", "text": "노드를 먼저 비웠습니다. GTID가 뭐?", "lang": "ko"})
+            p.send({"type": "utterance", "text": "GTID가 뭐?", "lang": "ko", "why": "short"})
+            p.wait(200)
+            card = p.js("""() => { const c = document.getElementById('hear'); c.scrollIntoView({ block: 'center' });
+                const r = c.getBoundingClientRect(), k = document.getElementById('hear-kept').getBoundingClientRect(), st = document.getElementById('hear-state').getBoundingClientRect(),
+                      b = document.getElementById('hear-text'), n = b.querySelector('.why'), nb = n?.getBoundingClientRect(), tb = b.getBoundingClientRect();
+                const inside = (x, o) => x.left >= o.left - .5 && x.right <= o.right + .5;
+                return { key: inside(k, r) && k.width >= 24 && k.height >= 24, beside: st.right <= k.left + .5 || st.bottom <= k.top + .5, note: !!n && inside(nb, tb) && nb.bottom <= tb.bottom + 1 && nb.top >= tb.top - 1,
+                         noteBox: nb ? [Math.floor(nb.left), Math.floor(nb.top), Math.ceil(nb.right), Math.ceil(nb.bottom)] : [0, 0, 1, 1], ink: n ? getComputedStyle(n).color.match(/[\\d.]+/g).map(Number) : [0, 0, 0],
+                         side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
+            p.wait(150)
+            check(f"{name}: the key to what is kept stands inside the card, beside the card's state, large enough to press", card["key"] and card["beside"], card)
+            check(f"{name}: the note under a sentence is in view inside the card's words", card["note"], card)
+            ratio = contrast(card["ink"], h.background_of(br, p.page.screenshot(), card["noteBox"]))
+            check(f"{name}: ...and reads at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f}")
+            p.js("() => openHeard()")
+            p.wait(300)
+            m = p.js(STUDY_MEASURE, "#heard")
+            check(f"{name}: the sheet is drawn, inside the window, its words whole, no key over another", not any(m.values()), m)
+            rows = p.js("""() => { const out = { n: 0, off: [], cut: [], scroll: 0 }; const list = document.getElementById('heard-lines'), lb = list.getBoundingClientRect();
+                out.scroll = list.scrollHeight > list.clientHeight ? 1 : 0;
+                for (const l of [...list.children].slice(0, 12)) { const t = l.querySelector('time').getBoundingClientRect(), w = l.querySelector('span').getBoundingClientRect(); out.n++;
+                  if (t.right > w.left + .5 || Math.abs(t.left - lb.left) > 1) out.off.push(l.textContent.slice(0, 20));
+                  if (w.right > lb.right + .5 || l.scrollWidth > l.clientWidth + 1) out.cut.push(l.textContent.slice(0, 20)); }
+                return out; }""")
+            check(f"{name}: a row's time stands beside its words, on one edge, nothing past the sheet", rows["n"] == 12 and not rows["off"] and not rows["cut"], rows)
+            words = p.js("""() => { const pick = (sel) => { const e = document.querySelector(sel), r = e.getBoundingClientRect(); return { box: [Math.floor(r.left), Math.floor(r.top), Math.ceil(r.right), Math.ceil(r.bottom)], ink: getComputedStyle(e).color.match(/[\\d.]+/g).map(Number) }; };
+                return { '#heard .lede': pick('#heard .lede'), '.heard-line time': pick('.heard-line time'), '.heard-line span': pick('.heard-line span'), '#heard-copy span': pick('#heard-copy span') }; }""")
+            png = p.page.screenshot()
+            for sel, got in words.items():
+                ratio = contrast(got["ink"], h.background_of(br, png, got["box"]))
+                check(f"{name}: {sel} reads at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f}")
+            check(f"{name}: the page does not scroll sideways under it", p.js("() => document.documentElement.scrollWidth - document.documentElement.clientWidth") <= 0)
+            p.js("() => closeHeard()")
+            p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='speech']\").click(); }")
+            p.wait(250)
+            box = p.js("""() => { const b = document.querySelector('#settings textarea[data-set=speech_terms]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' });
+                const r = b.getBoundingClientRect(), pane = document.querySelector('#settings .set-pane').getBoundingClientRect(), keys = [...document.querySelectorAll('#settings button[data-set=whisper_model]')].map((x) => x.getBoundingClientRect());
+                return { inside: r.left >= pane.left - .5 && r.right <= pane.right + .5, keys: keys.length === 2 && keys.every((k) => k.left >= pane.left - .5 && k.right <= pane.right + .5), side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
+            check(f"{name}: Extra terms and the speech model stand inside the sheet", box and box["inside"] and box["keys"] and box["side"] <= 0, box)
+            check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
+            p.close()
+    s.heard = {"days": [], "day": "", "lines": []}
+
+
 def group_shots(br, s):
     """The screens to look at, kept with the run: what no measure says, a person can see from CI's artifact without checking the commit out."""
     if not T.group("screens to look at"):
@@ -668,7 +731,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_release, group_matrix, group_study, group_shots):
+        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_heard, group_release, group_matrix, group_study, group_shots):
             group(br, s)
         br.close()
     return T.end()

@@ -14,7 +14,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90) |
 
@@ -1372,6 +1372,146 @@ going against a changing screen.
 Even when a remark in a lecture or a meeting matches a question phrase and starts a voice analysis, an answer of
 "nothing to solve" does not mark the screen as seen. So the problem on the screen that the remark pushed aside is solved
 again. Such "nothing to solve" answers are common, since only technical questions are solved ([note 41](#note-41)).
+
+### <a id="note-106"></a>106. What is heard is mostly somebody talking
+
+One hour of English speech heard in real use gave 60 utterances and 47 analyses: 33 found nothing to solve, 8 were
+stopped by newer speech 7 to 81 s after they started, 3 could not go to the agent because no question could be picked
+out, and 7 answered. The speech was mostly one person telling long technical stories, and five of the seven answers
+answered questions nobody had asked the listener: a question the speaker reported others asking, a tag at the end of a
+clause, a rhetorical one. Each got a report of several kilobytes. The words of that hour are not published. What follows
+was measured on sentences made up for the purpose, as text with the 26b and the panel in Korean, three rounds, unless it
+says otherwise.
+
+**The trigger.** The question words counted anywhere in a sentence, and a story is full of them ("that is why", "we had
+to write", ", which was"). An English question word or task now counts at the start of a clause and a Korean task word
+in the form that asks for the task, and `question_kind` first takes out what only sounds like a question: a tag at the
+end of a clause, a question the speaker reports, a stock rhetorical one, a Korean verb's ending that asks for agreement.
+Of 57 sentences of made-up stories, 25 started an analysis at once before and 4 after; of 30 written after the patterns
+stood, 24 before and 2 after. All 50 questions, tasks and quizzes still start at once. A sentence that misses still goes
+once the speaker pauses, so being strict costs seconds and never a question.
+
+**The rule.** The request told the models that all of what was heard was the problem to solve. It now says what is asked
+of the listener and what is not (`SPEECH_RULE`), the same for the first pass and the agent.
+
+| 24 texts that ask the listener nothing, 20 that do, three rounds | Before | After |
+|:---|---:|---:|
+| Stories ended as nothing to solve | 49 of 72 | 72 of 72 |
+| With a reported question | 16 of 18 | 18 of 18 |
+| With tags | 9 of 18 | 18 of 18 |
+| With a rhetorical question | 6 of 18 | 18 of 18 |
+| Real questions answered, with their key in the answer | 60 of 60 | 60 of 60 |
+| Median time to the first word of a real question | 1.27 s | 0.57 s |
+| Median time to nothing to solve | 0.50 s | 0.37 s |
+
+The real questions are terms from a few characters up, questions after a long explanation or a story, quizzes read aloud
+and tasks. With the panel in English, two rounds: stories 36 of 48 before and 48 of 48 after, real questions 40 of 40
+both times. With a screen behind the speech, as in real use, one round: stories 11 of 24 before and 24 of 24 after, real
+questions 20 of 20 both times. With the smaller models, one round: `e4b`, the one used while the GPU is busy, ended 22
+of 24 stories before and 24 of 24 after and answered 19 and 20 of 20 real questions; `e2b` ended 3 and 8 of 24 and
+answered 19 and 18 of 20, too small to tell a story from a question either way. The rule cost something, as one more
+rule in a prompt does: the route's word appeared where the type goes (`TYPE: fast`) in 4 or 5 answers of 60 against none
+before, with the answers right, whether the rule named `TYPE: none` or not. `without_route` reads it as `other`.
+
+The agent itself was not run on these. The same requests were put by hand to the agent's model with the same system
+prompt, once each: 12 of 12 stories ended as nothing to solve and 9 of 9 real questions were answered, before and after,
+so that model reads this right already and the rule tells it what the first pass is told. The reading that picks the
+question out for the agent (`EXTRACT_SPEECH`) found nothing in 36 of 72 stories before and 66 after, and in none of the
+60 real questions either time. So finding nothing now ends the analysis as nothing to solve, where it went on to the
+thinking pass, which wrote the report on the story.
+
+**An answer being written.** A newer spoken problem stopped the running one, whatever it had written. It now replaces
+only one that has written nothing, and once the first words are out the answer finishes and the newest speech waits
+behind it. That run first read what had its answer as marked context. The model answered it again whatever the mark
+said: of four stories told after an answered question, three brought the old answer back in nearly every round, in two
+wordings of the mark (20 and 21 of 30 cases right). Given only what came after, 30 of 30. What means nothing alone goes
+with what it belongs to, as one problem: the options of a quiz, and a question that leans on the one before it ("and
+when does it fail?"), which then answers both. What has its answer is known by where it was said in the sound, so the
+same words said later are asked again. After a pause a newer problem takes the place of the one waiting, as it always
+took the place of a run stopped: one question can go unanswered that way, when two runs of speech fall inside one long
+answer.
+
+**Technical terms.** One list for each speech language, chosen by the language each utterance is decoded in (on auto,
+once it is detected; a call that detects decodes nothing yet, so asking again adds no decode). Whisper keeps the last
+223 tokens of what it is given, half its context less one; the lists take 173 (Korean) and 156 (English), and the
+person's words go in front, so what is cut is the end of the list. Measured on 38 made-up sentences spoken by two neural
+voices each, 146 mentions of a term, and the 14 spoken questions of the bench:
+
+| | Terms written right, `small` | `medium` | Character errors on the 14, `small` | `medium` |
+|:---|---:|---:|---:|---:|
+| No hint | 99 | 101 | 4.6% | 4.1% |
+| The one text before this | 103 | 105 | 2.6% | 2.6% |
+| The lists | 124 | 133 | 3.1% | 2.2% |
+| The lists, four product names in front | 129 | 131 | 3.8% | 1.8% |
+
+With no hint, `small` wrote "Kubernetes" said in Korean as "number nine's diss", a sound-alike, and it came back on that
+one question with English product names in front of the Korean list on `small`: words of your own have a price, which
+`medium` did not pay. Nothing was invented on silence, noise, tones or a beat, with any arm, in either language or on
+auto, and on auto no sentence of the 38 went to the wrong language. The lists cost a decode about 14% more CPU than no
+hint, and 8% more than the old text.
+
+**The speech model.** What a pass costs, with the lists on, four threads, int8, on the test PC (Ryzen 9 9950X), the
+median of five:
+
+| | `small`, Korean | `small`, English | `medium`, Korean | `medium`, English |
+|:---|---:|---:|---:|---:|
+| The last 15 s of steady speech, CPU | 7.1 s | 8.1 s | 18.4 s | 13.8 s |
+| The same, on the clock | 3.6 s | 4.2 s | 8.5 s | 6.2 s |
+| A sentence of 5 s, CPU | 4.0 s | 3.8 s | 10.2 s | 9.3 s |
+| The same, on the clock | 1.8 s | 1.6 s | 4.3 s | 3.8 s |
+
+Passes follow one another while somebody speaks, so either model takes about two cores then, and with `medium` the live
+words come less often and a closed sentence comes about 2.5 s later. `small` stays the default for that, and `medium` is
+there for whoever hears mostly terms. A choice in the panel loads beside the model in use, which goes on hearing: while
+`medium` downloaded, 31 s here, a pass of `small` took 3.9 s against 3.7 s before. The speech loop reads the transcriber
+at each pass, so the sentence being cut is not lost. A model that cannot be had leaves the choice on the old one: left
+on it, the next start of the server would have no speech.
+
+**One answer language.** Both system prompts said that a question heard in English gets its answer line and answer
+paragraph in English, and its explanation in Korean. The agent did that. The local model drifted either way, with
+everything around the words in Korean: for English speech with the panel in Korean, of 33 answers its answer line was
+Korean in 10 and English in 19, and its body Korean in 23 and English in 10. A problem on the screen keeps that rule,
+since what you write down goes back where it came from. A question heard is now answered in the panel's language whole,
+said in the system prompts and again where the words are: answer line Korean in 26 and English in 2 (the other 5 are a
+value or a symbol), body Korean in all 33. With the system prompts alone it was 23, 5 and 27, and with the request alone
+23, 4 and 31 (the other two had no body), which is why it is said in both. The agent's model, given the same requests by
+hand, wrote English answer lines before and Korean ones after. With the panel in English nothing moved: all 22 answers
+to English speech and all 18 to Korean speech came in English, before and after. With a screen behind the speech and the
+panel in Korean, one round: answer line Korean in 2 of 11 before and 6 of 11 after (the others are a value or a symbol),
+body Korean in 7 of 11 before and 11 of 11 after.
+
+**What it cost on screens.** A screen's request is as it was, so of all this only the system prompts' language lines
+reach a screen. On the 56 screens and spoken questions of the known-answer set, in Korean: 50 before and 51 after, all 8
+spoken ones and all 7 code answers right both times. In English: 51 before and 50 after, the spoken ones 7 of 8 before
+(one of them right in words the grader does not read) and 8 of 8 after, the code 7 of 7 both times. The six screens that
+went the other way were run three times more on each side, and five of them are the spread this set has always had (50
+to 54 on the same code). The sixth is a 2160p screen in Korean, right 3 times of 3 before and once after: the first pass
+wrote its box with x and y swapped, and the thinking pass was given the wrong part of the screen. On that screen, the
+first pass alone, 40 rounds: 3 swapped boxes of 40 before and 22 of 38 after. The swap is a habit of the model's that
+comes with any wording, and which screens it hits moves with each edit. Over every screen of the set, the first pass
+alone, five rounds in each language: 25 swapped boxes of 387 before and 20 of 393 after. With the system prompts as they
+were, less the words that sent English speech to English, and the language said only in the request: 22 of 380, that
+screen kept (0 of 39), and a quiz in English swapped 5 times of 5. That costs as much on screens and more on the answer
+line, so the wording stays, and the swap is a matter for the REGION line on its own.
+
+**Emoji.** The local model put an emoji before a title now and then, 1 to 6 answers of 56 a run and mostly the smaller
+models, and in a bold line that stands as a heading. A rule is one more rule, for something too rare to measure, so the
+stream takes them from the front of those lines (`_HeadingMarks`). Anywhere else a mark can be all a cell or an answer
+says, a check mark or a cross in a table for one, and code is code.
+
+**Keep what is heard.** A table of its own in `history.sqlite`, off by default, since everything heard passes through.
+It goes by the answers' age and has its own limit. The answers' cap counts the file's pages, so the table's bytes come
+off them as the starred answers' do, and it is counted high: a row at its words twice and 96 bytes, since rows fill a
+page in the order they come and sentences of 3 KB left a fifth of each page unused. Counted low, a long transcript would
+push answers out by the difference; counted high, the answers get a little more room.
+
+**A short question, and what is not taken.** The owner's "GTID가 뭔가요?", 11 characters as it was written down, was dropped
+as under 12 while the live words on the card showed it. A sentence that looks like a question is now taken from 6. A
+sentence that ended and was not taken says why under it: too short at once, and nothing asked, or told rather than
+asked, when the first pass ends it. Those two come from the server (`utterance` with `why`), since it alone knows what
+the patterns found. Sound under 0.8 s is not written down at all, and the VAD measures a span anew on each pass: a
+"그렇군요." of 0.87 s alone was cut as shorter on the way, while the live words showed it. When nothing is being said after
+it, the card's last sentence, if short and not already a sentence that ended, then says it was too short.
 
 ## Security and isolation
 

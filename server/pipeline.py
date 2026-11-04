@@ -34,7 +34,7 @@ from typing import Awaitable, Callable
 from PIL import Image, ImageDraw
 
 from . import repeats, telemetry
-from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, build_user_text, error_hint, error_words, speech_request,
+from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, build_user_text, error_hint, error_words, speech_request,
                        text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
@@ -86,6 +86,10 @@ class NotSent(Exception):
     could hold more than the problem (it could not be placed, or what was written out from the whole
     screen holds numbers shaped like personal data), and the local model takes it instead. The message is
     the reason as a clause ("could not find where the problem is"), empty when it is the user's choice."""
+
+
+class NothingAsked(NotSent):
+    """What was heard holds no question to pick out: nothing goes to the agent, and there is nothing to solve."""
 
 
 @dataclass
@@ -1579,6 +1583,11 @@ class Pipeline:
             except (asyncio.CancelledError, Repeat):
                 raise
             except NotSent as why:
+                # No question in what was heard, by the model's own reading: nothing to solve, unless it was asked for by hand
+                if isinstance(why, NothingAsked) and not by_user:
+                    log.info("analysis #%d: no question in what was heard; nothing to solve", seq)
+                    return Outcome(text="TYPE: none", model=f.model or local.model, usage=f.usage, cost_usd=None, engine="local",
+                                   sent=sent, stages=stages)
                 stages["not_sent"] = True
                 # Why nothing went, in the log as well as on the panel: the 169 s answer fell to this
                 # PC's model with no record of which it was (no place and no words, numbers like personal data, a
@@ -1733,10 +1742,14 @@ class Pipeline:
             if local is not None and SETTINGS.on("extract"):   # only the question part of what was heard
                 await self.hooks.stage(seq, "extract", "speech")
                 question = await local.extract(speech=transcript)
+                # Nothing in what was heard reads as the problem. The whole transcript is up to two minutes of the
+                # room, and the setting promises only the question part, so it stays here. And when the model said
+                # so, it ends here: a thinking pass only wrote a report on somebody's story, and of 60 real questions
+                # this reading lost none (docs/DECISIONS.md, note 106). A reading that brought nothing says nothing,
+                # and this PC's model answers instead (the screen path already refuses this way).
+                if question == NO_QUESTION:
+                    raise NothingAsked(t("No question could be told apart in what was heard"))
                 if not question:
-                    # Nothing in what was heard reads as the problem. The whole transcript is up to two
-                    # minutes of the room, and the setting promises only the question part, so it stays
-                    # here and this PC's model answers instead (the screen path already refuses this way).
                     raise NotSent(t("No question could be told apart in what was heard"))
             if voice and payload == "screen" and look:
                 return (look[:1], build_user_text(question, 0, True, True),

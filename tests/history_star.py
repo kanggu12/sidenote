@@ -155,7 +155,20 @@ kept = ids(h.query(limit=200))
 check("the starred answers are kept, the oldest of all", 30 in kept and 32 in kept, kept[-6:])
 check("the oldest of the rest went first", 31 not in kept and 33 not in kept and 69 in kept and 68 in kept, kept[-6:])
 check("what is not starred fits the cap", rest_bytes(f) <= CAP * 1048576, rest_bytes(f))
-check("and holds more than half of it: the starred ones take none of its room", rest_bytes(f) > CAP * 1048576 / 2, rest_bytes(f))
+# Eight of these rows go at a time, and they are large for so small a cap, so what is left depends on when it last went: the rest
+# is read over one such turn, and at its fullest it comes within a row of the cap. With the starred bytes (two rows) counted
+# against it, it would stop short of them.
+g = Path(tempfile.mkdtemp(prefix="sidenote-star-room-")) / "history.sqlite"
+room = History(g, days=0, max_mb=CAP)
+for i in (1, 2):
+    room.add(i, now - 7200, "essay", answer(i, body + str(i)))
+    room.star(i, True)
+fullest = 0
+for i in range(3, 40):
+    room.add(i, now - 7000 + i, "essay", answer(i, body + str(i)))
+    fullest = max(fullest, rest_bytes(g))
+row = len(json.dumps(answer(3, body), ensure_ascii=False)) + len(body)   # its data and its words
+check("and at its fullest holds all of it: the starred ones take none of its room", fullest > CAP * 1048576 - 1.5 * row, [fullest, row])
 SAID.lines.clear()
 f = Path(tempfile.mkdtemp(prefix="sidenote-star-over-")) / "history.sqlite"
 h = History(f, days=0, max_mb=CAP)   # a cap the starred answers alone go past: ten of 40 KB each (text and words)

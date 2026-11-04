@@ -1092,7 +1092,10 @@
     margin-left: 3px; vertical-align: -2px; background: var(--pen); animation: caret 1s steps(1) infinite; }
   @keyframes caret { 50% { opacity: 0; } }
   .hear-body .quiet { color: var(--graphite); }
-  .hear-state { margin: 9px 0 0; padding-top: 8px; border-top: 1px dashed var(--rule);
+  /* Why a sentence on the card was not taken, right under it: the card's muted words, smaller */
+  .hear-body .why { display: block; font-size: 12px; line-height: 1.4; color: var(--graphite); }
+  .hear-foot { display: flex; align-items: center; gap: 8px; margin: 9px 0 0; padding-top: 8px; border-top: 1px dashed var(--rule); }
+  .hear-state { flex: 1; min-width: 0; margin: 0;
     font-size: 12px; color: var(--graphite); word-break: keep-all; }
   .hear-state b { color: var(--ink-2); font-weight: 600; }
   /* The index is as long as it is: a scroller here would be the same second scrollbar in a smaller
@@ -2851,6 +2854,18 @@
   #keys .set .ctl { justify-self: end; }
   #keys kbd.cmd { display: inline-block; min-width: 28px; text-align: center; line-height: 1.5; }
   :root[data-skin="classic"] kbd.cmd { border-radius: 2px; }
+  /* What was heard, kept: the keys' sheet again, its rows a sentence each with its time, the day and two keys over them */
+  #heard { width: min(720px, 100%); max-height: calc(100vh - var(--bar-h, 56px) - 32px); }   /* its foot in the window, under a bar of any height */
+  .heard-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 6px; }
+  .heard-tools select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .heard-tools .combo.pick { flex: 1 1 200px; min-width: 0; max-width: none; }
+  .heard-tools .combo.pick .combo-btn { height: 28px; font-size: 12.5px; }
+  .heard-lines { list-style: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -8px 0 0; padding: 0 8px 0 0; }
+  .heard-line { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 6px 0;
+    font-size: 13.5px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
+  .heard-line + .heard-line { border-top: 1px dashed var(--rule); }
+  .heard-line time { font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :root[data-skin="classic"] #open-heard { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3'/%3E%3C/svg%3E"); }
   /* Export's menu: the gear menu's look, held to the window under the Export key (app.js, exportMenu) */
   #export-menu { position: fixed; top: 0; right: auto; min-width: 176px; transform-origin: top right; }
   #export-menu.up { transform-origin: bottom right; }
@@ -2912,6 +2927,7 @@
         <hr />
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>
         <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
+        <button class="item" id="open-heard" type="button" data-t hidden>What was heard</button>
         <button class="item" id="clear" type="button" data-t>Clear history</button>
         <!-- this server's release (app.js, renderVersion), once the server has said it -->
         <div class="about" id="menu-about" hidden><hr /><p class="ver" id="menu-ver"></p></div>
@@ -2988,7 +3004,8 @@
         <span class="ears" id="hear-ears" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="lang" id="hear-lang"></span></h2>
       <div class="hear-body" id="hear-text" aria-live="polite"></div>
-      <p class="hear-state" id="hear-state"></p>
+      <div class="hear-foot"><p class="hear-state" id="hear-state"></p>
+        <button class="btn sm" id="hear-kept" type="button" title="What was heard, kept by the day" data-t-title hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg><span class="lab-word" data-t>What was heard</span></button></div>
     </section>
     <section class="card history">
       <h2 data-t>Contents <span class="n" id="hist-count"></span></h2>
@@ -3035,6 +3052,21 @@
       <div class="set"><span class="lbl" data-t>Keyboard shortcuts</span><span class="ctl"><kbd class="cmd">?</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Close</span><span class="ctl"><kbd class="cmd">Esc</kbd></span></div>
     </div>
+  </section>
+</div>
+<!-- What was heard, kept (app.js, openHeard; the server's /heard): the keys' sheet's look, a row a sentence with its time -->
+<div class="overlay" id="heard-overlay" hidden>
+  <section class="card settings" id="heard" role="dialog" aria-modal="true" aria-labelledby="heard-title">
+    <header><h2 id="heard-title" data-t>What was heard</h2>
+      <button class="btn icon" id="heard-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" data-t>Stays on this PC. Clear history in the menu clears it</p>
+    <div class="heard-tools">
+      <select id="heard-day" aria-label="Date" data-t-aria tabindex="-1"></select>
+      <button class="btn sm" id="heard-copy" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11.5" height="11.5" rx="2.5"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3h-7A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15"/></svg><span data-t>Copy all</span></button>
+      <button class="btn sm" id="heard-save" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/></svg><span data-t>Save as .md</span></button>
+    </div>
+    <ol class="heard-lines" id="heard-lines"></ol>
+    <p class="lede" id="heard-none" hidden></p>
   </section>
 </div>
 <!-- Export's two files, in the gear menu's look, opened under the Export key (app.js, exportMenu) -->

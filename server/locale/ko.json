@@ -321,5 +321,16 @@
  "local model slow": "이 PC의 모델 느림",
  "Local model: {state}{stand_in}{where}": "이 PC의 모델: {state}{stand_in}{where}",
  "Check for new versions": "새 버전 확인",
- "Asks GitHub once a day for the latest release. Only Sidenote's version goes out": "하루 한 번 GitHub에서 최신 릴리스 확인. Sidenote 버전만 나감"
+ "Asks GitHub once a day for the latest release. Only Sidenote's version goes out": "하루 한 번 GitHub에서 최신 릴리스 확인. Sidenote 버전만 나감",
+ "Extra terms": "추가 용어",
+ "Words speech recognition should spell as they are written, such as a product's name. Comma-separated. They go ahead of the built-in hints": "음성 인식이 적힌 그대로 쓸 낱말입니다. 제품 이름 같은 것. 쉼표로 구분하고, 기본 힌트보다 앞에 둡니다",
+ "Speech model": "음성 모델",
+ "The model that writes down what is heard. Runs on the CPU. A model not downloaded yet is fetched the first time it is chosen": "들리는 말을 받아 적는 모델입니다. CPU에서 돕니다. 받지 않은 모델은 처음 고를 때 내려받습니다",
+ "About {s} s of CPU a pass, on the test PC": "한 번에 CPU 약 {s}초, 시험 PC 기준",
+ "About {s} s of CPU a pass, on the test PC. Hears technical terms better": "한 번에 CPU 약 {s}초, 시험 PC 기준. 기술 용어를 더 잘 듣습니다",
+ "Keep what is heard": "들린 말 보관",
+ "Saves every sentence heard, with its time, for {days} days (up to {mb} MB), other people and whatever is playing included. It stays on this PC. Read it from What is heard, and clear it with Clear history in the menu": "들린 문장을 시각과 함께 {days}일 동안(최대 {mb} MB) 저장합니다. 다른 사람 말과 재생 중인 소리도 들어갑니다. 이 PC에만 남습니다. 들리는 말 카드에서 읽고, 메뉴의 기록 지우기로 지웁니다",
+ "Loading the speech model {model}: the first time it is downloaded": "음성 모델 {model} 불러오는 중 · 처음이면 내려받음",
+ "The speech model {model} is ready": "음성 모델 {model} 준비됨",
+ "The speech model {model} did not load: {old} stays": "음성 모델 {model} 불러오기 실패 · {old} 유지"
 }

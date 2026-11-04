@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .i18n import t
 
@@ -50,6 +50,25 @@ def env_bool(name: str, default: bool) -> bool:
     if raw:
         _ignored(name, raw, default)
     return default
+
+
+# What Whisper is given as the text before the audio, so it spells technical terms as they are written, one list for
+# each speech language and chosen by the language each utterance is decoded in (server/transcriber.py). The Korean
+# list keeps the words Korean speech says in Hangul and writes the rest as they are written in Korean technical text,
+# in Latin letters. The most useful words come first: Whisper keeps the last 223 tokens of a prompt, and the person's
+# own words go in front of these (Extra terms), so a list cut to fit loses its end. They take 173 and 156 of the 223.
+# Measured on 146 mentions of a term in made-up sentences with `small`: written right 99 times with no hint, 103 with the
+# one text before these lists, 124 with them, and nothing invented on silence, noise or music (docs/DECISIONS.md, note 106).
+WHISPER_HINTS = {
+    "ko": ("쿠버네티스, 도커, 파이썬, 자바, 자바스크립트, 리액트, 깃허브, 리눅스, 엔진엑스, 레디스, 카프카, 올라마, Ollama, "
+           "프로세스, 스레드, 해시 테이블, 시간 복잡도, 데이터베이스, 인덱스, 트랜잭션, 파드, 노드, API, TCP, HTTP, "
+           "kubectl, cordon, drain, Slurm, InfiniBand, NCCL, CUDA, GPU, NFS, LDAP, RStudio, Prometheus, Grafana, "
+           "Terraform, Ansible, MySQL, GTID."),
+    "en": ("Kubernetes, kubectl, cordon, uncordon, drain, kubelet, etcd, Helm, containerd, Docker, Slurm, sbatch, srun, "
+           "InfiniBand, RDMA, NCCL, CUDA, NVLink, NVIDIA, GPU, NFS, Lustre, LDAP, Kerberos, RStudio, JupyterHub, "
+           "Prometheus, Grafana, Terraform, Ansible, Ollama, PyTorch, nginx, Redis, Kafka, PostgreSQL, MySQL, GTID, "
+           "binlog, systemd, cgroup, TCP, UDP, HTTP, DNS, API, YAML, Linux, GitHub."),
+}
 
 
 @dataclass
@@ -314,13 +333,9 @@ class Config:
     # Threads faster-whisper decodes with. Left to itself it takes every core the container has
     # (measured: eight, held for 95 minutes), which lags the PC it is meant to help.
     whisper_threads: int = env_int("SIDENOTE_WHISPER_THREADS", 4)
-    # Words passed to Whisper as preceding text so it spells technical terms right. Measured on 12
-    # recorded questions with `small`: character error rate 5.3% -> 3.0% (it heard "Kubernetes" said in Korean as
-    # "number nine's diss", a sound-alike, without it), same speed, and nothing invented on silence, noise or music. Empty
-    # turns it off.
-    whisper_hint: str = os.environ.get("SIDENOTE_WHISPER_HINT", (
-        "쿠버네티스, 도커, 파이썬, 자바, 자바스크립트, 리액트, 깃허브, 리눅스, 엔진엑스, 레디스, 카프카, 올라마, Ollama, "
-        "프로세스, 스레드, 해시 테이블, 시간 복잡도, 데이터베이스, 인덱스, 트랜잭션, 파드, API, TCP, HTTP."))
+    # Words passed to Whisper as preceding text so it spells technical terms right, one list for each speech
+    # language (WHISPER_HINTS above). SIDENOTE_WHISPER_HINT gives one text for both instead; empty turns it off.
+    whisper_hint: dict | str = field(default_factory=lambda: os.environ.get("SIDENOTE_WHISPER_HINT", WHISPER_HINTS))
     # What the log keeps about speech: short (how long and how many characters) | full (the words
     # too, for working out why something was taken as a problem) | off. Everything the tool hears
     # passes through here, including other people and whatever is playing, so the words are not
@@ -329,6 +344,9 @@ class Config:
     # the answers kept for looking back (server/history.py): how long and how much
     history_days: float = env_float("SIDENOTE_HISTORY_DAYS", 90)
     history_mb: float = env_float("SIDENOTE_HISTORY_MB", 200)
+    # What was heard, with Keep what is heard on, has a limit of its own beside the answers': a day of steady speech
+    # is about a megabyte, in Korean, so this holds some twenty such days. The oldest lines go first.
+    heard_mb: float = env_float("SIDENOTE_HEARD_MB", 20)
     transcript_window_sec: float = env_float("SIDENOTE_TRANSCRIPT_WINDOW", 15)  # live bar
     # Problems given by voice. Speech is cut into utterances (Silero VAD): one opens at
     # speech onset and closes after utter_end_silence s of quiet (or at utter_max_sec);
@@ -343,10 +361,12 @@ class Config:
     # does not come back empty-handed from noise, it writes something. Of the 313 utterances in
     # one day, 178 were under 0.8 s and 172 of those came back as English on a Korean speaker's
     # machine, one of them 70 characters from 0.3 s of sound, which nobody can say. Thirteen of them
-    # were long enough to be taken for a spoken problem. A real spoken problem clears
-    # speech_min_chars, which takes longer than this to say.
+    # were long enough to be taken for a spoken problem. A real spoken problem takes longer than
+    # this to say: "GTID가 뭔가요?" took 1.6 s in a synthetic voice.
     utter_min_sec: float = env_float("SIDENOTE_UTTER_MIN", 0.8)
     speech_min_chars: int = env_int("SIDENOTE_SPEECH_MIN_CHARS", 12)  # ignore short remarks
+    # A sentence that looks like a question is no remark: "GTID가 뭔가요?" is under the limit above, and was dropped
+    speech_question_chars: int = env_int("SIDENOTE_SPEECH_QUESTION_CHARS", 6)
     speech_context_sec: float = env_float("SIDENOTE_SPEECH_CONTEXT", 120)
     # A pause longer than this between utterances starts a new spoken problem; shorter
     # pauses are sentences of the same one.

@@ -66,7 +66,7 @@ def make(language="auto"):
     t._vote = {lang: 0.0 for lang in tr.LANGS}
     t.voted = ""
     t.last_language = ""
-    t.hint = None
+    t.hints, t.extra, t._prompts = {}, [], {}
     t._model = Model()
     return t
 

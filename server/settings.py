@@ -45,6 +45,9 @@ TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay
 SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
                 "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing", "시크릿", "사생활 보호"]
 WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each at most this many characters
+# Seconds of CPU one pass over the live window takes with each speech model, 15 s of steady speech, four threads, int8, on
+# the test PC: small 7.1 (Korean) and 8.1 (English), medium 18.4 and 13.8 (docs/DECISIONS.md, note 106)
+SPEECH_CPU = {"small": "8", "medium": "16"}
 
 
 @dataclass
@@ -242,6 +245,10 @@ def _defs() -> list[Setting]:
                 t("When the speaker stops, what was said is solved as a problem. Off: shown only")),
         Setting("whisper_hint", "bool", bool(CONFIG.whisper_hint), "speech", t("Technical term hints"),
                 t("Gives speech recognition technical terms in advance (Kubernetes, hash table and the like)")),
+        # Ahead of the built-in words, and given with them switched off too: these were typed on purpose
+        Setting("speech_terms", "words", [], "speech", t("Extra terms"),
+                t("Words speech recognition should spell as they are written, such as a product's name. Comma-separated. "
+                  "They go ahead of the built-in hints")),
         # Measured on 126 spans of real recordings: 32 of the 108 Korean ones were read as
         # English by the automatic pick, and not one of the 18 English ones was read as Korean. The
         # session's own evidence takes that down (server/transcriber.py), but pinning the language is
@@ -250,6 +257,20 @@ def _defs() -> list[Setting]:
                 t("Auto picks Korean or English for each utterance and sometimes misreads short Korean. Pin it when "
                   "only one is spoken"),
                 [("auto", t("Auto")), ("ko", "한국어"), ("en", "English")]),
+        # What each costs is measured on the test PC (docs/DECISIONS.md, note 106). A model the environment names is
+        # always offered as well, as the agent's models are.
+        Setting("whisper_model", "choice", CONFIG.whisper_model, "speech", t("Speech model"),
+                t("The model that writes down what is heard. Runs on the CPU. A model not downloaded yet is fetched the "
+                  "first time it is chosen"),
+                [("small", "small"), ("medium", "medium")]
+                + ([(CONFIG.whisper_model, CONFIG.whisper_model)] if CONFIG.whisper_model not in ("small", "medium") else []),
+                opt_help={"small": t("About {s} s of CPU a pass, on the test PC", s=SPEECH_CPU["small"]),
+                          "medium": t("About {s} s of CPU a pass, on the test PC. Hears technical terms better", s=SPEECH_CPU["medium"])}),
+        # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
+        Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
+                t("Saves every sentence heard, with its time, for {days} days (up to {mb} MB), other people and whatever "
+                  "is playing included. It stays on this PC. Read it from What is heard, and clear it with Clear history "
+                  "in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
         # capture
         Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
                 t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),

@@ -30,7 +30,9 @@ from server import i18n  # noqa: E402
 PASS, FAIL = [], []
 ORIGIN = {"origin": "http://127.0.0.1:8777"}
 HANGUL = re.compile(r"[가-힣ㄱ-ㆎ]")
-ENDONYMS = {"한국어"}   # a language's own name in the speech language's choices, the same in every language
+# A language's own name in the speech language's choices, the same in every language, and the words of Skip windows' default list
+# for a Korean browser's private window: titles to look for, not words the panel says
+ENDONYMS = {"한국어", "시크릿", "사생활 보호"}
 
 
 def check(name, ok, detail=""):
@@ -222,7 +224,7 @@ check("...and so is the agent, with no rule asking for Korean either",
       and analyzer.ANSWER_IN_ENGLISH in agent_text and not [r for r in KOREAN_RULES if r in agent_text], agent_text[-200:])
 check("every rule the English answer replaces is still in the prompts (an edit there must update ENGLISH_RULES)",
       all(analyzer.LOCAL_SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES)
-      and all(analyzer.SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES[:4]),
+      and all(analyzer.SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES[:5]),
       [old[:30] for old, _ in analyzer.ENGLISH_RULES if analyzer.LOCAL_SYSTEM_PROMPT.count(old) != 1])
 check("in Korean neither is: the measured prompts as they were", ko_system == analyzer.LOCAL_SYSTEM_PROMPT
       and analyzer.ANSWER_IN_ENGLISH not in ko_agent and "Answer language" not in ko_system)

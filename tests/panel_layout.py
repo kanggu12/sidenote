@@ -342,7 +342,8 @@ ROWS = ".src-top, .fact, .k, .usage-sub, .bars-key, .agent-who, .agent-scale, .h
 COLUMNS = [
     [".rail .card", "left", "the cards' left edge"], [".rail .card", "right", "the cards' right edge"],
     [".src-name, .card > h2, .fact.wide dt, .fact:first-child dt, .usage .stat:first-child, .agent-who, .agent-scale > .t > span, .bars-key, .usage-sub, .usage-err, .usage-none, .hist-tools, .h-tab, .gpu-viz", "left", "what starts a card's line", ".rail .card"],
-    [".switch, .src-top .btn, .shot-tools .btn, #hist-export, .gpu-viz, .usage-sub, .bars, .h-day, .usage-top, .agent-who", "right", "the keys and blocks on a card's right", ".rail .card"],
+    [".switch, .src-top .btn, .shot-tools .btn, #hist-export, #hear-kept, .gpu-viz, .usage-sub, .bars, .h-day, .usage-top, .agent-who", "right", "the keys and blocks on a card's right", ".rail .card"],
+    [".heard-line time", "left", "the times of what was heard", "#heard"], [".heard-line > span", "left", "the words of what was heard", "#heard"],
     [".fact:not(.wide):first-child dd, .fact.wide dd, .agent-scale > .steps3, .stat:nth-child(2), .quota .q-bar", "text-left", "a fact's first value column", ".rail .card.engine", .75, 60],
     [".fact:nth-child(odd):not(.wide) dd", "text-left", "the values in the screen and sound rows", ".rail .card:not(.engine)", .75, 60],
     # The second half of every card, the screen's and the sound's second detail with the tiles' third figure (the groups' own scope has no box of its
@@ -532,6 +533,16 @@ def st_hearing(p):
     p.send({"type": "transcript", "text": "지금 들리는 말이 아주 길게 이어지는 경우입니다 " * 8, "lang": "ko", "final": False})
 
 
+def st_heard_notes(p):
+    # A sentence not taken with its line under it, the key to what is kept beside the card's state
+    msg = support.settings_message()
+    msg["values"]["speech_keep"] = True
+    p.send(msg)
+    p.send({"type": "transcript", "text": "노드를 먼저 비운 다음에 커널을 올렸습니다. GTID가 뭐?", "lang": "ko", "final": False})
+    p.send({"type": "utterance", "text": "노드를 먼저 비운 다음에 커널을 올렸습니다.", "lang": "ko", "why": "none"})
+    p.send({"type": "utterance", "text": "GTID가 뭐?", "lang": "ko", "why": "short"})
+
+
 def st_toast(p):
     p.js("() => toast('아주 긴 안내 문구가 한 번에 나오는 경우입니다, 어디까지 보이는지 봅니다. ' + 'x'.repeat(60))")
 
@@ -549,7 +560,7 @@ def st_update(p):
     p.send({"type": "status", "version": "0.1.0", "update": {"version": "0.1.2", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.1.2"}})
 
 
-RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
+RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_heard_notes, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
                                            st_local_down, st_local_long, st_agent_off, st_agent_login, st_agent_expired, st_agent_gone, st_agent_limit, st_agent_brake, st_agent_forced, st_agent_long,
                                            st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected, st_update)}
 SIZES = [(1920, 1080), (1920, 1300), (2560, 1440), (1440, 900), (1366, 768), (1280, 720), (1100, 800), (1001, 700), (1000, 800), (768, 1024), (390, 844)]
@@ -609,7 +620,12 @@ STUDY_OPEN = [
     ("practice_card", STUDY_CARD),
     ("keys_sheet", "() => openKeys()"),
     ("export_menu", "() => { const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }"),
+    ("heard_sheet", "() => openHeard()"),
 ]
+# What the sheet of what was heard reads: the stand-in server's /heard while the audit opens it
+HEARD_KEPT = {"days": [{"day": "2026-11-04", "n": 40, "first": 1793800000, "last": 1793803000}, {"day": "2026-11-03", "n": 2, "first": 1793700000, "last": 1793700100}], "day": "2026-11-04",
+              "lines": [{"ts": 1793800000 + i * 75, "secs": 3.0, "lang": "ko", "text": t} for i, t in enumerate(
+                  ["So we drained the node first and waited for the pods to move to the other two workers.", "커널을 올리고 다시 부팅한 다음에 노드를 돌려놓았습니다.", "GTID가 뭔가요?", "네", "x" * 90] * 8)]}
 # A fault of one kind in each of those, in their order: the audit has to find it there (group_overlays)
 STUDY_PLANTS = [
     ("cut", "#practice-seg button { width: 6px !important; flex: none !important; overflow: hidden !important; white-space: nowrap !important; padding: 0 !important; }"),
@@ -617,6 +633,7 @@ STUDY_PLANTS = [
     ("cut", "#keys .set { overflow: hidden !important; } #keys kbd.cmd { margin-right: -60px !important; }"),
     # its words are in its tooltips, so the cut is one the audit says is told
     ("cut-told", "#export-menu { width: 64px !important; min-width: 0 !important; } #export-menu .item { overflow: hidden !important; white-space: nowrap !important; }"),
+    ("cut", "#heard .heard-line { grid-template-columns: 8px minmax(0, 1fr) !important; } #heard .heard-line time { overflow: hidden !important; }"),
 ]
 
 
@@ -694,6 +711,7 @@ def group_overlays(br, s):
     if not T.group("what opens over the page"):
         return
     found = []
+    s.heard = HEARD_KEPT
     for (w, hh) in ((1920, 1080), (390, 844)):
         for name, act in (
             # with the version the server says at its foot (app.js, renderVersion)
@@ -742,9 +760,14 @@ def group_overlays(br, s):
         p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='screen']\").click(); }")
         p.wait(300)
         found += audit(p, "settings_words", f"{w}x{hh}")
+        # and the Speech section, with its own box of words and the speech model
+        p.js("() => document.querySelector(\".set-tab[data-sec='speech']\").click()")
+        p.wait(300)
+        found += audit(p, "settings_speech", f"{w}x{hh}")
         if p.errors:
             check(f"settings_words {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()
+    s.heard = {"days": [], "day": "", "lines": []}
     # An empty panel, and the first screen
     for (w, hh) in ((1920, 1080), (1366, 768), (390, 844)):
         p = Page(br, s, [], w=w, h=hh, settle=500)
@@ -1376,7 +1399,7 @@ def group_controls(br, s):
     cols = p.js("""() => { const m = document.getElementById('menu').getBoundingClientRect();
         const txt = (el) => { const t = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); const r = document.createRange(); r.selectNodeContents(t); return Math.round(r.getBoundingClientRect().left - m.left); };
         const mark = (el) => Math.round(el.getBoundingClientRect().left - m.left + parseFloat(getComputedStyle(el).paddingLeft));
-        return { h3: [...document.querySelectorAll('#menu h3')].map((x) => [mark(x), txt(x)]), items: [...document.querySelectorAll('#menu .item')].map((x) => [mark(x), txt(x)]) }; }""")
+        return { h3: [...document.querySelectorAll('#menu h3')].map((x) => [mark(x), txt(x)]), items: [...document.querySelectorAll('#menu .item')].filter((x) => x.offsetParent).map((x) => [mark(x), txt(x)]) }; }""")
     both = cols["h3"] + cols["items"]
     check("the menu's headings stand on its items' columns, marks and words", len({x[0] for x in both}) == 1 and len({x[1] for x in both}) == 1, cols)
     p.js("() => document.getElementById('more').click()")

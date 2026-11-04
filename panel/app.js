@@ -4163,6 +4163,7 @@ async function loadHistory(params = {}) {
     for (const row of rows.answers || []) added = restore(row) || added;
     historyDays = days.days || [];
     historyStarred = days.starred || 0;
+    heardAny = !!days.heard; syncHeardKeys();
     if (added) {
       thread.sort((a, b) => items.get(a).ts - items.get(b).ts);
       // Over the limit the oldest go, but not what this request just found: an old answer searched for was the first out
@@ -4541,6 +4542,29 @@ function hearState() {
 }
 const HEAR_FRESH = 8;   // longer than the 5 s between the server's capture messages, so the bars
 //                         do not blink off and on between two of them
+// Sentences that ended and were not taken, and why (the server's `utterance` messages with a `why`). The card writes down the last
+// seconds of sound, so a sentence the owner can see and nothing came of would look ignored: each is said under its sentence.
+const HEARD_WHY = { get short() { return t("Too short · not solved"); }, get told() { return t("Part of a story · not solved"); }, get none() { return t("No question · not solved"); } };
+const HEARD_NOTE_MS = 25000;   // a little longer than the card's words stay
+let heardNotes = [];
+const wordsIn = (s) => String(s).toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+function noteHeard(text, why) {
+  if (!text || !HEARD_WHY[why]) return;
+  // Its last sentence is the one to go under: a run of speech can be two minutes of it, and a sentence said after shares its words
+  const last = text.trim().split(SENTENCE_END).pop();
+  heardNotes = [...heardNotes.slice(-7), { text: last, why, words: new Set(wordsIn(last)), at: Date.now() }];
+  renderHear();
+  $("hear-text").scrollTop = $("hear-text").scrollHeight;
+}
+// The sentence on the card a note belongs to: the last one whose words are mostly the note's. The card and the note wrote the same
+// sound down apart, and they can differ by a word or two. -1 when none is: the note then brings its sentence along.
+function noteAt(note, lines) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const w = wordsIn(lines[i]);
+    if (w.length && w.filter((x) => note.words.has(x)).length / w.length >= 0.6) return i;
+  }
+  return -1;
+}
 function renderHear(text, lang, flags) {
   // Called two ways: with new words from the server, and once a second with nothing, to keep the
   // listening bars and the "last heard" wording current. Only the first kind replaces the state.
@@ -4559,10 +4583,17 @@ function renderHear(text, lang, flags) {
   // Sentences that have ended are settled; the last chunk is what is being said right now.
   const said = heard.text.trim() ? heard.text.trim().split(SENTENCE_END) : [];
   const now = said.pop() || "";   // pop: `said` keeps only the finished ones
+  // Why each sentence that was not taken was not, under it; one no longer on the card goes when its time is up
+  heardNotes = heardNotes.filter((n) => Date.now() - n.at < HEARD_NOTE_MS);
+  const lines = now ? [...said, now] : said, under = new Map(), loose = [];
+  for (const n of heardNotes) { const i = noteAt(n, lines); if (i >= 0) under.set(i, n); else loose.push(n); }
+  const why = (n) => (n ? `<span class="why">${escapeHtml(HEARD_WHY[n.why])}</span>` : "");
   // setHtml, not innerHTML: this runs once a second, and replacing the text while it was being read
   // threw away where it had been scrolled to and anything selected in it to copy.
-  setHtml("hear-text", said.map((t) => `<span class="said">${escapeHtml(t)}</span>`).join("")
-    + (now ? `<span class="now">${escapeHtml(now)}</span>`
+  setHtml("hear-text", said.map((t, i) => `<span class="said">${escapeHtml(t)}</span>${why(under.get(i))}`).join("")
+    + loose.map((n) => `<span class="said">${escapeHtml(n.text)}</span>${why(n)}`).join("")
+    + (now ? `<span class="now">${escapeHtml(now)}</span>${why(under.get(said.length))}`
+           : loose.length ? ""
            : `<span class="quiet">${paused ? t("Not written down while paused")
               : fresh ? t("No speech") : t("Nothing heard")}</span>`));
   if (text !== undefined) $("hear-text").scrollTop = $("hear-text").scrollHeight;   // only on new words
@@ -4878,6 +4909,7 @@ function handle(m) {
     case "notice": toast(m.text || "", m.of != null && items.has(m.of) ? () => goTo(m.of) : null,
       (m.level ? m.level === "warn" : /못했|못합니다|실패|수 없습니다|못 |안 보냄|없음|불가/.test(m.text || "")) ? "warn" : ""); break;
     case "transcript": renderHear(m.text, m.lang, { waiting: !!m.waiting, pending: !!m.pending }); break;
+    case "utterance": noteHeard(m.text, m.why); break;   // a sentence that ended: with a `why` when it was not taken
     case "analysis_start": onStart(m); break;
     case "delta": onDelta(m); break;
     case "analysis_done": liveDone.add(idOf(m.id)); onDone(m); sweepKey(entryEl(m.id)); break;
@@ -4947,7 +4979,7 @@ function handle(m) {
       // and so do the places outside the sheet that read the same values: the 'part of the screen'
       // note (roi_box) and the screen card's monitor. Those two waited for the next capture or status
       // message, so a region cleared elsewhere stayed announced here for seconds.
-      renderSettings(); renderShot(); renderAlerts(); renderSignals();
+      renderSettings(); renderShot(); renderAlerts(); renderSignals(); syncHeardKeys();
       break;
     case "agent_confirm":
       m.gotAt = Date.now() / 1000;   // this browser's own clock, not the server's (they can differ)
@@ -5794,6 +5826,7 @@ $("clear").onclick = () => {
   histDay = ""; histKind = ""; $("hist-day").value = ""; $("hist-kind").value = "";
   historyDays = [];
   histStar = false; historyStarred = 0;   // the starred answers go with the rest (server/history.py, clear)
+  heardAny = false; syncHeardKeys();      // and so does what was heard
   toggleMenu(false); $("more").focus({ preventScroll: true }); renderThread(); renderAll();
 };
 // ---------- the keyboard ----------
@@ -5879,9 +5912,88 @@ $("keys").addEventListener("keydown", (e) => {
 let keysPress = false;
 $("keys-overlay").addEventListener("mousedown", (e) => { keysPress = e.target === $("keys-overlay"); });
 $("keys-overlay").addEventListener("click", (e) => { if (keysPress && e.target === $("keys-overlay")) closeKeys(); keysPress = false; });
+// ---------- What was heard, kept ----------
+// One day's sentences, from the server's /heard (Keep what is heard), in the keys' sheet's look: the time and the words of each, Copy all,
+// and a .md file. The keys to it, on the card and in the menu, are there while the switch is on or something is kept: with the sound
+// off the card is gone, and what was kept can still be read.
+let heardAny = false, heardKept = false, heardDay = "", heardLines = [], heardOpener = null, heardPress = false;
+// Called when the server's settings come, when /history/days says what is kept, and when it is cleared
+function syncHeardKeys() {
+  // Switched off: what it kept meanwhile is still there to read, which the server knows
+  if (heardKept && !settingsValues.speech_keep) fetch("history/days").then((r) => r.json()).then((d) => { heardAny = !!d.heard; syncHeardKeys(); }).catch(() => {});
+  heardKept = !!settingsValues.speech_keep;
+  const on = !!settingsValues.speech_keep || heardAny;
+  $("hear-kept").hidden = !on;
+  $("open-heard").hidden = !on;
+}
+// The time of a line, to the second: 15:04:09
+const heardClock = (ts) => { const d = new Date(ts * 1000), p = (n) => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+// One day, or with none named the newest the server holds; a failed request reads as nothing kept
+async function loadHeard(day = "") {
+  let got = { days: [], day: "", lines: [] };
+  try { got = await fetch(`heard${day ? `?day=${encodeURIComponent(day)}` : ""}`).then((r) => r.json()); } catch (_) {}
+  heardDay = got.day || ""; heardLines = got.lines || [];
+  // The days, from when to when, in the contents' dropdown (syncPick draws it over the select)
+  const sel = $("heard-day");
+  sel.innerHTML = (got.days || []).map((d) => {
+    const name = fmtDay(new Date(`${d.day}T12:00:00`).getTime());
+    const span = d.first ? ` · ${heardClock(d.first).slice(0, 5)} ~ ${heardClock(d.last).slice(0, 5)}` : "";
+    return `<option value="${escapeHtml(d.day)}" data-short="${escapeHtml(name)}">${escapeHtml(name)} · ${d.n === 1 ? t("{n} sentence", { n: d.n }) : t("{n} sentences", { n: d.n })}${span}</option>`;
+  }).join("");
+  sel.value = heardDay;
+  syncPick(sel);
+  // With nothing kept there is no day to choose and nothing to copy: the sheet says why, and where the switch is
+  const none = !heardLines.length;
+  sel.closest(".heard-tools").hidden = none;
+  $("heard-lines").hidden = none;
+  $("heard-lines").innerHTML = heardLines.map((l) => `<li class="heard-line"><time>${heardClock(l.ts)}</time><span>${escapeHtml(l.text)}</span></li>`).join("");
+  $("heard-lines").scrollTop = 0;
+  $("heard-none").hidden = !none;
+  $("heard-none").textContent = settingsValues.speech_keep ? t("Nothing kept yet") : t("Nothing kept · Keep what is heard is off in Solver settings");
+}
+function openHeard() {
+  toggleMenu(false); exportMenu(false);
+  heardOpener = document.activeElement;
+  $("heard-overlay").hidden = false;
+  $("heard-close").focus({ preventScroll: true });
+  loadHeard();   // the newest day: left open overnight, the page still knows yesterday
+}
+function closeHeard() {
+  if ($("heard-overlay").hidden) return;
+  $("heard-overlay").hidden = true;
+  comboClose(false);   // the day list stands on the page's body, and would stay behind
+  // The keyboard goes back where it was, as from the keys' sheet
+  const was = heardOpener;
+  heardOpener = null;
+  if (was && was !== document.body && document.body.contains(was) && was.offsetParent) was.focus({ preventScroll: true });
+  else if (was?.closest?.(".menu")) $("more").focus({ preventScroll: true });
+  else document.activeElement?.blur?.();
+}
+$("heard-close").onclick = closeHeard;
+$("hear-kept").onclick = openHeard;
+$("open-heard").onclick = openHeard;
+$("heard-day").addEventListener("change", (e) => loadHeard(e.target.value));
+$("heard-copy").onclick = () => copyText(heardLines.map((l) => `${heardClock(l.ts)} ${l.text}`).join("\n"), $("heard-copy"));
+// One Markdown file: the day as its title, a line of the list a sentence
+$("heard-save").onclick = () => {
+  const out = [`# ${t("What was heard")} (${heardDay})`, "", ...heardLines.map((l) => `- ${heardClock(l.ts)} ${l.text.replace(/\s+/g, " ")}`), ""];
+  saveFile(out.join("\n"), "text/markdown;charset=utf-8", `sidenote-heard-${heardDay}.md`);
+  toast(heardLines.length === 1 ? t("Saved {n} sentence (Markdown)", { n: 1 }) : t("Saved {n} sentences (Markdown)", { n: heardLines.length }));
+};
+$("heard").addEventListener("keydown", (e) => {   // the keyboard stays inside the sheet, as in the keys' sheet
+  if (e.key !== "Tab") return;
+  const f = [...$("heard").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
+  if (!f.length) return;
+  const edge = e.shiftKey ? f[0] : f[f.length - 1];
+  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
+});
+// Closed by a press on the veil only when the press and the release are both on it (the settings sheet's rule)
+$("heard-overlay").addEventListener("mousedown", (e) => { heardPress = e.target === $("heard-overlay"); });
+$("heard-overlay").addEventListener("click", (e) => { if (heardPress && e.target === $("heard-overlay")) closeHeard(); heardPress = false; });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!$("keys-overlay").hidden) { closeKeys(); return; }
+    if (!$("heard-overlay").hidden) { closeHeard(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
     if (!$("export-menu").hidden) { exportMenu(false, true); return; }
     if (drawing) { stopDrawing(); return; }
@@ -5896,6 +6008,7 @@ document.addEventListener("keydown", (e) => {
   const key = shortcutKey(e);
   // The keys' sheet is one too: its own key closes it, and nothing else acts behind it
   if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
+  if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
   if (SHORTCUTS[key] && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {
     e.preventDefault();                                    // the letter is not typed anywhere, and / opens no find bar

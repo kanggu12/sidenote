@@ -43,6 +43,7 @@ import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from urllib.parse import urlsplit
@@ -374,6 +375,14 @@ class AppState:
     # Bumped whenever heard speech is thrown away (sound switched off, pause, resume): a speech
     # pass still transcribing in the executor drops what it finds instead of bringing it back.
     speech_epoch: int = 0
+    # The running analysis has written its first words: a newer spoken problem then waits for its answer instead of
+    # stopping it (analysis_worker). Set by its first delta, cleared when the next one starts.
+    analysis_wrote: bool = False
+    # Where in the sound the last spoken problem that got an answer ended: the next one reads what came after it
+    # (after_the_answer), and does not answer it again. A place, not its words: the same words said again later are asked again.
+    voice_answered_to: int = 0
+    voice_retake_to: int = 0      # the same for the spoken problem waiting to be asked again (voice_retake)
+    last_closed: str = ""         # the words of the last sentence that ended or was noted (note_the_card)
     # The answers a problem seen again can point back to, by id, without their screens (remember_answer)
     answers: dict = field(default_factory=dict)
     # Failed analyses in a row and when automatic analysis may try again (a usage limit or a
@@ -388,6 +397,8 @@ class AppState:
         self.voice_pending = self.voice_waiting = self.voice_asked = False
         self.voice_runs = 0
         self.voice_retake = ""        # a spoken problem waiting to be asked again is speech heard too
+        self.voice_answered_to = 0
+        self.last_closed = ""
         self.transcript = ""
         self.speech_epoch += 1
 
@@ -406,7 +417,7 @@ class AppState:
         """The live-transcript window: the most recent transcript_window_sec of audio."""
         return bytes(self.audio_buffer[-int(self.audio_sr * CONFIG.transcript_window_sec) * 2:])
 
-    def recent_speech(self) -> str:
+    def recent_group(self) -> list:
         """The spoken problem in progress: the latest run of utterances whose pauses are
         shorter than speech_group_gap (one problem read in several sentences), within
         speech_context_sec. A longer pause means a new problem, so earlier ones drop out."""
@@ -417,7 +428,11 @@ class AppState:
             if group and (group[-1]["start"] - u["end"]) / self.audio_sr > CONFIG.speech_group_gap:
                 break
             group.append(u)
-        return " ".join(u["text"] for u in reversed(group))
+        return group[::-1]
+
+    def recent_speech(self) -> str:
+        """The words of the spoken problem in progress (recent_group)."""
+        return " ".join(u["text"] for u in self.recent_group())
 
 
 STATE = AppState()
@@ -1520,17 +1535,137 @@ VAD_TAIL_SEC = 20  # recent audio the VAD looks at each pass (covers the gap bet
 # analysis on every sentence. The Korean "how many" counted only with a space after it, and asking to be told was
 # not a question: "What is the latest Docker Engine version. Tell me down to the patch version." waited out the whole
 # gap (7.8 s after the question, in a rehearsal). Telling is asked for, not offered: "I will
-# tell you" is still the speaker going on.
+# tell you" is still the speaker going on, and so is having written or explained something: a task word counts in the
+# form that asks for the task. An English question word or task counts at the start of a clause: in the middle of one
+# it is mostly the speaker going on ("that is why", "we had to write", ", which was"). What misses this still goes,
+# once the speaker pauses (voice_waiting), so being strict here costs a few seconds and never a question.
 QUESTION_RE = re.compile(
-    r"\?|무엇|어떻게|왜|어느|몇(?!몇)|인가요|일까요|입니까|습니까|나요|까요|하시오|하세요|쓰시오|구하|고르|"
-    r"말씀해|주시겠|주실래|뭔가요|뭐예요|뭔지|뭐야|뭐지|알려\s?(?:줘|주세요|주실|줄래|주라)|가르쳐\s?(?:줘|주세요|주실|줄래)|"
-    r"설명해|작성해|구현해|계산해|반환하|출력하|찾으|찾아|맞으면|틀리면|옳은|옳지|아닌 것|"
-    r"\b(what|how|why|which|explain|describe|write|implement|find|calculate|compute|determine|"
-    r"choose|select|return|true or false)\b", re.I)
+    r"\?|무엇(?!보다)|어떻게(?!든)|왜(?!냐)|어느(?!\s?(?:날|새|덧|정도))|몇(?!몇)|인가요|일까요|입니까|습니까|나요|까요|"
+    r"하시오|(?<!안녕)하세요|쓰시오|구하(?:시오|세요|라|는)|구해\s?(?:줘|주세요|주시|주실|보세요|봐)|고르(?:시오|세요|라)|"
+    r"골라\s?(?:줘|주세요|주시|주실|보세요|봐)|말씀해\s?(?:주세요|주시|주실|보세요|봐)|주시겠|주실래|뭔가요|뭐예요|뭐에요|뭔지|뭐야|뭐지|뭐죠|뭐냐(?!면)|"
+    r"알려\s?(?:줘|주세요|주실|줄래|주라)|가르쳐\s?(?:줘|주세요|주실|줄래)|"
+    r"(?:설명|작성|구현|계산)해\s?(?:줘|주세요|주시|주실|보세요|봐|라)|(?:반환|출력)하(?:시오|세요|라|는)|"
+    r"찾(?:으시오|으세요|아\s?(?:줘|주세요|주시|주실|보세요|봐|라))|맞으면|틀리면|옳은|옳지|아닌 것|"
+    r"\b(?:true or false|which of (?:the|these|those|following))\b|"
+    # the start of a clause, past the words a speaker opens with
+    r"(?:^|[.!?;:…]\s+|,\s+)(?:(?:so|and|but|okay|ok|now|then|well|sorry|hey|um|uh|alright|also|next|please)[,\s]+)*(?:"
+    # asking, and not "what we did was", "what happened was", "how it works"
+    r"(?:what|how|why)(?:'s|\s+(?:is|are|was|were|do|does|did|can|could|would|should|will|many|much|to|about|if))\b|"
+    r"what\s+(?!happened|we\b|i\b|they\b|he\b|she\b|it\b|you\b)\w+(?:\s+\w+){0,2}?\s+(?:is|are|does|do|did|can|could|should|would|will|has|have)\b|"
+    # asking for a task, and asking politely
+    r"(?:explain|describe|write|implement|find|calculate|compute|determine|choose|select|return|compare|define|"
+    r"tell me)\b|(?:can|could|would) you\b)|"
+    # after a comma "which" goes on with the sentence, so only at the start of one
+    r"(?:^|[.!?;:…]\s+)which\s+\w+", re.I)
+
+# What only sounds like a question, taken out before QUESTION_RE reads what was said. A speaker telling a story asks
+# nobody anything with these (question_kind). What a pattern cannot tell, the first pass is told to judge
+# (analyzer.SPEECH_RULE). One sentence at a time, its punctuation kept:
+SENTENCE_RE = re.compile(r"[^.!?…]+[.!?…]*")
+# A question the speaker reports: "somebody asked, could we ...?", "다들 왜 그러냐고 물어보셨어요". "I'm asking", "I was wondering",
+# "if someone asked you", "a frequently asked question" and "물어봐도 될까요" are the speaker's own, and stay.
+REPORTED_RE = re.compile(
+    r"\b(?:(?<!frequently )(?<!commonly )(?<!often )asked(?!\s+(?:you|question))|kept asking|(?:was|were) asking|would ask|"
+    r"(?<!i'm )(?<!am )asking (?:whether|if|why|what|how)|wondered|(?<!i )(?:was|were) wondering)\b|"
+    r"\b(?:said|says|saying|goes|went|(?:was|were|is|are|am)\s+like|(?:he|she|they|i)['’](?:s|re|m)\s+like)\s*,?\s*[\"“']?"
+    r"(?:what|why|how|is|are|was|were|do|does|did|can|could|should|would)\b|"
+    r"냐고(?!\s?묻는다면)|느냐며|냐면서|지\s*(?:계속|자꾸|다들|막)?\s*(?:물어보셨|물어보시길래|물어봤|물어보더|물었|묻더|묻길래)", re.I)
+# A stock phrase that is the whole sentence ("guess what?"), and the speaker asking what they did themselves: the
+# answer is the next sentence of the story. "So what is the difference?" is neither, and stays.
+RHETORICAL_RE = re.compile(
+    r"^\W*(?:(?:so|and|but|then|well|okay|ok)[,\s]+)*(?:guess what|you know what|(?:you )?(?:know|see) what i mean|so what|what(?: then)?|"
+    r"then what|what happened(?:\s+\w+){0,3}|(?:what|why|how|where|when)\s+did\s+(?:we|i)\b[^.?!…]*|"
+    r"sorry|pardon|really|seriously|excuse me|is it|are you sure|you sure)\s*\?\W*$", re.I)
+# A tag at the end of a clause, with its question mark. "Is that right?" and "What is correct?" ask with the same
+# word, so without a comma before it a tag counts only in a clause that does not open as a question does.
+TAG_WORDS = (r"right|you know|okay|ok|yeah|correct|huh|eh|got it|agreed|you see|make sense|makes sense|"
+             r"does that make sense|is that right|is that correct|"
+             r"(?:is|are|was|were|do|does|did|wo|ca|could|should|would|has|have)n['’]?t\s+(?:it|that|they|we|you|he|she)")
+TAG_COMMA_RE = re.compile(rf"(?:^|[,;]\s*)(?:{TAG_WORDS})\s*\?\W*$", re.I)
+TAG_BARE_RE = re.compile(rf"\s+(?:{TAG_WORDS})\s*\?\W*$", re.I)
+OPENS_ASKING_RE = re.compile(r"^\W*(?:(?:so|and|but|okay|ok|now|then|well)[,\s]+)*(?:is|are|was|were|do|does|did|can|could|"
+                             r"should|would|will|has|have|what|how|why|which|who|where|when)\b", re.I)
+# Korean asks for agreement in the ending of the verb ("그렇죠?", "맞죠?", "알죠?", "서버가 죽었죠?"), with no question word in the
+# sentence: "뭐가 있죠?" does ask. A lecturer's check on the room counts the same.
+KO_AGREE_RE = re.compile(r"(?:죠|지요|잖아요|잖아|거든요|지)\s*\?\W*$")
+KO_ASKING_RE = re.compile(r"뭐|뭔|뭘|무엇|무슨|어떻게|어떡|어떤|왜|어느|몇|얼마|언제|어디|어딜|누가|누구|누굴")
+KO_CHECK_RE = re.compile(r"(?:아시겠|알겠|이해되|이해가 되|이해되셨)\w*\s*\?\W*$")
+# "그게 뭐냐면", "왜냐면": the speaker about to say it
+KO_ABOUT_TO_RE = re.compile(r"(?:뭐|왜|어떻게|무엇|어디|누가)[^.?!…]{0,20}?냐면")
+
+
+def asked_part(text: str) -> str:
+    """What was said, without what only sounds like a question: reported questions, the speaker's own rhetorical ones,
+    and tags at the end of a clause. What is left of a sentence stays."""
+    kept = []
+    for sentence in SENTENCE_RE.findall(text):
+        sentence = sentence.strip()
+        if REPORTED_RE.search(sentence) or RHETORICAL_RE.search(sentence):
+            continue
+        sentence = KO_ABOUT_TO_RE.sub(" ", sentence)
+        if TAG_COMMA_RE.search(sentence):
+            sentence = TAG_COMMA_RE.sub(".", sentence)
+        elif not OPENS_ASKING_RE.search(sentence) and TAG_BARE_RE.search(sentence):
+            sentence = TAG_BARE_RE.sub(".", sentence)
+        if KO_CHECK_RE.search(sentence) or (KO_AGREE_RE.search(sentence) and not KO_ASKING_RE.search(sentence)):
+            sentence = sentence.rstrip(" ?") + "."
+        kept.append(sentence)
+    return " ".join(kept)
+
+
+# The first option of a problem read aloud: what follows it belongs with the question read a sentence earlier. Not "보기에는",
+# "1.5배", "첫 번째로", "A, which" or "Option one was", which are somebody going on, and "one" and "하나" only with their next.
+OPTIONS_RE = re.compile(
+    r"^\W*(?:일\s?번|1\s?번|1\s?[.)]\s|첫\s?번째\s?(?:보기|는|,)|첫째\s?(?:보기|,)|보기\s?(?:[,:.]|\d|일|하나)|①|[가ㄱ]\s?[.)]\s|"
+    r"a\s?[.,):]\s(?!which\b|that\b)|(?:option|choice|answer)\s*(?:a|1|one)\b(?!\s+(?:was|would|will))|"
+    r"one\s?[,.:]\s.*\btwo\b|하나\s?[,.:]\s.*둘)", re.I)
+
+
+# A question that leans on what came before it: "and when does it fail?", "그건 왜 그래요?"
+LEANS_ON_RE = re.compile(r"\b(?:it|its|that|this|those|these|they|them)\b|그것|그건|그게|그걸|이건|이게|이걸|저건", re.I)
+
+
+def after_the_answer(group: list, answered_to: int) -> str:
+    """What the next run reads of this run of speech: what came after the place the last answer reached (answered_to). Given the
+    words before it as well, even marked as answered, the model answered them again, 3 stories of 4 (note 106). What means nothing
+    alone goes with what it belongs to, as one problem: the options of a quiz, and a question that leans on the one before it. ""
+    when nothing came after."""
+    after = [u for u in group if u["end"] > answered_to]
+    words = " ".join(u["text"] for u in after)
+    if len(after) < len(group) and (OPTIONS_RE.match(words) or (LEANS_ON_RE.search(words) and looks_like_question(words))):
+        return " ".join(u["text"] for u in group)
+    return words
+
+
+def question_kind(text: str) -> str:
+    """"asked": it asks or sets a task. "told": it only sounds as if it does, in what asked_part takes out. "": neither."""
+    if not QUESTION_RE.search(text):
+        return ""
+    return "asked" if QUESTION_RE.search(asked_part(text)) else "told"
 
 
 def looks_like_question(text: str) -> bool:
-    return bool(QUESTION_RE.search(text))
+    return question_kind(text) == "asked"
+
+
+async def note_the_card(tracker: UtteranceTracker, lang: str) -> None:
+    """A span that ended with no words of its own, too short to write down or written as nothing. The live pass has written
+    the same sound all the same (the VAD measures a span anew each pass: a "그렇군요." of 0.87 s alone was cut as shorter than
+    utter_min_sec on the way), so it can stand on the card, where it would look heard and ignored.
+    The card's last sentence says so, when it is short, nothing is being said after it, and it is not a sentence that ended
+    already: a cough after a question leaves the question alone. The two passes write the same sound apart, so the
+    comparison allows for a word or two."""
+    if not SETTINGS.on("voice_auto") or tracker.start is not None:
+        return
+    said = SENTENCE_RE.findall(STATE.transcript.strip())
+    line = said[-1].strip() if said else ""
+    if not line or len(line) >= CONFIG.speech_min_chars:
+        return
+    # As much of the end of the last sentence as the line is long, and a little: that sentence can be two minutes of speech
+    if SequenceMatcher(None, line.lower(), STATE.last_closed.lower()[-len(line) - 4:]).ratio() >= 0.6:
+        return
+    STATE.last_closed = line   # once: the next cough finds it said
+    await broadcast({"type": "utterance", "text": line, "lang": lang, "why": "short"})
 
 
 async def _voice_pass(transcriber, tracker: UtteranceTracker, loop, fresh: bool) -> None:
@@ -1560,6 +1695,7 @@ async def _voice_pass(transcriber, tracker: UtteranceTracker, loop, fresh: bool)
             # The VAD found a blip, not speech. Whisper does not come back empty-handed from one: it
             # writes a sentence, in English, and a long one at that (CONFIG.utter_min_sec has the
             # numbers). Dropping it here also keeps the transcription off the PC's CPU.
+            await note_the_card(tracker, getattr(transcriber, "last_language", ""))
             continue
         pcm = buf[(s - buf_start) * 2:(e - buf_start) * 2]
         text = (await loop.run_in_executor(None, transcriber.transcribe, pcm, sr)).strip()
@@ -1573,7 +1709,22 @@ async def _voice_pass(transcriber, tracker: UtteranceTracker, loop, fresh: bool)
         elif CONFIG.log_speech != "off":
             log.info("utterance %.1fs: %d chars (%s)", (e - s) / sr, len(text),
                      getattr(transcriber, "last_language", "") or "?")
-        if len(text) >= CONFIG.speech_min_chars:
+        lang = getattr(transcriber, "last_language", "")
+        keep_heard(text, (e - s) / sr, lang)   # with the switch on, whatever comes of it below
+        if text:
+            STATE.last_closed = text
+        else:
+            await note_the_card(tracker, lang)
+        # Listening only to keep what is heard (Keep what is heard on, Solve spoken problems off): nothing is queued
+        if not SETTINGS.on("voice_auto"):
+            continue
+        # A closed sentence that looks like a question is taken from a few characters ("GTID가 뭔가요?"); a remark needs more
+        asked = looks_like_question(text)
+        need = CONFIG.speech_question_chars if asked else CONFIG.speech_min_chars
+        if text and len(text) < need:
+            # The panel's live words have shown it: left unsaid, it would look heard and ignored
+            await broadcast({"type": "utterance", "text": text, "lang": lang, "why": "short"})
+        if len(text) >= need:
             # A pause longer than speech_group_gap ends the spoken problem that was being read, so
             # whether an earlier sentence asked something says nothing about this one.
             if STATE.utterances and (s - STATE.utterances[-1]["end"]) / sr > CONFIG.speech_group_gap:
@@ -1586,7 +1737,7 @@ async def _voice_pass(transcriber, tracker: UtteranceTracker, loop, fresh: bool)
             # holds up to speech_context_sec (two minutes) of what was heard, so one "why" in a video's
             # dialogue made every sentence for the next two minutes queue a problem of its own: 43 of
             # them in one hour, against two answers worth reading.
-            if looks_like_question(text):
+            if asked:
                 STATE.voice_asked = True
             # And a group may only start so many analyses. A video's dialogue is one unbroken group
             # that runs for minutes, so the group alone is no bound; a problem read aloud is a few
@@ -1599,7 +1750,7 @@ async def _voice_pass(transcriber, tracker: UtteranceTracker, loop, fresh: bool)
                          STATE.voice_runs, CONFIG.speech_group_tries)
             else:
                 STATE.voice_waiting = True
-            await broadcast({"type": "utterance", "text": text, "lang": getattr(transcriber, "last_language", "")})
+            await broadcast({"type": "utterance", "text": text, "lang": lang})
     # Speech with no question word: analyze it once the speaker has paused long enough to
     # have finished (nothing open, no new utterance for speech_group_gap).
     if (STATE.voice_waiting and tracker.start is None and STATE.utterances
@@ -1614,8 +1765,7 @@ async def transcription_worker(app: FastAPI) -> None:
       never blocks on transcription;
     - voice problems: cut the audio into utterances and queue each finished one for
       analysis, so a problem read aloud is solved even if the screen never changes."""
-    transcriber = app.state.transcriber
-    if not getattr(transcriber, "available", False) or CONFIG.transcribe_interval <= 0:
+    if not getattr(app.state.transcriber, "available", False) or CONFIG.transcribe_interval <= 0:
         return
     loop = asyncio.get_running_loop()
     tracker, tracker_epoch = None, STATE.speech_epoch
@@ -1629,13 +1779,16 @@ async def transcription_worker(app: FastAPI) -> None:
         pass_time = 0.0
         if STATE.paused or not STATE.audio_buffer:
             continue
+        # Read each pass: a speech model chosen in the panel takes over here, and the utterance being cut goes on
+        transcriber = app.state.transcriber
         key = (STATE.audio_total, getattr(transcriber, "language", None))
         fresh = key != last_key                         # new audio or a language switch
         last_key = key
         t0 = time.time()
         # Spoken problems can be switched on and off in the panel: off, no utterances are cut (the live
-        # transcript goes on), and switching back on starts from what is heard from then on.
-        voice = SETTINGS.on("voice_auto") and hasattr(transcriber, "speech_segments")
+        # transcript goes on), and switching back on starts from what is heard from then on. Keep what is heard
+        # cuts them too, for its own use.
+        voice = (SETTINGS.on("voice_auto") or SETTINGS.get("speech_keep")) and hasattr(transcriber, "speech_segments")
         if not voice:
             tracker = None
         try:
@@ -2064,7 +2217,7 @@ def cancel_check() -> None:
 
 # The answers kept for looking back (server/history.py)
 HISTORY = answers_log.History(pathlib.Path(telemetry.LOG_DIR) / "history.sqlite" if telemetry.LOG_DIR else None,
-                              CONFIG.history_days, CONFIG.history_mb)
+                              CONFIG.history_days, CONFIG.history_mb, CONFIG.heard_mb)
 
 
 # One thread takes the writes, in order, and nobody waits on them. Awaited, each was a place a cancel could land: a
@@ -2087,6 +2240,19 @@ def keep_answer(seq: int, kind: str, data: dict) -> None:
     """One answer into the history, when the history is kept."""
     if SETTINGS.get("history_keep"):
         _history_write("not kept in the history", seq, HISTORY.add, seq, data.pop("ts"), kind, data)
+
+
+def keep_heard(text: str, secs: float, lang: str) -> None:
+    """One closed sentence into the history, when what is heard is kept (Keep what is heard). Nothing else stops for it."""
+    if not text or not SETTINGS.get("speech_keep"):
+        return
+
+    def work() -> None:
+        try:
+            HISTORY.add_heard(time.time(), secs, lang, text)
+        except Exception as exc:
+            log.warning("what was heard not kept (%s)", exc)
+    HISTORY_WRITES.submit(work)
 
 
 def keep_later(seq, **fields) -> None:
@@ -2311,10 +2477,10 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
         await send_control()
     elif key == "run_button":
         await broadcast({"type": "status", "run_enabled": run_enabled()})
-    elif key == "whisper_hint":
-        tr = app.state.transcriber
-        if hasattr(tr, "hint"):
-            tr.hint = CONFIG.whisper_hint if value else None
+    elif key in ("whisper_hint", "speech_terms"):
+        speech_hints(app.state.transcriber)
+    elif key == "whisper_model" and old != value:
+        app.state.speech_model_task = asyncio.create_task(change_speech_model(app, old, value))
     elif key in ("agent_model_name", "agent_effort") and ENGINES is not None and ENGINES.agent is not None:
         reset = getattr(ENGINES.agent, "reset_session", None)
         if reset:
@@ -2358,11 +2524,69 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
     return True, ""
 
 
+def speech_hints(tr) -> None:
+    """What the speech model is given before the audio, as the settings say: the built-in lists unless Technical term
+    hints is off, with the person's Extra terms in front of them. Also when it is off: those words were typed on purpose."""
+    if hasattr(tr, "set_hints"):
+        tr.set_hints(CONFIG.whisper_hint if SETTINGS.get("whisper_hint") else None, SETTINGS.get("speech_terms"))
+
+
+def ready_speech(tr) -> None:
+    """A speech model that has loaded, set up as the settings say."""
+    speech_hints(tr)
+    # The language is a setting, so a saved one applies to the decoder as well as to the sheet
+    if hasattr(tr, "language"):
+        tr.language = SETTINGS.get("speech_lang")
+
+
+async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
+    """The speech model chosen in the panel. It loads beside the one in use, which goes on hearing until it is ready. A
+    model not downloaded yet is fetched here, as the first start fetches `small`, and one that cannot be had leaves the
+    old one in use and the choice back on it: kept, it would leave the next start of the server with no speech at all."""
+    await notice(t("Loading the speech model {model}: the first time it is downloaded", model=model))
+    try:
+        tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+        failed = "" if getattr(tr, "available", False) else "unavailable"
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        tr, failed = None, str(exc)[:120]
+    if SETTINGS.get("whisper_model") != model:   # another choice since: that one's own load settles it
+        return
+    if failed:
+        log.warning("the speech model %s did not load (%s); %s stays", model, failed, old)
+        SETTINGS.set("whisper_model", old)
+        await broadcast({"type": "settings", "values": {"whisper_model": old}})
+        await notice(t("The speech model {model} did not load: {old} stays", model=model, old=old), "warn")
+        return
+    ready_speech(tr)
+    app.state.transcriber = tr   # the worker reads it at its next pass (transcription_worker)
+    # A server that had no speech until now has no worker either
+    if getattr(app.state, "transcribe_worker", None) is None or app.state.transcribe_worker.done():
+        app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
+    log.info("speech model ready (%s)", model)
+    await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None), "voice": SETTINGS.on("voice_auto")})
+    await notice(t("The speech model {model} is ready", model=model))
+
+
 async def load_speech(app: FastAPI) -> None:
     """The speech model, loaded after the server is up, then its worker started and the panels told that speech is
-    there. A model that cannot load leaves the server without speech, and says so in the log and on the panel."""
+    there. A model that cannot load leaves the server without speech, and says so in the log and on the panel. One
+    chosen in the panel that cannot be had any more gives way to the one the environment names."""
+    model = SETTINGS.get("whisper_model")
     try:
-        tr = await asyncio.to_thread(make_transcriber, CONFIG)
+        try:
+            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+        except Exception:   # the environment's own model failing is the case below; a panel's choice has that one to fall back on
+            if model == CONFIG.whisper_model:
+                raise
+            tr = NullTranscriber()
+        if model != CONFIG.whisper_model and CONFIG.audio_enabled and CONFIG.transcriber != "null" and not getattr(tr, "available", False):
+            log.warning("the speech model %s did not load; going back to %s", model, CONFIG.whisper_model)
+            SETTINGS.set("whisper_model", CONFIG.whisper_model)
+            await broadcast({"type": "settings", "values": {"whisper_model": CONFIG.whisper_model}})
+            model = CONFIG.whisper_model
+            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
     except asyncio.CancelledError:
         raise
     except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
@@ -2370,15 +2594,15 @@ async def load_speech(app: FastAPI) -> None:
         await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
                      "warn")
         return
-    if hasattr(tr, "hint") and not SETTINGS.get("whisper_hint"):
-        tr.hint = None
-    # The language is a setting, so a saved one applies to the decoder as well as to the sheet
-    if hasattr(tr, "language"):
-        tr.language = SETTINGS.get("speech_lang")
+    # Another model chosen in the panel while this one loaded, and already taken over: that one stays. Not yet: this one hears
+    # until it does, and is what is left when that one cannot be had
+    if SETTINGS.get("whisper_model") != model and getattr(app.state.transcriber, "available", False):
+        return
+    ready_speech(tr)
     app.state.transcriber = tr
     app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
     if getattr(tr, "available", False):
-        log.info("speech model ready (%s)", CONFIG.whisper_model)
+        log.info("speech model ready (%s)", model)
         await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None),
                          "voice": SETTINGS.on("voice_auto")})
 
@@ -2392,15 +2616,17 @@ async def analysis_worker(app: FastAPI) -> None:
     inflight_voice = False   # the running analysis is a spoken problem, not a screen
     inflight_speech = ""     # its words, so a screen that stops it can have it asked again
     inflight_retake = False  # it is that second asking, which a screen change ends for good
+    inflight_upto = 0        # where in the sound its words end
 
-    async def run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False) -> None:
+    async def run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False, upto: int = 0) -> None:
         """_run_analysis, counted while it runs: a deploy waits for the server to be idle (activity())."""
         STATE.analyses_running += 1
         STATE.screen_seq = seq   # whose age a screen change weighs (analysis_age): a follow-up takes an id of its own meanwhile
+        STATE.analysis_wrote = False   # nothing on the card yet: a newer spoken problem may still replace this one
         analysis_turn()   # a code check reading with this PC's model gives way (between_analyses)
         try:
             try:
-                await _run_analysis(frame, seq, voice, manual)
+                await _run_analysis(frame, seq, voice, manual, upto)
             except Exception as exc:   # past its own handling: the card still ends, and the worker goes on
                 log.exception("analysis #%d failed after solving", seq)
                 await report_error(seq, exc, "analysis", trigger="voice" if voice else "screen", elapsed=0)
@@ -2409,10 +2635,11 @@ async def analysis_worker(app: FastAPI) -> None:
             STATE.confirm_held.pop(seq, None)
             analysis_turn()   # and goes on when none runs
 
-    async def _run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False) -> None:
+    async def _run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False, upto: int = 0) -> None:
         """Solve the screen (if any) with the speech that goes with it. `voice` is a problem spoken
         aloud: then it is the problem itself, not side context. `manual`: the user asked for this
-        one (Reanalyze), so neither brake on automatic sending applies to it."""
+        one (Reanalyze), so neither brake on automatic sending applies to it. `upto`: where in the sound the
+        words of `voice` end, which the next spoken problem starts from once these have their answer."""
         start = time.time()
         trigger = "voice" if voice else "screen"
         first: list[float] = []
@@ -2431,6 +2658,10 @@ async def analysis_worker(app: FastAPI) -> None:
         async def on_delta(text: str) -> None:
             if not first:
                 first.append(time.time())
+                STATE.analysis_wrote = True
+                # The question has its answer coming: what is said from here on does not extend it, and asks for itself
+                if voice:
+                    STATE.voice_asked = False
             await broadcast({"type": "delta", "id": seq, "text": text})
 
         try:
@@ -2540,6 +2771,12 @@ async def analysis_worker(app: FastAPI) -> None:
         await note_success(result.engine, result.model)
         kind, answer = head_of(result.text)
         is_none = kind == "none"
+        if voice and not is_none:
+            STATE.voice_answered_to = max(STATE.voice_answered_to, upto)   # what the next one need not read
+        elif voice:
+            # Nothing to solve in it: the card says so under what was heard, so a sentence on the panel is not left unexplained
+            await broadcast({"type": "utterance", "text": voice, "lang": getattr(app.state.transcriber, "last_language", ""),
+                             "why": "told" if question_kind(voice) == "told" else "none"})
         # A run of answers that all found nothing means the screen is someone working rather than a
         # problem waiting to be read, and the worker then watches quietly (CONFIG.quiet_after). Only
         # what the tool asked by itself counts: Reanalyze asks for a proper look, which
@@ -2686,8 +2923,9 @@ async def analysis_worker(app: FastAPI) -> None:
             STATE.analysis_seq += 1
             inflight_frame, inflight_voice = STATE.latest_frame, bool(voice)
             inflight_speech, inflight_retake = voice, False
+            inflight_upto = STATE.utterances[-1]["end"] if voice and STATE.utterances else 0
             inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=voice,
-                                                        manual=True))
+                                                        manual=True, upto=inflight_upto))
             continue
 
         # A problem spoken aloud starts an analysis right away, with the current screen if
@@ -2702,7 +2940,13 @@ async def analysis_worker(app: FastAPI) -> None:
         if STATE.voice_pending and not SETTINGS.on("voice_auto"):
             STATE.voice_pending = False   # spoken problems are switched off, however this one got queued
         screen_busy = bool(inflight and not inflight.done() and not inflight_voice)
-        if STATE.voice_pending and not STATE.paused and not screen_busy and time.time() >= STATE.retry_after:
+        # The spoken problem that runs has written its first words: its answer is let finish, and the flag stays up, so
+        # the newest words start as soon as it is done. One waits: what is said in the same run of speech joins it, and after
+        # a pause a newer problem takes its place. Stopped here, a speaker who went on talking dropped the answers being
+        # written, 7 to 81 s after they started. With nothing written yet the problem is still being read, and the longer
+        # version replaces it below.
+        writing = bool(inflight and not inflight.done() and STATE.analysis_wrote)
+        if STATE.voice_pending and not STATE.paused and not screen_busy and not writing and time.time() >= STATE.retry_after:
             STATE.voice_pending = False
             if inflight and not inflight.done():   # only ever an earlier spoken problem (screen_busy above)
                 STATE.cancel_reason = "voice"
@@ -2711,14 +2955,19 @@ async def analysis_worker(app: FastAPI) -> None:
                     await inflight
                 except asyncio.CancelledError:
                     pass
+            group = STATE.recent_group()
+            if STATE.voice_retake and STATE.voice_retake in " ".join(u["text"] for u in group):
+                STATE.voice_retake = ""   # the same problem read on: this run carries the stopped one's words
+            # What the last answer was about is not asked again: this run is what came after it. Nothing after it: nothing to do
+            speech = after_the_answer(group, STATE.voice_answered_to)
+            if group and not speech:
+                continue
             STATE.last_analyze_ts = time.time()
             STATE.analysis_seq += 1
-            speech = STATE.recent_speech()
-            if STATE.voice_retake and STATE.voice_retake in speech:
-                STATE.voice_retake = ""   # the same problem read on: this run carries the stopped one's words
             inflight_frame, inflight_voice = STATE.latest_frame, True
             inflight_speech, inflight_retake = speech, False
-            inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=speech))
+            inflight_upto = group[-1]["end"] if group else 0
+            inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=speech, upto=inflight_upto))
             continue
 
         # A spoken problem a screen change stopped (below, where a screen takes over) is asked once more. It was
@@ -2743,8 +2992,9 @@ async def analysis_worker(app: FastAPI) -> None:
                 STATE.analysis_seq += 1
                 inflight_frame, inflight_voice = shown, True
                 inflight_speech, inflight_retake = speech, True
+                inflight_upto = STATE.voice_retake_to
                 log.info("analysis #%d: the spoken problem a screen change stopped is asked again", STATE.analysis_seq)
-                inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=speech))
+                inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=speech, upto=inflight_upto))
                 continue
 
         frame = STATE.latest_frame
@@ -2792,7 +3042,7 @@ async def analysis_worker(app: FastAPI) -> None:
                     pass
                 # A spoken problem stopped here is asked again after this screen (the retake above), once
                 if inflight_voice and inflight_speech and not inflight_retake and STATE.speech_epoch == heard:
-                    STATE.voice_retake, STATE.voice_retake_at = inflight_speech, time.time()
+                    STATE.voice_retake, STATE.voice_retake_at, STATE.voice_retake_to = inflight_speech, time.time(), inflight_upto
                     STATE.voice_retake_mark = STATE.screen_started
                 inflight = None
                 inflight_frame = None
@@ -2924,6 +3174,7 @@ def create_app() -> FastAPI:
         app.state.worker = asyncio.create_task(analysis_worker(app))
         app.state.worker.add_done_callback(worker_ended)
         app.state.transcribe_worker = None
+        app.state.speech_model_task = None
         app.state.speech_task = asyncio.create_task(load_speech(app))
         crop_on = CONFIG.crop != "off" and app.state.ocr is not None
         audio_on = getattr(app.state.transcriber, "available", False)
@@ -2971,6 +3222,8 @@ def create_app() -> FastAPI:
             app.state.runner_task.cancel()
             app.state.worker.cancel()
             app.state.speech_task.cancel()
+            if app.state.speech_model_task is not None:
+                app.state.speech_model_task.cancel()
             if app.state.transcribe_worker is not None:
                 app.state.transcribe_worker.cancel()
             cancel_check()
@@ -3076,11 +3329,22 @@ def create_app() -> FastAPI:
         rows = await asyncio.to_thread(HISTORY.query, day, q[:200], kind, limit, starred)
         return JSONResponse({"answers": rows})
 
+    @app.get("/heard")
+    async def heard_rows(day: str = ""):
+        """What was heard and kept (Keep what is heard): the days that hold any, the newest first, and the lines of one
+        of them, by default the newest, in the order they were said."""
+        days = await asyncio.to_thread(HISTORY.heard_days)
+        day = day if any(d["day"] == day for d in days) else (days[0]["day"] if days else "")
+        lines = await asyncio.to_thread(HISTORY.heard_lines, day) if day else []
+        return JSONResponse({"days": days, "day": day, "lines": lines})
+
     @app.get("/history/days")
     async def history_days():
-        # the days that have answers, and how many answers are starred (the contents' Starred choice)
+        # the days that have answers, how many answers are starred (the contents' Starred choice), and whether anything
+        # heard is kept (the keys to it)
         return JSONResponse({"days": await asyncio.to_thread(HISTORY.days_list),
-                             "starred": await asyncio.to_thread(HISTORY.starred_count)})
+                             "starred": await asyncio.to_thread(HISTORY.starred_count),
+                             "heard": await asyncio.to_thread(HISTORY.heard_any)})
 
     @app.get("/stats")
     async def stats() -> JSONResponse:

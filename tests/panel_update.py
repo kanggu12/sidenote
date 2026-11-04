@@ -46,9 +46,10 @@ def group_menu(br, s):
     p.wait(150)
     got = p.js("""() => { const m = document.getElementById('menu').getBoundingClientRect(), v = document.getElementById('menu-ver');
         const left = (el) => { const t = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); const r = document.createRange(); r.selectNodeContents(t); return Math.round(r.getBoundingClientRect().left - m.left); };
-        return { shown: !document.getElementById('menu-about').hidden && !!v.offsetParent, text: v.textContent, at: left(v), items: [...document.querySelectorAll('#menu .item')].map(left),
+        return { shown: !document.getElementById('menu-about').hidden && !!v.offsetParent, text: v.textContent, at: left(v), items: [...document.querySelectorAll('#menu .item')].filter((el) => el.offsetParent).map(left),
                  last: document.getElementById('menu').lastElementChild.id, inside: v.getBoundingClientRect().bottom <= m.bottom }; }""")
     check("then its foot says it: '버전 0.1.0'", got["shown"] and got["text"] == "버전 0.1.0" and got["last"] == "menu-about" and got["inside"], got)
+    # the items drawn: one that is hidden (What was heard, with nothing kept) has no column to be on
     check("...its words on the items' words' column", {got["at"]} == set(got["items"]), got)
     p.send({"type": "status", "version": "<img src=x onerror=alert(1)>"})
     p.wait(100)

@@ -35,6 +35,8 @@ HANGUL_SEEN = """(skip) => {
   while (walker.nextNode()) {
     const n = walker.currentNode, el = n.parentElement;
     if (!el || !HANGUL.test(n.nodeValue) || away(el) || el.closest("script, style")) continue;
+    // A box of words holds the person's own list, which names windows as their programs title them (시크릿, 사생활 보호)
+    if (el.closest("textarea.words")) continue;
     if (!el.getClientRects().length) continue;   // not drawn
     out.push(`text: ${n.nodeValue.trim().slice(0, 90)} (${el.id || el.className || el.tagName})`);
   }

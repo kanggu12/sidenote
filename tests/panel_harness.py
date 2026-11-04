@@ -82,6 +82,7 @@ class Stand:
         (self.static / "health").write_text('{"ok":true}')
         self.rows: list[dict] = []
         self.asked: list[str] = []   # the query of each /history the page asked for, in order
+        self.heard: dict = {"days": [], "day": "", "lines": []}   # what /heard gives: Keep what is heard
         stand = self
 
         class H(SimpleHTTPRequestHandler):
@@ -107,7 +108,11 @@ class Stand:
                         e["n"] += 1
                         e["first"], e["last"] = min(e["first"], r["ts"]), max(e["last"], r["ts"])
                     return self._json({"days": sorted(days.values(), key=lambda x: x["day"], reverse=True),
-                                       "starred": sum(1 for r in stand.rows if r.get("starred"))})
+                                       "starred": sum(1 for r in stand.rows if r.get("starred")), "heard": bool(stand.heard["days"])})
+                if url.path == "/heard":
+                    q = parse_qs(url.query)
+                    day = q.get("day", [""])[0] or stand.heard["day"]
+                    return self._json({**stand.heard, "day": day, "lines": [x for x in stand.heard["lines"] if x.get("day", day) == day]})
                 return super().do_GET()
 
             def _json(self, data):
