@@ -1,7 +1,8 @@
-name: Feature request
-description: An idea for Sidenote.
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: Ideas are kept here so others can add to them and vote. Search first; adding to an idea already there helps more than a second copy.
   - type: textarea
     id: problem
     attributes:

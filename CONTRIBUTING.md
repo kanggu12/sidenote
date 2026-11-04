@@ -25,9 +25,10 @@ from a fresh clone to a pull request.
   ([docs/capture-client.md](docs/capture-client.md)).
 - **Docs.** Anything that made you stop and search is worth a sentence.
 
-Look for issues labeled `good first issue` and `help wanted`. For a larger change, open an issue first, so the design
-can be agreed on before the code is written. Everyone taking part follows the
-[code of conduct](.github/CODE_OF_CONDUCT.md).
+Look for issues labeled `good first issue` and `help wanted`. Ideas and questions go to
+[Discussions](https://github.com/kanggu12/sidenote/discussions), where others can add to them and vote. For a larger
+change, start an idea there first, so the design can be agreed on before the code is written. Everyone taking part
+follows the [code of conduct](.github/CODE_OF_CONDUCT.md).
 
 **One rule for features.** Sidenote is for learning, practice and your own work
 ([Please use it fairly](README.md#please-use-it-fairly)). A change whose purpose is to hide Sidenote from a proctor,
@@ -262,7 +263,8 @@ Kotlin, JavaScript, TypeScript, Go, Bash). A new language needs:
 
 ## Report a bug
 
-Open an issue with what you did, what you expected, and what happened. These help:
+Open an [issue](https://github.com/kanggu12/sidenote/issues/new/choose) with what you did, what you expected, and
+what happened. These help:
 
 - `./sidenote doctor`: Docker, the images, the GPU, the agent's sign-in, the capture program's packages.
 - `./sidenote report`: each day's answers by engine, with their timing and cost.

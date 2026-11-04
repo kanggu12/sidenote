@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/kanggu12/sidenote/discussions/new?category=q-a
+    about: Setting up, using it, or whether something is meant to work.
+  - name: Suggest an idea
+    url: https://github.com/kanggu12/sidenote/discussions/new?category=ideas
+    about: Ideas are kept in Discussions, where others can add to them and vote.
   - name: Report a security problem
     url: https://github.com/kanggu12/sidenote/security/advisories/new
     about: Privately, so it can be fixed before it is public.

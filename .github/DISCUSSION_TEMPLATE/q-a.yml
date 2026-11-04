@@ -1,0 +1,30 @@
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What you want to do, and what happened when you tried.
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you run Sidenote
+      options:
+        - The app on Windows
+        - The app on Linux
+        - Docker on Linux
+        - Docker in WSL 2
+        - Kubernetes
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you downloaded, or `./sidenote version` with Docker.
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: For example RTX 4070 12 GB, Radeon RX 7900 XTX, or none.
