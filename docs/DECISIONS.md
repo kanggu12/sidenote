@@ -1505,7 +1505,7 @@ off them as the starred answers' do, and it is counted high: a row at its words 
 page in the order they come and sentences of 3 KB left a fifth of each page unused. Counted low, a long transcript would
 push answers out by the difference; counted high, the answers get a little more room.
 
-**A short question, and what is not taken.** The owner's "GTID가 뭔가요?", 11 characters as it was written down, was dropped
+**A short question, and what is not taken.** A spoken "GTID가 뭔가요?", 11 characters as it was written down, was dropped
 as under 12 while the live words on the card showed it. A sentence that looks like a question is now taken from 6. A
 sentence that ended and was not taken says why under it: too short at once, and nothing asked, or told rather than
 asked, when the first pass ends it. Those two come from the server (`utterance` with `why`), since it alone knows what

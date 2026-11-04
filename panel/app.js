@@ -4543,7 +4543,7 @@ function hearState() {
 const HEAR_FRESH = 8;   // longer than the 5 s between the server's capture messages, so the bars
 //                         do not blink off and on between two of them
 // Sentences that ended and were not taken, and why (the server's `utterance` messages with a `why`). The card writes down the last
-// seconds of sound, so a sentence the owner can see and nothing came of would look ignored: each is said under its sentence.
+// seconds of sound, so a sentence the user can see and nothing came of would look ignored: each is said under its sentence.
 const HEARD_WHY = { get short() { return t("Too short · not solved"); }, get told() { return t("Part of a story · not solved"); }, get none() { return t("No question · not solved"); } };
 const HEARD_NOTE_MS = 25000;   // a little longer than the card's words stay
 let heardNotes = [];
