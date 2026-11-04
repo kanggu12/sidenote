@@ -422,6 +422,95 @@ def group_drawn(br, s):
     p.close()
 
 
+# What Practice, the keyboard shortcuts and Export to Anki add, measured where each opens: inside the window, its words whole, no key over
+# another, and its words readable on what they stand on
+STUDY_MEASURE = """(sel) => {
+  const W = innerWidth, H = innerHeight, out = { missing: [], outside: [], cut: [], over: [] };
+  const box = document.querySelector(sel);
+  if (!box || !box.getClientRects().length) { out.missing.push(sel); return out; }
+  const b = box.getBoundingClientRect();
+  if (b.left < -0.5 || b.right > W + 0.5 || b.top < -0.5 || b.bottom > H + 0.5) out.outside.push(`${sel} ${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.right)},${Math.round(b.bottom)}`);
+  const keys = [...box.querySelectorAll('button, kbd, .hint-n, .lbl')].filter((e) => e.getClientRects().length);
+  for (const e of keys) {
+    const r = e.getBoundingClientRect();
+    if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible') out.cut.push(e.textContent.trim());
+    if (r.left < b.left - 0.5 || r.right > b.right + 0.5) out.outside.push(`${e.textContent.trim()} out of ${sel}`);
+  }
+  for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+    const a = keys[i].getBoundingClientRect(), c = keys[j].getBoundingClientRect();
+    if (keys[i].contains(keys[j]) || keys[j].contains(keys[i])) continue;
+    if (Math.min(a.right, c.right) - Math.max(a.left, c.left) > 0.5 && Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top) > 0.5) out.over.push(`${keys[i].textContent.trim()} / ${keys[j].textContent.trim()}`);
+  }
+  return out;
+}"""
+STUDY_CARD = ("## 핵심\n\n첫 부분입니다.\n\n## 코드\n\n```python\nprint(1)\n```\n\n## 복잡도\n\n셋째 부분입니다.\n")
+
+
+def group_study(br, s):
+    """The gear menu with Practice and Keyboard shortcuts in it, an answer Practice keeps back, the keys' sheet and Export's menu."""
+    if not T.group("practice, the keys' sheet and Export's menu at every width"):
+        return
+    rows = [row(980 + i, "essay", f"물음 {i}", "답", "풀이", ago=600 - i * 60) for i in range(3)]
+    for theme in ("dark", "light"):
+        for w, hh in ((360, 740), (390, 844), (768, 1024), (1001, 800), (1280, 720), (1440, 900), (1920, 1080), (2560, 1440)):
+            p = Page(br, s, rows, w=w, h=hh, theme=theme, settle=300)
+            name = f"{theme} {w}x{hh}"
+            p.js("() => setPractice(true)")
+            p.answer(990, "algorithm", "두 수의 합이 목표값이 되는 두 원소의 인덱스를 구하시오", "사전 한 번 훑기", STUDY_CARD)
+            p.wait(250)
+            p.js("() => { showHint(items.get(990)); stick = false; entryEl(990).scrollIntoView({ block: 'start' }); }")
+            p.wait(250)
+            seen = {"the answer kept back": p.js(STUDY_MEASURE, ".entry[data-id='990'] .row.practice")}
+            p.js("() => document.getElementById('more').click()")
+            p.wait(200)
+            seen["the menu"] = p.js(STUDY_MEASURE, "#menu")
+            p.js("() => document.getElementById('more').click()")
+            p.js("() => openKeys()")
+            p.wait(200)
+            seen["the keys' sheet"] = p.js(STUDY_MEASURE, "#keys")
+            rows_ok = p.js("() => [...document.querySelectorAll('#keys .set')].every((r) => { const l = r.querySelector('.lbl').getBoundingClientRect(), k = r.querySelector('kbd').getBoundingClientRect(); return l.right <= k.left + 0.5 && Math.abs((l.top + l.bottom) / 2 - (k.top + k.bottom) / 2) < 4; })")
+            p.js("() => closeKeys()")
+            p.js("() => { const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }")
+            p.wait(200)
+            seen["Export's menu"] = p.js(STUDY_MEASURE, "#export-menu")
+            clear = p.js("() => { const m = document.getElementById('export-menu').getBoundingClientRect(), k = document.getElementById('hist-export').getBoundingClientRect(); return Math.min(m.right, k.right) - Math.max(m.left, k.left) <= 0 || Math.min(m.bottom, k.bottom) - Math.max(m.top, k.top) <= 0; }")
+            for what, m in seen.items():
+                check(f"{name}: {what} is drawn, inside the window, its words whole, no key over another", not any(m.values()), m)
+            check(f"{name}: in the keys' sheet each key stands beside its words, on their line", rows_ok)
+            check(f"{name}: Export's menu leaves its key in view", clear)
+            check(f"{name}: the page does not scroll sideways", p.js("() => document.documentElement.scrollWidth - document.documentElement.clientWidth") <= 0)
+            check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
+            p.close()
+    # Their words read at 4.5:1 or better on what they stand on, in both themes
+    words = {".row.practice .hint-n": "how many hints", ".row.practice .btn span": "a Practice key's word", "#keys .set .lbl": "what a key does",
+             "#keys kbd.cmd": "a key", "#keys .set .help": "a key's note", "#export-menu .item": "an export choice", "#practice-seg button": "Practice's choice"}
+    for theme in ("dark", "light"):
+        p = Page(br, s, rows, w=1440, h=900, theme=theme, settle=300)
+        p.js("() => setPractice(true)")
+        p.answer(990, "algorithm", "물음", "답", STUDY_CARD)
+        p.wait(250)
+        p.js("() => { stick = false; entryEl(990).scrollIntoView({ block: 'start' }); }")
+        p.wait(200)
+        opens = {".row.practice": "() => {}", "#keys": "() => openKeys()", "#export-menu": "() => { closeKeys(); const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }",
+                 "#practice-seg": "() => { exportMenu(false); document.getElementById('more').click(); }"}
+        for scope, act in opens.items():
+            p.js(act)
+            p.wait(250)
+            png = p.page.screenshot()
+            for sel, what in words.items():
+                if not sel.startswith(scope):
+                    continue
+                got = p.js("""(sel) => { const e = [...document.querySelectorAll(sel)].find((x) => x.getClientRects().length); if (!e) return null; const r = e.getBoundingClientRect();
+                    return { box: [Math.floor(r.left), Math.floor(r.top), Math.ceil(r.right), Math.ceil(r.bottom)], colour: getComputedStyle(e).color.match(/[\\d.]+/g).map(Number) }; }""", sel)
+                if got is None:
+                    check(f"{theme}: {what} is there to read ({sel})", False)
+                    continue
+                ratio = contrast(got["colour"], h.background_of(br, png, got["box"]))
+                check(f"{theme}: {what} reads at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f}")
+        check(f"{theme}: the page threw nothing", not p.errors, p.errors[:2])
+        p.close()
+
+
 def group_shots(br, s):
     """The screens to look at, kept with the run: what no measure says, a person can see from CI's artifact without checking the commit out."""
     if not T.group("screens to look at"):
@@ -446,7 +535,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_matrix, group_shots):
+        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_matrix, group_study, group_shots):
             group(br, s)
         br.close()
     return T.end()

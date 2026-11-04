@@ -313,7 +313,8 @@
     mask-image: linear-gradient(180deg, #000 0, rgba(0, 0, 0, .55) 45%, transparent 92%); }
   button, select, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
-  code.cmd { font-family: var(--mono); font-size: 13px; white-space: nowrap;
+  /* a command to copy, and a key to press (the keys' sheet): one chip */
+  :is(code, kbd).cmd { font-family: var(--mono); font-size: 13px; white-space: nowrap;
     background: var(--sheet-2); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; }
 
   /* ---- top bar ---- */
@@ -2809,6 +2810,30 @@
   :root[data-skin="classic"] .v-seg { flex: 1 1 auto; min-width: 72px; }
   /* Two bands stacked over the thread read as one block: what passes under them does not show between them */
   html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { background: color-mix(in srgb, var(--paper) 78%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 4px; }
+
+  /* ---- Practice, the keyboard shortcuts and Export's menu: parts the panel has, put to these uses ---- */
+  /* An answer Practice keeps back: its keys wear the follow-up row's look (.row.asks), how many hints it has stands on their middle */
+  .row.practice .ct { align-items: center; }
+  .row.practice .topline { margin: 0; }
+  /* its label on the middle of what is beside it, the keys or the line that says it is being written, as the follow-up row's is */
+  :root[data-skin="classic"] .entry > .row.practice { align-items: center; }
+  :root[data-skin="classic"] .entry > .row.practice > .mg { padding-top: 0; }
+  .row.practice .hint-n { margin-left: 4px; font-size: 12.5px; line-height: 30px; color: var(--graphite); white-space: nowrap; }
+  /* The keys' sheet: the settings sheet, narrower, its rows a key each, the key in the command chip on the right at every width */
+  #keys { width: min(560px, 100%); }
+  #keys .keys-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-top: 6px; padding-right: 8px; margin-right: -8px; }
+  #keys .set { grid-template-columns: minmax(0, 1fr) auto; }
+  #keys .set .ctl { justify-self: end; }
+  #keys kbd.cmd { display: inline-block; min-width: 28px; text-align: center; line-height: 1.5; }
+  :root[data-skin="classic"] kbd.cmd { border-radius: 2px; }
+  /* Export's menu: the gear menu's look, held to the window under the Export key (app.js, exportMenu) */
+  #export-menu { position: fixed; top: 0; right: auto; min-width: 176px; transform-origin: top right; }
+  #export-menu.up { transform-origin: bottom right; }
+  /* The marks of the new entries, drawn as the menu's others are */
+  :root[data-skin="classic"] .menu h3:has(+ #practice-seg) { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l1.2-4.4L15.6 5.2a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.4 18.8z'/%3E%3Cpath d='M13.5 7.5l3 3'/%3E%3C/svg%3E"); }
+  :root[data-skin="classic"] #open-keys { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 14h8'/%3E%3C/svg%3E"); }
+  :root[data-skin="classic"] #export-menu [data-export="md"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3h8l4 4v14H6z'/%3E%3Cpath d='M14 3v4h4M9 12h6M9 16h4'/%3E%3C/svg%3E"); }
+  :root[data-skin="classic"] #export-menu [data-export="anki"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='7.5' width='13' height='13' rx='2'/%3E%3Cpath d='M8 4h11a2 2 0 0 1 2 2v11'/%3E%3C/svg%3E"); }
 </style>
 </head>
 <body>
@@ -2845,8 +2870,14 @@
         <div class="seg" id="lang-seg">
           <button type="button" data-lang="auto" title="Follows the browser's language" data-t data-t-title>Auto</button><button type="button" data-lang="ko" lang="ko">한국어</button><button type="button" data-lang="en" lang="en">English</button>
         </div>
+        <!-- Practice keeps each new answer back until it is asked for (app.js, setPractice). Its two words have keys of their own (data-t): in Korean the states Off and On are other words -->
+        <h3 data-t>Practice</h3>
+        <div class="seg" id="practice-seg">
+          <button type="button" data-practice="off" data-t="Practice: Off">Off</button><button type="button" data-practice="on" title="New answers show their question first, and their hints and the answer when asked" data-t="Practice: On" data-t-title>On</button>
+        </div>
         <hr />
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>
+        <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
         <button class="item" id="clear" type="button" data-t>Clear history</button>
       </div>
     </div>
@@ -2925,12 +2956,12 @@
     </section>
     <section class="card history">
       <h2 data-t>Contents <span class="n" id="hist-count"></span></h2>
-      <!-- finding an answer of this sitting by its words, and taking them all away as one Markdown file -->
+      <!-- finding an answer of this sitting by its words, and taking them all away as one Markdown file or as notes for Anki (#export-menu) -->
       <div class="hist-tools" id="hist-tools" hidden>
         <input type="search" id="hist-q" placeholder="Find an answer" aria-label="Search the answers" data-t-placeholder data-t-aria autocomplete="off">
         <select id="hist-day" aria-label="Date" data-t-aria tabindex="-1"><option value="" data-t>All days</option></select>
         <select id="hist-kind" aria-label="Type" data-t-aria tabindex="-1"><option value="" data-t>All types</option></select>
-        <button type="button" class="btn sm" id="hist-export" title="Download the answers in view as Markdown" data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/></svg><span class="lab-word" data-t>Export</span></button>
+        <button type="button" class="btn sm" id="hist-export" title="Download the answers in view as Markdown or for Anki" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu" data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/></svg><span class="lab-word" data-t>Export</span></button>
       </div>
       <ol id="history"></ol>
       <p class="none-found" id="hist-nomatch" hidden></p>
@@ -2949,6 +2980,31 @@
     <div id="settings-body"></div>
     <footer class="set-foot"><button class="btn sm ghost" id="settings-reset" type="button" data-t>Reset to defaults</button></footer>
   </section>
+</div>
+<!-- The keyboard shortcuts (app.js, SHORTCUTS): the settings sheet's look, a row a key, each key in the command chip -->
+<div class="overlay" id="keys-overlay" hidden>
+  <section class="card settings" id="keys" role="dialog" aria-modal="true" aria-labelledby="keys-title">
+    <header><h2 id="keys-title" data-t>Keyboard shortcuts</h2>
+      <button class="btn icon" id="keys-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" data-t>Not while typing in a field, nor with Ctrl, Alt or Meta held. c, h and a act on the answer the contents mark</p>
+    <div class="keys-list">
+      <div class="set"><span class="lbl" data-t>Next answer</span><span class="ctl"><kbd class="cmd">j</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Previous answer</span><span class="ctl"><kbd class="cmd">k</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Copy the one-line answer</span><span class="ctl"><kbd class="cmd">c</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Reanalyze</span><span class="ctl"><kbd class="cmd">r</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Pause or continue</span><span class="ctl"><kbd class="cmd">p</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Find an answer</span><span class="ctl"><kbd class="cmd">/</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Show a hint</span><span class="ctl"><kbd class="cmd">h</kbd></span><p class="help" data-t>In practice mode</p></div>
+      <div class="set"><span class="lbl" data-t>Show the answer</span><span class="ctl"><kbd class="cmd">a</kbd></span><p class="help" data-t>In practice mode</p></div>
+      <div class="set"><span class="lbl" data-t>Keyboard shortcuts</span><span class="ctl"><kbd class="cmd">?</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Close</span><span class="ctl"><kbd class="cmd">Esc</kbd></span></div>
+    </div>
+  </section>
+</div>
+<!-- Export's two files, in the gear menu's look, opened under the Export key (app.js, exportMenu) -->
+<div class="menu" id="export-menu" role="menu" aria-labelledby="hist-export" hidden>
+  <button class="item" type="button" role="menuitem" data-export="md" title="One Markdown file with each answer, what was asked and its follow-ups" data-t-title>Markdown</button>
+  <button class="item" type="button" role="menuitem" data-export="anki" title="Notes for Anki: the question on the front, the answer line and its key point on the back" data-t-title>Anki</button>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>

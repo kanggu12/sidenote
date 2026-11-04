@@ -170,6 +170,8 @@ const PTEXT_COPY_MARK = mark('<rect x="9" y="9" width="11.5" height="11.5" rx="2
 // A sheet with a line pulled out of it: the one line that is the answer.
 const ANSWER_MARK = mark('<rect x="4" y="3.5" width="12" height="17" rx="2.5"/><path d="M8 9.5h4M8 14h5"/>'
   + '<path d="M16.5 12h4M18.5 10l2 2-2 2"/>');
+// A light bulb: a hint, the next part of the working (Practice)
+const HINT_MARK = mark('<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/>');
 // The code block's own copy button: the mark changes with the word, so the state is visible from
 // across the page and not only to whoever is reading the label.
 async function copyCode(from, btn) {
@@ -1774,7 +1776,8 @@ function vAnswerTiles(el, md) {
 }
 function infographics(el) {
   const it = el.matches?.(".entry") ? items.get(idOf(el.dataset.id)) : el.dataset?.turn ? turns.get(idOf(el.dataset.turn)) : null;
-  const head = it ? splitHead(it.raw || "", true) : null;
+  // Kept back by Practice: drawn from the hints shown alone, or a complexity scale would say what the rest of it keeps back
+  const head = it ? (el.matches?.(".entry") && held(it) ? { type: it.head.type, answer: "", body: shownText(it) } : splitHead(it.raw || "", true)) : null;
   el.querySelectorAll(".md").forEach((md) => {
     if (md.closest(".ptext, .check-runs") || md.dataset.drawn === "1") return;
     md.dataset.drawn = "1";
@@ -3114,8 +3117,9 @@ const NEXT_ASKS = {
 };
 // Offered on the newest answer only: a follow-up is asked about the last one the server answered,
 // so a button under an older entry would send the question somewhere it was not meant to go.
+// Not on one Practice keeps back: they ask about an answer not seen yet.
 const nextAsks = (it) => (!it.live && !it.error && it.head.type && it.head.type !== "none"
-                          && it.id === lastAnsweredId() && status.canAsk)
+                          && it.id === lastAnsweredId() && status.canAsk && !held(it))
   ? [[t("Go deeper"), DIG], ...(NEXT_ASKS[it.head.type] || [])] : [];
 // A dropped connection loses the replies still on their way: a Problem text being written out goes back to its
 // button, and an agent check in progress says it was not received.
@@ -3176,7 +3180,9 @@ const turnWrote = (t) => {
   return !!((h.body || "").trim() || (h.answer || "").trim());
 };
 // Errors are short: never folded. An entry stays open while a follow-up about it is being written.
-const folded = (it) => olderThanOpen(it) && !it.live && !it.error && !unfolded.has(it.id) && !it.turns.some((t) => turns.get(t)?.live);
+// One kept back by Practice is not folded either: folded, it would show the answer line it keeps back.
+const foldable = (it) => olderThanOpen(it) && !it.live && !it.error && !held(it);
+const folded = (it) => foldable(it) && !unfolded.has(it.id) && !it.turns.some((t) => turns.get(t)?.live);
 // When an answer was, with its day when that was not today
 function answerItems(text) {
   // The numbered forms an answer line comes in: "(1) a (2) b", "1) a 2) b", "1. a 2. b", "① a ② b". One form throughout:
@@ -3202,6 +3208,171 @@ function answerItems(text) {
   if (at.length < 2) return null;   // a "2" after the "1", or it is only a number
   return at.map((a, i) => t.slice(a.body, i + 1 < at.length ? at[i + 1].start : t.length).trim());
 }
+
+// ---------- Practice: an answer kept back until it is asked for ----------
+// For a student who wants to try first. With Practice on (the gear menu), an answer that arrives shows its question and
+// keeps the rest back: Show a hint opens the solution's own parts one at a time, in their order, and Show the answer
+// opens all of it, the answer line too. It is a way of showing only: the server is not told and solves as before. This
+// browser keeps the choice, and for each answer that came while it was on how far it has been opened.
+const PRACTICE_KEY = "sidenote-practice";               // when Practice was turned on (ms); nothing while it is off
+const PRACTICE_CARDS_KEY = "sidenote-practice-cards";   // [id, hints shown] of the answers it kept back, oldest first
+const PRACTICE_KEEP = 400;                              // answers remembered: days of study, a few KB of storage
+const OPENED = -1;                                      // "hints shown" of an answer opened in full: it stays open
+let practiceSince = null;                               // when Practice was turned on, or null while it is off
+const practiceCards = new Map();                        // String(id) -> hints shown, or OPENED
+// Read once as the page opens, as the menu's other choices are; storage may be unavailable, and then nothing is kept
+try {
+  const since = Number(localStorage.getItem(PRACTICE_KEY));   // a time, or 0 for nothing stored
+  practiceSince = since > 0 ? since : null;                   // anything else is off
+  for (const [id, n] of JSON.parse(localStorage.getItem(PRACTICE_CARDS_KEY) || "[]")) {
+    if (Number.isInteger(n) && n >= OPENED) practiceCards.set(String(id), n);   // a count of hints, or OPENED; nothing else is ours
+  }
+} catch (_) { practiceCards.clear(); }                        // unreadable: start with nothing kept back
+function keepCards() {
+  // Over the limit the oldest go: a Map keeps the order its keys were first set in
+  while (practiceCards.size > PRACTICE_KEEP) practiceCards.delete(practiceCards.keys().next().value);
+  try { localStorage.setItem(PRACTICE_CARDS_KEY, JSON.stringify([...practiceCards])); } catch (_) {}
+}
+// Kept back now: Practice is on, the answer came while it was, it was not opened in full, and there is something to keep
+// back (one being written, or one that wrote an answer line or a solution: a failure that wrote nothing shows as it is)
+function held(it) {
+  if (practiceSince == null || !it || !practiceCards.has(String(it.id))) return false;
+  return practiceCards.get(String(it.id)) !== OPENED && (it.live || wrote(it));
+}
+// An answer comes into the notebook: with Practice on it is kept back from now on, across a reload. One from the history
+// counts as come while Practice was on when it was answered after Practice was turned on (with the panel closed, say)
+function practiceArrived(it, restored = false) {
+  if (practiceSince == null || practiceCards.has(String(it.id))) return;   // off, or known already
+  if (restored && it.ts < practiceSince) return;                           // answered before: shown as it was
+  practiceCards.set(String(it.id), 0);                                     // kept back, no hint shown yet
+  keepCards();
+}
+// Where each of an answer's parts ends in its text: the solution's own sections in their order. The hints shown so far
+// are the text up to one of these, so they read as the whole does, only shorter. Under headings when two or more stand
+// at one level; else under lines that are only bold (the steps as the models write them); else block by block, each step
+// of a list a part of its own. A heading, a rule or a line ending in a colon goes with what follows it.
+function answerCuts(md) {
+  const text = String(md || "");
+  const first = text.search(/\S/);                     // where the writing begins
+  if (first < 0) return [];                            // nothing written: no part
+  // The blocks as the panel's Markdown reads them, each with where it starts; the items of a list are blocks of their own
+  let toks = null;
+  try { toks = typeof window.marked?.lexer === "function" ? window.marked.lexer(text) : null; } catch (_) { toks = null; }
+  const blocks = [];
+  if (toks && toks.map((k) => k.raw).join("") === text) {   // the tokens make up the text exactly: their offsets hold
+    let at = 0;
+    for (const k of toks) {
+      const from = at;
+      at += k.raw.length;
+      if (k.type === "space") continue;                       // the blank lines between blocks
+      if (k.type === "list" && k.items?.length > 1 && k.items.map((i) => i.raw).join("") === k.raw) {
+        let p = from;                                         // each step at its own place in the list
+        for (const i of k.items) { blocks.push({ type: "item", from: p, raw: i.raw }); p += i.raw.length; }
+      } else blocks.push({ type: k.type, depth: k.depth, from, raw: k.raw });
+    }
+  } else {
+    // No Markdown reader here: the paragraphs, as blank lines divide them outside code
+    let fence = false, at = 0, open = true;
+    for (const line of text.split("\n")) {
+      if (/^\s*(```|~~~)/.test(line)) fence = !fence;         // a code block's blank lines divide nothing
+      if (!line.trim()) open = open || !fence;                // a blank line ends the paragraph
+      else if (open) { blocks.push({ type: /^\s{0,3}#{1,6}\s/.test(line) ? "heading" : "paragraph", from: at, raw: line }); open = false; }
+      at += line.length + 1;
+    }
+  }
+  const words = (b) => b.raw.trim();
+  let starts;
+  // Headings: the outermost level with two or more, and any heading above it
+  const level = [1, 2, 3, 4, 5, 6].find((d) => blocks.filter((b) => b.type === "heading" && b.depth === d).length >= 2);
+  if (level) starts = blocks.filter((b) => b.type === "heading" && b.depth <= level).map((b) => b.from);
+  else {
+    // Lines that are only bold, two or more ("**1. Read the input**")
+    const bold = blocks.filter((b) => b.type === "paragraph" && /^\*\*[^*\n]{1,60}\*\*[:：]?$/.test(words(b)));
+    if (bold.length >= 2) starts = bold.map((b) => b.from);
+    else {
+      starts = [];
+      let join = false;                                       // the block before leads into this one
+      for (const b of blocks) {
+        if (!join) starts.push(b.from);
+        join = b.type === "heading" || b.type === "hr" || /[:：]$/.test(words(b));
+      }
+    }
+  }
+  // A part starts at each, what stands before the first is a part too, and none starts inside a formula set on lines of
+  // its own (a $$ block with a blank line in it reads as two paragraphs)
+  const evenMath = (c) => ((text.slice(0, c).replace(/(```|~~~)[\s\S]*?\1/g, "").match(/\$\$/g) || []).length % 2) === 0;
+  const cuts = [...new Set(starts.filter((s) => s > first))].sort((a, b) => a - b).filter(evenMath);
+  return [...cuts, text.length];                              // each part ends where the next starts, the last at the end
+}
+// An answer's parts, worked out once for the text it has
+function practiceParts(it) {
+  const body = it.head?.body || "";
+  if (it.cutsOf !== body) { it.cuts = answerCuts(body); it.cutsOf = body; }
+  return it.cuts;
+}
+const hintsShown = (it) => Math.max(0, Math.min(practiceCards.get(String(it.id)) || 0, practiceParts(it).length));
+// What a kept-back answer shows of its solution: its first parts, as many as hints were asked for
+function shownText(it) {
+  const n = hintsShown(it);
+  return n ? (it.head?.body || "").slice(0, practiceParts(it)[n - 1]) : "";
+}
+// The rows of a kept-back answer, under its question: the keys that show more, then what they have shown. The keys stay where
+// they are as the hints come in under them, so they are pressed again without moving the pointer.
+function practiceRows(it) {
+  // Being written: the card says so, and shows none of it
+  if (it.live) return row(t("Practice"), `<div class="topline pending"><span class="spin"></span><span>${t("Writing the answer · hidden in practice mode")}</span></div>`, "practice");
+  const total = practiceParts(it).length, n = hintsShown(it);
+  // A hint while parts are left; an answer of one part has the answer key alone
+  const hint = total > 1 && n < total ? `<button class="btn sm" type="button" data-act="hint" title="${t("Show the next part of the solution")}">${HINT_MARK}<span>${t("Show a hint")}</span></button>` : "";
+  const all = `<button class="btn sm" type="button" data-act="reveal" title="${t("Show the answer line and the whole solution")}">${ANSWER_MARK}<span>${t("Show the answer")}</span></button>`;
+  // How many there are, and how many are out
+  const count = total > 1 ? `<span class="hint-n">${n ? t("{n} of {total} hints", { n, total }) : t("{n} hints", { n: total })}</span>` : "";
+  // The follow-up row's look (.asks), with a name of its own, so the code that keeps that row in step leaves this one alone
+  return row(t("Practice"), `${hint}${all}${count}`, "asks practice")
+    + (n ? row(t("Hints"), `<div class="md" data-body></div>`) : "");
+}
+// The next part of the current answer's solution; false when there is none to show
+function showHint(it, key = null) {
+  if (!it || !held(it) || it.live) return false;                     // only an answer kept back, once it is written
+  const total = practiceParts(it).length, n = hintsShown(it);
+  if (total < 2 || n >= total) return false;                          // one part, or all of them out
+  practiceCards.set(String(it.id), n + 1);                            // one more, kept across a reload
+  keepCards();
+  renderEntry(it);
+  // A key pressed keeps the keyboard; once the last hint is out, the answer key next to it takes it
+  if (key) afterDraw(it, (el) => { if (!el.contains(document.activeElement)) el.querySelector("[data-act='hint'], [data-act='reveal']")?.focus({ preventScroll: true }); });
+  return true;
+}
+// All of it: the answer line, the whole solution and what came with it. Opened once, it stays open
+function showAnswer(it, key = null) {
+  if (!it || !held(it) || it.live) return false;
+  practiceCards.set(String(it.id), OPENED);
+  keepCards();
+  unfolded.add(it.id);              // opened by hand: an older answer shows whole, as one opened from its fold does
+  renderEntry(it); renderIndex();   // the contents row says what it answers now
+  afterDraw(it, (el) => {
+    if (key && !el.contains(document.activeElement)) el.querySelector("[data-copy-answer]")?.focus({ preventScroll: true });   // the key's place
+    sweepKey(el);                   // the highlighter goes along the answer line, as on an answer that has come in
+  });
+  announce(`${TYPE_LABEL[it.head.type] || t("Solution")}: ${plainAnswer(it.head.answer) || t("Solution done")}`);
+  return true;
+}
+// After the entry is drawn again: a press under way draws it when the press ends (renderEntry, endPress), which is queued first
+function afterDraw(it, fn) { setTimeout(() => { const el = entryEl(it.id); if (el) fn(el); }, 0); }
+// Practice turned on or off in the menu; kept in this browser
+function setPractice(on) {
+  if (on === (practiceSince != null)) { syncPracticeSeg(); return; }   // already so
+  practiceSince = on ? Date.now() : null;                              // the answers from now on are kept back
+  try { if (on) localStorage.setItem(PRACTICE_KEY, String(practiceSince)); else localStorage.removeItem(PRACTICE_KEY); } catch (_) {}
+  syncPracticeSeg();
+  // Those kept back come and go with it: only the entries whose look changes are drawn again, the one read kept in its place
+  keepPlace(() => thread.forEach((id) => { const it = items.get(id), el = entryEl(id); if (it && el && el.classList.contains("held") !== held(it)) renderEntry(it); }));
+  renderIndex(); syncNextAsks();
+}
+function syncPracticeSeg() {
+  const on = practiceSince != null;
+  document.querySelectorAll("#practice-seg button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.practice === "on") === on)));
+}
 function entryWhen(it) {
   const d = new Date(it.ts);
   return `<time class="stamped">${fmtWhen(d.getTime())}</time>`;
@@ -3215,10 +3386,11 @@ function entryHtml(it) {
   if (it.pages) via.push(`<span>${t("A problem gathered by scrolling, {n} pages", { n: it.pages })}</span>`);
   if (it.live) via.push(`<span data-elapsed>${liveText(it)}</span>`);
   const asks = nextAsks(it);          // what can be asked next about this answer
+  const hold = held(it);              // kept back by Practice: its question, and the keys that show more
   const tools = [];
   // Every one of these wears its mark, the same drawing as the copy button inside a code block.
-  if (olderThanOpen(it) && !it.live && !it.error) tools.push(`<button class="btn sm ghost" data-fold="${it.id}" aria-expanded="${!folded(it)}">${folded(it) ? OPEN_MARK + `<span>${t("Show the solution")}</span>` : FOLD_MARK + `<span>${t("Fold")}</span>`}</button>`);
-  if (!it.live && !it.error) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
+  if (foldable(it)) tools.push(`<button class="btn sm ghost" data-fold="${it.id}" aria-expanded="${!folded(it)}">${folded(it) ? OPEN_MARK + `<span>${t("Show the solution")}</span>` : FOLD_MARK + `<span>${t("Fold")}</span>`}</button>`);
+  if (!it.live && !it.error && !hold) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
   if (ptextOffered(it)) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}" title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}</span></button>`);
   if (it.ptext?.text) tools.push(`<button class="btn sm ghost" data-copy-ptext="${it.id}" title="${t("Copy the problem text written out")}">${PTEXT_COPY_MARK}<span>${t("Copy problem text")}</span></button>`);
   // An error says what went wrong on its first line, beside its label. Its head used to be the headline
@@ -3232,11 +3404,14 @@ function entryHtml(it) {
   // The follow-up buttons can be pressed only while the socket is up: syncNextAsks keeps them in step
   // after this, and takes the row away when the server says it cannot answer them.
   const offline = wsState === "up" ? "" : " disabled";
+  // Kept back by Practice: in place of the answer line and the solution, the keys and the hints shown, and the problem text
+  // written out (a question too). What the watching added under it by itself (a retry, the answer filled out) waits with
+  // the rest, and the follow-ups asked about it show.
   return `${head}
     ${it.trigger === "voice" && it.transcript ? row(t("Heard"), `<div class="asked">${escapeHtml(it.transcript)}</div>`, "fold-hide") : ""}
     ${row(t("Question"), `<div class="asked" data-asked></div>`, "", "data-askedrow hidden")}
     ${it.stopped ? row(t("Stopped"), `<p class="cap stopped">${escapeHtml(it.stopped)}${t(" · to solve it again: {redo}", { redo: REDO_KEY() })}</p>`) : ""}
-    ${!it.error || wrote(it) ? `
+    ${hold ? `${practiceRows(it)}${it.ptext ? row(t("Problem"), ptextHtml(it.ptext)) : ""}` : !it.error || wrote(it) ? `
       ${row(`<span data-albl>${t("Answer")}</span>`, `<div class="answer"><span class="answer-text"><mark class="hl" data-aval></mark></span>
         <button class="btn sm ghost" data-copy-answer="${it.id}" title="${t("Copy the one-line answer")}">${COPY_MARK}<span>${t("Copy")}</span></button></div>`, "", "data-answer hidden")}
       ${row(it.error ? t("Unfinished solution") : t("Solution"), `<div class="md${it.live ? " cursor" : ""}" data-body></div>`, "fold-hide")}
@@ -3245,7 +3420,7 @@ function entryHtml(it) {
       ${it.ptext ? row(t("Problem"), ptextHtml(it.ptext), "fold-hide") : ""}
       ${it.meta ? row("", metaHtml(it.meta), "fold-hide") : ""}
 ` : ""}
-    <div data-thread class="fold-hide">${it.turns.map((tid) => turnHtml(turns.get(tid))).join("")}</div>
+    <div data-thread class="fold-hide">${(hold ? it.turns.filter((tid) => !turns.get(tid)?.retry) : it.turns).map((tid) => turnHtml(turns.get(tid))).join("")}</div>
     ${asks.length ? row(t("More"), asks.map(([label, text]) =>
         `<button class="btn sm" data-ask="${escapeHtml(text)}" title="${escapeHtml(text)}"${offline}>${ASK_MARK}<span>${escapeHtml(label)}</span></button>`).join(""),
       "fold-hide asks") : ""}`;
@@ -3305,6 +3480,7 @@ function renderEntry(it) {   // create or rebuild one entry in place
     $("thread").insertBefore(el, $("thread-tail"));
   }
   el.classList.toggle("folded", folded(it));
+  el.classList.toggle("held", held(it));   // kept back by Practice: turning it off or on draws again only these (setPractice)
   el.classList.toggle("fresh", !!it.fresh); it.fresh = false;
   if (it.id === viewId) el.dataset.here = "1";
   // The kind of problem is what the entry is coloured by: the word in the margin, the same word in
@@ -3370,7 +3546,7 @@ function refold() {   // only the newest KEEP_OPEN entries stay open; older ones
   thread.forEach((id) => {
     const it = items.get(id), el = entryEl(id);
     if (it && el && !stick && folded(it) && !el.classList.contains("folded") && inView(el)) unfolded.add(id);   // being read
-    if (it && el && (el.classList.contains("folded") !== folded(it) || !!el.querySelector("[data-fold]") !== (olderThanOpen(it) && !it.live && !it.error))) renderEntry(it);
+    if (it && el && (el.classList.contains("folded") !== folded(it) || !!el.querySelector("[data-fold]") !== foldable(it))) renderEntry(it);
   });
 }
 function syncEmpty() {
@@ -3538,7 +3714,8 @@ function paintItem(it, final) {
   // The stream stopped part way: say so beside the answer too, not only beside the body (the
   // ANSWER line may itself have been cut off).
   const label = ANSWER_LABEL[type] || t("Summary");
-  paintAnswer(el, type, answer, it.error ? t("{label}, unfinished", { label }) : label);
+  // Not on one Practice keeps back: it has no answer row, and the first one in it would be a follow-up's
+  if (!held(it)) paintAnswer(el, type, answer, it.error ? t("{label}, unfinished", { label }) : label);
   // a problem that is not in Korean: what it asks, in Korean, above the answer it is answered in
   const askedRow = el.querySelector("[data-askedrow]"), askedEl = el.querySelector("[data-asked]");
   if (askedRow && askedEl) {
@@ -3552,6 +3729,13 @@ function paintItem(it, final) {
   if (folded(it)) { typesetMath(el); return; }   // its answer line shows, and may hold a formula
   const bodyEl = el.querySelector(":scope > .row [data-body]");
   if (!bodyEl) return;
+  // Kept back by Practice: the hints asked for, drawn as the whole would be, and nothing while it is written
+  if (held(it)) {
+    if (it.live) return;
+    renderInto(bodyEl, shownText(it));
+    if (final) enhance(el);
+    return;
+  }
   if (it.live && (body || "").length >= LIVE_FROM) { paintLive(bodyEl, body); return; }
   bodyEl.__live = null;
   renderInto(bodyEl, body || "");
@@ -3812,9 +3996,12 @@ function forgetScreens() {   // screen capture off: the screenshots kept for the
 // answers), lower-cased once per search
 // (the answer as read: its head lines, "TYPE:", "ANSWER:", kept every row for "type" and showed in the row)
 function readText(raw) { const h = splitHead(raw || "", true); return [h.answer || "", h.body || ""].join("\n"); }
+// One Practice keeps back is found by what it shows: its question and the hints out, not the answer it keeps back, which a row
+// found by it would show
 function searchText(it) {
-  const parts = [TYPE_LABEL[it.head.type] || it.head.type || "", it.transcript || "", it.head.asked || "", readText(it.raw), it.error || ""];
-  for (const tid of it.turns) { const t = turns.get(tid); if (t) parts.push(t.q || "", readText(t.raw)); }
+  const hold = held(it);
+  const parts = [TYPE_LABEL[it.head.type] || it.head.type || "", it.transcript || "", it.head.asked || "", hold ? shownText(it) : readText(it.raw), it.error || ""];
+  for (const tid of it.turns) { const t = turns.get(tid); if (t && !(hold && t.retry)) parts.push(t.q || "", readText(t.raw)); }
   return parts.join("\n").toLowerCase();
 }
 // The row's text with the words searched for marked, escaped; around the first match when it is further in than
@@ -3885,6 +4072,7 @@ function restore(row) {
       meta: t, retry: !!t.retry, kind: t.kind, check: t.check || null });
     it.turns.push(t.id);
   }
+  practiceArrived(it, true);   // answered while Practice was on, the panel closed or not: kept back like one that came here
   items.set(it.id, it); thread.push(it.id);
   return true;
 }
@@ -3998,10 +4186,14 @@ function renderIndex() {
     const says = (s, block = false) => { const t = plainAnswer(s, block); return /[\p{L}\p{N}]{2,}/u.test(t) ? t : ""; };
     // a line of the body is read as a block: its heading's hashes and a table row's bars are marks there
     const firstLine = (s) => says(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => says(l, true)), true);
-    let text = it.error ? (HINT[it.hint] || HINT[""]).title : (plainAnswer(it.head.asked) || says(it.head.answer) || firstLine(it.head.body) || label);
+    // One Practice keeps back is named by its question alone, or by what was heard: never its answer line or the first words of its working
+    const hold = held(it);
+    let text = it.error && !hold ? (HINT[it.hint] || HINT[""]).title
+      : hold ? (plainAnswer(it.head.asked) || (it.trigger === "voice" ? says(it.transcript) : "") || t("Answer hidden for practice"))
+      : (plainAnswer(it.head.asked) || says(it.head.answer) || firstLine(it.head.body) || label);
     // a row kept for words that are not in its first line shows where they are
     if (words.length && !words.every((w) => text.toLowerCase().includes(w))) {
-      const whole = readText(it.raw), at = whole.toLowerCase().indexOf(words[0]);
+      const whole = hold ? shownText(it) : readText(it.raw), at = whole.toLowerCase().indexOf(words[0]);
       if (at >= 0) text = whole.replace(/\s+/g, " ");
     }
     return `${head}<li><button class="h${it.error ? " err" : ""}${it.live ? " live" : ""}" data-id="${id}" title="${escapeHtml(text)}"
@@ -4013,18 +4205,19 @@ function renderIndex() {
   markIndex();
   if (focused) $("history").querySelector(`.h[data-id="${focused}"]`)?.focus({ preventScroll: true });
 }
+// What Export takes, oldest first: the finished answers the contents list (the day and the kind chosen, and the words searched for)
+function exportItems() {
+  const words = histQuery.split(/\s+/).filter(Boolean);
+  return thread.map((id) => items.get(id)).filter((it) => it && !it.live && inChoice(it) && words.every((w) => searchText(it).includes(w)));
+}
 // The answers in view as one Markdown file, oldest first: each with its time, kind and who answered, what was heard when
 // it was a spoken problem, the answer without the engine's own TYPE, ANSWER and REGION lines, and its follow-ups.
 function exportMarkdown() {
   const pad = (n) => String(n).padStart(2, "0");
   const when = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const out = [`# ${t("Sidenote answers ({when})", { when: when(Date.now()) })}`, ""];
-  const words = histQuery.split(/\s+/).filter(Boolean);
   let written = 0;
-  for (const id of thread) {
-    const it = items.get(id);
-    // what the contents list: the day and the kind chosen, and the words searched for
-    if (!it || it.live || !inChoice(it) || !words.every((w) => searchText(it).includes(w))) continue;
+  for (const it of exportItems()) {
     written++;
     const kind = it.error ? t("Error") : TYPE_LABEL[it.head.type] || it.head.type || t("Result");
     const who = it.meta ? `${it.meta.engine === "agent" ? AG() : t("Local model")}${it.meta.model ? ` · ${it.meta.model}` : ""}${it.meta.elapsed != null ? ` · ${t("{n} s", { n: it.meta.elapsed })}` : ""}` : "";
@@ -4043,15 +4236,143 @@ function exportMarkdown() {
     }
   }
   if (!written) { toast(t("No answers to export"), null, "warn"); return; }
-  const d = new Date();
-  const blob = new Blob([out.join("\n")], { type: "text/markdown;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `sidenote-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.md`;
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  saveFile(out.join("\n"), "text/markdown;charset=utf-8", `sidenote-${fileStamp()}.md`);
   toast(written === 1 ? t("Exported {n} answer (Markdown)", { n: written }) : t("Exported {n} answers (Markdown)", { n: written }));
 }
+// A file made here, downloaded as a link to it is
+function saveFile(text, type, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);   // the download has its copy by then
+}
+// The time in a file's name: 20261104-1042
+function fileStamp(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+// ---------- Export to Anki ----------
+// The same answers as notes for Anki to import, one line each: Anki's headers, then each answer's question on the front and on the back
+// its answer line and its key point (the solution's first part, as Practice cuts it), drawn by the panel's own Markdown and cleaned by
+// its own sanitizing, tagged with its type and its day. Anki reads the file as tab-separated text whose fields are HTML, so nothing in
+// a field may end it: a tab is written as its entity and a line break as <br>. Anki takes a line that starts with # for a comment and a
+// field that starts with a quote mark for a quoted one, so those two are written as entities too. A formula keeps its TeX, in the
+// \( \) and \[ \] Anki's MathJax reads; code keeps its text; nothing is a picture.
+const ANKI_QUOTE = "\uE000";   // a quote mark in the words while they are written out: back as &quot; after, unlike an attribute's own
+function ankiHtml(md, inline = false) {
+  const box = document.createElement("div");
+  renderInto(box, String(md || ""), inline);                  // the panel's Markdown, cleaned as an answer on the page is (PURIFY)
+  // A formula as the TeX it was written in, set off as Anki's MathJax reads it; its line ends are spaces to TeX, and stay out of it
+  box.querySelectorAll("span.math").forEach((m) => {
+    const s = m.textContent, block = s.startsWith("$$") && s.endsWith("$$") && s.length >= 4;
+    const tex = (block ? s.slice(2, -2) : s.replace(/^\$|\$$/g, "")).trim().replace(/\s*\n\s*/g, " ");
+    m.replaceWith(block ? `\\[${tex}\\]` : `\\(${tex}\\)`);
+  });
+  box.querySelectorAll("pre > code").forEach((c) => { c.textContent = c.textContent.replace(/\n$/, ""); });   // a block's last line break is no line of its own
+  // What the panel puts on its own elements says nothing in Anki: the class of a code block, a link's way of opening
+  box.querySelectorAll("[class], [target], [rel]").forEach((e) => { e.removeAttribute("class"); e.removeAttribute("target"); e.removeAttribute("rel"); });
+  box.querySelectorAll("*").forEach((e) => { for (const a of [...e.attributes]) if (/[\t\r\n]/.test(a.value)) e.setAttribute(a.name, a.value.replace(/\s+/g, " ")); });
+  // The line breaks between blocks are only the Markdown's layout: they go, and those in the words become <br> (ankiField)
+  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), texts = [];
+  while (walker.nextNode()) texts.push(walker.currentNode);
+  for (const n of texts) {
+    const up = n.parentElement, beside = (x) => ANKI_BLOCK.test(x?.nodeName || "");
+    // between blocks, or in a list or a table where words never stand loose: not a break in the words
+    if (!up.closest("pre") && /^\s*\n\s*$/.test(n.nodeValue) && (n.parentNode === box || ANKI_LAYOUT.test(up.nodeName) || beside(n.previousSibling) || beside(n.nextSibling))) { n.remove(); continue; }
+    n.nodeValue = n.nodeValue.replace(/\r/g, "").replace(/"/g, ANKI_QUOTE);
+  }
+  return ankiField(box.innerHTML.replaceAll(ANKI_QUOTE, "&quot;"));
+}
+const ANKI_LAYOUT = /^(OL|UL|TABLE|THEAD|TBODY|TFOOT|TR|BLOCKQUOTE)$/;              // what holds blocks only
+const ANKI_BLOCK = /^(P|DIV|OL|UL|LI|TABLE|BLOCKQUOTE|PRE|H[1-6]|HR|SECTION)$/;   // what stands as a block of its own
+// Words as they are, made safe for a field
+const ankiText = (s) => ankiField(escapeHtml(String(s || "")));
+// One field of a line: a tab or a line break never ends it, and it does not open as a comment or a quoted field
+const ankiField = (html) => html.trim().replace(/\t/g, "&#9;").replace(/\r?\n/g, "<br>").replace(/^#/, "&#35;").replace(/^"/, "&quot;");
+// The front: the question as the panel shows it, what was heard for a spoken one, the problem written out, or else its kind and time
+// (never empty: Anki leaves out a note whose first field is)
+function ankiFront(it) {
+  return (it.head.asked && ankiHtml(it.head.asked, true))
+    || (it.trigger === "voice" && it.transcript && ankiText(it.transcript))
+    || (it.ptext?.text && ankiText(it.ptext.text))
+    || ankiText(`${TYPE_NAME[it.head.type] || it.head.type || t("Result")} · ${fmtWhen(it.ts)}`);
+}
+// The back: the answer line, bold as on the page, then the solution's first part; nothing when the answer wrote neither
+function ankiBack(it) {
+  const parts = [];
+  if (it.head.answer) parts.push(`<b>${ankiHtml(it.head.answer, true)}</b>`);
+  const body = it.head.body || "", key = body.slice(0, answerCuts(body)[0] || 0);
+  if (key.trim()) parts.push(ankiHtml(key));
+  return parts.join("<br><br>");
+}
+// Its type and its day, as Anki's tags: words with no spaces in them
+const ankiTags = (it) => [TYPE_LABEL[it.head.type] || it.head.type || t("Result"), dayOf(it.ts)].map((x) => String(x).trim().replace(/\s+/g, "_")).join(" ");
+function exportAnki() {
+  // Anki's headers: how the file is cut, that its fields are HTML, the note type, the columns' names and which of them holds the tags
+  const lines = ["#separator:tab", "#html:true", "#notetype:Basic", "#columns:Front\tBack\tTags", "#tags column:3"];
+  let written = 0;
+  for (const it of exportItems()) {
+    const back = ankiBack(it);
+    if (!back) continue;          // a failure that wrote nothing: nothing to learn from it
+    lines.push([ankiFront(it), back, ankiTags(it)].join("\t"));
+    written++;
+  }
+  if (!written) { toast(t("No answers to export"), null, "warn"); return; }
+  saveFile(lines.join("\n") + "\n", "text/plain;charset=utf-8", `sidenote-anki-${fileStamp()}.txt`);
+  toast(written === 1 ? t("Exported {n} answer (Anki)", { n: written }) : t("Exported {n} answers (Anki)", { n: written }));
+}
+// Export offers its two files in a menu of the panel's own under its key, held to the window as the dropdowns are (comboPlace): the
+// contents' card would cut it off at its edge, and its glass would hold a fixed menu inside itself
+let exportAt = "";   // where the key stood when the menu opened: the menu goes when the key moves
+const exportWhere = () => { const b = $("hist-export").getBoundingClientRect(); return `${Math.round(b.top)}:${Math.round(b.left)}`; };
+function exportMenu(open, back = false) {
+  const m = $("export-menu"), key = $("hist-export");
+  if (!open) {
+    if (m.hidden) return;
+    m.hidden = true;
+    key.setAttribute("aria-expanded", "false");
+    if (back) key.focus({ preventScroll: true });          // Escape, or a choice: the keyboard goes back to the key
+    return;
+  }
+  toggleMenu(false); comboClose(false);                    // one menu open at a time
+  key.scrollIntoView({ block: "nearest", behavior: "instant" });   // the key in the window, for the menu to hang from
+  m.hidden = false;
+  key.setAttribute("aria-expanded", "true");
+  // Under the key, its right edge on the key's, inside the window; over it when there is no room under it
+  m.style.left = "8px"; m.style.top = "8px";               // measured first where nothing squeezes it
+  const b = key.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  const up = b.bottom + 6 + h > innerHeight - 8 && b.top - 6 - h >= 8;
+  m.classList.toggle("up", up);
+  m.style.top = `${Math.round(up ? b.top - 6 - h : b.bottom + 6)}px`;
+  m.style.left = `${Math.round(Math.min(Math.max(8, b.right - w), innerWidth - 8 - w))}px`;
+  exportAt = exportWhere();
+  m.querySelector(".item")?.focus({ preventScroll: true });   // the first choice, for the arrows and Enter
+}
+$("hist-export").addEventListener("click", () => {
+  if (!$("export-menu").hidden) { exportMenu(false); return; }   // a second press closes it
+  // Nothing in view: said at once, with no choice of file to make first
+  if (!exportItems().length) { toast(t("No answers to export"), null, "warn"); return; }
+  exportMenu(true);
+});
+$("export-menu").addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-export]");
+  if (!pick) return;
+  exportMenu(false, true);
+  if (pick.dataset.export === "anki") exportAnki(); else exportMarkdown();
+});
+// The keys of a menu: the arrows, Home and End go along it, Tab leaves it from the key it hangs from (Escape: the page's own, below)
+$("export-menu").addEventListener("keydown", (e) => {
+  const opts = [...$("export-menu").querySelectorAll(".item")], at = opts.indexOf(document.activeElement);
+  const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: opts.length - 1 }[e.key];
+  if (to != null) { e.preventDefault(); e.stopPropagation(); opts[(to + opts.length) % opts.length].focus(); return; }
+  if (e.key === "Tab") exportMenu(false, true);             // the Tab goes on from the key
+});
+// A press outside it, the window resized, or the key moved by a scroll: the menu would hang where nothing is
+addEventListener("pointerdown", (e) => { if (!$("export-menu").hidden && !e.target.closest("#export-menu, #hist-export")) exportMenu(false); }, true);
+addEventListener("resize", () => exportMenu(false));
+addEventListener("scroll", () => { if (!$("export-menu").hidden && exportWhere() !== exportAt) exportMenu(false); }, true);
 // A search looks through everything kept, not only what is on the page
 let searchWait = 0;
 $("hist-q").addEventListener("input", (e) => {
@@ -4074,7 +4395,6 @@ $("hist-kind").addEventListener("change", (e) => {
   choiceChange(() => { histKind = e.target.value; });
   if (histKind) loadHistory({ kind: histKind, day: histDay, limit: 60 });
 });
-$("hist-export").addEventListener("click", exportMarkdown);
 $("choice-reset").addEventListener("click", clearChoice);
 let ribbonAt;   // the answer the ribbon last fell on: undefined until the page has first been drawn, when nothing falls
 function markIndex() {
@@ -4175,7 +4495,7 @@ function syncNextAsks() {
   const id = lastAnsweredId();                         // the only entry that carries them (nextAsks)
   const it = id != null ? items.get(id) : null, el = id != null ? entryEl(id) : null;
   if (!it || !el) return;
-  const row = el.querySelector(":scope > .row.asks");
+  const row = el.querySelector(":scope > .row.asks:not(.practice)");      // not Practice's keys, which wear its look
   if (!!row !== (nextAsks(it).length > 0)) { renderEntry(it); return; }   // the row comes or goes
   // a button just pressed keeps its own two seconds (the click handler's busy time) either way
   if (row) row.querySelectorAll("[data-ask]").forEach((b) => { b.disabled = wsState !== "up" || Date.now() < (b._busyUntil || 0); });
@@ -4218,6 +4538,7 @@ function pruneRuns() {
 function dropItem(it) {   // cancelled, or nothing to solve: leave no trace
   items.delete(it.id);
   clearTimeout(it.revealTimer);
+  if (practiceCards.delete(String(it.id))) keepCards();   // nor in what Practice keeps
   const i = thread.indexOf(it.id);
   // The index and the folds change only when the entry was in the thread: rebuilt for every analysis that never got
   // there, the index dropped the keyboard focus on one of its rows every few seconds.
@@ -4285,6 +4606,7 @@ function onDelta(m) {
   it.raw += m.text;
   it.head = splitHead(it.raw);
   if (it.head.type && it.head.type !== "none" && !it.shown) {   // a real problem: it joins the thread
+    practiceArrived(it);   // with Practice on, kept back from the first word
     addToThread(it); syncEmpty();
     it.fresh = true;   // its answer line rises in once, when it first appears (not again when it finishes)
     renderEntry(it); refold(); renderTail(); renderIndex(); afterGrow();
@@ -4322,7 +4644,8 @@ function onDone(m) {
     if (p) renderEntry(p);
     if (followTurn === turn.id) { showTurn(turn); followTurn = null; readerMoved(); if (nearBottom()) stick = true; }
     else followEnd();
-    announce(t("Follow-up answer: {text}", { text: plainAnswer(splitHead(turn.raw, true).answer) || t("Answer done") }));
+    // Not one the watching wrote under an answer Practice keeps back: it waits with that answer, and so do its words
+    if (!(p && held(p) && turn.retry)) announce(t("Follow-up answer: {text}", { text: plainAnswer(splitHead(turn.raw, true).answer) || t("Answer done") }));
     return;
   }
   const before = lastAnsweredId();   // the Problem text button moves from that answer to this one (taken while this one is live)
@@ -4343,13 +4666,15 @@ function onDone(m) {
     return;
   }
   const wasShown = it.shown;   // on the page already while it was being written
+  if (!wasShown) practiceArrived(it);   // all of it in one message: with Practice on, kept back as it comes
   addToThread(it); syncEmpty();
   if (before != null && before !== it.id && items.get(before) && entryEl(before)) renderEntry(items.get(before));
   status.canAsk = true; syncAsk();
   it.fresh = !wasShown;
   renderEntry(it); refold(); renderTail(); renderIndex();
   if (wasShown) { followEnd(); updateView(); } else afterGrow();   // finishing is not a new answer: no pull
-  announce(`${TYPE_LABEL[it.head.type] || t("Solution")}: ${plainAnswer(it.head.answer) || t("Solution done")}`);
+  // Its kind for a screen reader, and its answer line unless Practice keeps it back
+  announce(`${TYPE_LABEL[it.head.type] || t("Solution")}: ${(!held(it) && plainAnswer(it.head.answer)) || t("Solution done")}`);
   if (viewId === it.id) renderShot();   // its problem region arrives only now
 }
 // Stopped on purpose (pause, a switch turned off): a half-written answer stays, with a note. Any
@@ -5145,11 +5470,12 @@ function reanalyze() {
 }
 function togglePause() { send({ type: paused ? "resume" : "pause" }); }
 function goLatest() { pinnedView = null; stick = true; $("jump").hidden = true; toBottom(true); setTimeout(updateView, 400); }
-function goTo(id) {   // from the index: open the entry if folded and bring it into view
+// From the index: open the entry if folded and bring it into view. `open: false` (the j and k keys) leaves a folded one folded
+function goTo(id, { open = true } = {}) {
   const it = items.get(id), el = entryEl(id);
   if (!it || !el) return;
   if (el.hidden) clearChoice();   // pointed at from a notice, an answer the filter hides: going there lifts the filter
-  if (folded(it)) { unfolded.add(id); renderEntry(it); }
+  if (open && folded(it)) { unfolded.add(id); renderEntry(it); }
   stopFollowing();   // reading what was picked: a new answer offers the jump instead of pulling the page away
   pinnedView = id; pinnedAt = Date.now(); updateView();   // the ribbon goes to what was picked, at once
   autoUntil = Date.now() + 900;
@@ -5261,10 +5587,14 @@ document.addEventListener("click", (e) => {
   if (hb) goTo(idOf(hb.dataset.id));
   const fb = e.target.closest("[data-fold]");
   if (fb) { const id = idOf(fb.dataset.fold), it = items.get(id); if (it) { if (folded(it)) unfolded.add(id); else unfolded.delete(id); renderEntry(it); } }
+  // (never of one Practice keeps back, whose keys these are not drawn on)
   const ca = e.target.closest("[data-copy-answer]");
-  if (ca) { const it = items.get(idOf(ca.dataset.copyAnswer)); if (it?.head.answer) copyText(plainAnswer(it.head.answer), ca); }
+  if (ca) { const it = items.get(idOf(ca.dataset.copyAnswer)); if (it?.head.answer && !held(it)) copyText(plainAnswer(it.head.answer), ca); }
   const ci = e.target.closest("[data-copy-item]");
-  if (ci) { const it = items.get(idOf(ci.dataset.copyItem)); if (it) copyText((it.head.answer ? `${ANSWER_LABEL[it.head.type] || t("Summary")}: ${it.head.answer}\n\n` : "") + it.head.body.trim(), ci); }
+  if (ci) { const it = items.get(idOf(ci.dataset.copyItem)); if (it && !held(it)) copyText((it.head.answer ? `${ANSWER_LABEL[it.head.type] || t("Summary")}: ${it.head.answer}\n\n` : "") + it.head.body.trim(), ci); }
+  // Practice's keys on an answer it keeps back: the next hint, or all of it
+  const pk = e.target.closest(".entry [data-act='hint'], .entry [data-act='reveal']");
+  if (pk) { const it = items.get(idOf(pk.closest(".entry").dataset.id)); if (pk.dataset.act === "hint") showHint(it, pk); else showAnswer(it, pk); }
   const pt = e.target.closest("[data-ptext]");
   if (pt) { const it = items.get(idOf(pt.dataset.ptext)); if (it && send({ type: "problem_text", id: it.id })) { it.ptext = { pending: true }; renderEntry(it); } }
   const mm = e.target.closest("[data-meta]");
@@ -5282,6 +5612,8 @@ document.addEventListener("click", (e) => {
 $("theme-seg").onclick = (e) => { const b = e.target.closest("button"); if (b) setTheme(b.dataset.theme); };
 $("motion-seg").onclick = (e) => { const b = e.target.closest("button"); if (b) setMotion(b.dataset.motion); };
 $("lang-seg").onclick = (e) => { const b = e.target.closest("button"); if (b) setUiLang(b.dataset.lang); };
+$("practice-seg").onclick = (e) => { const b = e.target.closest("button"); if (b) setPractice(b.dataset.practice === "on"); };
+$("open-keys").onclick = openKeys;
 let clearArmed = 0;
 $("clear").onclick = () => {
   if (Date.now() - clearArmed > 3000) {   // first click: ask once more (there is no undo)
@@ -5296,6 +5628,8 @@ $("clear").onclick = () => {
   // answers still being written stay (with their labels); everything finished goes
   const keep = new Set([...items.values()].filter((it) => it.live || it.turns.some((t) => turns.get(t)?.live)).map((it) => it.id));
   for (const [id, it] of [...items]) if (!keep.has(id)) { it.turns.forEach((t) => turns.delete(t)); items.delete(id); unfolded.delete(id); }
+  for (const id of [...practiceCards.keys()]) if (!keep.has(idOf(id))) practiceCards.delete(id);   // what Practice kept of them goes too
+  keepCards();
   thread = thread.filter((id) => keep.has(id));
   pruneRuns();
   viewId = null; stick = true; lastNone = null; $("jump").hidden = true;
@@ -5304,11 +5638,94 @@ $("clear").onclick = () => {
   historyDays = [];
   toggleMenu(false); $("more").focus({ preventScroll: true }); renderThread(); renderAll();
 };
-// No letter shortcuts: every action has a button, and stray keys were confusing. Only Escape
-// (close the menu / leave the box) and the scroll keys that pause auto-follow stay.
+// ---------- the keyboard ----------
+// A letter for what is done most, each listed in the keys' sheet (Keyboard shortcuts in the menu, or ?). Every one of them also
+// has its button. Never while typing in a field or a list or inside the settings sheet, and never with Ctrl, Alt or Meta held:
+// those keys belong to the browser and to what is typed. Escape closes what is open, and the scroll keys that stop the
+// following of new answers stay as they were.
+// The letter a key stands for: what it types, or where a layout or an input method types another script there (ㅓ for j on a
+// Korean keyboard), the letter of its place on the keyboard. A letter with Shift held is none (? is Shift with /, and is one)
+function shortcutKey(e) {
+  if (e.key === "?" || e.key === "/") return e.key;
+  if (e.shiftKey) return "";
+  if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase();                 // Caps Lock on: still the letter
+  const at = /^Key([A-Z])$/.exec(e.code || "");
+  return at && !/^[\x20-\x7e]$/.test(e.key) ? at[1].toLowerCase() : "";   // a typed Latin sign is its own, never a letter's
+}
+const SHORTCUTS = {
+  j: () => stepAnswer(1), k: () => stepAnswer(-1), c: () => copyCurrent(), r: () => reanalyze(), p: () => togglePause(),
+  "/": () => findAnswer(), h: () => practiceKey("hint"), a: () => practiceKey("answer"),
+  "?": () => ($("keys-overlay").hidden ? openKeys() : closeKeys()),
+};
+// j and k: the next or the previous answer in the notebook, brought into view and made the current one, the contents' ribbon on
+// it. A folded one stays folded: going past an answer is not opening it
+function stepAnswer(by) {
+  const shown = [...$("thread").children].filter((e) => e.classList.contains("entry") && !e.hidden);
+  if (!shown.length) return;
+  const at = shown.findIndex((e) => idOf(e.dataset.id) === viewId);
+  const to = at < 0 ? (by > 0 ? 0 : shown.length - 1) : at + by;
+  if (to < 0 || to >= shown.length) return;   // past the first or the last: nothing further that way
+  goTo(idOf(shown[to].dataset.id), { open: false });
+}
+// c: the current answer's answer line, as its Copy key copies it, said on the key and in a notice (the key may be out of view)
+async function copyCurrent() {
+  const it = viewId != null ? items.get(viewId) : null;
+  if (it && held(it)) { toast(t("Answer hidden for practice")); return; }   // not a way round Practice
+  if (!it?.head.answer) { toast(t("No answer line to copy")); return; }
+  const ok = await copyText(plainAnswer(it.head.answer), entryEl(it.id)?.querySelector("[data-copy-answer]") || null);
+  toast(ok ? t("Answer line copied") : t("Copy failed"), null, ok ? "" : "warn");
+}
+// /: the contents' search, its words picked so what is typed takes their place
+function findAnswer() {
+  const q = $("hist-q");
+  if (q.offsetParent === null) return;   // no answers yet: the search is not there
+  q.focus();
+  q.select();
+}
+// h and a: Practice's two keys, on the current answer while Practice keeps it back
+function practiceKey(which) {
+  const it = viewId != null ? items.get(viewId) : null;
+  if (!it || !held(it) || it.live) return;
+  if (which === "answer") showAnswer(it);
+  else if (!showHint(it)) toast(t("No more hints"));
+}
+// The keys' sheet: the settings sheet's look, a row a key. The menu's item, ? and Escape open and close it, and so do its close key
+// and a press on the veil
+let keysOpener = null;
+function openKeys() {
+  toggleMenu(false); exportMenu(false);
+  keysOpener = document.activeElement;
+  $("keys-overlay").hidden = false;
+  $("keys-close").focus({ preventScroll: true });
+}
+function closeKeys() {
+  if ($("keys-overlay").hidden) return;
+  $("keys-overlay").hidden = true;
+  // The keyboard goes back where it was: to the gear when the sheet came from the menu (closed by now), to nothing from the page
+  const was = keysOpener;
+  keysOpener = null;
+  if (was && was !== document.body && document.body.contains(was) && was.offsetParent) was.focus({ preventScroll: true });
+  else if (was?.closest?.(".menu")) $("more").focus({ preventScroll: true });
+  else document.activeElement?.blur?.();
+}
+$("keys-close").onclick = closeKeys;
+// The keyboard stays inside the sheet while it is open, as in the settings sheet
+$("keys").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...$("keys").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
+  if (!f.length) return;
+  const edge = e.shiftKey ? f[0] : f[f.length - 1];
+  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
+});
+// Closed by a press on the veil only when the press and the release are both on it (the settings sheet's rule)
+let keysPress = false;
+$("keys-overlay").addEventListener("mousedown", (e) => { keysPress = e.target === $("keys-overlay"); });
+$("keys-overlay").addEventListener("click", (e) => { if (keysPress && e.target === $("keys-overlay")) closeKeys(); keysPress = false; });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (!$("keys-overlay").hidden) { closeKeys(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
+    if (!$("export-menu").hidden) { exportMenu(false, true); return; }
     if (drawing) { stopDrawing(); return; }
     const open = !$("menu").hidden; toggleMenu(false);
     if (open) $("more").focus({ preventScroll: true }); else if (document.activeElement?.id === "ask") document.activeElement.blur();
@@ -5318,6 +5735,15 @@ document.addEventListener("keydown", (e) => {
   // The settings sheet is a dialog over the page: a key pressed in it (Space on a choice, an arrow on a
   // tab or a switch) is not a scroll of the notebook behind it.
   if (!$("settings-overlay").hidden) return;
+  const key = shortcutKey(e);
+  // The keys' sheet is one too: its own key closes it, and nothing else acts behind it
+  if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
+  // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
+  if (SHORTCUTS[key] && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {
+    e.preventDefault();                                    // the letter is not typed anywhere, and / opens no find bar
+    if (!e.repeat || key === "j" || key === "k") SHORTCUTS[key]();   // held down, only j and k go on
+    return;
+  }
   if (["ArrowUp", "PageUp", "Home"].includes(e.key) || (e.key === " " && e.shiftKey)) stopFollowing();
   else if (["ArrowDown", "PageDown", "End", " "].includes(e.key) && !stick) readerMoved();
 });
@@ -5664,6 +6090,7 @@ function runDemo() {
 setTheme(themeNow());
 setMotion(motionPicked());
 document.querySelectorAll("#lang-seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === pickedLang())));
+syncPracticeSeg();
 setSkin(document.documentElement.dataset.skin || "classic");
 renderThread();
 renderAll();

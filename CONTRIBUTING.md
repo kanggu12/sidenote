@@ -225,6 +225,8 @@ Add its cases to `tests/models_check.py`: the pattern, and the tier each GPU siz
 2. `server/locale/<code>.json`: copy `server/locale/ko.json`, translate the values, and add the code to `SUPPORTED` in
    `server/i18n.py`.
 3. Keep the placeholders (`{n}`, `{name}`) as they are. The keys are the English text in the code and stay as written.
+   A few name the place they are used in (`Practice: Off`, given in `index.html` as `data-t="Practice: Off"`), where a
+   word says something else there than it does elsewhere.
 
 The panel follows the browser's first language, and **Language** in its gear menu picks one by hand: give the new
 language a button in `#lang-seg` (`panel/index.html`), named in its own words. `?lang=<code>` picks one for a page.

@@ -58,12 +58,14 @@ function t(text, vars) {
 // The static words in index.html: an element with data-t has its English text translated, and data-t-title,
 // data-t-aria, data-t-placeholder and data-t-alt do the same for those attributes. Run once, before the first paint.
 // The text is the element's own words: an element that also holds a mark (an icon, a dot) keeps it, and only its
-// first stretch of text beside the mark is translated.
+// first stretch of text beside the mark is translated. A data-t with a value names the key to translate by, for a word
+// another language says otherwise in that one place: <button data-t="Practice: Off">Off</button> is 끔 in Korean, where
+// "Off" alone is the state word 꺼 둠.
 function translateDom(root = document) {
   if (LANG === "en") return;
   for (const el of root.querySelectorAll("[data-t]")) {
     const node = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.nodeValue.trim());
-    if (node) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), () => t(node.nodeValue.trim()));
+    if (node) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), () => t(el.dataset.t || node.nodeValue.trim()));
   }
   for (const [attr, data] of [["title", "data-t-title"], ["aria-label", "data-t-aria"], ["placeholder", "data-t-placeholder"], ["alt", "data-t-alt"]]) {
     for (const el of root.querySelectorAll(`[${data}]`)) el.setAttribute(attr, t(el.getAttribute(attr) || ""));

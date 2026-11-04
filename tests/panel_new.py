@@ -177,6 +177,7 @@ def main() -> int:
         check("the count says how many of how many", page.evaluate("() => document.getElementById('hist-count').textContent") == "2/5")
         with page.expect_download() as dl:
             page.click("#hist-export")
+            page.click("#export-menu [data-export='md']")   # Export's menu: the Markdown file
         md = Path(dl.value.path()).read_text(encoding="utf-8")
         check("Export writes what the contents list, without the engine's lines", md.count("\n## ") == 2 and "TYPE:" not in md and "ANSWER:" not in md, md[:160])
         check("and says how many it wrote", "답 2개" in page.evaluate("() => document.getElementById('toast').textContent"))

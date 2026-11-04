@@ -580,6 +580,35 @@ def answer_rows(items):
     return [row(600 + i, kind, asked, key, body, ago=3000 - i * 30, thumb=h.thumb(1600, 900), region=[.1, .1, .8, .9], region_shown=True) for i, (kind, asked, key, body) in enumerate(items)]
 
 
+# What Practice, the keyboard shortcuts and Export to Anki put on the page: the menu with Practice on, an answer Practice keeps back
+# with a hint of three out (a long question over it) and one being written under it, the keys' sheet, and Export's menu
+STUDY_CARD = """() => {
+  setPractice(true);
+  const now = Date.now() / 1000, text = 'TYPE: algorithm\\nANSWER: 사전 한 번 훑기\\nASKED: ' + '두 수의 합이 목표값이 되는 두 원소의 인덱스를 구하는 문제 '.repeat(3) + '\\n\\n## 핵심\\n\\n첫 부분입니다.\\n\\n## 코드\\n\\n둘째 부분\\n\\n## 복잡도\\n\\n셋째 부분';
+  handle({ type: 'analysis_start', id: 9901, ts: now, thumb: null, transcript: '', pages: 0, trigger: 'screen', roi: null });
+  handle({ type: 'delta', id: 9901, text });
+  handle({ type: 'analysis_done', id: 9901, text, usage: {}, cost_usd: null, model: 'sidenote-gemma4:26b', engine: 'local', sent: [], stages: {}, elapsed: 2, region: null });
+  handle({ type: 'analysis_start', id: 9902, ts: now, thumb: null, transcript: '', pages: 0, trigger: 'screen', roi: null });
+  handle({ type: 'delta', id: 9902, text: 'TYPE: work\\nANSWER: 쓰는 중인 답\\nASKED: 쓰는 중인 물음\\n\\n풀이' });
+  showHint(items.get(9901));
+  stick = false; entryEl(9901).scrollIntoView({ block: 'start' });
+}"""
+STUDY_OPEN = [
+    ("practice_menu", "() => { setPractice(true); document.getElementById('more').click(); }"),
+    ("practice_card", STUDY_CARD),
+    ("keys_sheet", "() => openKeys()"),
+    ("export_menu", "() => { const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }"),
+]
+# A fault of one kind in each of those, in their order: the audit has to find it there (group_overlays)
+STUDY_PLANTS = [
+    ("cut", "#practice-seg button { width: 6px !important; flex: none !important; overflow: hidden !important; white-space: nowrap !important; padding: 0 !important; }"),
+    ("overlap", ".row.practice .hint-n { margin-left: -150px !important; }"),
+    ("cut", "#keys .set { overflow: hidden !important; } #keys kbd.cmd { margin-right: -60px !important; }"),
+    # its words are in its tooltips, so the cut is one the audit says is told
+    ("cut-told", "#export-menu { width: 64px !important; min-width: 0 !important; } #export-menu .item { overflow: hidden !important; white-space: nowrap !important; }"),
+]
+
+
 # ---------------------------------------------------------------- the groups
 def record(found):
     FOUND.extend(found)
@@ -663,6 +692,7 @@ def group_overlays(br, s):
             ("search_long", "() => { const q = document.getElementById('hist-q'); q.value = '이것은 아주 길게 쓴 찾는 말입니다 어디까지 보일까요'; q.dispatchEvent(new Event('input', { bubbles: true })); }"),
             ("search_none", "() => { const q = document.getElementById('hist-q'); q.value = '없는말없는말'; q.dispatchEvent(new Event('input', { bubbles: true })); }"),
             ("ask_long", "() => { const a = document.getElementById('ask'); a.value = '아주 긴 추가 질문 '.repeat(30); a.dispatchEvent(new Event('input', { bubbles: true })); }"),
+            *STUDY_OPEN,
         ):
             p = Page(br, s, many(), w=w, h=hh, settle=300)
             p.js(act)
@@ -671,6 +701,27 @@ def group_overlays(br, s):
             if p.errors:
                 check(f"{name} {w}x{hh}: the page threw nothing", False, p.errors[:2])
             p.close()
+    # Practice's card, the keys' sheet and Export's menu at the narrowest and the widest windows too, in both themes
+    for (w, hh, theme) in ((360, 740, "dark"), (360, 740, "light"), (1280, 720, "light"), (2560, 1440, "dark"), (2560, 1440, "light")):
+        for name, act in STUDY_OPEN:
+            p = Page(br, s, many(), w=w, h=hh, theme=theme, settle=300)
+            p.js(act)
+            p.wait(300)
+            found += audit(p, name, f"{w}x{hh} {theme}")
+            if p.errors:
+                check(f"{name} {w}x{hh} {theme}: the page threw nothing", False, p.errors[:2])
+            p.close()
+    # ...and the audit sees them: a fault planted in each is found there
+    for (name, act), (kind, css) in zip(STUDY_OPEN, STUDY_PLANTS):
+        p = Page(br, s, many(), w=1920, h=1080, settle=300)
+        p.js(act)
+        p.wait(300)
+        before = {(g["where"], g["detail"]) for g in p.js(AUDIT, OPTS) if g["kind"] == kind}
+        p.js("(css) => { const st = document.createElement('style'); st.textContent = css; document.head.append(st); }", css)
+        p.wait(200)
+        after = [g for g in p.js(AUDIT, OPTS) if g["kind"] == kind and (g["where"], g["detail"]) not in before]
+        check(f"the audit finds a fault planted in {name} ({kind})", bool(after), after[:2])
+        p.close()
     # An empty panel, and the first screen
     for (w, hh) in ((1920, 1080), (1366, 768), (390, 844)):
         p = Page(br, s, [], w=w, h=hh, settle=500)

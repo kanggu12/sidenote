@@ -75,6 +75,8 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
   model that fits. With no GPU, the cloud agent answers everything.
 - **Checks code answers.** With Docker or Kubernetes, a coding answer is run on the problem's own examples in nine
   languages, in a sandbox with no network, and the card shows which examples pass.
+- **Lets you try first.** With **Practice** on, a new answer shows its question, then its hints one at a time and the
+  answer when you ask. The answers export as Markdown or as notes for Anki, and the most used buttons have keys.
 - **Private by design.** Faces on the screen are covered before any model sees it. Each card lists what left your PC
   for it. The server listens on 127.0.0.1 only.
 - **Open source.** MIT licensed, and CI runs the test suite on every push.

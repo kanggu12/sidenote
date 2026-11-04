@@ -175,7 +175,7 @@ def group_contents(br, s):
     check("an empty search shows them all again", count() == 15)
     # Export holds what was asked, every answer of it
     with p.page.expect_download() as dl:
-        p.js("() => $('hist-export').click()")
+        p.js("() => { $('hist-export').click(); document.querySelector('#export-menu [data-export=md]').click(); }")   # Export's menu: the Markdown file
     md = Path(dl.value.path()).read_text(encoding="utf-8")
     check("the file says what was asked", "서브넷 문제 3" in md and md.count("\n## ") == 15, md[:120])
     # Each day a tab saying how many

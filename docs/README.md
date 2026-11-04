@@ -296,7 +296,7 @@ What each part of the panel shows, and what its buttons do.
    heard.
 9. The contents: the list of solutions, with search, filters and **Export**.
 
-There are no keyboard shortcuts; everything is done with buttons.
+Everything is done with buttons, and the most used have a key too ([Keyboard shortcuts](#keyboard-shortcuts)).
 
 ### The top bar
 
@@ -323,7 +323,10 @@ notebook carry the same readings.
   - **Language**: **Auto** (the browser's language), **한국어** or **English**. A pick opens the panel again in that
     language, the server's messages too, and this browser keeps it. `?lang=en` or `?lang=ko` in the address picks one
     for that page alone.
+  - **Practice**: **Off** or **On**. With it on, a new answer shows its question first, and its hints and its answer
+    when you ask ([Practice](#practice)). This browser keeps it.
   - **Solver settings** (section 12).
+  - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Clear history**, which takes a second press; an answer still being written stays.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
@@ -401,6 +404,25 @@ whose screen the right column shows, on its line in the contents.
   folded when new answers arrive. Any scroll by hand, up or down, starts an 8-second count again; after 8 seconds the
   view follows down again from the next new answer. It does not pull down while the same answer grows or finishes. A
   solution picked from the contents stays the current one until you scroll by hand, however long you read it.
+
+### Practice
+
+Practice is for trying a problem before reading its solution. With **Practice** on in the gear menu, each answer that
+arrives shows its question and keeps the rest back. The answers that were there before stay as they are.
+
+- **Show a hint** shows the solution's next part: its sections in their order (such as the approach, the code and the
+  complexity), or its steps one by one. Beside it, how many hints there are and how many are shown.
+- **Show the answer** shows all of it: the answer line, the whole solution, the example check and the follow-up keys.
+  An answer of a single part offers only **Show the answer**.
+- An answer being written says so, and shows nothing of itself until it is done and asked for. An answer kept back
+  does not fold with the older ones, where it would show its answer line.
+- Until then the answer line stays out of the contents, their search, the screen reader's note and the `c` key, and
+  the answer has no **Copy** or **Copy all**. **Problem text** writes out the question as usual, and a follow-up
+  asked about the answer is answered under it. **Export** takes everything, the hidden answers too.
+- This browser keeps how far each answer was opened, so a reload shows it as it was, and an answer shown in full stays
+  shown. Answers the server gave while the panel was closed, after Practice was turned on, are kept back too.
+- The server is not told: it solves and keeps the answers as before. **Off** shows every answer whole again, and
+  **On** keeps back again those it kept back before.
 
 ### Running code
 
@@ -484,11 +506,33 @@ is under the top bar.
     in what was asked, the answer, its follow-ups or what was heard.
   - The day and type lists show one day's or one type's answers in the notebook too. With a day chosen, the type list
     offers that day's types, each with how many.
-  - **Export** saves what is shown, with what was asked and its follow-ups, as one Markdown file.
+  - **Export** saves what is shown, as **Markdown** (one file, with what was asked and the follow-ups) or as notes for
+    **Anki** (a text file to import in Anki with File > Import, as the Basic note type: the question on the front, and
+    on the back the answer line and the solution's first part, tagged with the type and the day). Code and formulas
+    keep their text, and Anki draws the formulas.
 
 The answers stay after a reload or a restart: the server keeps them, each with a small picture of its screen, in
 `history.sqlite` in the log folder, for 90 days and 200 MB at most, the oldest going first (`SIDENOTE_HISTORY_DAYS`,
 `SIDENOTE_HISTORY_MB`). **Keep answers** stops it, and **Clear history** in the menu empties it.
+
+### Keyboard shortcuts
+
+The keys work while no text box, list or **Solver settings** has the keyboard, and never with Ctrl, Alt or Meta held.
+`?` opens their list and `Esc` closes it; **Keyboard shortcuts** in the gear menu opens it too. The current answer is
+the one the contents' ribbon marks, whose screen the right column shows.
+
+| Key | What it does |
+|:---:|:---|
+| `j` | the next answer in the notebook, brought into view and made the current one |
+| `k` | the previous answer |
+| `c` | copies the current answer's answer line, as its **Copy** does |
+| `r` | **Reanalyze** |
+| `p` | **Pause**, or **Continue** while paused |
+| `/` | the contents' search, **Find an answer** |
+| `h` | with **Practice** on, the current answer's next hint |
+| `a` | with **Practice** on, the current answer's whole answer |
+| `?` | the list of keys |
+| `Esc` | closes the list, a menu or **Solver settings** |
 
 ## 6. Screen and sound switches
 
@@ -1153,6 +1197,9 @@ What leaves this PC, what can reach what, and what is kept.
   transcript either way, from memory.
 - **Clear history** in the menu deletes the kept answers (`history.sqlite`). It does not touch the log files: delete
   those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data folder's `logs` with the app).
+- The browser keeps the panel's own choices (**Theme**, **Motion**, **Language**, **Practice**), and for **Practice**
+  the numbers of the 400 newest answers it kept back, with how far each was opened, never their words. **Clear
+  history** forgets those numbers too.
 - The Claude Code agent reads and writes this PC's `~/.claude` (token refresh), and the Codex agent uses this PC's
   `~/.codex` for its login. Everything else they write stays inside the container: Claude Code's config backups and
   process registry go to the container's scratch space, each Codex run works in a temporary folder of its own that is
@@ -1374,6 +1421,21 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 세션, 주간, N% 사용, … 뒤 초기화 | Session, Week, N% used, Resets in … | the agent's card: the plan's usage of its five-hour session and week, read where Claude Code's own `/usage` reads it, at once when a panel opens and every 90 s while one is |
 | 움직임: 켬, 자동, 끔 | Motion: Full, Auto (the system's setting), None | **Settings** menu; **Full** by default, though the system asks for less |
 | 언어: 자동, 한국어, English | Language: Auto (the browser's language), 한국어, English | **Settings** menu; each language is named in its own words |
+| 연습: 끔, 켬 | Practice: Off, On | **Settings** menu |
+| 연습 | Practice | the margin of an answer **Practice** keeps back |
+| 힌트 보기 | Show a hint | an answer **Practice** keeps back; the list of keys (`h`) |
+| 정답 보기 | Show the answer | an answer **Practice** keeps back; the list of keys (`a`) |
+| 힌트 N개, 힌트 N개 중 N개 | N hints, N of N hints | beside **Show a hint** |
+| 힌트 | Hints | the margin of the hints shown |
+| 답 작성 중 · 연습 모드라 가림 | Writing the answer · hidden in practice mode | an answer **Practice** keeps back, being written |
+| 연습으로 가린 답 | Answer hidden for practice | its row in **Contents**; the `c` key on it |
+| 남은 힌트 없음 | No more hints | the `h` key with every hint shown |
+| 단축키 | Keyboard shortcuts | **Settings** menu; the list of keys |
+| 다음 답, 이전 답 | Next answer, Previous answer | the list of keys (`j`, `k`) |
+| 일시정지 또는 계속하기 | Pause or continue | the list of keys (`p`) |
+| 연습 모드에서 | In practice mode | the list of keys (`h`, `a`) |
+| 정답 한 줄 복사됨 | Answer line copied | the `c` key |
+| Markdown, Anki | Markdown, Anki | the menu of **Export** in **Contents** |
 | 확인 중 | Checking | a state of a source |
 | 연결됨 | Connected | a state of a source |
 | 꺼 둠 | Off | a state of a source |

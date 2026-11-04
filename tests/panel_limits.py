@@ -134,6 +134,7 @@ def main() -> int:
         page.screenshot(path=str(SHOTS / "limits_contents.png"))
         with page.expect_download() as dl:
             page.click("#hist-export")
+            page.click("#export-menu [data-export='md']")   # Export's menu: the Markdown file
         path = dl.value.path()
         md = Path(path).read_text(encoding="utf-8") if path else ""
         check("Export gives one Markdown file with every answer", dl.value.suggested_filename.endswith(".md")
