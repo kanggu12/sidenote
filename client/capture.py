@@ -426,7 +426,7 @@ def hide_own(img: Image.Image, rects: list, mine: list) -> Image.Image:
 # SKIP_WINDOWS) holds until they do, and with an older server that sends none. What is read of the window stays in
 # this program: it goes neither to the server nor into the log, which says only that a skip started and ended.
 SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
-                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing"]
+                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing", "시크릿", "사생활 보호"]
 
 
 def skip_words(words) -> list:

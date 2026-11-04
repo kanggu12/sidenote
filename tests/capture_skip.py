@@ -68,7 +68,8 @@ DEFAULT_WINDOWS = [("Passwords - 1Password", "1Password.exe"), ("My vault | Bitw
                    ("Enpass", "Enpass.exe"), ("NordPass", "NordPass.exe"), ("Proton Pass", "Proton Pass.exe"),
                    ("New InPrivate tab - [InPrivate] - Microsoft Edge", "msedge.exe"),
                    ("New Incognito tab - Google Chrome (Incognito)", "chrome.exe"),
-                   ("Mozilla Firefox Private Browsing", "Navigator firefox")]
+                   ("Mozilla Firefox Private Browsing", "Navigator firefox"),
+                   ("새 시크릿 탭 - Chrome", "chrome.exe"), ("Mozilla Firefox 사생활 보호 모드", "Navigator firefox")]
 default = words(*cap.SKIP_WINDOWS)
 check("the default list skips each password manager and private window it names",
       all(cap.skip_match(w, default) for w in DEFAULT_WINDOWS), [w for w in DEFAULT_WINDOWS if not cap.skip_match(w, default)])

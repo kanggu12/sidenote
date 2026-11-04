@@ -945,7 +945,7 @@ The **Screen** section holds **Skip windows**: a list of words, typed into a box
 window in front has one of them in its title or in its program's name, in any case, the capture program sends no
 screen at all. By default the list names the common password managers (1Password, Bitwarden, KeePass, KeePassXC,
 LastPass, Dashlane, Keeper, Enpass, NordPass, Proton Pass) and the browsers' private windows (InPrivate, Incognito,
-Private Browsing).
+Private Browsing, and in Korean 시크릿 and 사생활 보호).
 
 - A word matches any part of a title or a name, so `Keeper` also skips a page titled "ZooKeeper". Take out a word
   that skips more than you want. **Reset to defaults** puts the default list back, with every other setting.

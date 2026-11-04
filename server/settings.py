@@ -43,7 +43,7 @@ TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay
 # sends no screen at all. The common password managers and the browsers' private windows. client/capture.py keeps a
 # copy for the moments before the server's word arrives, and tests/capture_skip.py checks the two are the same.
 SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
-                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing"]
+                "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing", "시크릿", "사생활 보호"]
 WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each at most this many characters
 
 
