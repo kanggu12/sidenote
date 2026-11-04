@@ -178,10 +178,17 @@ def group_choice(br, s):
     # Export takes what is shown
     with p.page.expect_download() as dl:
         p.page.click("#hist-export")
+        p.page.click("#export-menu [data-export='md']")   # Export's menu: the Markdown file
     md = Path(dl.value.path()).read_text(encoding="utf-8")
     check("Export writes the starred answers, and only them", md.count("\n## ") == 3 and all(f"풀이 {i}" in md for i in (1, 4, 6))
           and "풀이 0" not in md, md[:200])
     check("...and says how many", "답 3개" in p.js("() => document.getElementById('toast').textContent"))
+    # The Anki file takes the same answers: one note per starred answer, after Anki's header lines
+    with p.page.expect_download() as dl:
+        p.page.click("#hist-export")
+        p.page.click("#export-menu [data-export='anki']")
+    notes = [l for l in Path(dl.value.path()).read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")]
+    check("...and the Anki file holds the starred answers, one note each", len(notes) == 3, notes[:3])
     # Unstarred while Starred is chosen, the answer stays in view until the choice changes
     star(p, 404, False)
     got = shown(p)
