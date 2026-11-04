@@ -107,8 +107,7 @@ the panel does not open, see [Troubleshooting](docs/README.md#13-troubleshooting
 
 ### Linux: the app
 
-For an X11 desktop with glibc 2.35 or newer: Ubuntu 22.04, Debian 12 or newer. (The 0.1.0 build needs glibc 2.38,
-Ubuntu 24.04 or newer.)
+For an X11 desktop with glibc 2.35 or newer: Ubuntu 22.04, Debian 12 or newer.
 
 1. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`.
 2. Download [Sidenote-linux-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-linux-x64.zip),
@@ -123,8 +122,8 @@ The capture program reads the X11 screen, and the speaker sound through PulseAud
 
 The app is not code-signed yet. Each release lists the SHA-256 of its files in `SHA256SUMS`: run
 `sha256sum -c --ignore-missing SHA256SUMS` in the download folder, or in PowerShell compare
-`Get-FileHash Sidenote-windows-x64.zip` with its line there. From the release after 0.1.0, GitHub also records where
-each file was built: `gh attestation verify Sidenote-windows-x64.zip --repo kanggu12/sidenote`.
+`Get-FileHash Sidenote-windows-x64.zip` with its line there. GitHub also records where each file
+was built (from 0.1.1 on): `gh attestation verify Sidenote-windows-x64.zip --repo kanggu12/sidenote`.
 
 ### With Docker: Linux, or Windows with WSL 2
 
@@ -257,6 +256,7 @@ through SearXNG, and once a day the server asks GitHub whether a newer release i
 - [Local-first design](docs/DESIGN-local-first.md): why the local model answers first, and when the agent takes over.
 - [Quality](docs/QA.md): from a test case through CI to a release.
 - [Helm chart](deploy/helm/sidenote/README.md) and [the capture program on its own](docs/capture-client.md).
+- [Changelog](CHANGELOG.md): what changed in each release.
 
 The panel, the server's messages and the command line speak English, or Korean when your browser or system is set to
 Korean. **Language** in the panel's gear menu picks one by hand. To add a language, see
@@ -264,9 +264,10 @@ Korean. **Language** in the panel's gear menu picks one by hand. To add a langua
 
 ## Contributing
 
-Most of Sidenote can be worked on without a GPU: the tests run the server with stand-in models and the panel in a
-headless browser. Start with [CONTRIBUTING.md](CONTRIBUTING.md): how the pieces fit, the setup, the tests, and recipes
-for adding a model, a GPU vendor, a language or a cloud agent.
+Questions and ideas are welcome in [Discussions](https://github.com/kanggu12/sidenote/discussions). Most of Sidenote
+can be worked on without a GPU: the tests run the server with stand-in models and the panel in a headless browser. Start
+with [CONTRIBUTING.md](CONTRIBUTING.md): how the pieces fit, the setup, the tests, and recipes for adding a model, a GPU
+vendor, a language or a cloud agent.
 
 ```bash
 python3 -m venv .venv

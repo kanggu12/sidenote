@@ -76,9 +76,10 @@ running panel is the code here, and with the gate on, what CI said of this commi
 
 A version tag (`v1.2.3`) publishes: `release.yml` runs `ci.yml`, `chart-e2e.yml` and `desktop.yml` first, and
 publishes nothing if any of them fails. Before tagging, set the release's number in `server/version.py` (`VERSION`)
-and in `deploy/helm/sidenote/Chart.yaml` (`version` and `appVersion`), and commit them. At its start the release job
-runs `.github/check_version.py`, which refuses a tag that is not `v` and that number, or a chart that says another,
-before an image is built or anything is pushed; `version_check.py` holds the two files to one number on every push.
+and in `deploy/helm/sidenote/Chart.yaml` (`version` and `appVersion`), and commit them. The workflow's first job
+runs `.github/check_version.py`, which refuses a tag that is not `v` and that number, or a chart that says another, and
+takes the release's notes from that number's section of `CHANGELOG.md`, before anything is built; `version_check.py`
+and `changelog_check.py` hold the files to one number on every push.
 
 ## What no check here can say
 

@@ -1,6 +1,6 @@
 """The version a release names, in every place that names it: the tag (v1.2.3), server/version.py, and the Helm chart's
-version and appVersion (deploy/helm/sidenote/Chart.yaml). release.yml's release job runs this before it builds an image
-or pushes anything, so a release cannot go out under a number its own code and chart do not carry.
+version and appVersion (deploy/helm/sidenote/Chart.yaml). release.yml's first job runs this before anything is built,
+so a release cannot go out under a number its own code and chart do not carry.
 
     python3 .github/check_version.py v1.2.3                  exit 0 when all agree, 1 with what differs
     python3 .github/check_version.py v1.2.3 --root DIR       the files of another tree (tests/version_check.py)

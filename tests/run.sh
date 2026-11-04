@@ -36,7 +36,7 @@ cd "$(dirname "$0")/.." || exit 2      # the repository's root, whatever folder 
 SERVER=(integ agent_first server_review worker_order voice_trigger speech_hints heard_keep lang_vote stall_guard capture_loop up_wait
         report_period capture_update capture_panel capture_skip scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch
         codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check history_star ci_gate update_check
-        version_check launcher_args)
+        version_check changelog_check launcher_args)
 PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout
        panel_update)
 # What the suites import or start: not suites themselves

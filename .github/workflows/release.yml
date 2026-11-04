@@ -15,6 +15,26 @@ permissions:
   packages: write      # the images and the chart in ghcr.io
 
 jobs:
+  # What a tag must have before anything is built: one version in the tag, server/version.py and the chart, and this
+  # version's section of CHANGELOG.md, which is the release's notes
+  notes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag, server/version.py and the chart name one version
+        run: python3 .github/check_version.py "$GITHUB_REF_NAME"
+      - name: The release notes, from CHANGELOG.md
+        run: |
+          python3 .github/release_notes.py "$GITHUB_REF_NAME" > release-notes.md
+          cat release-notes.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 7
+
   # any v*.*.* tag published images and `latest`, on a failing commit too
   checks:
     uses: ./.github/workflows/ci.yml
@@ -34,18 +54,16 @@ jobs:
       contents: read
 
   release:
-    needs: [checks, chart, desktop]
+    needs: [notes, checks, chart, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write      # the GitHub release and its files
       packages: write      # the images and the chart in ghcr.io
       id-token: write      # the build provenance below, signed through GitHub's OIDC token
       attestations: write
+      discussions: write   # the release's announcement in Discussions
     steps:
       - uses: actions/checkout@v7
-      # before an image is built or anything is pushed: the tag is v and server/version.py's VERSION, as the chart is
-      - name: The tag, server/version.py and the chart name one version
-        run: python3 .github/check_version.py "$GITHUB_REF_NAME"
       - name: Version and names
         id: v
         run: |
@@ -124,12 +142,29 @@ jobs:
             dist/sidenote-${{ steps.v.outputs.version }}.tgz
             dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
             dist/app/Sidenote-*.zip
+      - name: The release notes the notes job took from CHANGELOG.md
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes
+          path: dist
       - name: GitHub release
         uses: softprops/action-gh-release@v3
         with:
-          generate_release_notes: true
+          body_path: dist/release-notes.md
+          generate_release_notes: true          # adds the compare link under the notes
+          discussion_category_name: Announcements
           files: |
             dist/sidenote-${{ steps.v.outputs.version }}.tgz
             dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
             dist/app/Sidenote-*.zip
             dist/SHA256SUMS
+
+  # the winget package: its manifests checked and installed on Windows, then sent to winget-pkgs when WINGET_TOKEN is set
+  winget:
+    needs: [release]
+    uses: ./.github/workflows/winget.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
+    permissions:
+      contents: read

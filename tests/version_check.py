@@ -88,14 +88,15 @@ check("a pre-release named the same everywhere: passes (what it publishes as is 
 
 print("\n[release.yml]")
 wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-job = wf[wf.find("\n  release:"):]
-step = job.find('python3 .github/check_version.py "$GITHUB_REF_NAME"')
-firsts = [job.find(x) for x in ("docker/build-push-action", "helm package", "helm push", "softprops/action-gh-release",
-                                "actions/download-artifact")]
-check("the release job runs the script on the tag", step > 0, step)
-check("...before it builds, pushes or publishes anything", step > 0 and all(step < f for f in firsts if f > 0), (step, firsts))
-check("...right after the checkout", step > 0 and job.rfind("actions/checkout", 0, step) > 0
-      and job.count("- name:", job.rfind("actions/checkout", 0, step), step) == 1, job[:400])
+first = wf[wf.find("\n  notes:"):wf.find("\n  checks:")]
+step = first.find('python3 .github/check_version.py "$GITHUB_REF_NAME"')
+check("the workflow's first job runs the script on the tag", step > 0, step)
+check("...right after the checkout", step > 0 and first.rfind("actions/checkout", 0, step) > 0
+      and first.count("- name:", first.rfind("actions/checkout", 0, step), step) == 1, first[:400])
+release = wf[wf.find("\n  release:"):wf.find("\n  winget:")]
+check("...and the release job, which builds, pushes and publishes, waits for it", "needs: [notes," in release, release[:120])
+check("the first job builds and pushes nothing", not any(x in first for x in ("docker/build-push-action", "helm push",
+                                                                               "softprops/action-gh-release")), first[:200])
 
 print("\n[./sidenote version]")
 # A copy of the launcher beside a version.py of its own (the launcher works from its own folder), and the programs it
