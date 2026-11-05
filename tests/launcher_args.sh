@@ -40,7 +40,11 @@
 # - Docker's own reason reaches the user: the docker group, the NVIDIA Container Toolkit;
 # - with no GPU that fits a model, llm pull, install, doctor and status say one and the same line;
 # - status names the engines as the panel does, uninstall on a Linux desktop lists and removes what it made there, and
-#   help names the start commands, setup-capture, the capture options and the CI switch.
+#   help names the start commands, setup-capture, the capture options and the CI switch;
+# - the server's user: up passes this user to compose and 0 under rootless Docker, makes the folders Docker would make as
+#   root, and compose.yaml uses it (tests/nonroot_check.sh runs that for real);
+# - the time zone comes from the PC, .env first; what PowerShell prints is read as UTF-8; no python3 is said;
+# - a first install ends well with what is left to do, and uninstall takes the images it pulled.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
 
 here="$(cd "$(dirname "$0")" && pwd)"             # this script's folder, whatever the caller's cwd
@@ -125,7 +129,10 @@ printf '%s\0' "$@" > "$FAKE/calls/ps.$(date +%s%N)"
 case "$3" in
   *Stop-Process*) [ -f "$FAKE/state/unkillable" ] || rm -f "$FAKE/state/running" ;;
   *.Count*) if [ -f "$FAKE/state/running" ]; then echo 1; else echo 0; fi ;;
-  *GetFolderPath*) echo 'C:\Users\fake\Desktop' ;;
+  # With state/korean-desktop, a folder with Korean in it, as PowerShell 5.1 writes it into a pipe: UTF-8 only when asked
+  *GetFolderPath*) if [ ! -f "$FAKE/state/korean-desktop" ]; then echo 'C:\Users\fake\Desktop'
+                   elif [[ $3 == *OutputEncoding*UTF8* ]]; then echo 'C:\Users\진구\OneDrive\바탕 화면'
+                   else echo 'C:\Users\진구\OneDrive\바탕 화면' | iconv -f UTF-8 -t CP949; fi ;;
   *Get-Command*pyw*) [ -f "$FAKE/state/no-pyw" ] || echo 'C:\WINDOWS\pyw.exe' ;;
   *sidenote.ico*) [ -f "$FAKE/state/no-icon-copy" ] || echo 'C:\Users\fake\AppData\Local\Sidenote\sidenote.ico' ;;
   *Test-Path*) echo y ;;
@@ -165,6 +172,7 @@ printf '%s\0' "$@" > "$FAKE/calls/docker.$(date +%s%N)"
 echo "${COMPOSE_PROFILES:-}" >> "$FAKE/state/profiles"
 case "$1" in
   info) [ -f "$FAKE/state/docker-off" ] && exit 1
+        [ -f "$FAKE/state/rootless" ] && echo '["name=seccomp,profile=builtin","name=rootless","name=cgroupns"]'
         if [ -f "$FAKE/state/docker-denied" ]; then
           echo "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" >&2; exit 1
         fi ;;
@@ -172,9 +180,25 @@ case "$1" in
   inspect) echo true ;;
   compose) if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
              echo 'Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu]]' >&2; exit 1
+           fi
+           # what compose.yaml would be filled in with, for the checks of the server's user and the time zone
+           if printf '%s\n' "$@" | grep -qx up; then
+             printf '%s:%s %s' "${SIDENOTE_UID:-}" "${SIDENOTE_GID:-}" "${TZ:-}" > "$FAKE/state/compose-env"
            fi ;;
+  # With state/image-in-use, the way Docker refuses to remove an image a container of another project runs
+  image) if [ "$2" = rm ] && [ -f "$FAKE/state/image-in-use" ] && [[ $* == *ollama/ollama* ]]; then exit 1; fi ;;
 esac
 exit 0
+STUB
+# id: an ordinary user unless a check says otherwise, whoever runs this suite
+cat > "$work/bin/id" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in -u) echo 1000 ;; -g) echo 1001 ;; *) exec /usr/bin/id "$@" ;; esac
+STUB
+# timedatectl: what the system says of its time zone (state/system-tz), or nothing, as under WSL without systemd
+cat > "$work/bin/timedatectl" <<'STUB'
+#!/usr/bin/env bash
+cat "$FAKE/state/system-tz" 2>/dev/null
 STUB
 # gh: writes down that it was asked, and answers what CI said of the commit as the launcher's --jq prints it
 # (state/gh-answer: success, failure, running). Only a launcher with SIDENOTE_CI_GATE=1 may ask it at all.
@@ -723,6 +747,114 @@ else bad "up gives a local model server that is starting its moment, and reports
 if grep -qF "Local model: not responding (./sidenote llm logs)" <<<"$never" && [ "$took" -lt 30 ]; then
   ok "up still says not responding of one that does not come, and goes on after a bounded wait"
 else bad "up still says not responding of one that does not come, and goes on after a bounded wait" "$took s: $(grep -F "Local model" <<<"$never")"; fi
+
+# 43. Who the server runs as: this user, whose 600 login files it has to read, and root where that root is this user. A run
+#     as root with no capabilities reads neither, and says "login needed" while `./sidenote login` says "signed in".
+state; run up; plain="$(cat "$work/state/compose-env" 2>/dev/null)"
+state rootless; run up; rootless="$(cat "$work/state/compose-env" 2>/dev/null)"
+if [ "${plain%% *}" = 1000:1001 ]; then ok "up passes this user to compose"
+else bad "up passes this user to compose" "$plain"; fi
+if [ "${rootless%% *}" = 0:0 ]; then ok "under rootless Docker up keeps the container's root, which is this user"
+else bad "under rootless Docker up keeps the container's root, which is this user" "$rootless"; fi
+
+# 44. What Docker would make as root for a mount that is missing, made first as this user; a new log folder is private.
+state; rm -rf "$work/home/.claude" "$work/home/.codex" "$work/newlogs"
+EXTRA_ENV="SIDENOTE_LOG_PATH=$work/newlogs/here" run up
+if [ -d "$work/home/.claude/backups" ] && [ -d "$work/home/.claude/sessions" ] && [ -d "$work/home/.codex" ]; then
+  ok "up makes the agents' folders itself, before Docker would"
+else bad "up makes the agents' folders itself, before Docker would" "$(ls -A "$work/home/.claude" 2>&1 | tr '\n' ' ')"; fi
+if [ "$(stat -c %a "$work/newlogs/here" 2>/dev/null)" = 700 ]; then ok "a new log folder is this user's alone"
+else bad "a new log folder is this user's alone" "mode $(stat -c %a "$work/newlogs/here" 2>&1)"; fi
+
+# 45. compose.yaml as the launcher beside it is meant to fill it in: the user in the server and in its home, the service that
+#     hands the folders over and that the server waits for, and no one's own time zone as the default.
+tree="$(dirname "$launcher")"
+compose_text="$(cat "$tree/compose.yaml" 2>/dev/null)"
+if grep -qF 'user: "${SIDENOTE_UID:-0}:${SIDENOTE_GID:-0}"' <<<"$compose_text" \
+   && grep -qF '/root:size=256m,uid=${SIDENOTE_UID:-0}' <<<"$compose_text" \
+   && grep -qF 'service_completed_successfully' <<<"$compose_text" && grep -qF 'server-init:' <<<"$compose_text"; then
+  ok "compose.yaml runs the server as the user passed in, after the folders are handed over, and as root by default"
+else bad "compose.yaml runs the server as the user passed in, after the folders are handed over, and as root by default"; fi
+if ! grep -qF 'Asia/Seoul' "$tree/compose.yaml" "$tree/deploy/helm/sidenote/values.yaml" 2>/dev/null \
+   && [ -f "$tree/compose.yaml" ]; then ok "neither compose.yaml nor the chart assumes one country's time zone"
+else bad "neither compose.yaml nor the chart assumes one country's time zone"; fi
+
+# 46. The time zone: the environment and .env first, then the system's, in order, and only what is a zone's name.
+etc="$work/etc"; mkdir -p "$etc" "$work/zoneinfo/Pacific"; : > "$work/zoneinfo/Pacific/Fiji"
+tz_of() {                             # the launcher's own function, cut out, with a folder in place of /etc: $1 = TZ
+  { sed -n '/^host_tz() {$/,/^}$/p' "$launcher"
+    printf 'setting() { printf %%s "$TZ_GIVEN"; }\nhost_tz "$1"\n'; } > "$work/tz.sh"
+  TZ_GIVEN="$1" PATH="$work/bin:/usr/bin:/bin" FAKE="$work" bash "$work/tz.sh" "$etc"
+}
+state; echo 'Asia/Tokyo' > "$work/state/system-tz"; echo 'Europe/Paris' > "$etc/timezone"
+ln -sf "$work/zoneinfo/Pacific/Fiji" "$etc/localtime"
+a="$(tz_of "America/New_York")"; b="$(tz_of "")"; c="$(tz_of ":/etc/localtime")"
+echo 'n/a' > "$work/state/system-tz"; d="$(tz_of "")"
+rm -f "$etc/timezone"; e="$(tz_of "")"
+rm -f "$etc/localtime"; f="$(tz_of "")"
+if [ "$a|$b|$c|$d|$e|$f" = "America/New_York|Asia/Tokyo|Asia/Tokyo|Europe/Paris|Pacific/Fiji|UTC" ]; then
+  ok "the time zone: TZ, timedatectl, /etc/timezone, the /etc/localtime link, then UTC, and only a zone's name"
+else bad "the time zone: TZ, timedatectl, /etc/timezone, the /etc/localtime link, then UTC, and only a zone's name" "$a|$b|$c|$d|$e|$f"; fi
+state; echo 'TZ=Europe/Berlin' > "$work/repo/.env"; run up; from_env="$(cat "$work/state/compose-env" 2>/dev/null)"
+EXTRA_ENV="TZ=Asia/Tokyo" run up; from_shell="$(cat "$work/state/compose-env" 2>/dev/null)"; rm -f "$work/repo/.env"
+if [ "${from_env##* }" = Europe/Berlin ] && [ "${from_shell##* }" = Asia/Tokyo ]; then ok "up gives compose .env's TZ, and the environment's over it"
+else bad "up gives compose .env's TZ, and the environment's over it" "$from_env | $from_shell"; fi
+
+# 47. A path with Korean in it, read from PowerShell and handed back to it: as bytes of the console's code page it is no
+#     longer that path, and the shortcut could not be made.
+state korean-desktop; run shortcut; last_call_with ps "CreateShortcut"
+if [[ ${CALL[*]:-} == *'바탕 화면\Sidenote Capture.lnk'* ]]; then ok "a Windows path with Korean in it comes back from PowerShell whole"
+else bad "a Windows path with Korean in it comes back from PowerShell whole" "$(grep -a -m1 -o 'CreateShortcut([^)]*)' <<<"${CALL[*]:-}")"; fi
+
+# 48. No python3: it is said first. It used to pick the CPU's compose file for an NVIDIA GPU and end `up` in the middle of its
+#     status with status 127 and no word of why.
+mkdir -p "$work/nopy"
+for tool in /usr/bin/* /bin/*; do
+  case "${tool##*/}" in python*|pydoc*) ;; *) ln -sf "$tool" "$work/nopy/${tool##*/}" 2>/dev/null ;; esac
+done
+state; EXTRA_ENV="PATH=$work/bin:$work/nopy SIDENOTE_LANG=en" run status; said_status="$(cat "$work/out")"; rc_status="$(cat "$work/rc")"
+EXTRA_ENV="PATH=$work/bin:$work/nopy SIDENOTE_LANG=en" run help; rc_help="$(cat "$work/rc")"
+if [ "$rc_status" = 1 ] && grep -qF "python3 is not installed" <<<"$said_status" && [ "$rc_help" = 0 ]; then
+  ok "without python3 a command says so, and help still answers"
+else bad "without python3 a command says so, and help still answers" "status $rc_status: $(tail -1 <<<"$said_status"); help $rc_help"; fi
+
+# 49. A first install: no model and no login are what comes next, in the README's order, and not a failed install. doctor
+#     asked later still fails on them, and an install with something really missing still fails.
+fresh='{"present": true, "on": true, "ok": false, "missing": true, "fits": true, "model": "sidenote-gemma4:e4b"}'
+state; echo "nvidia,Test GPU,16" > "$work/state/gpu"; health_with "$fresh"
+python3 - "$work/state/health.json" <<'FIX'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["engines"]["ready"] = False
+d["engines"]["agent"] = {"present": True, "ok": False, "mode": "hard", "login": "./sidenote login"}
+json.dump(d, open(sys.argv[1], "w"))
+FIX
+EXTRA_ENV="SIDENOTE_LANG=en" run install; first="$(cat "$work/out")"; rc_first="$(cat "$work/rc")"
+next="$(sed -n '/^Next$/,$p' <<<"$first")"
+EXTRA_ENV="SIDENOTE_LANG=en" run doctor; rc_doctor="$(cat "$work/rc")"
+if [ "$rc_first" = 0 ] && ! grep -qF "✗" <<<"$first"; then ok "a first install with no model and no login ends well"
+else bad "a first install with no model and no login ends well" "exit $rc_first: $(grep -F "✗" <<<"$first" | tr '\n' '|')"; fi
+pull_at="$(grep -n "llm pull" <<<"$next" | head -1 | cut -d: -f1)"; up_at="$(grep -n "capture --up" <<<"$next" | head -1 | cut -d: -f1)"
+if [ -n "$pull_at" ] && [ -n "$up_at" ] && [ "$pull_at" -lt "$up_at" ] && grep -qF "./sidenote login" <<<"$next"; then
+  ok "...and names what is next: the model, the login, the start"
+else bad "...and names what is next: the model, the login, the start" "$next"; fi
+if ! grep -qF "Until then the agent solves every problem" <<<"$first" && ! grep -qF "The agent solves every problem" <<<"$first"; then
+  ok "...and does not promise an agent that is not signed in"
+else bad "...and does not promise an agent that is not signed in"; fi
+if [ "$rc_doctor" = 1 ]; then ok "doctor asked later still fails on them"; else bad "doctor asked later still fails on them" "exit $rc_doctor"; fi
+state no-py; health_with "$fresh"; EXTRA_ENV="SIDENOTE_LANG=en" run install; rc_broken="$(cat "$work/rc")"
+if [ "$rc_broken" = 1 ]; then ok "an install with something really missing still fails"; else bad "an install with something really missing still fails" "exit $rc_broken"; fi
+
+# 50. uninstall takes the images the setup pulled too, says what stays, and one that another project is running stops nothing.
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall; listed="$(cat "$work/out")"
+state image-in-use; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --yes; rc_gone="$(cat "$work/rc")"; last_call_with docker "searxng/searxng"
+search_rm="${CALL[*]:-}"; last_call_with docker "ollama/ollama"
+if grep -qF "ollama/ollama:" <<<"$listed" && grep -qF "searxng/searxng:" <<<"$listed" && grep -qF "Windows Python" <<<"$listed"; then
+  ok "uninstall lists the pulled images, and the capture packages it leaves in Windows Python"
+else bad "uninstall lists the pulled images, and the capture packages it leaves in Windows Python" "$(grep -F "Images" <<<"$listed")"; fi
+if [ "$rc_gone" = 0 ] && [[ $search_rm == "image rm searxng/searxng:"* ]] && [[ ${CALL[*]:-} != *" -f "* ]]; then
+  ok "uninstall --yes removes them unforced, and goes on past one that is in use"
+else bad "uninstall --yes removes them unforced, and goes on past one that is in use" "exit $rc_gone; $search_rm; ${CALL[*]:-}"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

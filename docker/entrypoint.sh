@@ -1,14 +1,18 @@
 #!/bin/sh
 # The claude CLI in the container signs in with this PC's own Claude Code login: the host's ~/.claude
-# is mounted at /root/.claude (compose.yaml). Older images ran as uid 10001; folders they
-# left behind are handed back to root, the owner of everything else here and on the host.
+# is mounted at /root/.claude (compose.yaml), and HOME is /root whichever user this runs as (the launcher starts it as
+# the PC's user). Run as root, by `docker compose` by hand or on a PC whose user is root, folders left by the uid 10001 of
+# older images are handed back to root. As any other user this has neither the right nor the need: compose.yaml's
+# server-init service has already handed these folders to the user.
 set -e
 export HOME=/root
-for d in /data/hf "${SIDENOTE_LOG_DIR:-}"; do
-    if [ -n "$d" ] && [ -d "$d" ] && [ "$(stat -c %u "$d")" != 0 ]; then
-        chown -R 0:0 "$d" 2>/dev/null || true
-    fi
-done
+if [ "$(id -u)" = 0 ]; then
+    for d in /data/hf "${SIDENOTE_LOG_DIR:-}"; do
+        if [ -n "$d" ] && [ -d "$d" ] && [ "$(stat -c %u "$d")" != 0 ]; then
+            chown -R 0:0 "$d" 2>/dev/null || true
+        fi
+    done
+fi
 # No per-request access log: the healthcheck alone would add a line every 10 s.
 # A 3840x2160 frame of a photo-like screen (a game, a video) can be over 16 MiB as the message that carries it
 # (one of random pixels: 23.7 MiB of PNG, 31.7 MiB of message). uvicorn's default limit of 16 MiB closes the

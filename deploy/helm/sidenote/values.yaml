@@ -17,12 +17,13 @@ fullnameOverride: ""
 # Secrets for pulling images from a private registry, in the form Kubernetes uses:
 #   imagePullSecrets:
 #     - name: my-registry
-# You build the sidenote and sidenote-runner images from this repository and push them yourself
-# (README.md, "Images").
+# The chart published with a release pulls that release's images from ghcr.io, a public registry. With the chart in the
+# repository you build the sidenote and sidenote-runner images and push them yourself (README.md, "Images").
 imagePullSecrets: []
 
-# The time zone of the log times, given to the containers as TZ (compose.yaml has the same default).
-timezone: Asia/Seoul
+# The time zone of the log times and of the day an answer counts toward, given to the containers as TZ. A cluster's
+# nodes say nothing of where its user is, so name yours (Europe/Berlin, say).
+timezone: UTC
 
 # NetworkPolicies that keep the components apart, as compose.yaml's networks do: the code runner
 # reaches nothing and only the server reaches it, the local LLM reaches nothing and only the server
@@ -61,7 +62,8 @@ agent:
 
 server:
   image:
-    # Built from the repository's docker/Dockerfile and pushed where the cluster can pull it.
+    # The published chart names this release's image here. The chart in the repository names a local one: build it from
+    # docker/Dockerfile, push it where the cluster can pull it, and name that.
     repository: sidenote
     # Empty: the chart's appVersion.
     tag: ""
@@ -160,7 +162,7 @@ runner:
   # false: no code runner, and the panel shows no run button (SIDENOTE_RUNNER_URL is empty).
   enabled: true
   image:
-    # Built from runner/Dockerfile and pushed where the cluster can pull it.
+    # As for the server, from runner/Dockerfile.
     repository: sidenote-runner
     # Empty: the chart's appVersion.
     tag: ""

@@ -72,8 +72,9 @@ COPY --chmod=755 docker/entrypoint.sh /app/entrypoint.sh
 
 WORKDIR /app
 # Inside the container the server listens on all interfaces; compose publishes it on the host's
-# 127.0.0.1 only. It runs as root of the container (no capabilities but CHOWN, read-only root
-# filesystem; see compose.yaml) because the PC's ~/.claude it signs in with belongs to root.
+# 127.0.0.1 only. ./sidenote runs it as the PC's user, who owns the ~/.claude it signs in with (SIDENOTE_UID in
+# compose.yaml); by default, and on a PC whose user is root, it is root of the container with no capabilities but
+# CHOWN. A read-only root filesystem either way, and nothing in the image is writable or private: any uid can run it.
 ENV HOME=/root \
     SIDENOTE_HOST=0.0.0.0 \
     SIDENOTE_PORT=8777 \
