@@ -28,6 +28,7 @@
 #   terminal colour codes, wsl.exe's own UTF-16 messages readable, capture options passed on as typed;
 # - `capture --up` with no terminal (as launch.pyw runs it) ends with a failing status and waits for no key;
 # - up gives a local model server that is starting a moment before it reports on it;
+# - on a PC with no internet up builds and pulls nothing, and the capture packages come from a folder of wheels;
 # - the language: the checks above read the Korean words (SIDENOTE_LANG=ko), which are the words the launcher had
 #   before it spoke English too. With SIDENOTE_LANG=en every command prints no Korean, a locale picks the language when
 #   SIDENOTE_LANG is not set, a SIDENOTE_LANG that is set is handed on to the Windows programs (WSLENV), and launch.pyw's
@@ -186,7 +187,8 @@ case "$1" in
              printf '%s:%s %s' "${SIDENOTE_UID:-}" "${SIDENOTE_GID:-}" "${TZ:-}" > "$FAKE/state/compose-env"
            fi ;;
   # With state/image-in-use, the way Docker refuses to remove an image a container of another project runs
-  image) if [ "$2" = rm ] && [ -f "$FAKE/state/image-in-use" ] && [[ $* == *ollama/ollama* ]]; then exit 1; fi ;;
+  image) if [ "$2" = rm ] && [ -f "$FAKE/state/image-in-use" ] && [[ $* == *ollama/ollama* ]]; then exit 1; fi
+         if [ "$2" = inspect ] && [ -f "$FAKE/state/no-image" ]; then exit 1; fi ;;
 esac
 exit 0
 STUB
@@ -855,6 +857,27 @@ else bad "uninstall lists the pulled images, and the capture packages it leaves 
 if [ "$rc_gone" = 0 ] && [[ $search_rm == "image rm searxng/searxng:"* ]] && [[ ${CALL[*]:-} != *" -f "* ]]; then
   ok "uninstall --yes removes them unforced, and goes on past one that is in use"
 else bad "uninstall --yes removes them unforced, and goes on past one that is in use" "exit $rc_gone; $search_rm; ${CALL[*]:-}"; fi
+
+# 43. A PC with no internet (docs/air-gapped.md): up builds nothing and pulls nothing, and leaves the search engine out; it
+#     names what is missing where compose would stop on the pull; a model is not downloaded; and the capture packages come
+#     from a folder of wheels. Without the switch nothing of this happens.
+state; EXTRA_ENV="SIDENOTE_OFFLINE=1" run up; last_call docker build; o_build=${#CALL[@]}; last_call docker up; o_up=" ${CALL[*]} "; o_rc="$(cat "$work/rc")"
+state; run up; last_call docker build; p_build=${#CALL[@]}; last_call docker up; p_up=" ${CALL[*]} "
+if [ "$o_rc" = 0 ] && [ "$o_build" = 0 ] && [[ $o_up == *" --no-build --pull never "* ]] && [[ $o_up == *" server runner llm "* ]]; then
+  ok "offline, up builds nothing, pulls nothing and starts the server, the runner and the local model"
+else bad "offline, up builds nothing, pulls nothing and starts the server, the runner and the local model" "rc $o_rc, build calls $o_build, up:$o_up"; fi
+if [ "$p_build" -gt 0 ] && [[ $p_up != *" --pull never "* ]] && [[ $p_up != *" server runner"* ]]; then ok "...and without the switch up is as it was"
+else bad "...and without the switch up is as it was" "build calls $p_build, up:$p_up"; fi
+state no-image; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LANG=en" run up; last_call docker up; none=${#CALL[@]}
+if [ "$(cat "$work/rc")" != 0 ] && [ "$none" = 0 ] && said "sidenote:local is not on this PC" && said "docs/air-gapped.md"; then ok "offline, an image that is not here is named, with the way out"
+else bad "offline, an image that is not here is named, with the way out" "rc $(cat "$work/rc"), compose up calls $none: $(tail -1 "$work/out")"; fi
+state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LANG=en" run llm pull gemma4:e4b; last_call docker llm-pull; pulled=${#CALL[@]}
+if [ "$(cat "$work/rc")" != 0 ] && [ "$pulled" = 0 ] && said "docs/air-gapped.md"; then ok "offline, a model is not downloaded, and it says where one comes from"
+else bad "offline, a model is not downloaded, and it says where one comes from" "rc $(cat "$work/rc"), pulls $pulled: $(tail -1 "$work/out")"; fi
+state; EXTRA_ENV="SIDENOTE_WHEELS=/mnt/c/bundle/wheels" run setup-capture; last_call cmd pip; wheels=" ${CALL[*]} "
+state; run setup-capture; last_call cmd pip; online=" ${CALL[*]} "
+if [[ $wheels == *" --no-index --find-links "* ]] && [[ $online != *"--no-index"* ]]; then ok "the capture packages come from a folder of wheels when one is named"
+else bad "the capture packages come from a folder of wheels when one is named" "with:$wheels without:$online"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

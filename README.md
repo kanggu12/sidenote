@@ -256,6 +256,7 @@ through SearXNG, and once a day the server asks GitHub whether a newer release i
 - [Local-first design](docs/DESIGN-local-first.md): why the local model answers first, and when the agent takes over.
 - [Quality](docs/QA.md): from a test case through CI to a release.
 - [Helm chart](deploy/helm/sidenote/README.md) and [the capture program on its own](docs/capture-client.md).
+- [Running with no internet](docs/air-gapped.md): the local model and speech on a closed network, and what cannot work there.
 - [Changelog](CHANGELOG.md): what changed in each release.
 
 The panel, the server's messages and the command line speak English, or Korean when your browser or system is set to

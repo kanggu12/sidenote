@@ -109,6 +109,15 @@ tests/nonroot_check.sh                                # sidenote:local and siden
 tests/nonroot_check.sh sidenote:ci sidenote-runner:ci
 ```
 
+`tests/offline_check.sh` brings up the same server and code runner on a network with no way out, set up as
+[docs/air-gapped.md](../docs/air-gapped.md) says. It fails when a start waits on the internet or the page loads anything
+from outside. CI's image job runs it after the build:
+
+```bash
+tests/offline_check.sh                                # sidenote:local and sidenote-runner:local
+tests/offline_check.sh sidenote:ci sidenote-runner:ci
+```
+
 ## The Helm chart on a cluster
 
 `tests/k3d_check.sh` installs the chart on a throwaway k3d cluster with the images given (by default the ones
