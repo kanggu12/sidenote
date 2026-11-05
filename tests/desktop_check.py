@@ -262,14 +262,14 @@ from desktop import build as desktop_build  # noqa: E402
 with tempfile.TemporaryDirectory() as d:
     # client/sidenote.ico is made from the tray's own drawing. After a change to it:
     #   python -c "from pathlib import Path; from desktop.build import icon; icon(Path('client/sidenote.ico'))"
-    drawn = Image.open(desktop_build.icon(Path(d) / "drawn.ico"))
-    kept = Image.open(ROOT / "client" / "sidenote.ico")
-    check("client/sidenote.ico holds every size the app's icon has", sorted(kept.ico.sizes()) == sorted(drawn.ico.sizes()),
-          sorted(kept.ico.sizes()))
-    # With some room: another build of Pillow may round a pixel of the smoothing differently, and a new drawing is far off
-    worst = max((max(hi for _, hi in ImageChops.difference(kept.ico.getimage(s).convert("RGBA"), drawn.ico.getimage(s).convert("RGBA")).getextrema())
-                 for s in drawn.ico.sizes() if s in kept.ico.sizes()), default=255)
-    check("...and is what the tray's drawing makes now", worst <= 8, f"largest difference in a channel: {worst}")
+    # Both closed before the folder goes: Windows cannot delete a file that is still open
+    with Image.open(desktop_build.icon(Path(d) / "drawn.ico")) as drawn, Image.open(ROOT / "client" / "sidenote.ico") as kept:
+        check("client/sidenote.ico holds every size the app's icon has", sorted(kept.ico.sizes()) == sorted(drawn.ico.sizes()),
+              sorted(kept.ico.sizes()))
+        # With some room: another build of Pillow may round a pixel of the smoothing differently, and a new drawing is far off
+        worst = max((max(hi for _, hi in ImageChops.difference(kept.ico.getimage(s).convert("RGBA"), drawn.ico.getimage(s).convert("RGBA")).getextrema())
+                     for s in drawn.ico.sizes() if s in kept.ico.sizes()), default=255)
+        check("...and is what the tray's drawing makes now", worst <= 8, f"largest difference in a channel: {worst}")
 
 print("[--check, as CI runs it on the built app]")
 done = subprocess.run([sys.executable, "-m", "desktop", "--check"], cwd=str(ROOT), capture_output=True, text=True,
