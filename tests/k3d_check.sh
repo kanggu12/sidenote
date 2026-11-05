@@ -181,17 +181,21 @@ check "...and the file a run user left in /work is gone" test "$OUT" = gone
 check "...and it is healthy" kc exec "$RPOD" -- python3 /app/runner.py --health
 
 echo "[no internet: the speech bundle, unpacked as docs/air-gapped.md does]"
+# The guide's own command, from the guide: what it runs in the server's pod for speech.tar
+read -r -a UNPACK <<< "$(sed -n 's|^kubectl -n sidenote exec -i deploy/sidenote-server -- \(.*\) < speech\.tar$|\1|p' "$REPO/docs/air-gapped.md")"
 BUNDLE="$WORK/bundle"                                 # a model's files as the guide's command writes them, with no links
 SNAPSHOT="$BUNDLE/hub/models--Systran--faster-whisper-small/snapshots/0123456789012345678901234567890123456789"
 mkdir -p "$SNAPSHOT" "$BUNDLE/hub/models--Systran--faster-whisper-small/refs"
 printf %s 0123456789012345678901234567890123456789 > "$BUNDLE/hub/models--Systran--faster-whisper-small/refs/main"
 echo "the model" > "$SNAPSHOT/model.bin"
-tar cf "$WORK/speech.tar" -C "$BUNDLE" hub
-kc exec -i deploy/sidenote-server -- tar xf - -C /data/hf < "$WORK/speech.tar" > "$SP/k3d_bundle.log" 2>&1
+# owned by the user of the PC it was made on, as a real one is, and not by the pod's root
+tar cf "$WORK/speech.tar" --owner=1000 --group=1000 -C "$BUNDLE" hub
+unpack() { [ "${#UNPACK[@]}" -gt 0 ] && kc exec -i deploy/sidenote-server -- "${UNPACK[@]}" < "$WORK/speech.tar"; }
+check "the guide's command unpacks it into the server's volume, with no error" unpack
 FIND='import sys
 from faster_whisper import download_model
 sys.exit(open(download_model("small") + "/model.bin").read().strip() != "the model")'
-check "kubectl unpacks it into the server's volume, and the library finds the model with no network" \
+check "...and the library finds the model there with no network" \
   kc exec deploy/sidenote-server -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
 
 echo "[upgrade: the token kept, Codex's login copied into a writable home]"
