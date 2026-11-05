@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-05
+
 ### Changed
 
 - **Skip windows** stops the screen while a window named in the list shows on the monitor being captured, whichever
@@ -122,6 +124,7 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/kanggu12/sidenote/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kanggu12/sidenote/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kanggu12/sidenote/releases/tag/v0.1.0
