@@ -5,14 +5,17 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-06
+
 ### Fixed
 
 - With the speech language on **Auto**, an English sentence in a session that has been speaking Korean stays English when it
   is 3 s or more and Whisper is sure of it. Held to Korean, 30 of 73 sentences read by people came back in Korean with what was
   said lost, 12 of them as one phrase over and over. What is still held no longer writes such a phrase.
 - [Running with no internet](https://github.com/kanggu12/sidenote/blob/main/docs/air-gapped.md): the speech model goes in the
-  bundle as plain files, as the links its cache keeps them behind unpack on Windows only with Developer Mode on. The guide
-  also says where an Ollama on Linux keeps its models when it runs as a service.
+  bundle as plain files, as the links its cache keeps them behind unpack on Windows only with Developer Mode on, and a pod on
+  Kubernetes unpacks the bundle as its own files, which its root could not read otherwise. The guide also says where an Ollama
+  on Linux keeps its models when it runs as a service.
 
 ## [0.1.3] - 2026-11-05
 
@@ -142,7 +145,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/kanggu12/sidenote/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/kanggu12/sidenote/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kanggu12/sidenote/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kanggu12/sidenote/compare/v0.1.0...v0.1.1
