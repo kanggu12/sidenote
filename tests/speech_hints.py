@@ -58,7 +58,7 @@ class Model:
         self.calls = []            # (the language asked for, the prompt given)
         self.hf_tokenizer = Tokens()
 
-    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None):
+    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None, **how):
         self.calls.append((language, initial_prompt))
         lang = language or self.said
         return iter([types.SimpleNamespace(text=f"<{lang}>")]), Info(lang)

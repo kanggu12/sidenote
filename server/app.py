@@ -1846,8 +1846,9 @@ async def transcription_worker(app: FastAPI) -> None:
                 if hasattr(transcriber, "speech_segments"):
                     heard = bool(await loop.run_in_executor(None, transcriber.speech_segments,
                                                             window, STATE.audio_sr))
-                text = (await loop.run_in_executor(None, transcriber.transcribe, window, STATE.audio_sr)
-                        ) if heard else ""
+                # What only shows on the panel may not hold up the utterances beside it in this loop (transcribe_live)
+                read = getattr(transcriber, "transcribe_live", transcriber.transcribe)
+                text = (await loop.run_in_executor(None, read, window, STATE.audio_sr)) if heard else ""
                 # Silence clears it too: a sentence heard minutes ago must not ride along with
                 # every later screen analysis as "recent audio".
                 if STATE.speech_epoch == epoch and text != STATE.transcript:

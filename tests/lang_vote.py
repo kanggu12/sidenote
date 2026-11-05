@@ -48,9 +48,11 @@ class Model:
     def __init__(self):
         self.script = []      # (detected language, {odds}) per call made with language=None
         self.asked = []       # the `language` argument of every call
+        self.how = []         # what else every call was given (temperature, max_new_tokens)
 
-    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None):
+    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None, **how):
         self.asked.append(language)
+        self.how.append(how)
         if language is None:
             lang, probs = self.script.pop(0)
             return iter([types.SimpleNamespace(text=f"<{lang}>")]), Info(lang, probs)
@@ -150,6 +152,58 @@ t._model.script.append(("ko", KO))
 t.transcribe(pcm(0.8), 16000)
 check("asked for korean straight away", t._model.asked, ["ko"])
 check("still nothing voted for", t.voted, "")
+
+print("\n[the live line: read quickly, in the language it sounds like]")
+t = make()
+for _ in range(3):
+    feed(t, 2.0, "ko", KO)
+check("the session has voted Korean", t.voted, "ko")
+t._model.asked.clear(), t._model.how.clear()
+t._model.script.append(("en", EN_SURE))
+words = t.transcribe_live(pcm(15), 16000)
+check("a window of English is not held to the vote", (words, t._model.asked), ("<en>", [None]))
+check("...is given no retries and no more tokens than speech makes, within what Whisper allows beside the longest prompt",
+      t._model.how, [{"temperature": 0.0, "max_new_tokens": tr.LIVE_TOKENS_MAX}])
+t._model.how.clear()
+t._model.script.append(("en", EN_SURE))
+t.transcribe_live(pcm(4), 16000)
+check("...and a short one fewer of them", t._model.how, [{"temperature": 0.0, "max_new_tokens": 76}])
+
+print("\n[an utterance held to the vote]")
+
+
+def voted_korean():
+    """A session that has spoken Korean, with nothing else on the stand-in's record: what it hears next may move the vote."""
+    v = make()
+    for _ in range(3):
+        feed(v, 2.0, "ko", KO)
+    v._model.asked.clear(), v._model.how.clear()
+    return v
+
+
+t = voted_korean()
+t._model.script.append(("en", EN_SURE))
+words = t.transcribe(pcm(5), 16000)
+check("a sentence held to Korean is decoded once, with no retries", (words, t._model.asked, t._model.how),
+      ("<ko>", [None, "ko"], [{}, {"temperature": 0.0}]))
+t = voted_korean()
+t._model.script.append(("en", EN_SURE))
+t.transcribe(pcm(tr.HELD_SENTENCE_SEC + 1), 16000)
+check("...and longer speech keeps Whisper's retries, as one try goes round on a phrase there", t._model.how, [{}, {}])
+t = voted_korean()
+t._model.script.append(("ko", KO))
+t.transcribe(pcm(5), 16000)
+check("one that sounds as it is voted is decoded as it always was", t._model.how, [{}])
+
+print("\n[what the live line leaves out]")
+said = types.SimpleNamespace(text=" We had an outage, and the database kept ffffffffffffffffffffffff", compression_ratio=9.0)
+check("the sound Whisper went round on goes, and the words before it stay", tr.unlooped(said), "We had an outage, and the database kept")
+said = types.SimpleNamespace(text="드라마에 비해 " * 8, compression_ratio=6.0)
+check("...a phrase too", tr.unlooped(said), "")
+said = types.SimpleNamespace(text=" 하하하하하하 정말요", compression_ratio=1.2)
+check("what Whisper itself does not call a loop stays", tr.unlooped(said), "하하하하하하 정말요")
+said = types.SimpleNamespace(text=" no compression ratio on this one")
+check("...and a segment that does not say", tr.unlooped(said), "no compression ratio on this one")
 
 print(f"\n==== {PASS} passed, {FAIL} failed ====")
 sys.exit(1 if FAIL else 0)
