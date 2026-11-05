@@ -50,7 +50,7 @@ accounted() {
   for f in tests/*.py tests/*.sh; do
     n="$(basename "${f%.*}")"
     # this script, and the two that need Docker and real images, each with a CI job of its own
-    { [ "$n" = run ] || [ "$n" = k3d_check ] || [ "$n" = nonroot_check ]; } && continue
+    { [ "$n" = run ] || [ "$n" = k3d_check ] || [ "$n" = nonroot_check ] || [ "$n" = offline_check ]; } && continue
     case " ${SERVER[*]} ${PANEL[*]} ${HELPERS[*]} " in
       *" $n "*) ;;
       *) echo "tests/run.sh: $f is in no list of suites" >&2; bad=1 ;;

@@ -70,6 +70,10 @@ PY
 COMPOSE_FILE="$(setting COMPOSE_FILE "")"
 [ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="compose.yaml:docker/compose.$(gpu_vendor).yaml"
 export COMPOSE_FILE
+# A PC with no way to the internet (docs/air-gapped.md): SIDENOTE_OFFLINE=1 in .env. The images came with a bundle, so nothing is
+# built or pulled, a build's apt and pip being the first things to fail there, and a model is brought, not downloaded.
+offline() { case "$(setting SIDENOTE_OFFLINE "" | tr '[:upper:]' '[:lower:]')" in 1|true|yes|on) return 0 ;; esac; return 1; }
+
 # The CI check before a deploy is for maintainers: only with SIDENOTE_CI_GATE=1 (the environment or .env) does `up`
 # ask gh what CI said of the commit. Without it nothing here asks gh, and no command prints a CI line.
 CI_GATE="$(setting SIDENOTE_CI_GATE 0 | tr -d '[:space:]')"
@@ -440,12 +444,26 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   echo "$(L "${B}Starting the server${N} ${D}(the first time, and after an agent CLI update, building the image takes a while)${N}" \
             "${B}서버를 시작합니다${N} ${D}(처음과 에이전트 CLI 업데이트 뒤에는 이미지 빌드에 시간이 걸립니다)${N}")"
   local rc=0 out; out="$(mktemp)"
-  # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
-  # during it had the container replaced under it, the very thing the wait is there to prevent.
-  docker compose build 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+  local nopull=() services=()
+  if offline; then
+    # Said here, in words that name the way out: compose would stop on a pull it was told not to make, or on a build's base image
+    local image
+    for image in sidenote:local sidenote-runner:local; do
+      docker image inspect "$image" >/dev/null 2>&1 || die "$(L "$image is not on this PC, and with SIDENOTE_OFFLINE=1 it is neither built nor pulled. Load the bundle: docs/air-gapped.md" \
+                                                                "$image 이미지가 이 PC에 없고, SIDENOTE_OFFLINE=1이면 빌드도 내려받기도 하지 않습니다. 묶음을 불러오세요: docs/air-gapped.md")"
+    done
+    nopull=(--pull never)
+    # Named one by one to leave the search engine out: it only asks the internet, and its image need not come along
+    services=(server runner)
+    if [ "$ANALYZER" = local ]; then services+=(llm); fi
+  else
+    # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
+    # during it had the container replaced under it, the very thing the wait is there to prevent.
+    docker compose build 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+  fi
   if [ "$rc" = 0 ]; then
     wait_idle
-    docker compose up -d --no-build --quiet-pull ${1:+--force-recreate} 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+    docker compose up -d --no-build "${nopull[@]}" --quiet-pull ${1:+--force-recreate} "${services[@]}" 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
   fi
   if [ "$rc" != 0 ]; then
     # A taken port leaves a created but never started server behind; the next up would start it
@@ -972,7 +990,9 @@ setup_capture_here() {
       || die "$(L "Could not make a virtual environment with pip. Install python3-venv (on Ubuntu: sudo apt install python3-venv) and run ./sidenote setup-capture again." \
                   "pip가 든 가상 환경을 만들지 못했습니다. python3-venv를 설치한 뒤(Ubuntu: sudo apt install python3-venv) ./sidenote setup-capture를 다시 실행하세요.")"
   fi
-  "$(here_py)" -m pip install -q -r client/requirements.txt 2>&1 | tail -3
+  local source=()
+  if [ -n "$(setting SIDENOTE_WHEELS "")" ]; then source=(--no-index --find-links "$(setting SIDENOTE_WHEELS "")"); fi   # no internet here: docs/air-gapped.md
+  "$(here_py)" -m pip install -q "${source[@]}" -r client/requirements.txt 2>&1 | tail -3
 }
 cmd_capture_here() {
   local a up=0 console=0 opts=() packages
@@ -1028,6 +1048,8 @@ cmd_llm() {   # the local LLM: pull, list, logs
   docker_up
   case "${1:-}" in
     pull)
+      if offline; then die "$(L "With SIDENOTE_OFFLINE=1 a model comes with the bundle, not from the internet: docs/air-gapped.md" \
+                                "SIDENOTE_OFFLINE=1이면 모델은 인터넷이 아니라 묶음으로 가져옵니다: docs/air-gapped.md")"; fi
       shift; local models=("$@")
       if [ ${#models[@]} -eq 0 ]; then
         # a GPU that could not be read is not a GPU that is too small: only the second is the no-GPU case
@@ -1336,7 +1358,9 @@ cmd_setup_capture() {
                                               "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   local req; req="$(wslpath -w "$PWD/client/requirements.txt")"
   echo "${B}$(L "Installing the capture packages into Windows Python" "Windows Python에 캡처 패키지를 설치합니다")${N} ($req)"
-  (cd /mnt/c && cmd.exe /c py -3 -m pip install --user -r "$req" 2>&1 | tr -d '\r' | tail -3)
+  local source=()
+  if [ -n "$(setting SIDENOTE_WHEELS "")" ]; then source=(--no-index --find-links "$(wslpath -w "$(setting SIDENOTE_WHEELS "")")"); fi   # no internet here: docs/air-gapped.md
+  (cd /mnt/c && cmd.exe /c py -3 -m pip install --user "${source[@]}" -r "$req" 2>&1 | tr -d '\r' | tail -3)
 }
 
 cmd_doctor() {
