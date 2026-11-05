@@ -1353,7 +1353,13 @@ higher is worse still (38 of 126). So each utterance adds its length times those
 English in a session that has been speaking Korean is decoded again as Korean; only that direction, since letting the
 vote push Korean into English made things worse than doing nothing. Over a sitting that goes Korean, then English, then
 Korean, that is 32 of 126 read as the wrong language without it against 16 with, and 19 against 12 among the ones long
-enough to be sent on as a question. Pinning the language in the panel is still the whole fix. With `en` pinned, Korean
+enough to be sent on as a question. Those spans were 2 s or shorter. A whole sentence is another matter: of 73 English
+sentences read by people (a LibriSpeech sample), held to Korean 30 came back in Korean with what was said lost, 12 of them as
+one phrase over and over, and each had `p(en)` of 0.97 or more (0.95 or more in its first 3 s). Of 457 Korean ones (the test
+split of Zeroth-Korean), clean and with noise over a phone's band, cut from 3 s up to the whole, 13 of 1830 were read as
+English and none of those reached 0.6, where at 2 s one reached 0.9. So an utterance of 3 s or more with `p(en)` of 0.8 or
+more stays English, and what is held and goes round on a phrase, as it is read with no retries, keeps only the words before
+it. Pinning the language in the panel is still the whole fix. With `en` pinned, Korean
 speech is translated into English by Whisper (measured). Continuous transcription judges new audio by the total
 received, not by the rolling buffer length, since once the buffer fills its window its length stops growing. The VAD
 decides whether the live window is written down at all: without it the loop held 1.5 cores of the test PC for as long as

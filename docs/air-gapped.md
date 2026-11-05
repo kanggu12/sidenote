@@ -164,7 +164,7 @@ search:
 ```
 
 ```bash
-helm install sidenote sidenote-<version>.tgz --namespace sidenote --create-namespace -f my-values.yaml
+helm install sidenote sidenote-<version>.tgz --namespace sidenote --create-namespace -f my-values.yaml --wait
 kubectl -n sidenote exec -i deploy/sidenote-llm -- tar xf - -C /root/.ollama < models.tar
 kubectl -n sidenote exec -i deploy/sidenote-server -- tar xf - -C /data/hf < speech.tar
 kubectl -n sidenote rollout restart deploy/sidenote-server

@@ -856,7 +856,8 @@ How a question read out loud becomes a problem. Sound is used as input only; Sid
 - The speech languages are Korean and English. The default, **Auto**, picks between those two only, and goes by the
   session rather than by the one utterance in front of it. A short Korean sentence is often read as English (32 of 108
   measured), so one read that way while the session has been speaking Korean is written down again as Korean; it never
-  goes the other way. Pinning the language removes the mistake: pin **한국어** (the choice is written in Korean in
+  goes the other way. A sentence of 3 s or more that Whisper is sure is English stays English. Pinning the language removes
+  the mistake: pin **한국어** (the choice is written in Korean in
   both languages) if that is all you speak to it. With **English** pinned, Korean speech is written down translated
   into English, so use **Auto** when the two are mixed.
 - The model corrects small transcription errors from the context. **Technical term hints** give the speech model

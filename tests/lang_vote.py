@@ -181,19 +181,74 @@ def voted_korean():
     return v
 
 
+EN_UNSURE = {"ko": 0.2, "en": 0.6}   # the most of p(en) measured on Korean of 3 s or more that was read as English
+
 t = voted_korean()
-t._model.script.append(("en", EN_SURE))
+t._model.script.append(("en", EN_UNSURE))
 words = t.transcribe(pcm(5), 16000)
 check("a sentence held to Korean is decoded once, with no retries", (words, t._model.asked, t._model.how),
       ("<ko>", [None, "ko"], [{}, {"temperature": 0.0}]))
 t = voted_korean()
-t._model.script.append(("en", EN_SURE))
+t._model.script.append(("en", EN_UNSURE))
 t.transcribe(pcm(tr.HELD_SENTENCE_SEC + 1), 16000)
 check("...and longer speech keeps Whisper's retries, as one try goes round on a phrase there", t._model.how, [{}, {}])
 t = voted_korean()
 t._model.script.append(("ko", KO))
 t.transcribe(pcm(5), 16000)
 check("one that sounds as it is voted is decoded as it always was", t._model.how, [{}])
+
+print("\n[a sentence long enough to tell, which Whisper is sure of, is not held]")
+t = voted_korean()
+t._model.script.append(("en", EN_SURE))
+words = t.transcribe(pcm(tr.HOLD_SEC), 16000)
+check("sure English of that length stays English, with Whisper's retries", (words, t._model.asked, t._model.how, t.last_language),
+      ("<en>", [None], [{}], "en"))
+t = voted_korean()
+t._model.script.append(("en", EN_SURE))
+words = t.transcribe(pcm(tr.HOLD_SEC - 0.5), 16000)
+check("...and just short of it, as sure as it is, it is held: a short span is where Whisper is sure and wrong", (words, t._model.asked),
+      ("<ko>", [None, "ko"]))
+t = voted_korean()
+t._model.script.append(("en", {"ko": 0.1, "en": tr.HOLD_SURE - 0.01}))
+words = t.transcribe(pcm(5), 16000)
+check("...and so is one of that length it is less sure of", (words, t._model.asked), ("<ko>", [None, "ko"]))
+t = voted_korean()
+t.hints = {"ko": "도커", "en": "docker"}     # with hints, the first call is given the session's, and is asked again with its own
+t._prompts = {}
+t._model.script.append(("en", EN_SURE))
+t.transcribe(pcm(5), 16000)
+check("...and with hints it is read again in its own language, with its retries", (t._model.asked, t._model.how), ([None, "en"], [{}, {}]))
+t = voted_korean()
+t._model.script.append(("ja", {"ko": 0.1, "en": 0.85, "ja": 0.05}))
+words = t.transcribe(pcm(5), 16000)
+check("a language outside the two, whose likelier one is that sure, goes to that one", (words, t._model.asked), ("<en>", [None, "en"]))
+t = make()
+t._model.script.append(("en", EN_SURE))
+t.transcribe(pcm(2), 16000)
+check("in a session that has voted nothing, nothing was holding it", t._model.asked, [None])
+
+print("\n[what a reading with no retries leaves out]")
+
+
+class Looping(Model):
+    """A stand-in whose decode in a given language goes round on one phrase, as Whisper does with English read as Korean."""
+
+    def transcribe(self, audio, language=None, vad_filter=True, initial_prompt=None, **how):
+        segments, info = super().transcribe(audio, language, vad_filter, initial_prompt, **how)
+        if language is None:
+            return segments, info
+        return iter([types.SimpleNamespace(text="컨트롤 플레인은 " + "에티시드에서 " * 8, compression_ratio=9.0)]), info
+
+
+t = voted_korean()
+t._model.__class__ = Looping
+t._model.script.append(("en", EN_UNSURE))
+check("a held sentence that goes round on a phrase keeps only the words before it", t.transcribe(pcm(5), 16000), "컨트롤 플레인은")
+t = voted_korean()
+t._model.__class__ = Looping
+t._model.script.append(("en", EN_UNSURE))
+words = t.transcribe(pcm(tr.HELD_SENTENCE_SEC + 1), 16000)
+check("...and longer speech, which Whisper's retries look after, is left to them", words.count("에티시드에서"), 8)
 
 print("\n[what the live line leaves out]")
 said = types.SimpleNamespace(text=" We had an outage, and the database kept ffffffffffffffffffffffff", compression_ratio=9.0)

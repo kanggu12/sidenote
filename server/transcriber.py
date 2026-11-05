@@ -48,12 +48,20 @@ LANGS = ("ko", "en")  # speech languages the tool supports
 # to be sent on as a question, which is what costs an answer nobody asked for: 19 -> 12. The second
 # decode it sometimes needs costs 4 ms on a median utterance of 1270.
 #
+# Those spans were all 2 s or shorter. A whole sentence is another matter, and Whisper can tell it: of 73 English sentences read by
+# people, held to Korean 30 came back in Korean with what was said lost, 12 of them as one phrase over and over, while each had
+# p(en) of 0.97 or more (0.95 or more in its first 3 s). Of 457 Korean ones, clean and with noise over a phone's band, cut from
+# 3 s up to the whole, 13 of 1830 were read as English and none of those reached 0.6, where at 2 s one reached 0.9. So what is at
+# least HOLD_SEC long and that sure stays as it sounds.
+#
 # Pinning the language in the panel remains the whole fix; this is for `auto`.
 VOTE_MIN = 1.0      # seconds of evidence (length x odds) before the vote decides anything
 VOTE_SHARE = 0.6    # how much of the vote the leading language needs
 VOTE_DECAY = 0.7    # per utterance: the vote remembers about the last three, so somebody who
                     # switches language is followed instead of overruled for the next ten
 VOTE_TOWARDS = "ko"  # the one language the vote may move an utterance to
+HOLD_SEC = 3.0       # an utterance this long is held to the vote only when Whisper is not sure of it: shorter ones it can be wrong about
+HOLD_SURE = 0.8      # the odds that count as sure, between the Korean misread at 0.6 at most and the English at 0.95 at least
 HELD_SENTENCE_SEC = 12.0   # as long as a sentence is: decoded once when the vote holds it to Korean
 
 # The live line is read from whatever the last seconds hold, a sentence cut off in mid-word among it. A few cuts send Whisper
@@ -251,9 +259,11 @@ class FasterWhisperTranscriber:
         if audio is None:
             return ""
         lang = self._language if self._language in LANGS else None
+        seconds = len(audio) / 16000.0
         quick = {}
+        held = False
         if live:
-            quick = {"temperature": 0.0, "max_new_tokens": min(LIVE_TOKENS_MAX, int(LIVE_TOKENS_PER_SEC * len(audio) / 16000.0) + 16)}
+            quick = {"temperature": 0.0, "max_new_tokens": min(LIVE_TOKENS_MAX, int(LIVE_TOKENS_PER_SEC * seconds) + 16)}
         # The hint is chosen by the language the decode runs in, and on auto that is known only once the language
         # is detected: the first call is given the hint of the language this session most likely speaks, and is
         # asked again with the right one when the utterance turns out to be in the other
@@ -270,19 +280,21 @@ class FasterWhisperTranscriber:
                 # voted for. The vote is counted from the odds, not from the decision, so an utterance
                 # decoded against it still says what it sounded like.
                 pick = info.language if info.language in LANGS else max(LANGS, key=lambda l: probs.get(l, 0.0))
-                if not live and self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS:
+                if not live and self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS \
+                        and (seconds < HOLD_SEC or probs.get(pick, 0.0) < HOLD_SURE):
                     pick = self.voted
-                self._count(probs, len(audio) / 16000.0)   # counted after, so it never votes on itself
+                self._count(probs, seconds)   # counted after, so it never votes on itself
                 # Asked again in the language picked, or with that language's hint: nothing has been decoded yet, and
                 # a call with the language given detects nothing, so the second call adds no decode and no detection
                 if pick != info.language or self.prompt(pick) != self.prompt(first):
                     # Held to Korean against what it sounds like, a sentence reads as poor text and Whisper tries it again
                     # at each higher temperature: English of 5 s took 5 to 8 s to come to the words the first try wrote in
                     # 1 s. Longer speech goes round on one phrase at that first try, so the retries stay for it.
-                    held = pick != info.language and len(audio) / 16000.0 <= HELD_SENTENCE_SEC
+                    held = pick != info.language and seconds <= HELD_SENTENCE_SEC
                     segments, info = self._model.transcribe(audio, language=pick, vad_filter=True, initial_prompt=self.prompt(pick),
                                                             **(quick or ({"temperature": 0.0} if held else {})))
-            text = " ".join((unlooped(seg) if live else seg.text.strip()) for seg in segments).strip()
+            # With no retries a reading may go round on one sound or phrase, which is nothing anyone said
+            text = " ".join((unlooped(seg) if live or held else seg.text.strip()) for seg in segments).strip()
         self.last_language = info.language
         if filler(text):
             log.debug("dropped a stock phrase from silence: %r", text)
