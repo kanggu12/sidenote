@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Fixed
+
+- The desktop shortcut `./sidenote shortcut` makes wears Sidenote's icon, not Windows' printer. Run the command again to
+  change a shortcut already made.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added

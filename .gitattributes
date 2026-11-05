@@ -2,4 +2,5 @@
 # from a clone, and a Windows clone with core.autocrlf would otherwise give them CRLF endings that bash cannot run.
 * text=auto eol=lf
 *.png binary
+*.ico binary
 *.onnx binary

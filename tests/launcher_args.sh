@@ -58,6 +58,7 @@ bad()  { fail=$((fail + 1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && prin
 mkdir -p "$work/bin" "$work/calls" "$work/state" "$work/home" "$work/logs" "$work/repo/client"
 cp "$launcher" "$work/repo/sidenote"              # the launcher cds to its own folder: this one
 : > "$work/repo/client/capture.py"                # it only has to exist; nothing runs it
+: > "$work/repo/client/sidenote.ico"               # the shortcut's icon: only its path matters here
 # The GPU the launcher reads (server/hardware.py) stood in for: the one named in state/gpu ("vendor,name,GB"), or none.
 # server/models.py is the real one, so what fits a GPU is what the launcher would really pull.
 mkdir -p "$work/repo/server"
@@ -125,6 +126,7 @@ case "$3" in
   *.Count*) if [ -f "$FAKE/state/running" ]; then echo 1; else echo 0; fi ;;
   *GetFolderPath*) echo 'C:\Users\fake\Desktop' ;;
   *Get-Command*pyw*) [ -f "$FAKE/state/no-pyw" ] || echo 'C:\WINDOWS\pyw.exe' ;;
+  *sidenote.ico*) [ -f "$FAKE/state/no-icon-copy" ] || echo 'C:\Users\fake\AppData\Local\Sidenote\sidenote.ico' ;;
   *Test-Path*) echo y ;;
 esac
 exit 0
@@ -398,6 +400,29 @@ want_args="'-3 \"$(wslpath -w "$work/repo/client/launch.pyw")\" --distro $distro
 if [ "$target" = "'C:\WINDOWS\pyw.exe'" ] && [ "$args" = "$want_args" ] && [[ $args != *capture.py* ]]; then
   ok "the shortcut runs launch.pyw with pyw.exe, not wsl.exe"
 else bad "the shortcut runs launch.pyw with pyw.exe, not wsl.exe" "target ${target:-none}, arguments ${args:-none}"; fi
+
+# 16b. It wears Sidenote's own icon, copied to a Windows folder. It used to name shell32.dll's picture 16, a printer.
+icon="$(sed -n 's/^.*$s\.IconLocation = \(.*\);$/\1/p' <<<"$script")"
+last_call_with ps Copy-Item; copied="${CALL[2]:-}"
+if [ "$icon" = "'C:\Users\fake\AppData\Local\Sidenote\sidenote.ico,0'" ] && [[ $script != *shell32* ]] \
+   && [[ $copied == *"$(wslpath -w "$work/repo/client/sidenote.ico")"* ]]; then
+  ok "the shortcut wears Sidenote's icon, copied to a Windows folder, and no picture out of shell32.dll"
+else bad "the shortcut wears Sidenote's icon, copied to a Windows folder, and no picture out of shell32.dll" "icon ${icon:-none}"; fi
+[ -f "$root/client/sidenote.ico" ] && ok "the icon is in the repository" || bad "the icon is in the repository" "$root/client/sidenote.ico"
+
+# 16c. A copy that fails costs no shortcut: it wears the checkout's own file, which serves while WSL runs.
+state no-icon-copy; run shortcut
+last_call_with ps CreateShortcut; icon="$(sed -n 's/^.*$s\.IconLocation = \(.*\);$/\1/p' <<<"${CALL[2]:-}")"
+if [ "$(cat "$work/rc")" = 0 ] && [ "$icon" = "'$(wslpath -w "$work/repo/client/sidenote.ico"),0'" ]; then
+  ok "with the icon not copied the shortcut is still made, with the checkout's file"
+else bad "with the icon not copied the shortcut is still made, with the checkout's file" "rc $(cat "$work/rc"), icon ${icon:-none}"; fi
+
+# 16d. Removing the shortcut takes the icon with it, and only the icon: the app keeps its data in the same folder.
+state; run shortcut --remove
+last_call_with ps "Remove-Item -LiteralPath (Join-Path"; removed="${CALL[2]:-}"
+if [[ $removed == *"sidenote.ico"* ]] && [[ $removed == *"Get-ChildItem"* ]] && [[ $removed != *"-Recurse"* ]]; then
+  ok "--remove takes the icon too, and its folder only when that is empty"
+else bad "--remove takes the icon too, and its folder only when that is empty" "${removed:-no such call}"; fi
 
 # 17. Without pyw.exe (no Windows Python) the shortcut would have nothing to run: none is made, and it says why.
 state no-pyw; run shortcut

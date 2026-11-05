@@ -268,7 +268,7 @@ that appears.
   meanwhile says that a start is still going.
 - When a start fails (Docker off, the port taken, the capture program already running), a message box shows the
   launcher's last lines. `./sidenote capture --up` in a WSL terminal prints all of it.
-- `./sidenote shortcut --remove` takes the shortcut away.
+- `./sidenote shortcut --remove` takes the shortcut away, with the icon it keeps in `%LOCALAPPDATA%\Sidenote`.
 
 ### Lending the GPU to other work
 

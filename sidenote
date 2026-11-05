@@ -1177,6 +1177,10 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
       fi
     done
     [ "$gone" = 0 ] && echo "  $(L "No shortcut on the desktop to remove." "바탕화면에 지울 바로가기가 없습니다.")"
+    # and the icon it wore, with its folder when that holds nothing else (the app keeps its data in the same folder)
+    winps "\$d = Join-Path \$env:LOCALAPPDATA 'Sidenote';
+           Remove-Item -LiteralPath (Join-Path \$d 'sidenote.ico') -ErrorAction SilentlyContinue;
+           if ((Test-Path -LiteralPath \$d) -and -not (Get-ChildItem -LiteralPath \$d -Force)) { Remove-Item -LiteralPath \$d -ErrorAction SilentlyContinue }" >/dev/null || true
     return 0
   fi
   # Nothing this shortcut starts has a window: pyw.exe, the Python launcher that opens no console, runs
@@ -1197,11 +1201,21 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   # here: capture and capture-stop find the capture program by it. The single quotes of PowerShell's own strings
   # below are doubled inside them (ps_quote).
   local args="-3 \"$launch\" --distro $distro --repo \"$PWD\""
+  # Sidenote's icon, the tray's S (client/sidenote.ico), copied to a Windows folder: Explorer reads a shortcut's icon from
+  # its file whenever it draws it, and a file inside WSL would wake the distribution for that, or draw blank where it
+  # cannot. Should the copy fail, the checkout's own file still serves while WSL runs.
+  local ico_src; ico_src="$(wslpath -w "$PWD/client/sidenote.ico")"
+  local ico; ico="$(winps "\$d = Join-Path \$env:LOCALAPPDATA 'Sidenote';
+         New-Item -ItemType Directory -Force -Path \$d | Out-Null;
+         Copy-Item -LiteralPath '$(ps_quote "$ico_src")' -Destination \$d -Force;
+         \$f = Join-Path \$d 'sidenote.ico';
+         if (Test-Path -LiteralPath \$f) { \$f }" | head -1)"
+  [ -n "$ico" ] || ico="$ico_src"
   winps "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$lnk');
          \$s.TargetPath = '$(ps_quote "$pyw")';
          \$s.Arguments = '$(ps_quote "$args")';
          \$s.Description = '$(L "Sidenote: start screen and sound capture (quit from the tray icon)" "Sidenote: 화면과 소리 캡처 시작 (끄기는 트레이 아이콘에서)")';
-         \$s.IconLocation = \"\$env:SystemRoot\\System32\\shell32.dll,16\";
+         \$s.IconLocation = '$(ps_quote "$ico"),0';
          \$s.Save()" >/dev/null
   if [ -n "$(winps "if (Test-Path -LiteralPath '$lnk') { 'y' }")" ]; then
     ok "$(L "Desktop shortcut made: $name" "바탕화면에 바로가기를 만들었습니다: $name")"
