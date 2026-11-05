@@ -39,7 +39,7 @@ RENAMED = {"claude_mode": "agent_mode", "claude_payload": "agent_payload", "clau
            "claude_hourly_usd": "agent_hourly_usd", "claude_confirm": "agent_confirm"}
 TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay", "coding": "Coding",
               "algorithm": "Algorithm", "work": "Work", "math": "Math", "diagram": "Diagram", "other": "Other"}
-# Skip windows: while the window in front has one of these in its title or its program's name, the capture program
+# Skip windows: while a window on screen has one of these in its title or its program's name, the capture program
 # sends no screen at all. The common password managers and the browsers' private windows. client/capture.py keeps a
 # copy for the moments before the server's word arrives, and tests/capture_skip.py checks the two are the same.
 SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
@@ -214,11 +214,11 @@ def _defs() -> list[Setting]:
         Setting("face_mask", "bool", True, "screen", t("Cover faces"),
                 t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
         # The capture program gets the words in its control message (server/app.py, control_message) and reads the
-        # window in front itself: its title and its program's name never leave that program (client/capture.py).
+        # windows itself: their titles and their programs' names never leave that program (client/capture.py).
         Setting("skip_windows", "words", list(SKIP_WINDOWS), "screen", t("Skip windows"),
-                t("While the window in front has one of these words in its title or its program's name, no screen is "
-                  "sent at all. Comma-separated, any case. Windows and Linux with X11: on Wayland the window in front "
-                  "cannot be read. Sound capture goes on")),
+                t("While a window on screen has one of these words in its title or its program's name, no screen is "
+                  "sent at all, whichever window has the focus. Comma-separated, any case. Windows and Linux with X11: on "
+                  "Wayland the windows cannot be read. Sound capture goes on")),
         Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),
                 t("Solves again only when the answer's problem area changes. Off: on every screen change")),
         Setting("roi", "bool", True, "screen", t("Zoom in on the problem"),

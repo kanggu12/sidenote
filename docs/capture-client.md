@@ -58,19 +58,25 @@ The program sends each frame as it is; the server covers the faces on it before 
 
 ## Windows it does not send
 
-While the window in front has one of the words of **Skip windows** (**Solver settings** > **Screen**) in its title or
-in its program's name, in any case, the program takes no screenshot and sends no frame. The words come from the server
-with its other switches, on connect and on every change; until they arrive, it holds the server's default list (the
-common password managers and the browsers' private windows). Sound capture goes on.
+While a window with one of the words of **Skip windows** (**Solver settings** > **Screen**) in its title or in its
+program's name, in any case, is in front or shows in any part on the monitor being captured, the program takes no
+screenshot and sends no frame, whichever window has the focus. A window that is minimized, on another desktop, on
+another monitor or wholly covered by the windows above it shows nothing and stops nothing, and this tool's own panel never
+counts. The words come from the server with its other switches, on connect and on every change; until they arrive, it
+holds the server's default list (the common password managers and the browsers' private windows). Sound capture goes on.
 
-| System | The window in front | Its title | Its program's name |
-|:---|:---|:---|:---|
-| Windows | `GetForegroundWindow` | `GetWindowTextW` | the file name of its process (`QueryFullProcessImageNameW`), such as `Bitwarden.exe` |
-| Linux with X11 | the root window's `_NET_ACTIVE_WINDOW`, which the window manager keeps | `_NET_WM_NAME`, else `WM_NAME` | `WM_CLASS`, such as `keepassxc KeePassXC` |
+| System | The window in front | The windows, top first | Their titles | Their programs' names |
+|:---|:---|:---|:---|:---|
+| Windows | `GetForegroundWindow` | `EnumWindows`, with a title, not minimized, not cloaked, and neither a tool window nor click-through | `GetWindowTextW` | the file name of the process (`QueryFullProcessImageNameW`), such as `Bitwarden.exe` |
+| Linux with X11 | the root window's `_NET_ACTIVE_WINDOW`, which the window manager keeps | the root window's `_NET_CLIENT_LIST_STACKING`, without those `_NET_WM_STATE_HIDDEN` or on another `_NET_WM_DESKTOP` | `_NET_WM_NAME`, else `WM_NAME` | `WM_CLASS`, such as `keepassxc KeePassXC` |
 
-A Wayland session tells other programs nothing of its windows, so there nothing is skipped, and the log says so once.
-The window is looked at before each screenshot and again after it, so a window brought to the front while a screenshot
-was being taken does not go out in it. The title and the name stay in this program: the server hears only that a
-window is skipped, and the log says only when a skip started and ended. Meanwhile the line under **Open the panel**
-in the tray menu reads **Skipped window**, as does the screen card in the panel. Once the window is no longer in front
-the program captures again, and the same problem as before is not taken for a new screen.
+A Wayland session tells other programs nothing of its windows, so there nothing is skipped. A window manager that keeps
+no list of its windows leaves the window in front to go by, and one that keeps neither leaves nothing. The log says so
+once for each reason, and the panel's screen card says **Windows not skipped** or **Front window only** while it lasts.
+A read that fails counts as nothing known and is tried again at the next look.
+
+The windows are looked at before each screenshot and again after it, so a window that comes to show while a screenshot was
+being taken does not go out in it. The titles and the names stay in this program: the server hears only that a window
+is skipped and whether the windows could be read, and the log says only when a skip started and ended. Meanwhile the line
+under **Open the panel** in the tray menu reads **Skipped window**, as does the screen card in the panel. Once the
+window no longer shows the program captures again, and the same problem as before is not taken for a new screen.

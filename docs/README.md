@@ -221,7 +221,7 @@ the terminal instead, where Ctrl+C ends it; that is the way to see what stops it
 Clicking the icon opens the panel. Its menu, on the right button, has **Open the panel**, the **Screen capture** and
 **Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole
 app). The menu uses the panel's look: the same icons, the same status pill (green while it captures, red with no
-server, amber with **Skipped window** while a window named in **Skip windows** is in front) and the same switches.
+server, amber with **Skipped window** while a window named in **Skip windows** is on screen) and the same switches.
 
 The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program runs as before and says so
 once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
@@ -491,8 +491,9 @@ is under the top bar.
 - **Capture**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
   arrived, which sound device). The **Screen capture** line reads **Watching quietly** while the watching has slowed
   itself down after a run of answers that found nothing, and says what brings it back (section 8). It reads
-  **Skipped window**, in amber, while a window named in **Skip windows** is in front and no screen is sent; it never
-  says which window (section 12).
+  **Skipped window**, in amber, while a window named in **Skip windows** is on screen and no screen is sent; it never
+  says which window. It reads **Windows not skipped** or **Front window only**, in amber, where the capture program
+  cannot read all the windows and screens still go out (section 12).
 - **Local model**: which model, whether it is on the GPU (**On GPU**, or **Idle** once the GPU was given back, with
   **Free the GPU** and **Load onto the GPU**), the GPU's load and memory, and what it has done today.
 - **Agent**, with a switch of its own (off keeps the mode it had, so on brings it back): the account it is signed in
@@ -585,9 +586,9 @@ The switches in the **Capture** card turn screen capture and sound capture on an
   what is waiting, so nothing recorded before that goes out after it.
 - While the screen cannot be captured, such as on the lock screen or while an administrator window is in front, the
   capture program retries every 2 seconds and sends the current screen once it can capture again.
-- While a window named in **Skip windows** (section 12) is in front, such as a password manager or a private browser
+- While a window named in **Skip windows** (section 12) is on screen, such as a password manager or a private browser
   window, the capture program takes no screenshot and sends no screen; sound goes on, and the switch stays as it is.
-  When that window is no longer in front it captures again; the same problem as before is not taken for a new screen.
+  When that window no longer shows it captures again; the same problem as before is not taken for a new screen.
 - The panel itself is painted over before a screen is sent. What it shows is the answer to the screen behind it, so a
   screen with the panel on it would be a screen answering itself. The capture program finds the panel by its window
   title (which never leaves that program), paints its area gray and pastes back any window in front of it, so a
@@ -983,9 +984,9 @@ The **Speech** section holds what shapes what is written down:
   and has a limit of its own, 20 MB, the oldest lines going first (`SIDENOTE_HEARD_MB`): the answers' 200 MB does not
   count it, so a long transcript pushes no answer out. **Clear history** clears it with the answers.
 
-The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While the
-window in front has one of them in its title or in its program's name, in any case, the capture program sends no
-screen at all. By default the list names the common password managers (1Password, Bitwarden, KeePass, KeePassXC,
+The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While a
+window with one of them in its title or in its program's name, in any case, is on screen, the capture program sends no
+screen at all, whichever window has the focus. By default the list names the common password managers (1Password, Bitwarden, KeePass, KeePassXC,
 LastPass, Dashlane, Keeper, Enpass, NordPass, Proton Pass) and the browsers' private windows (InPrivate, Incognito,
 Private Browsing, and in Korean 시크릿 and 사생활 보호).
 
@@ -993,10 +994,14 @@ Private Browsing, and in Korean 시크릿 and 사생활 보호).
   that skips more than you want. **Reset to defaults** puts the default list back, with every other setting.
 - Enter, or leaving the box, saves the list. Each word is trimmed and an empty one dropped; the list holds up to 50
   words of up to 60 characters each.
-- Only the window in front counts. A password manager left open behind another window is captured as any window is.
-- The capture program reads the window in front on Windows, and on Linux with X11 from what the window manager says
-  (`_NET_ACTIVE_WINDOW`). In a Wayland session it cannot read it, so nothing is skipped there, and its log says so
-  once.
+- A window counts while any part of it shows on the monitor being captured, or while it is in front. One that is
+  minimized, on another desktop, on another monitor or wholly covered by the windows above it does not, and the
+  panel itself never does. So a password manager left open beside another window stops the screen until it is
+  minimized or covered.
+- The capture program reads the windows on Windows, and on Linux with X11 from what the window manager says
+  (`_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST_STACKING`). With no list from the window manager only the window in front
+  counts, and the screen card says **Front window only**. In a Wayland session it cannot read them, so nothing is skipped
+  there, and the screen card says **Windows not skipped**. Emptying the list takes the caution away.
 - Sound capture goes on while a window is skipped.
 
 ### The .env file
@@ -1233,11 +1238,11 @@ What leaves this PC, what can reach what, and what is kept.
   120 ms at 4K). It covers most faces from about 64 px wide up and about half of the 32 px ones (an avatar), and
   leaves drawn figures alone, so a face in a black-and-white photo stays. For a screen that must not be read at all,
   switch the screen off or pause.
-- While a window named in **Skip windows** is in front (a password manager or a private browser window by default,
+- While a window named in **Skip windows** is on screen (a password manager or a private browser window by default,
   section 12), no screenshot is taken at all, so nothing of that screen reaches the server, a model or the agent. The
-  capture program reads the window's title and its program's name on this PC and keeps them there: they go neither to
-  the server nor into a log. The server hears only that a window is skipped, and `capture.log` and `events.jsonl` say
-  only when a skip started and ended.
+  capture program reads the windows' titles and their programs' names on this PC and keeps them there: they go neither to
+  the server nor into a log. The server hears only that a window is skipped and whether the windows could be read, and
+  `capture.log` and `events.jsonl` say only when a skip started and ended.
 
 ### What can reach what
 
@@ -1563,6 +1568,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | GPU에 올리기 | Load onto the GPU | **Local model**, the **GPU** section |
 | 조용히 보는 중 | Watching quietly | **Screen capture** |
 | 창 건너뜀 | Skipped window | **Screen capture**; the tray menu's state line |
+| 창 못 건너뜀 | Windows not skipped | **Screen capture** |
+| 맨 앞 창만 | Front window only | **Screen capture** |
 | 소리 없이 실행 중 | No sound | **Sound capture**, with `--no-audio` |
 | 캡처 프로그램 꺼짐 | Program off | **Screen capture** and **Sound capture**, with no capture program running |
 | 장치를 열지 못함 | Device error | **Sound capture**, when the sound device cannot be opened |

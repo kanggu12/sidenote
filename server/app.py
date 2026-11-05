@@ -731,7 +731,7 @@ def capture_status() -> dict:
 
 def control_message() -> str:
     """What the capture program should do: the panel's switches, scroll stitching, the monitor, and the words of Skip
-    windows (it reads the window in front itself, and its title never comes here)."""
+    windows (it reads the windows itself, and their titles never come here)."""
     return json.dumps({"type": "control", "screen": STATE.screen_on, "audio": STATE.audio_on,
                        "stitch": bool(SETTINGS.get("stitch")), "monitor": int(SETTINGS.get("monitor")),
                        "skip_windows": list(SETTINGS.get("skip_windows"))})
@@ -3475,11 +3475,14 @@ def create_app() -> FastAPI:
                             await apply_setting(app, "roi_box", None)
                             await notice(t("Capture started anew: region cleared · sees the whole screen"))
                     # "code": which capture.py it runs (./sidenote up compares it with the file it deployed);
-                    # "skipping": a window of Skip windows is in front, so no screen comes (never which window)
+                    # "skipping": a window of Skip windows is on screen, so no screen comes (never which window);
+                    # "skip_limit": what that switch can do on this desktop (the panel's card says so)
                     caps = {k: data[k] for k in ("screen", "audio", "audio_device", "monitor", "no_audio",
-                                                 "monitors", "code", "skipping") if k in data}
+                                                 "monitors", "code", "skipping", "skip_limit") if k in data}
                     if "skipping" in caps:
                         caps["skipping"] = caps["skipping"] is True   # a yes or a no, whatever a client sends
+                    if "skip_limit" in caps and caps["skip_limit"] not in ("none", "front"):
+                        caps["skip_limit"] = ""                       # one of two words, so nothing else can reach the panel
                     if caps:
                         STATE.capture_caps = {**STATE.capture_caps, **caps}
                     if isinstance(data.get("monitors"), list):   # the panel offers these
