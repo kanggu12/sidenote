@@ -10,7 +10,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
@@ -655,6 +655,37 @@ bench with the local model: answers 51/56 as before (the infographic line alone 
 five corner screens run twice, within the runs' spread), answers with a picture 38 → 43, term cards 18 → 33, the median
 time 30.9 → 30.8 s; the made-up inputs ran 4/4 with only the answers printed. Both lines are in SYSTEM_PROMPT, so the
 agent's and the local model's prompts carry them (tests/integ.py).
+
+### <a id="note-107"></a>107. A box standing on end is read the other way round
+
+The first pass is asked for `REGION: x0 y0 x1 y1`, and now and then Gemma writes y first, its own order. The crop then lands
+somewhere else on the screen, the thinking pass reads the wrong part of it, and the agent is given that part. What each box
+would do was worked out as the pipeline decides it (`located`, then the margin and the window), on five rounds of the
+known-answer screens with the 26b in each language, about 390 boxes a run:
+
+| | Asked x first, three runs | Asked y first | Asked x first, a box on end turned |
+|:---|---:|---:|---:|
+| The crop holds the problem | 203 to 225 | 228 | 218 to 233 |
+| The crop holds the wrong part | 28 to 33 | 11 | 15 to 24 |
+| No crop: the box places nothing | 115 to 120 | 112 | 115 to 120 |
+
+Asking for y first and reading it so took the most wrong crops away, and was not kept, for three reasons. On a screen with a
+private chat beside the problem, the crop landed in the chat in 3 of 9 first passes and in both runs of the known-answer set;
+asked x first, in none, as the model's box there is a wide one that spans both windows, which places nothing, and read y
+first the same numbers stand inside the chat. A smaller model went the other way: the `e2b` wrote its boxes in the order it
+was not asked for 0 times of 88 asked x first and 8 of 91 asked y first, and the `e4b` went from no wrong crop of 81 to 4 of
+83. And it is a change to the prompt, with what that costs elsewhere: on the known-answer set 51 of 56 stayed 51 in Korean and
+50 went to 51 in English, but one coding answer of 7 went wrong, and each screen's reading moved.
+
+The other order has a shape. A problem is lines of writing, so its box is wide or not much taller than wide: the tallest
+whole problem of the set stands 1.07 times its width, and in one run all 16 boxes over 1.2 times their width were the wrong
+part. So a box more than `TALL_BOX` times as tall as wide, in the pixels of the picture it was written on, is read the other
+way round. The prompts stay as they were measured, and every model gets the same rule. At 2 no box that held its problem was
+turned in five runs; at 1.5 and below, a box down the left of a coding site was (`code_lc_jobs`). The smaller models write
+no box that tall, so nothing moves for them.
+
+What it cannot tell is a box written y first that is still wide enough, as on the 2160p screen of note 106: 0.77 times as
+tall as wide, a shape a long problem in a pane can have too.
 
 ## The agents
 
