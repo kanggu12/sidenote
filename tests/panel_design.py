@@ -618,7 +618,7 @@ def group_skip(br, s):
             check(f"{name}: ...read at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f} {pill}")
             if w == 1920:
                 check(f"{theme}: the card's note says nothing is sent and where the words are, without naming a window",
-                      pill["note"] == "맨 앞에 있는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'", pill["note"])
+                      pill["note"] == "화면에 보이는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'", pill["note"])
             check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
             p.close()
     # The card's other states come first: the screen switched off, and no capture program, say so over a skip
@@ -634,13 +634,32 @@ def group_skip(br, s):
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": False}})
     p.wait(120)
     check("...and once the window is gone the card is receiving again", p.js("() => document.getElementById('pill-screen').textContent") == "받는 중")
+    # Where the windows cannot be read the list is not doing all it says: said in the same caution, screens still going out
+    got = []
+    for limit in ("none", "front", ""):
+        p.send({**h.CAPTURE, "now": now, "last_frame": now - 8, "caps": {**h.CAPTURE["caps"], "skip_limit": limit}})
+        p.wait(120)
+        got.append(p.js("""() => { const e = document.getElementById('pill-screen'), n = document.querySelector('#st-screen .src-note');
+            return [e.textContent, e.dataset.state, e.scrollWidth <= e.clientWidth + 1, n ? n.textContent : '']; }"""))
+    check("no way to read the windows: the card warns, whole, and says what to do",
+          got[0] == ["창 못 건너뜀", "warn", True, "이 데스크톱은 열린 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요"], got[0])
+    check("only the window in front to go by: the same caution, told apart",
+          got[1] == ["맨 앞 창만", "warn", True, "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요"], got[1])
+    check("...and with nothing to say the card is receiving", got[2][:2] == ["받는 중", "ok"] or got[2][0] == "받는 중", got[2])
+    p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skip_limit": "none", "skipping": True}})
+    p.wait(120)
+    check("a skip going on is said over it: nothing is going out then", p.js("() => document.getElementById('pill-screen').textContent") == "창 건너뜀")
     p.close()
     # In English, as the other pages are given it: the same words, and no Korean
     p = Page(br, s, [], w=1920, h=1080, settle=300, locale="en-US")
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": True}})
     p.wait(150)
     en = p.js("() => [document.getElementById('pill-screen').textContent, document.querySelector('#st-screen .src-note')?.textContent]")
-    check("in English the card reads 'Skipped window', and where the words are", en == ["Skipped window", "No screen is sent while it is in front · Skip windows in Solver settings"], en)
+    p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skip_limit": "none"}})
+    p.wait(150)
+    limit_en = p.js("() => [document.getElementById('pill-screen').textContent, document.querySelector('#st-screen .src-note')?.textContent]")
+    check("...and where the windows cannot be read, in English too", limit_en == ["Windows not skipped", "This desktop does not say which windows are open · Turn the screen off while a private window shows"], limit_en)
+    check("in English the card reads 'Skipped window', and where the words are", en == ["Skipped window", "No screen is sent while it shows · Skip windows in Solver settings"], en)
     p.close()
 
 

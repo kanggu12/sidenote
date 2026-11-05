@@ -234,8 +234,8 @@ one is logged as lost (code 1009).
 | Type | When | Main fields |
 |:---|:---|:---|
 | `hello` | first, on every connection | `info` (`capture/win32`, `capture/linux`), `screen`, `audio`, `no_audio`, `monitor`, `monitors` (what the panel offers), `flags` (the options it was started with, which win over the panel's last choice, sent once per start), `code` (the sha256 of the `capture.py` it runs) |
-| `caps` | when it knows whether the sound device opened, and when a skip starts or ends | `screen`, `audio`, `audio_device`, `no_audio` (started with `--no-audio`), `monitors`, `skipping` (a window named in **Skip windows** is in front, so no frame comes; never which window) |
-| `frame` | when the screen changed and settled, and no window named in **Skip windows** is in front | `data` (PNG, base64), `windows` (the visible top-level windows over the captured area, front to back, in fractions of it, without the desktop, the taskbar and tool windows), `extra` (with `--stitch`: the joined problem) |
+| `caps` | when it knows whether the sound device opened, and when a skip starts or ends | `screen`, `audio`, `audio_device`, `no_audio` (started with `--no-audio`), `monitors`, `skipping` (a window named in **Skip windows** is on screen, so no frame comes; never which window), `skip_limit` (`none` or `front`: what **Skip windows** can go by on this desktop, empty when it can read all the windows) |
+| `frame` | when the screen changed and settled, and no window named in **Skip windows** is on screen | `data` (PNG, base64), `windows` (the visible top-level windows over the captured area, front to back, in fractions of it, without the desktop, the taskbar and tool windows), `extra` (with `--stitch`: the joined problem) |
 | `audio` | each second while sound is on | `sr` (16000), `data` (16-bit mono PCM, base64) |
 | `capture_set` | a switch in the tray menu, taken as the panel's are | `screen` or `audio` |
 
@@ -243,7 +243,7 @@ one is logged as lost (code 1009).
 
 | Type | When | Main fields |
 |:---|:---|:---|
-| `control` | on connect and on every change | `screen`, `audio`, `stitch`, `monitor`, `skip_windows` (the words of **Skip windows**: no frame is sent while the window in front has one in its title or its program's name) |
+| `control` | on connect and on every change | `screen`, `audio`, `stitch`, `monitor`, `skip_windows` (the words of **Skip windows**: no frame is sent while a window on screen has one in its title or its program's name) |
 
 ### Server to panel, on `/panel`
 
@@ -326,7 +326,7 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 | The PC and its network | code a model wrote, run for a check or by **Run** | the runner has no network and takes one run at a time, each compile and run as a user of its own, under rlimits and a time limit; output over 8 MB stops a run; what a run leaves is removed; a read-only root, 128 processes, 1 GB, 2 CPUs; a token for every run on Kubernetes | `runner/runner.py`, `compose.yaml` ([47](DECISIONS.md#note-47), [87](DECISIONS.md#note-87)) |
 | The screens and speech the local model reads | leaving the PC | the local model is on `llmnet` (`internal: true`), with no route out; models come in through `llm-pull` | `compose.yaml` ([48](DECISIONS.md#note-48)) |
 | People's likeness on the screen | going to a model, the agent or a thumbnail | faces found and painted gray before anything reads the screen (**Cover faces**, on by default) | `server/faces.py`, `prepare_frame` ([85](DECISIONS.md#note-85)) |
-| A password manager or a private browser window in front | being sent at all | no screenshot is taken while the window in front has a word of **Skip windows** in its title or its program's name; the title and the name stay in the capture program, and only `skipping` goes out | `FrontWindow`, `screen_loop` in `client/capture.py` |
+| A password manager or a private browser window on screen | being sent at all | no screenshot is taken while a window on screen has a word of **Skip windows** in its title or its program's name; the title and the name stay in the capture program, and only `skipping` and `skip_limit` go out | `FrontWindow`, `screen_loop` in `client/capture.py` |
 | Personal data on the screen | a search, a page address or a problem written out from the screen | a number shaped like personal data stops the search, the page read or the written-out problem; the local model solves instead | `personal_data` in `server/pipeline.py`, `server/analyzer.py` |
 | The private network | the server reading a page for the model | pages are read from public addresses only: the name is resolved once, every address it gives must be public, and the connection goes to one of those addresses (a name that resolves elsewhere by the time of the connect gets no request) | `allowed_url`, `public_backend` in `server/search.py` |
 | This PC's agent setup | the CLI in the container | Claude Code reads none of the PC's settings, hooks, plugins, MCP servers or skills and keeps no sessions; Codex reads none of its config or rules; the container's config backups and process registry stay in its own scratch space | `claude_args`, `codex_args` in `server/agents.py`, `compose.yaml` ([23](DECISIONS.md#note-23)) |

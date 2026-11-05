@@ -75,7 +75,7 @@
  "Counts: {list}": "건수: {list}",
  "Cover faces": "얼굴 가리기",
  "Skip windows": "건너뛸 창",
- "While the window in front has one of these words in its title or its program's name, no screen is sent at all. Comma-separated, any case. Windows and Linux with X11: on Wayland the window in front cannot be read. Sound capture goes on": "맨 앞 창의 제목이나 프로그램 이름에 이 단어 중 하나가 있으면 화면을 아예 보내지 않음. 쉼표로 구분하고 대소문자는 가리지 않음. Windows와 X11을 쓰는 Linux에서 동작하며 Wayland에서는 맨 앞 창을 읽지 못함. 소리 캡처는 그대로",
+ "While a window on screen has one of these words in its title or its program's name, no screen is sent at all, whichever window has the focus. Comma-separated, any case. Windows and Linux with X11: on Wayland the windows cannot be read. Sound capture goes on": "제목이나 프로그램 이름에 이 단어 중 하나가 있는 창이 화면에 보이면 어느 창에 포커스가 있든 화면을 아예 보내지 않음. 쉼표로 구분하고 대소문자는 가리지 않음. Windows와 X11을 쓰는 Linux에서 동작하며 Wayland에서는 창을 읽지 못함. 소리 캡처는 그대로",
  "'{label}' takes up to {n} words of up to {m} characters each": "'{label}'에는 {m}자 이하의 단어를 {n}개까지 쓸 수 있음",
  "Cut at window edges": "창 경계에서 자르기",
  "Cuts at the edges of the problem's window so the windows beside it stay out. Off: only adds a margin to the area the model gave": "문제가 있는 창의 경계에서 잘라 옆 창이 들어가지 않게 함. 끄면 모델이 알려 준 영역에 여백만 더함",

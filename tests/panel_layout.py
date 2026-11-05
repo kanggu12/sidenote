@@ -443,8 +443,12 @@ def st_three_monitors(p):
     capture(p, caps={**h.CAPTURE["caps"], "monitor": 3, "monitors": [[3840, 2160], [1440, 2560], [7680, 4320]]})
 
 
-def st_skipping(p):   # a window of Skip windows in front: the screen card's caution, with its note
+def st_skipping(p):   # a window of Skip windows on screen: the screen card's caution, with its note
     capture(p, caps={**h.CAPTURE["caps"], "skipping": True})
+
+
+def st_skip_limit(p):   # the windows cannot be read here: the same caution, with a longer note
+    capture(p, caps={**h.CAPTURE["caps"], "skip_limit": "none"})
 
 
 def st_local_loaded(p):
@@ -560,7 +564,7 @@ def st_update(p):
     p.send({"type": "status", "version": "0.1.0", "update": {"version": "0.1.2", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.1.2"}})
 
 
-RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_heard_notes, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
+RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_heard_notes, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_skip_limit, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
                                            st_local_down, st_local_long, st_agent_off, st_agent_login, st_agent_expired, st_agent_gone, st_agent_limit, st_agent_brake, st_agent_forced, st_agent_long,
                                            st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected, st_update)}
 SIZES = [(1920, 1080), (1920, 1300), (2560, 1440), (1440, 900), (1366, 768), (1280, 720), (1100, 800), (1001, 700), (1000, 800), (768, 1024), (390, 844)]

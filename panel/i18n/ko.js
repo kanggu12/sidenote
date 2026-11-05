@@ -137,9 +137,13 @@ CATALOGS.ko = {
   "When the screen changes": "화면이 바뀌면",
   "Watching quietly": "조용히 보는 중",
   "No problem {n} times in a row · small changes checked every {s} s. A window switch, a question or Reanalyze brings it back": "{n}번 연속 문제 없음 · 작은 변화는 {s}초마다 확인. 창 전환, 질문, 다시 분석이면 원래대로",
-  // Skip windows: the screen card while one is in front, and the box its words are typed into
+  // Skip windows: the screen card while one is on screen or the windows cannot be read, and the box its words are typed into
   "Skipped window": "창 건너뜀",
-  "No screen is sent while it is in front · Skip windows in Solver settings": "맨 앞에 있는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'",
+  "No screen is sent while it shows · Skip windows in Solver settings": "화면에 보이는 동안 화면을 보내지 않음 · 풀이 설정의 '건너뛸 창'",
+  "Windows not skipped": "창 못 건너뜀",
+  "This desktop does not say which windows are open · Turn the screen off while a private window shows": "이 데스크톱은 열린 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요",
+  "Front window only": "맨 앞 창만",
+  "This desktop does not list the windows behind the front one · Turn the screen off while a private window shows": "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요",
   "Words, separated by commas": "쉼표로 구분한 단어",
   "Receiving": "받는 중",
   "All monitors ({n})": "모든 모니터 {n}대",

@@ -2242,9 +2242,13 @@ function screenState() {
   // browser's. Null when no frame has arrived yet, which is not an error, only a quiet start.
   const age = capture.last_frame ? fmtAgo(serverNow() - capture.last_frame) : null;
   const facts = [[t("Monitor"), monitorText()], [t("Last screen"), age || t("When the screen changes")]];
-  // A window of Skip windows is in front, so the capture program sends nothing: said as a caution, and never which
+  // A window of Skip windows is on screen, so the capture program sends nothing: said as a caution, and never which
   // window (its title stays in that program). It goes on by itself once the window is gone
-  if (caps.skipping) return card("warn", t("Skipped window"), facts, t("No screen is sent while it is in front · Skip windows in Solver settings"));
+  if (caps.skipping) return card("warn", t("Skipped window"), facts, t("No screen is sent while it shows · Skip windows in Solver settings"));
+  // Screens are going out, and the list in the settings cannot do all it says here: a list that looks in force and is not is
+  // worse than none. The program clears this with an empty list, where there is nothing to look for
+  if (caps.skip_limit === "none") return card("warn", t("Windows not skipped"), facts, t("This desktop does not say which windows are open · Turn the screen off while a private window shows"));
+  if (caps.skip_limit === "front") return card("warn", t("Front window only"), facts, t("This desktop does not list the windows behind the front one · Turn the screen off while a private window shows"));
   // The watching slowed itself down: every answer in a row found nothing, so this is somebody
   // working rather than a problem waiting. A tool that quietly looks less often is worse than one
   // that keeps asking, so the card says it while it holds and says what brings it back.
