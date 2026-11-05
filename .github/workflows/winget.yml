@@ -27,7 +27,9 @@ jobs:
     timeout-minutes: 30      # a start that waits on a window nobody can press ends here, not hours later
     env:
       VERSION: ${{ inputs.version }}
-      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}   # empty when the secret is not set: nothing is sent
+      # Whether the secret is set, and not the secret: this job runs third-party modules and the app it just built, and
+      # only the step that sends gets the token. A step's `if` cannot read `secrets` itself.
+      HAS_WINGET_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -101,9 +103,22 @@ jobs:
           name: winget-manifests-${{ inputs.version }}
           path: ${{ runner.temp }}/winget
           retention-days: 30
-      - name: Send them to microsoft/winget-pkgs
-        if: ${{ env.WINGET_TOKEN != '' && github.event_name != 'workflow_dispatch' }}
+      # An unset secret would otherwise leave a green run and a package nobody sent
+      - name: Say that nothing is sent without the token
+        if: ${{ env.HAS_WINGET_TOKEN != 'true' && github.event_name != 'workflow_dispatch' }}
         shell: pwsh
+        run: Write-Output "::notice::WINGET_TOKEN is not set, so these manifests were not sent to winget-pkgs. They are kept as this run's artifact."
+      - name: Send them to microsoft/winget-pkgs
+        if: ${{ env.HAS_WINGET_TOKEN == 'true' && github.event_name != 'workflow_dispatch' }}
+        shell: pwsh
+        env:
+          # the tool reads it from here, which keeps it off its command line and out of what it logs
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe submit --token $env:WINGET_TOKEN "${{ steps.m.outputs.dir }}"
+          # This one release and its published checksum: what runs here holds a token that can open pull requests
+          Invoke-WebRequest https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe -OutFile wingetcreate.exe
+          if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne "24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA") {
+            Write-Host "wingetcreate.exe is not the file of v1.12.13.0"; exit 1
+          }
+          # --no-open: by default it opens the pull request in a browser, and a runner has nobody to close one
+          .\wingetcreate.exe submit --no-open "${{ steps.m.outputs.dir }}"

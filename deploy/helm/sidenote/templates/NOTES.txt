@@ -36,7 +36,7 @@ The local model
   No model has been downloaded by this release (llm.pull.enabled is false). Until one is there the
   agent solves everything, if it is signed in. Download the models, tens of GB, with:
 
-    helm upgrade {{ .Release.Name }} deploy/helm/sidenote --namespace {{ $ns }} --reuse-values \
+    helm upgrade {{ .Release.Name }} oci://ghcr.io/kanggu12/charts/sidenote --version {{ .Chart.Version }} --namespace {{ $ns }} --reuse-values \
       --set llm.pull.enabled=true --timeout 2h
 {{- end }}
 {{- if eq (int .Values.llm.gpu) 0 }}
