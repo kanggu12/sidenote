@@ -51,9 +51,13 @@ mkdir bundle
 docker save sidenote:local sidenote-runner:local ollama/ollama:0.40.5 | gzip > bundle/images.tar.gz
 docker run --rm --entrypoint tar -v sidenote_llm-models:/v:ro -v "$PWD/bundle":/out sidenote:local \
   cf /out/models.tar --exclude='./id_ed25519*' -C /v .
-docker run --rm --entrypoint tar -v sidenote_hf-cache:/v:ro -v "$PWD/bundle":/out sidenote:local cf /out/speech.tar -C /v .
+docker run --rm --entrypoint tar -v sidenote_hf-cache:/v:ro -v "$PWD/bundle":/out sidenote:local \
+  cf /out/speech.tar --dereference --exclude=blobs -C /v hub
 git archive --format=tar.gz --prefix=sidenote/ -o bundle/sidenote.tar.gz HEAD
 ```
+
+The speech model goes as plain files: its cache keeps them behind links, which Windows unpacks only with Developer Mode on.
+`--dereference` follows the links, and `--exclude=blobs` keeps the model from going twice.
 
 The capture program takes a few Python packages. Download them on a connected PC with the same system and the same Python
 version as the one it will run on (Windows, for a Windows screen). On Windows, with a copy of the checkout's `client` folder:
@@ -117,10 +121,13 @@ A speech model that is not in the bundle cannot be chosen in the panel: the choi
 ## The app, with no Docker
 
 The Windows and Linux apps hold the server and the capture program, so there are no packages to carry. Bring the zip from the
-[release](https://github.com/kanggu12/sidenote/releases), Ollama's own installer, and `models.tar` and `speech.tar` from step 1.
-Install Ollama, then put the two in place (paths for Windows; on Linux, `~/.ollama` and `~/.local/share/sidenote/hf`):
+[release](https://github.com/kanggu12/sidenote/releases), Ollama's own download (on Linux its archive, as its install script
+needs the internet), and `models.tar` and `speech.tar` from step 1. Install Ollama, then put the two in place. The paths below
+are for Windows. On Linux they are `~/.local/share/sidenote/hf` and `~/.ollama`, or `/usr/share/ollama/.ollama`, owned by its
+`ollama` user, for an Ollama that runs as a service.
 
 ```bat
+mkdir "%USERPROFILE%\.ollama"
 tar xf models.tar -C "%USERPROFILE%\.ollama"
 mkdir "%LOCALAPPDATA%\Sidenote\hf"
 tar xf speech.tar -C "%LOCALAPPDATA%\Sidenote\hf"
@@ -171,5 +178,6 @@ The volumes stay, and with them the models and your history.
 ## How this is checked
 
 `tests/offline_check.sh` brings the server and the code runner up from `compose.yaml` on a network with no way out, with the
-settings above. It fails if the start waits on the internet, or if the page loads anything from outside. CI runs it on every
-commit.
+settings above. It fails if the start waits on the internet, or if the page loads anything from outside. It also writes and
+unpacks the speech bundle with the command above, from a cache laid out as the real one is, and fails if a link is left in it
+or the model is not found. CI runs it on every commit.

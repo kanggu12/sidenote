@@ -28,10 +28,13 @@ chmod 755 "$work"
 home="$work/home"; logs="$work/logs"
 mkdir -p "$home/.claude/backups" "$home/.claude/sessions" "$home/.codex" "$logs"
 
+cache="$project-cache" unpacked="$project-unpacked"   # the speech bundle's two volumes, the last check's
+
 compose() { docker compose -p "$project" -f "$work/compose.json" "$@"; }
 cleanup() {
   compose down -v --remove-orphans > /dev/null 2>&1
-  docker run --rm --name "$project-clean" --user 0:0 --entrypoint rm -v "$work:/w" "$server_image" -rf /w/home /w/logs > /dev/null 2>&1
+  docker run --rm --name "$project-clean" --user 0:0 --entrypoint rm -v "$work:/w" "$server_image" -rf /w/home /w/logs /w/bundle > /dev/null 2>&1
+  docker volume rm "$cache" "$unpacked" > /dev/null 2>&1
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -139,6 +142,33 @@ import json, sys
 sys.exit(0 if ((json.loads(sys.argv[1]).get('runner') or {}).get('ok')) else 1)" "$health"; then ok "the code runner is ready"
   else bad "the code runner is ready" "$health"; fi
 fi
+
+# The guide's speech bundle, from a cache laid out as the library leaves it: a snapshot's file is a link to the repo's blobs,
+# and that a link to the store the repos share. Written with the guide's own arguments, it has to hold the file itself, as a
+# link does not unpack on a Windows with no Developer Mode, and the library has to find it there with no network.
+read -ra speech_args <<<"$(sed -n 's|^ *cf /out/speech\.tar ||p' "$tree/docs/air-gapped.md")"
+mkdir -p "$work/bundle"
+docker run --rm --network none --entrypoint sh -v "$cache:/v" "$server_image" -c '
+  repo=/v/hub/models--Systran--faster-whisper-small rev=0123456789012345678901234567890123456789
+  mkdir -p "$repo/refs" "$repo/blobs" "$repo/snapshots/$rev" /v/hub/blobs/42 /v/xet
+  printf %s "$rev" > "$repo/refs/main"
+  echo "the model" > /v/hub/blobs/42/abc
+  ln -s ../../blobs/42/abc "$repo/blobs/abc"
+  ln -s ../../blobs/abc "$repo/snapshots/$rev/model.bin"' > /dev/null 2>&1
+docker run --rm --network none --entrypoint tar -v "$cache:/v:ro" -v "$work/bundle:/out" "$server_image" \
+  cf /out/speech.tar "${speech_args[@]}" > "$work/bundle.log" 2>&1
+listing="$(tar tvf "$work/bundle/speech.tar" 2>&1)"
+inside="$(tar xOf "$work/bundle/speech.tar" --wildcards '*/snapshots/*/model.bin' 2>&1)"
+if [ "${#speech_args[@]}" -gt 0 ] && ! grep -q '^l' <<<"$listing" && ! grep -q blobs <<<"$listing" && [ "$inside" = "the model" ]; then
+  ok "the speech bundle holds the model's files, with no link and nothing twice"
+else bad "the speech bundle holds the model's files, with no link and nothing twice" "${speech_args[*]}: $inside; $listing"; fi
+
+docker run --rm --network none --entrypoint tar -v "$unpacked:/v" -v "$work/bundle:/in:ro" "$server_image" xf /in/speech.tar -C /v > /dev/null 2>&1
+found="$(docker run --rm --network none -e HF_HOME=/data/hf -e HF_HUB_OFFLINE=1 -v "$unpacked:/data/hf" --entrypoint python "$server_image" -c "
+from faster_whisper import download_model
+print(open(download_model('small') + '/model.bin').read().strip())" 2>&1 | tail -1)"
+if [ "$found" = "the model" ]; then ok "unpacked, the library finds that model with no network"
+else bad "unpacked, the library finds that model with no network" "$found"; fi
 
 printf '  ==== %d ok, %d FAIL\n' "$pass" "$fail"
 [ "$fail" = 0 ]
