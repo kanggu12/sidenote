@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Fixed
+
+- [Running with no internet](https://github.com/kanggu12/sidenote/blob/main/docs/air-gapped.md): the speech model goes in the
+  bundle as plain files, as the links its cache keeps them behind unpack on Windows only with Developer Mode on. The guide
+  also says where an Ollama on Linux keeps its models when it runs as a service.
+
 ## [0.1.3] - 2026-11-05
 
 ### Added
