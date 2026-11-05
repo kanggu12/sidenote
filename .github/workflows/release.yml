@@ -150,6 +150,7 @@ jobs:
       - name: GitHub release
         uses: softprops/action-gh-release@v3
         with:
+          name: Sidenote ${{ steps.v.outputs.version }}
           body_path: dist/release-notes.md
           generate_release_notes: true          # adds the compare link under the notes
           discussion_category_name: Announcements
