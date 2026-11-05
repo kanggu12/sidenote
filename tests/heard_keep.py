@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -315,10 +316,62 @@ async def worker_cuts_for_the_switch():
 asyncio.run(speech_pass())
 asyncio.run(worker_cuts_for_the_switch())
 
+print("\n[who can read the file]")
+if hasattr(os, "getuid"):
+    was_umask = os.umask(0o022)                 # the usual one, under which a file comes out readable by everybody
+    folder = Path(tempfile.mkdtemp(prefix="sidenote-heard-mode-")) / "made" / "here"
+    path = folder / "history.sqlite"
+    h = History(path)
+    h.add_heard(time.time(), 1.0, "ko", "다른 사람의 말입니다.")
+    mode = lambda p: Path(p).stat().st_mode & 0o777   # noqa: E731
+    check("a folder the server makes is its user's alone", mode(folder) == 0o700, oct(mode(folder)))
+    check("the file and the two beside it are its user's alone",
+          [mode(f"{path}{end}") for end in ("", "-wal", "-shm")] == [0o600] * 3,
+          [oct(mode(f"{path}{end}")) for end in ("", "-wal", "-shm")])
+    old = Path(tempfile.mkdtemp(prefix="sidenote-heard-old-"))
+    os.chmod(old, 0o755)
+    earlier = sqlite3.connect(old / "history.sqlite")
+    earlier.execute("PRAGMA journal_mode=WAL")
+    earlier.execute("CREATE TABLE t (x)")
+    earlier.commit()
+    os.chmod(old / "history.sqlite", 0o644)
+    os.chmod(old / "history.sqlite-wal", 0o644)
+    os.chmod(old / "history.sqlite-shm", 0o644)
+    h2 = History(old / "history.sqlite")
+    check("a file left readable by an earlier version is closed at the open, with the two beside it",
+          [mode(old / f"history.sqlite{end}") for end in ("", "-wal", "-shm")] == [0o600] * 3,
+          [oct(mode(old / f"history.sqlite{end}")) for end in ("", "-wal", "-shm")])
+    check("...and a folder already there keeps its mode: another program may read its logs", mode(old) == 0o755, oct(mode(old)))
+    earlier.close()
+    theirs = Path(tempfile.mkdtemp(prefix="sidenote-heard-theirs-")) / "history.sqlite"
+    real_getuid = os.getuid
+    os.getuid = lambda: real_getuid() + 1       # this server runs as another user than the file's
+    try:
+        History(theirs)
+        check("a file of another user is left as it is", mode(theirs) == 0o644, oct(mode(theirs)))
+    finally:
+        os.getuid = real_getuid
+    logs = Path(tempfile.mkdtemp(prefix="sidenote-heard-logs-")) / "made"
+    run = subprocess.run([sys.executable, "-c", "from server import telemetry; telemetry.setup()"], cwd=ROOT,
+                         env={**os.environ, "SIDENOTE_LOG_DIR": str(logs), "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, text=True, timeout=60)
+    check("the log folder the server makes at its start is its user's alone", logs.is_dir() and mode(logs) == 0o700,
+          (run.returncode, run.stderr[-200:], oct(mode(logs)) if logs.exists() else None))
+    os.umask(was_umask)
+
 print("\n[/heard and the panel's socket]")
 from starlette.testclient import TestClient  # noqa: E402
 
+# A server that runs for a few hours at a time, with nothing new kept: what is past its age goes at the start all the same
+A.HISTORY.clear()
+A.HISTORY.add_heard(time.time() - A.CONFIG.history_days * DAY - 3600, 1.0, "ko", "기한이 지난 말입니다.")
+check("past its age and still kept, with nothing written since", A.HISTORY.heard_any())
 with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
+    A.HISTORY_WRITES.submit(lambda: None).result(timeout=10)   # whatever the start handed the history's thread has gone before this
+    for _ in range(100):                                       # the start's task may not have run yet
+        if not A.HISTORY.heard_any():
+            break
+        time.sleep(0.05)
+    check("the server's start clears what is past its age", not A.HISTORY.heard_any())
     A.HISTORY.clear()
     got = client.get("/heard").json()
     check("/heard with nothing kept", got == {"days": [], "day": "", "lines": []}, got)
