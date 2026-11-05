@@ -5,7 +5,7 @@ capture program (`client/capture.py`, on Windows or a Linux desktop with X11) st
 server's WebSocket, as it does with compose.
 
 ```bash
-helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote --version 0.1.0 \
+helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote \
   --namespace sidenote --create-namespace -f my-values.yaml
 ```
 
@@ -54,13 +54,14 @@ repository names the images by their local names (`sidenote`, `sidenote-runner`)
 registry your cluster can pull from, and name it in your values:
 
 ```bash
-docker build -f docker/Dockerfile -t registry.example.com/sidenote:0.1.0 .
-docker build -f runner/Dockerfile -t registry.example.com/sidenote-runner:0.1.0 .
-docker push registry.example.com/sidenote:0.1.0
-docker push registry.example.com/sidenote-runner:0.1.0
+version="$(sed -n 's/^appVersion: "\(.*\)"$/\1/p' deploy/helm/sidenote/Chart.yaml)"
+docker build -f docker/Dockerfile -t "registry.example.com/sidenote:$version" .
+docker build -f runner/Dockerfile -t "registry.example.com/sidenote-runner:$version" .
+docker push "registry.example.com/sidenote:$version"
+docker push "registry.example.com/sidenote-runner:$version"
 ```
 
-The tag defaults to the chart's `appVersion` (0.1.0); set `server.image.tag` and `runner.image.tag` for another.
+The tag defaults to the chart's `appVersion`; set `server.image.tag` and `runner.image.tag` for another.
 An image you build yourself carries the Claude Code CLI at the version of its `CLAUDE_VERSION` build argument
 (`--build-arg CLAUDE_VERSION=...`); the published images carry none (`WITH_CLAUDE_CODE=0`), as Claude Code is
 Anthropic's to distribute. With `agent.provider: claude-code` an init container copies the image's CLI into the
@@ -95,7 +96,7 @@ llm:
 ```bash
 kubectl create namespace sidenote
 # create the agent's Secret here (next section)
-helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote --version 0.1.0 \
+helm install sidenote oci://ghcr.io/kanggu12/charts/sidenote \
   --namespace sidenote -f my-values.yaml --timeout 2h
 ```
 
@@ -205,7 +206,7 @@ themselves.
 ## Code runner isolation
 
 compose runs the code runner with `network_mode: none`, and the server reaches it through a Unix socket in a
-volume the two share, which only root may open. The chart keeps the runner in a Deployment of its own and lets it
+volume the two share, which only the runner and the server's group may open. The chart keeps the runner in a Deployment of its own and lets it
 listen on TCP (`RUNNER_PORT`, 8000; `runner/runner.py` does this when `RUNNER_SOCKET` is not set):
 
 - A Unix socket needs a volume both sides mount, which works only for containers in one pod or on one node.
@@ -238,7 +239,7 @@ What the chart cannot reproduce:
 
 - Kubernetes NetworkPolicy does not block traffic from a pod's own node: processes on the runner's node, including
   pods with host networking, can reach its port, and inside the runner pod a run can reach it over loopback. In
-  compose only root in the server's container could open the socket. Here the runner takes a run only with a
+  compose only the server's container could open the socket. Here the runner takes a run only with a
   token (`RUNNER_TOKEN`, from the Secret `<release>-runner-token`, which the chart makes on the first install and
   keeps on upgrades; the server sends it as `SIDENOTE_RUNNER_TOKEN`). Keeping the token across upgrades needs Helm
   to read the Secret from the cluster. Where the chart is rendered without a cluster (`helm template`, Argo CD,

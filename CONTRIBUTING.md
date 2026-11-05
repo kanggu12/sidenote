@@ -54,7 +54,7 @@ sits around them.
 
 | | The app | Docker | Kubernetes |
 |:---|:---|:---|:---|
-| Starts the parts | `desktop/app.py`, which restarts what stops | `./sidenote up`, with compose's restart policy | the chart |
+| Starts the parts | `desktop/app.py`, which restarts what stops | `./sidenote up`; nothing starts again by itself | the chart |
 | Local model | the PC's Ollama, downloaded from the panel | the `llm` container, `./sidenote llm pull` | the `llm` pod, the chart's pull Job |
 | Web search, code checks | off | SearXNG and the code runner | SearXNG and the code runner |
 | The agent's CLI | the PC's own `claude` or `codex` | built into the server image | Codex in the image, Claude Code fetched into the pod when it starts |

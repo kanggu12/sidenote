@@ -1,6 +1,8 @@
 """One version, in every place that says it: server/version.py as the source, the Helm chart agreeing with it, the
 release step's script (.github/check_version.py) passing a tag that matches and refusing one that does not, release.yml
 running that script before it builds or publishes anything, and `./sidenote version` printing the number from the file.
+With them, what the release files and the documents say of a release: what a pre-release tag publishes, where the winget
+token goes, and the versions, paths and prerequisites people copy from the documents.
 
     .venv/bin/python tests/version_check.py
 
@@ -97,6 +99,47 @@ release = wf[wf.find("\n  release:"):wf.find("\n  winget:")]
 check("...and the release job, which builds, pushes and publishes, waits for it", "needs: [notes," in release, release[:120])
 check("the first job builds and pushes nothing", not any(x in first for x in ("docker/build-push-action", "helm push",
                                                                                "softprops/action-gh-release")), first[:200])
+
+print("\n[a pre-release tag]")
+version_step = release[release.find("Version and names"):release.find("docker/setup-buildx-action")]
+check("the release job reads a pre-release from the tag's -", '*-*) echo "pre=true"' in version_step, version_step[:300])
+check("...publishes it as one", "prerelease: ${{ steps.v.outputs.pre == 'true' }}" in release)
+check("...and moves neither image's latest", not re.search(r"^\s+ghcr\.io/\S+:latest\s*$", release, re.M)
+      and release.count("steps.v.outputs.pre == 'false' && format(") == 2, re.findall(r".*:latest.*", release))
+winget_job = wf[wf.find("\n  winget:"):]
+check("...and makes no winget package", "if: ${{ !contains(github.ref_name, '-') }}" in winget_job, winget_job[:200])
+
+print("\n[the winget token]")
+winget = (ROOT / ".github" / "workflows" / "winget.yml").read_text(encoding="utf-8")
+steps = winget[winget.find("    steps:"):]
+head = winget[:winget.find("    steps:")]
+check("the job holds whether the token is set, not the token", "secrets.WINGET_TOKEN }}" not in head and "HAS_WINGET_TOKEN" in head, head[-300:])
+check("...the token goes to one step", steps.count("secrets.WINGET_TOKEN") == 1
+      and steps.find("secrets.WINGET_TOKEN") > steps.find("- name: Send them to microsoft/winget-pkgs"))
+check("...not on a command line", "--token" not in steps)
+check("wingetcreate is one release, checked against its checksum", "aka.ms" not in steps
+      and re.search(r"releases/download/v[0-9.]+/wingetcreate\.exe", steps) and re.search(r"Get-FileHash[^\n]*\"[0-9A-F]{64}\"", steps), steps[-500:])
+check("no token is said, in a notice", "::notice::" in steps)
+
+print("\n[what the documents name]")
+chart_readme = (ROOT / "deploy" / "helm" / "sidenote" / "README.md").read_text(encoding="utf-8")
+named = re.findall(r"--version (\S+)|appVersion` \((\S+?)\)|registry\.example\.com/sidenote(?:-runner)?:([0-9]\S*)", chart_readme)
+check("the chart's README names no other version", all(VERSION in group for group in named), named)
+notes = (ROOT / "deploy" / "helm" / "sidenote" / "templates" / "NOTES.txt").read_text(encoding="utf-8")
+check("the chart's NOTES asks for no path of a checkout", "deploy/helm/sidenote" not in notes
+      and "oci://ghcr.io/kanggu12/charts/sidenote --version {{ .Chart.Version }}" in notes)
+values = (ROOT / "deploy" / "helm" / "sidenote" / "values.yaml").read_text(encoding="utf-8")
+check("the chart's values say the published chart needs no image built", "published chart" in values)
+doc = lambda *parts: (ROOT.joinpath(*parts)).read_text(encoding="utf-8")   # noqa: E731
+check("README's Docker setup names python3", "`python3`" in doc("README.md").split("### With Docker")[1].split("```")[0])
+check("the guide's requirements name python3", "`python3`" in doc("docs", "README.md").split("## 2. Requirements")[1].split("## 3.")[0])
+check("the guide names the TZ setting", "| `TZ` |" in doc("docs", "README.md"))
+check("the architecture's list of notes counts nothing that goes stale", not re.search(r"\b\d+ numbered notes", doc("docs", "ARCHITECTURE.md"))
+      and "| Topic | Notes |" not in doc("docs", "ARCHITECTURE.md"))
+check("CONTRIBUTING claims no restart policy compose.yaml does not have", "restart policy" not in doc("CONTRIBUTING.md"))
+capture_doc = doc("docs", "capture-client.md")
+pictures = re.findall(r'src="(assets/[^"]+)"', capture_doc)
+check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/sidenote-capture/assets/" in release for p in pictures), pictures)
 
 print("\n[./sidenote version]")
 # A copy of the launcher beside a version.py of its own (the launcher works from its own folder), and the programs it

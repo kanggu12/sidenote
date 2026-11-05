@@ -127,7 +127,7 @@ was built (from 0.1.1 on): `gh attestation verify Sidenote-windows-x64.zip --rep
 
 ### With Docker: Linux, or Windows with WSL 2
 
-You need Docker with `docker compose` (on Windows, inside WSL 2), and for an NVIDIA GPU on Linux the
+You need Docker with `docker compose` and `python3` (on Windows, both inside WSL 2), and for an NVIDIA GPU on Linux the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 On Windows the capture program runs in Python for Windows (the `py` command, from
 [python.org](https://www.python.org/downloads/windows/)).

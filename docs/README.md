@@ -65,7 +65,7 @@ What each setup needs before its first start:
 - **The app**: Windows 10 or 11, or Linux with an X11 desktop and glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or
   newer; the 0.1.0 build needs glibc 2.38, Ubuntu 24.04 or newer). [Ollama](https://ollama.com/download) runs the
   local model.
-- **Docker**: Docker with `docker compose` (inside WSL on Windows), and for an NVIDIA GPU on Linux the NVIDIA Container
+- **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux the NVIDIA Container
   Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture` installs the capture
   program's packages into it.
 - **The local model**: an NVIDIA or AMD GPU. Sidenote reads its memory and picks the largest measured model that fits:
@@ -128,7 +128,7 @@ in at a limit** off.
 ### With Docker
 
 ```bash
-./sidenote install         # the server, the capture packages, the desktop shortcut on Windows, then a check
+./sidenote install         # the server, the capture packages, the desktop shortcut on Windows, a check, what is left to do
 ./sidenote llm pull        # the local model for this GPU and its smaller one, once (a few GB to tens of GB)
 ```
 
@@ -1077,6 +1077,8 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_LOG_FILES` | `4` | Number of old log files kept |
 | `SIDENOTE_LOG_DAYS` | `14` | Days before old log files are deleted |
 | `SIDENOTE_LOG_PATH` | `~/.local/state/sidenote/logs` | Log folder. Write an absolute path when you change it |
+| `TZ` | (this PC's time zone, else `UTC`) | The time zone of the log times and of the days in the panel and `./sidenote report`, such as `Europe/Berlin`. `./sidenote` finds this PC's by itself |
+| `SIDENOTE_UID`, `SIDENOTE_GID` | (the user running `./sidenote`; `0` under rootless Docker) | Who the server's container runs as. It has to be able to read the login files in `~/.claude` and `~/.codex` |
 | `SIDENOTE_ANALYZER` | `local` | `agent`: the cloud agent alone, with no local model (`cli` and `api`, its earlier names, still mean it); `mock`: fixed practice answers from both engines (for testing). Any case is read the same, and an unknown value runs as `local`, by the server and `./sidenote` alike |
 | `SIDENOTE_CI_GATE` | `0` | `1`: before it deploys, `./sidenote up` asks what CI said of the commit and refuses one that failed (`--no-ci` deploys anyway). For maintainers ([QA.md](QA.md)) |
 | `SIDENOTE_AGENT_HOURLY_USD` | `2.0` | What an hour of the agent may cost before the tool stops sending by itself. Only an agent that reports a price counts toward it (Claude Code and the Anthropic API; a Codex login reports none). **Reanalyze** and questions still go. 0 turns the cap off. `SIDENOTE_CLAUDE_HOURLY_USD`, its earlier name, is read when this is not set |
@@ -1262,8 +1264,10 @@ What leaves this PC, what can reach what, and what is kept.
   behind and every file it wrote are deleted when it ends. Code that runs there cannot reach the server or the
   internet, cannot read or change the files or the processes of another run or of the compile, and cannot read or
   stop the runner itself. A run's result goes only to the panel that sent the code.
-- Every container drops all Linux capabilities and cannot gain privileges. The server adds back one capability (CHOWN)
-  and the code runner four (SETUID, SETGID, CHOWN and KILL, to start each run as a user of its own); the others keep
+- Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
+  `./sidenote`, so the login files and the logs stay that user's; a short-lived `server-init` container hands the log
+  folder and the speech model's volume to that user first, as root with CHOWN and no network. The server adds back one
+  capability (CHOWN, of use only when that user is root) and the code runner four (SETUID, SETGID, CHOWN and KILL, to start each run as a user of its own); the others keep
   none. The server, the code runner and the search engine run with a read-only root filesystem; the local model's is
   writable, with the models in a volume of their own.
 - The limits in `compose.yaml`: the server 512 processes, 8 GB of memory and 8 CPUs; the code runner 128 processes,
@@ -1352,10 +1356,12 @@ What is pinned, so that a rebuild gives the same thing:
 server image, the panel build the running server serves, Claude Code and Codex on this PC and in the container, the
 image tags, the models pulled and the log folder.
 
-`./sidenote uninstall` lists everything this project put on the PC (the containers, images and volumes, the desktop
-shortcut on Windows, the capture packages on Linux) and removes it only with `--yes`. The models live in a volume of
-tens of gigabytes, so nothing is removed by a command typed by accident. The logs are left behind on purpose, and so
-are `~/.claude` and `~/.codex`, the login folders Claude Code and Codex use on this PC too.
+`./sidenote uninstall` lists what this project put on the PC (the containers, the images, among them the Ollama and
+SearXNG ones, the volumes, the desktop shortcut on Windows, the capture packages on Linux) and removes it only with
+`--yes`. The models live in a volume of tens of gigabytes, so nothing is removed by a command typed by accident. An
+image another project is using stays, as Docker refuses to remove it. The logs are left behind on purpose, and so are
+`~/.claude` and `~/.codex`, the login folders Claude Code and Codex use on this PC too, and the capture packages in
+Windows Python, which other programs there may use.
 
 ### Checks
 

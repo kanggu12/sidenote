@@ -168,7 +168,7 @@ write no core dumps ([note 39](DECISIONS.md#note-39)).
 | Server | `server`, `sidenote` | 8777, published on `127.0.0.1` only (`SIDENOTE_PORT` moves the host side) | `default`, `llmnet` | the agent's service (claude.ai, chatgpt.com or the Anthropic API), the local model, SearXNG, public web pages, the runner's socket, api.github.com for the latest release | the capture program and the panel through the published port; `PeerGuard` takes only that port's gateway and the container itself |
 | Local model | `llm`, `sidenote-llm` (Ollama) | 11434, not published | `llmnet` (`internal: true`) | nothing | the server |
 | Web search | `searxng`, `sidenote-searxng` | 8080, not published | `default` | the search engines | the server |
-| Code runner | `runner`, `sidenote-runner` | none: `/sock/runner.sock` in the `runner-sock` volume, which only root may open | none (`network_mode: none`) | nothing | the server, through the socket |
+| Code runner | `runner`, `sidenote-runner` | none: `/sock/runner.sock` in the `runner-sock` volume, which only the runner and the server's group may open | none (`network_mode: none`) | nothing | the server, through the socket |
 | Model download | `llm-pull`, run by `./sidenote llm pull` | none | `default` | the internet, for the model's files | nobody; it writes the `llm-models` volume and ends |
 | Capture program | on the PC, outside Docker | none | the PC's | `ws://127.0.0.1:8777/ingest` | nobody |
 | Panel | in the browser | none | the PC's | `http://127.0.0.1:8777` and its `/panel` WebSocket | nobody |
@@ -369,17 +369,15 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 
 ## Design decisions
 
-The reasons behind the design, with the measurements, are in [DECISIONS.md](DECISIONS.md): 105 numbered notes, each
-under the first of its topics. A note that a later one replaces says so on its first line.
+The reasons behind the design, with the measurements, are in [DECISIONS.md](DECISIONS.md): numbered notes, each under
+the first of its topics. A note that a later one replaces says so on its first line.
 
-| Topic | Notes |
-|:---|:---:|
-| [Capture, change detection and when an analysis runs](DECISIONS.md#capture-change-detection-and-when-an-analysis-runs) | 26 |
-| [Choosing who answers (routing, handoff, spend) and what is sent](DECISIONS.md#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | 14 |
-| [The local model and the answer prompt](DECISIONS.md#the-local-model-and-the-answer-prompt) | 9 |
-| [The agents](DECISIONS.md#the-agents) | 14 |
-| [Code checks](DECISIONS.md#code-checks) | 11 |
-| [The panel](DECISIONS.md#the-panel) | 33 |
-| [Speech](DECISIONS.md#speech) | 6 |
-| [Security and isolation](DECISIONS.md#security-and-isolation) | 9 |
-| [Deployment and packaging](DECISIONS.md#deployment-and-packaging) | 9 |
+- [Capture, change detection and when an analysis runs](DECISIONS.md#capture-change-detection-and-when-an-analysis-runs)
+- [Choosing who answers (routing, handoff, spend) and what is sent](DECISIONS.md#choosing-who-answers-routing-handoff-spend-and-what-is-sent)
+- [The local model and the answer prompt](DECISIONS.md#the-local-model-and-the-answer-prompt)
+- [The agents](DECISIONS.md#the-agents)
+- [Code checks](DECISIONS.md#code-checks)
+- [The panel](DECISIONS.md#the-panel)
+- [Speech](DECISIONS.md#speech)
+- [Security and isolation](DECISIONS.md#security-and-isolation)
+- [Deployment and packaging](DECISIONS.md#deployment-and-packaging)

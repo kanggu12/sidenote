@@ -1,6 +1,7 @@
 # A version tag (v1.2.3) publishes a release: both images to the GitHub Container Registry, the Helm chart as an OCI
 # artifact and a .tgz, the desktop app for Windows and Linux (desktop.yml), and the capture program on its own as a
-# .zip, all attached to the GitHub release.
+# .zip, all attached to the GitHub release. A tag with a pre-release part (v1.2.3-rc.1) publishes as a pre-release: no
+# `latest` images and no winget package.
 #
 # The published server image carries the Codex CLI (Apache-2.0) and not Claude Code, which is Anthropic's to
 # distribute: the chart fetches Claude Code into the pod when it starts (WITH_CLAUDE_CODE below).
@@ -69,6 +70,9 @@ jobs:
         run: |
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          # A tag such as v1.2.3-rc.1 is a pre-release: marked as one, so the README's latest-release links and the
+          # panel's new-version line pass over it, and without the images' `latest`, which people pull as the release.
+          case "$GITHUB_REF_NAME" in *-*) echo "pre=true" >> "$GITHUB_OUTPUT" ;; *) echo "pre=false" >> "$GITHUB_OUTPUT" ;; esac
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -86,7 +90,7 @@ jobs:
             WITH_CLAUDE_CODE=0
           tags: |
             ghcr.io/${{ steps.v.outputs.owner }}/sidenote:${{ steps.v.outputs.version }}
-            ghcr.io/${{ steps.v.outputs.owner }}/sidenote:latest
+            ${{ steps.v.outputs.pre == 'false' && format('ghcr.io/{0}/sidenote:latest', steps.v.outputs.owner) || '' }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
       - name: Code runner image
@@ -97,7 +101,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner:${{ steps.v.outputs.version }}
-            ghcr.io/${{ steps.v.outputs.owner }}/sidenote-runner:latest
+            ${{ steps.v.outputs.pre == 'false' && format('ghcr.io/{0}/sidenote-runner:latest', steps.v.outputs.owner) || '' }}
           cache-from: type=gha,scope=runner
           cache-to: type=gha,mode=max,scope=runner
       - uses: azure/setup-helm@v5
@@ -120,6 +124,9 @@ jobs:
           mkdir -p dist/sidenote-capture
           cp client/capture.py client/launch.pyw client/requirements.txt dist/sidenote-capture/
           cp docs/capture-client.md dist/sidenote-capture/README.md
+          # the one picture that page shows, at the path it names
+          mkdir -p dist/sidenote-capture/assets
+          cp docs/assets/tray-menu.png dist/sidenote-capture/assets/
           (cd dist && zip -r "sidenote-capture-${{ steps.v.outputs.version }}.zip" sidenote-capture)
       - name: The desktop app's zips, built by the desktop job
         uses: actions/download-artifact@v7
@@ -151,6 +158,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           name: Sidenote ${{ steps.v.outputs.version }}
+          prerelease: ${{ steps.v.outputs.pre == 'true' }}
           body_path: dist/release-notes.md
           generate_release_notes: true          # adds the compare link under the notes
           discussion_category_name: Announcements
@@ -163,6 +171,7 @@ jobs:
   # the winget package: its manifests checked and installed on Windows, then sent to winget-pkgs when WINGET_TOKEN is set
   winget:
     needs: [release]
+    if: ${{ !contains(github.ref_name, '-') }}   # make_manifests.py takes release numbers only: no package of a pre-release
     uses: ./.github/workflows/winget.yml
     with:
       version: ${{ github.ref_name }}
