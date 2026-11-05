@@ -96,6 +96,19 @@ many and why in its line (see "The measurement data" below). Every other check r
 Windows through WSL: it finds the capture program's path with `wslpath` and starts Windows programs from `/mnt/c`. A
 machine that is not WSL has neither, so `tests/run.sh` skips that suite there and says so in its line.
 
+## The server as an ordinary user
+
+`tests/nonroot_check.sh` brings up `compose.yaml`'s server and code runner with real images, as this user (as uid 1000
+when this user is root), under another project's name and port, beside any Sidenote that is running. With made-up login
+files it checks what no stand-in can show: the server reads the 600 logins and the CLIs find them, it writes in every
+place it writes, a log folder an older image turned over to root comes back, the volume stays the user's in the next
+container, and the socket lets the server in and keeps a run out. The `images` job of CI runs it.
+
+```bash
+tests/nonroot_check.sh                                # sidenote:local and sidenote-runner:local
+tests/nonroot_check.sh sidenote:ci sidenote-runner:ci
+```
+
 ## The Helm chart on a cluster
 
 `tests/k3d_check.sh` installs the chart on a throwaway k3d cluster with the images given (by default the ones
@@ -165,7 +178,7 @@ Server and capture (`PY`):
 | `limits_check.py` | why analyses stopped and what the agent was paid for, from the log; the local model, switched off, standing in for the agent at its limit; the thinking pass's last sentence; code run on made-up inputs when a problem shows none; Codex's reset times and missing prices, the API agent's stop reasons, a status code inside a request id; the chart's runner token rendered without a cluster ([note 89](../docs/DECISIONS.md#note-89)) |
 | `update_check.py` | the check for a newer release, against a stand-in for GitHub: a newer release, the same, an older one, a pre-release, a draft, a reply that is not JSON, a timeout and the rate limit; the User-Agent, no token, the ETag, no retry before the next day's; a release page outside this repository refused; "Check for new versions", `SIDENOTE_UPDATE_CHECK=0` and mock mode each making no request; the loop stopping when the server closes down, a cancellation as the switch wakes it included; the notice reaching a panel that connects later |
 | `changelog_check.py` | CHANGELOG.md and the notes release.yml takes from it: every release's section and link, the newest being `server/version.py`'s number, a section printed whole, a tag with no notes stopped before anything is built |
-| `version_check.py` | one version: `server/version.py` and the Helm chart agree, the release step's script (`.github/check_version.py`) with matching and mismatching fake tags and trees, `release.yml`'s release job running it before it builds or pushes anything, and `./sidenote version` printing the number |
+| `version_check.py` | one version: `server/version.py` and the Helm chart agree, the release step's script (`.github/check_version.py`) with matching and mismatching fake tags and trees, `release.yml`'s release job running it before it builds or pushes anything, `./sidenote version` printing the number, the chart's README and NOTES naming no other version or path, what a pre-release tag publishes, the winget token staying in its one step, and the small facts the docs state |
 | `launcher_args.sh` | what `./sidenote` hands to Windows, and how it behaves when a program it calls is missing or broken |
 
 Panel (`PW`):

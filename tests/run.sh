@@ -49,7 +49,8 @@ accounted() {
   local bad=0 f n
   for f in tests/*.py tests/*.sh; do
     n="$(basename "${f%.*}")"
-    { [ "$n" = run ] || [ "$n" = k3d_check ]; } && continue    # this script, and the cluster's check of its own workflow
+    # this script, and the two that need Docker and real images, each with a CI job of its own
+    { [ "$n" = run ] || [ "$n" = k3d_check ] || [ "$n" = nonroot_check ]; } && continue
     case " ${SERVER[*]} ${PANEL[*]} ${HELPERS[*]} " in
       *" $n "*) ;;
       *) echo "tests/run.sh: $f is in no list of suites" >&2; bad=1 ;;

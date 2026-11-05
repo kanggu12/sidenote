@@ -139,8 +139,8 @@ no_fit() {
     "$1" "$(L "Local model: no GPU fits it, and the agent is off (SIDENOTE_AGENT=off), so nothing solves. ./sidenote llm pull gemma4:e2b runs it on the CPU, slowly" \
               "이 PC의 모델: 맞는 GPU 없음, 에이전트도 꺼 둠 (SIDENOTE_AGENT=off): 풀 엔진 없음. ./sidenote llm pull gemma4:e2b로 CPU에서 느리게 실행 가능")"
   else
-    "$1" "$(L "Local model: not used, no GPU fits it (no NVIDIA or AMD GPU with more than 6 GB). The agent solves every problem. Optional: ./sidenote llm pull gemma4:e2b, on the CPU, slowly" \
-              "이 PC의 모델: 쓰지 않음, 맞는 GPU 없음 (6GB를 넘는 NVIDIA나 AMD GPU 없음). 에이전트가 모든 문제를 풂. 원하면 ./sidenote llm pull gemma4:e2b (CPU에서 느리게)")"
+    "$1" "$(L "Local model: not used, no GPU fits it (no NVIDIA or AMD GPU with more than 6 GB). A signed-in agent solves every problem. Optional: ./sidenote llm pull gemma4:e2b, on the CPU, slowly" \
+              "이 PC의 모델: 쓰지 않음, 맞는 GPU 없음 (6GB를 넘는 NVIDIA나 AMD GPU 없음). 로그인한 에이전트가 모든 문제를 풂. 원하면 ./sidenote llm pull gemma4:e2b (CPU에서 느리게)")"
   fi
 }
 
@@ -148,9 +148,21 @@ if [ -t 1 ]; then B=$'\e[1m'; G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; D=$'\e[2m';
 else B='' G='' R='' Y='' D='' N=''; fi
 ok()   { printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
 FAILS=0   # ✗ lines printed so far (doctor fails when there is any)
+# Set by install alone. Right after a first install no model is downloaded and no agent need be signed in yet: those are
+# the next steps it names, not a failed install, whereas doctor asked later has every reason to fail on them.
+ENGINE_SOFT=0
 bad()  { printf '  %s✗%s %s\n' "$R" "$N" "$*"; FAILS=$((FAILS + 1)); }
 warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*"; }
 die()  { printf '%s%s%s\n' "$R" "$*" "$N" >&2; exit 1; }
+# Reading /health, the GPU and the model list all go through python3. Without it the GPU above silently counted as none
+# and `up` ended in the middle of its status with status 127 and no word of why, so it is said first. help needs nothing.
+if ! command -v python3 >/dev/null 2>&1; then
+  case "${1:-help}" in
+    help|-h|--help) ;;
+    *) die "$(L "python3 is not installed, and ./sidenote needs it to read the server's state and the GPU. Install it (on Ubuntu or Debian: sudo apt install python3) and run this again." \
+                "python3가 설치되어 있지 않습니다. ./sidenote가 서버 상태와 GPU를 읽는 데 필요합니다. 설치한 뒤(Ubuntu, Debian: sudo apt install python3) 다시 실행하세요.")" ;;
+  esac
+fi
 # The capture program can run in a terminal window of its own (--console, or `capture --up` from an older desktop
 # shortcut, which opened one), and the title bar is all that window says about itself.
 # An empty name puts the terminal's own title back. With no terminal (the shortcut now) it does nothing.
@@ -159,7 +171,11 @@ term_title() { [ -t 1 ] && printf '\033]0;%s\007' "$1"; return 0; }
 # Windows side, through interop. cmd.exe complains when started from a WSL directory, so
 # windows commands run with a Windows working directory.
 win()  { (cd /mnt/c && cmd.exe /c "$@" 2>/dev/null | tr -d '\r'); }
-winps() { (cd /mnt/c && powershell.exe -NoProfile -Command "$1" 2>/dev/null | tr -d '\r'); }
+# PowerShell 5.1 writes a pipe in the console's code page (cp949 on Korean Windows, '?' for what the page lacks), so a path
+# read here with Korean in it (a user folder, OneDrive's 바탕 화면) came back as bytes that are no longer that path once
+# they are handed to PowerShell again. Asked for UTF-8 first, what it prints is what this script speaks. With no console to
+# set, that one statement fails on stderr and the command still runs.
+winps() { (cd /mnt/c && powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $1" 2>/dev/null | tr -d '\r'); }
 # A single quote inside a PowerShell single-quoted string has to be written twice. Paths come from
 # Windows and can hold one (a user folder under a name with an apostrophe), and it ended the string.
 ps_quote() { printf '%s' "${1//\'/\'\'}"; }
@@ -200,11 +216,44 @@ in_image() {
   if running; then docker exec -e SIDENOTE_LANG="$UI_LANG" sidenote python -m server.report "$@"
   else
     docker image inspect sidenote:local >/dev/null 2>&1 || die "$(L "No image yet. Run ./sidenote up first" "이미지가 없습니다. 먼저 ./sidenote up을 실행하세요")"
-    docker run --rm -e TZ="${TZ:-Asia/Seoul}" -e SIDENOTE_LANG="$UI_LANG" -v "$LOG_PATH:/data/logs:ro" --entrypoint python sidenote:local -m server.report "$@"
+    docker run --rm -e TZ="$(host_tz)" -e SIDENOTE_LANG="$UI_LANG" -v "$LOG_PATH:/data/logs:ro" --entrypoint python sidenote:local -m server.report "$@"
   fi
 }
 
-ensure_dirs() { mkdir -p "$LOG_PATH" "$HOME/.claude" "$HOME/.codex"; }
+# The folders the server's container mounts. Docker, which runs as root, makes a mount's missing folder as root, and then
+# this PC's own Claude Code could not write to its own backups or sessions, so each is made here first, as this user. The
+# log folder holds the answers and what was heard: when it is made here, it is this user's alone.
+ensure_dirs() {
+  mkdir -p "$HOME/.claude/backups" "$HOME/.claude/sessions" "$HOME/.codex"
+  [ -d "$LOG_PATH" ] || mkdir -p -m 700 "$LOG_PATH"
+}
+
+# Who the server runs as: this user, so it can read the 600 login files in ~/.claude and ~/.codex, and a token it refreshes
+# stays this user's file. Root with more capabilities could read them too, but it would leave the refreshed login owned by
+# root, out of reach of this PC's own CLI. Under rootless Docker the container's root already is this user, and uid 1000
+# in there would be a stranger, so it stays 0. compose.yaml's default of 0 is for `docker compose` run by hand.
+server_user() {
+  if docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -q rootless; then
+    SIDENOTE_UID="$(setting SIDENOTE_UID 0)" SIDENOTE_GID="$(setting SIDENOTE_GID 0)"
+  else
+    SIDENOTE_UID="$(setting SIDENOTE_UID "$(id -u)")" SIDENOTE_GID="$(setting SIDENOTE_GID "$(id -g)")"
+  fi
+  export SIDENOTE_UID SIDENOTE_GID
+}
+
+# The time zone the containers keep their log times and days in: the one this PC is in, which a container cannot see. TZ
+# in the environment or .env first, then what the system says, in the order that is most to least sure of itself. $1 is the
+# folder to read in place of /etc, for tests/launcher_args.sh. Only a zone's name passes: TZ=:/etc/localtime names a file
+# no container has, and "n/a" is timedatectl with nothing to say. UTC when nothing says.
+host_tz() {
+  local etc="${1:-/etc}" tz found
+  for tz in "$(setting TZ "")" "$(timeout 3 timedatectl show -p Timezone --value 2>/dev/null || true)" \
+            "$(head -1 "$etc/timezone" 2>/dev/null || true)" "$(readlink -f "$etc/localtime" 2>/dev/null || true)"; do
+    case "$tz" in */zoneinfo/*) tz="${tz##*/zoneinfo/}" ;; esac
+    if [ "$tz" != n/a ] && [[ $tz =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]]; then found="$tz"; break; fi
+  done
+  printf '%s' "${found:-UTC}"
+}
 # Who Claude Code is signed in as, for the panel's agent card: ~/.claude.json is not mounted in the server, and only its
 # address comes out of it. Owner-only; a dot file, which the log tools pass over. Nothing to read: nothing kept.
 note_account() {
@@ -376,6 +425,8 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   docker_up
   ensure_dirs
   note_account
+  server_user
+  TZ="$(host_tz)"; export TZ   # compose.yaml reads it from here
   wait_idle   # not while it is in use
   # a capture program connected now reconnects by itself after the restart (asked only when the server
   # is up: here a closed local port hangs until curl's timeout instead of refusing)
@@ -548,6 +599,7 @@ if C.get("present"):
 if not ready: print(T("bad|No engine can answer (see above, or Solver settings in the panel)", "bad|풀 수 있는 엔진 없음 (위 항목, 또는 패널의 풀이 설정)"))
 ENGINES
   while IFS='|' read -r level line; do
+    if [ "$ENGINE_SOFT" = 1 ] && [ "$level" = bad ]; then level=warn; fi   # install: what is left to do next, not a failure
     if [ "$line" = NOFIT ]; then no_fit "$level"; continue; fi   # the one no-GPU line, at the level the server's state calls for
     case "$level" in ok) ok "$line" ;; warn) warn "$line" ;; *) bad "$line" ;; esac
   done < <(echo "$h" | python3 -c "$engines" "$UI_LANG" 2>/dev/null)
@@ -1022,7 +1074,7 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   # so running it again after a change is safe and says what it did rather than redoing it.
   # --with-models: pull the models too. Named apart from cmd_llm's own `models` list, which shellcheck
   # would otherwise take for this one.
-  local with_models=0
+  local with_models=0 need_model=0
   [ "${1:-}" = "--with-models" ] && with_models=1
   echo "$(L "${B}Installing Sidenote${N} ${D}(steps already done are skipped)${N}" "${B}Sidenote를 설치합니다${N} ${D}(이미 끝난 단계는 건너뜁니다)${N}")"
   echo
@@ -1068,9 +1120,10 @@ cmd_install() {   # everything a first run needs, in the order it needs it
     else
       local which=""
       [ -z "$want" ] || which=" ${D}($(L "the model for this GPU: ${want}, a few GB to tens of GB" "이 GPU에 맞는 모델: ${want}, 수 GB에서 수십 GB"))${N}"
+      need_model=1
       warn "$(L "Not downloaded yet: ${B}./sidenote llm pull${N}" "아직 받지 않음: ${B}./sidenote llm pull${N}")$which"
       if [ "$AGENT" = off ]; then echo "     $(L "Until then nothing solves: the agent is off (SIDENOTE_AGENT=off)." "받기 전까지는 풀 엔진 없음: 에이전트도 꺼 둠 (SIDENOTE_AGENT=off)")"
-      else echo "     $(L "Until then the agent solves every problem." "받기 전까지는 에이전트가 모든 문제를 풂")"; fi
+      else echo "     $(L "Until then a signed-in agent solves every problem." "받기 전까지는 로그인한 에이전트가 모든 문제를 풂")"; fi
     fi
   fi
   echo
@@ -1084,7 +1137,27 @@ cmd_install() {   # everything a first run needs, in the order it needs it
     ( cmd_shortcut ) || true   # a shortcut that cannot be made says why; doctor still runs
   fi
   echo
-  cmd_doctor
+  ENGINE_SOFT=1
+  local rc=0
+  cmd_doctor || rc=$?
+  install_next "$need_model"
+  return "$rc"
+}
+
+# What is left after an install, in the README's order: the model, the agent's login where it has none (optional beside a
+# local model), and the start. Whatever failed above is doctor's to say, with its status.
+install_next() {
+  local login=""
+  case "$AGENT" in
+    claude-code) [ -n "$(claude_login)" ] || login="./sidenote login" ;;
+    codex) [ -n "$(codex_login)" ] || login="./sidenote login codex" ;;
+    anthropic-api) [ -n "$(setting ANTHROPIC_API_KEY "")" ] || login="ANTHROPIC_API_KEY in .env" ;;
+  esac
+  echo
+  echo "${B}$(L "Next" "다음 할 일")${N}"
+  if [ "$1" = 1 ]; then echo "  ${B}./sidenote llm pull${N}        $(L "the local model for this GPU" "이 GPU에 맞는 모델 받기")"; fi
+  if [ -n "$login" ]; then echo "  ${B}${login}${N}   $(L "the agent's login, for the hard problems" "어려운 문제를 맡길 에이전트 로그인")"; fi
+  echo "  ${B}./sidenote capture --up${N}    $(L "start the server and the capture" "서버와 캡처 시작")"
 }
 
 cmd_version() {   # what is actually installed and running, in one place
@@ -1129,7 +1202,10 @@ cmd_uninstall() {   # take back everything this project put on the PC
   [ "${1:-}" = "--yes" ] && purge=1
   echo "${B}$(L "What Sidenote made on this PC" "Sidenote가 이 PC에 만든 것")${N}"
   echo "  $(L "Containers: " "컨테이너: ")$(docker ps -a --filter name=sidenote --format '{{.Names}}' | paste -sd' ' - || true)"
-  echo "  $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local"
+  local ollama search
+  ollama="ollama/ollama:$(setting SIDENOTE_OLLAMA_VERSION 0.40.5)"
+  search="searxng/searxng:$(setting SIDENOTE_SEARXNG_VERSION 2026.10.7-6671d89be)"
+  echo "  $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local, $ollama, $ollama-rocm, $search"
   echo "  $(L "Volumes:    " "볼륨:     ")$(docker volume ls --format '{{.Name}}' | grep '^sidenote_' | paste -sd' ' - || true)"
   # the shortcut is made on WSL only, on the Windows desktop; the capture packages of a Linux desktop are in a venv here
   if [ "$ON_WSL" = 1 ]; then echo "  $(L "Shortcut:   Sidenote Capture.lnk on the Windows desktop" "바로가기: Windows 바탕화면의 Sidenote Capture.lnk")"; fi
@@ -1140,6 +1216,9 @@ cmd_uninstall() {   # take back everything this project put on the PC
   # settings on this PC, which those CLIs keep using after Sidenote is gone
   echo "  ${D}$(L "(kept either way: ~/.claude and ~/.codex, the login folders Claude Code and Codex use on this PC too)" \
                   "(어느 쪽이든 그대로 둠: ~/.claude, ~/.codex. 이 PC의 Claude Code와 Codex도 쓰는 로그인 폴더)")${N}"
+  # the capture packages on Windows went into a Python this project does not own, beside whatever else uses their libraries
+  if [ "$ON_WSL" = 1 ]; then echo "  ${D}$(L "(kept either way: the capture packages in Windows Python, client/requirements.txt lists them)" \
+                                            "(어느 쪽이든 그대로 둠: Windows Python의 캡처 패키지. 목록은 client/requirements.txt)")${N}"; fi
   if [ "$purge" != 1 ]; then
     echo
     warn "$(L "Nothing removed. To remove it all: ${B}./sidenote uninstall --yes${N}" "아무것도 지우지 않았습니다. 정말 지우려면 ${B}./sidenote uninstall --yes${N}")"
@@ -1152,6 +1231,10 @@ cmd_uninstall() {   # take back everything this project put on the PC
   local rc=0
   docker compose --profile '*' down -v --remove-orphans 2>&1 | sed 's/^/  /' || rc=$?
   docker image rm -f sidenote:local sidenote-runner:local >/dev/null 2>&1 || true
+  # Not forced, one at a time: these two are other people's images that another project on this PC may be running, which
+  # Docker then refuses, and the one it refuses is no reason to stop or to leave the rest.
+  local image
+  for image in "$ollama" "$ollama-rocm" "$search"; do docker image rm "$image" >/dev/null 2>&1 || true; done
   local venv=0; if [ -d "$CAPTURE_VENV" ]; then rm -rf "$CAPTURE_VENV" && venv=1; fi
   if [ "$rc" = 0 ]; then
     if [ "$ON_WSL" = 1 ]; then ok "$(L "Removed the containers, images, volumes and shortcut." "컨테이너, 이미지, 볼륨, 바로가기를 지웠습니다.")"
@@ -1291,6 +1374,7 @@ PY
   # With the local LLM, the agent is the second engine: without a login the local model solves everything. With no
   # local model to fall back on, a missing login leaves nothing to solve.
   local nologin=bad; [ "$ANALYZER" = local ] && [ "$usable" = 1 ] && nologin=warn
+  [ "$ENGINE_SOFT" = 1 ] && nologin=warn
   case "$AGENT" in
     codex)
       how="$(codex_login)"

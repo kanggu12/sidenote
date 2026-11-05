@@ -24,7 +24,7 @@ groups:
 |:---|:---|:---|:---|
 | server and capture | the `server` job, with mock engines | the GPU, the network, the agent, Windows | `integ`, `server_review`, `server_scenarios`, `ci_gate`, ... |
 | panel | the `panel` job, in headless Chromium with the server's CSP | the server and its socket | `panel_review`, `panel_scenarios`, `panel_design`, `panel_layout`, ... |
-| images and chart | the `images`, `chart` and `chart-e2e` jobs | nothing: the real images on a throwaway cluster | `k3d_check.sh` |
+| images and chart | the `images`, `chart` and `chart-e2e` jobs | nothing: the real images, as an ordinary user and on a throwaway cluster | `nonroot_check.sh`, `k3d_check.sh` |
 
 The newest suites hold the long, tangled cases:
 

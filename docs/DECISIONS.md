@@ -713,8 +713,9 @@ servers or skills, and keeps no sessions (`--setting-sources ""`, `--strict-mcp-
 container writes the login file and two other things in `~/.claude`: config backups and the process registry. Only the
 latest 5 config backups are kept, so every container start would push one of the PC's real backups out. So `backups` and
 `sessions` are covered with container scratch space (with that, three analyses and a restart left the test PC's backups
-as they were). The login file belongs to root, so the container runs as root as well and drops privileges instead
-([note 39](#note-39)). A long-lived token from `claude setup-token`, passed as a secret, would add a separate sign-in
+as they were). The login file is mode 600 and the PC user's, so `./sidenote` runs the container as that user, and
+drops privileges as well ([note 39](#note-39)). A root that could read the file would turn a refreshed token into root's
+file, out of reach of the PC's own CLI. A long-lived token from `claude setup-token`, passed as a secret, would add a separate sign-in
 step, so the login folder is shared instead. The port is opened on `127.0.0.1` only (the panel has no login and shows
 screen thumbnails). The port and address inside the container are fixed in compose, so `.env` cannot change them.
 
@@ -861,7 +862,7 @@ network (11 items), plus 6 panel round trips.
 Superseded by [note 47](#note-47).
 
 The `runner` service has no network at all (`network_mode: none`): the server reaches it through `/sock/runner.sock`, a
-socket only root may open, in the `runner-sock` volume the two share. It is root of its container with four
+socket only the runner and the server's group may open, in the `runner-sock` volume the two share. It is root of its container with four
 capabilities, for itself alone (SETUID, SETGID, CHOWN, KILL), and starts every compile and every run as a user of its
 own. A read-only root, `no-new-privileges`, caps of 128 processes, 1 GB of memory and 2 CPUs. The only writable places
 are the tmpfs `/work` (`exec`, mode 1777, because compiled programs run from there), `/tmp`, and `/out` (mode 0700: the
@@ -872,7 +873,7 @@ the panel.
 ### <a id="note-47"></a>47. The runner is isolated and does not break
 
 The runner has no network at all (`network_mode: none`); the server reaches it through `/sock/runner.sock`, a socket
-only root may open, in the `runner-sock` volume the two share (on Kubernetes it listens on TCP and a run must carry its
+only the runner and the server's group may open, in the `runner-sock` volume the two share (on Kubernetes it listens on TCP and a run must carry its
 token, [note 87](#note-87)). It is root of its container with four capabilities, for itself alone (SETUID, SETGID,
 CHOWN, KILL), and takes one request at a time: it starts every compile and every run as a user of its own, one of
 `RUN_UIDS` in turn, which can neither signal nor read it (`runner/runner.py`). Output goes to files in `/out`, a tmpfs
@@ -1556,8 +1557,10 @@ panel load would leave access records at three outside sites. Measured: 12 to 15
 
 ### <a id="note-39"></a>39. The containers run with privileges dropped
 
-Every container drops all capabilities and runs with `no-new-privileges`. The server keeps one capability, CHOWN (used
-only to hand folders left by the old uid 10001 image back), a read-only root filesystem (writes go only to the `/tmp`
+Every container drops all capabilities and runs with `no-new-privileges`. The server runs as the PC's user, as `./sidenote`
+passes it (`SIDENOTE_UID`; 0 under rootless Docker, where the container's root is that user). A one-off `server-init`,
+root with CHOWN alone and no network, hands the log folder and the speech model's volume to that user first. The server
+keeps one capability, CHOWN (of use only when it is root, to hand folders left by the old uid 10001 image back), a read-only root filesystem (writes go only to the `/tmp`
 and `/root` scratch space and the log, model, `~/.claude` and `~/.codex` binds), and caps of 512 processes, 8 GB and 8
 CPUs. The code runner keeps SETUID, SETGID, CHOWN and KILL, to start each run as a user of its own, with a read-only
 root filesystem, no network, 128 processes, 1 GB and 2 CPUs. The local model keeps no capability and its root filesystem

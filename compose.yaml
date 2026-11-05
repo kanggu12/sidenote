@@ -1,6 +1,6 @@
 ---
 # sidenote analysis server. Drive it with ./sidenote (up, down, status, logs) rather than compose
-# directly: ./sidenote also passes in this PC's Claude Code version.
+# directly: ./sidenote also passes in this PC's Claude Code version, its user and its time zone.
 name: sidenote   # the project name stays the same if the folder is renamed (volumes, network)
 services:
   server:
@@ -14,6 +14,13 @@ services:
         CODEX_VERSION: ${SIDENOTE_CODEX_VERSION:-0.165.0}
     image: sidenote:local
     container_name: sidenote
+    # The PC's user, which ./sidenote passes in: the login files in ~/.claude and ~/.codex are mode 600 and this user's. A
+    # root with no capabilities could not read them, and a root with more would turn a refreshed token into root's file,
+    # out of reach of the PC's own CLI. Everything it writes is in the mounts and tmpfs below, none of it root's alone.
+    user: "${SIDENOTE_UID:-0}:${SIDENOTE_GID:-0}"
+    depends_on:
+      server-init:
+        condition: service_completed_successfully
     # Started by `./sidenote up` and stopped by `./sidenote down` only; Docker starting does not bring
     # it back (no resident program on this PC).
     restart: "no"
@@ -27,7 +34,7 @@ services:
       - path: .env
         required: false
     environment:
-      TZ: ${TZ:-Asia/Seoul}   # log times in local time
+      TZ: ${TZ:-UTC}   # log times in the PC's time zone, which ./sidenote finds (UTC by hand)
       SIDENOTE_LOG_DIR: /data/logs
       # Writes the screen behind a "nothing to solve" to the log folder, for working out why.
       SIDENOTE_DEBUG_FRAMES: ${SIDENOTE_DEBUG_FRAMES-}
@@ -74,21 +81,23 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
-    # Hardening: nothing but CHOWN (the entrypoint hands folders from older images back to root),
-    # no privilege gain, a read-only root filesystem with small scratch areas, a process cap.
+    # Hardening: nothing but CHOWN, which does anything only when it runs as root (the entrypoint hands folders from older
+    # images back to root), no privilege gain, a read-only root filesystem with small scratch areas, a process cap.
     cap_drop: [ALL]
     cap_add: [CHOWN]
     security_opt:
       - no-new-privileges:true
     read_only: true
+    # A tmpfs takes its owner and mode from the folder it covers: /root is the image's, root's and closed to others, and
+    # /tmp is open to all. So the home is given to the user it is the home of, and everything under it with it.
     tmpfs:
       - /tmp:size=512m
-      - /root:size=256m
+      - /root:size=256m,uid=${SIDENOTE_UID:-0},gid=${SIDENOTE_GID:-0},mode=0700
       # Over the shared ~/.claude: the CLI here keeps its config backups and its process registry to
       # itself. Each start would otherwise add a backup of its own empty config to the PC's
       # backups/, which keeps only the newest five (measured: one real backup pushed out per start).
-      - /root/.claude/backups:size=16m
-      - /root/.claude/sessions:size=16m
+      - /root/.claude/backups:size=16m,uid=${SIDENOTE_UID:-0},gid=${SIDENOTE_GID:-0},mode=0700
+      - /root/.claude/sessions:size=16m,uid=${SIDENOTE_UID:-0},gid=${SIDENOTE_GID:-0},mode=0700
     pids_limit: 512
     # Whisper on CPU plus the agent's CLI; capped so a runaway cannot starve the host.
     mem_limit: 8g
@@ -97,6 +106,50 @@ services:
     # (hundreds of MB for one node crash). A limit of exactly 1 is what makes the kernel skip them.
     ulimits:
       core: 1
+
+  # Hands the two folders the server writes in to the user it runs as, and ends; the server waits for it. A named volume
+  # starts out root's, and a log folder may have been turned over to root by an older image. It runs as root with CHOWN
+  # alone and no network. No DAC_OVERRIDE, so a folder of another user's that is closed to others is first made root's in
+  # order to look inside, and -depth changes each folder after what it holds, for the same reason. It always ends well: on
+  # a mount that takes no chown (a Windows drive) the server's own start says what it cannot write. The file it leaves in
+  # the volume is what keeps the handover: Docker gives a named volume that is still empty the uid of the image's folder
+  # again each time one is mounted.
+  server-init:
+    image: sidenote:local
+    container_name: sidenote-init
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    environment:
+      TARGET_UID: ${SIDENOTE_UID:-0}
+      TARGET_GID: ${SIDENOTE_GID:-0}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        touch /data/hf/.handed-over
+        for d in /data/hf /data/logs; do
+          [ "$$(stat -c %u "$$d")" = "$$TARGET_UID" ] || chown 0:0 "$$d"
+          find "$$d" -depth \( ! -uid "$$TARGET_UID" -o ! -gid "$$TARGET_GID" \) -exec chown -h "$$TARGET_UID:$$TARGET_GID" {} +
+        done 2>/dev/null
+        exit 0
+    volumes:
+      - hf-cache:/data/hf
+      - ${SIDENOTE_LOG_PATH:-${HOME}/.local/state/sidenote/logs}:/data/logs
+    healthcheck:
+      disable: true     # the image's check asks for the server, which this is not
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    pids_limit: 32
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
 
   # Runs the code from a solution and returns its real output. Isolated: no network at all, a
   # read-only root filesystem, process and memory capped, and every compile and every run under a
@@ -113,11 +166,12 @@ services:
     # it they stay as zombies and use up the process limit until C/C++ cannot compile any more.
     init: true
     # No network at all: the server reaches it through the socket in the runner-sock volume, which
-    # only root (the runner here, the server there) may open.
+    # only the runner and the server's group may open (mode 0660, or 0600 with the server as root).
     network_mode: none
     environment:
-      TZ: ${TZ:-Asia/Seoul}
+      TZ: ${TZ:-UTC}
       RUNNER_SOCKET: /sock/runner.sock
+      RUNNER_SOCKET_GID: ${SIDENOTE_GID:-0}
     volumes:
       - runner-sock:/sock
     # Root of the container with four capabilities, for the runner alone: it starts each compile and
@@ -164,7 +218,7 @@ services:
     networks:
       - llmnet
     environment:
-      TZ: ${TZ:-Asia/Seoul}
+      TZ: ${TZ:-UTC}
       # A screenshot is a few thousand tokens and the prompt about two thousand; 16k leaves room
       # for scroll-stitched tiles and the answer.
       OLLAMA_CONTEXT_LENGTH: ${SIDENOTE_LOCAL_CONTEXT:-16384}
@@ -221,7 +275,7 @@ services:
     # A fresh secret on every start; nothing else is configured by environment.
     entrypoint: ["/bin/sh", "-c", "export SEARXNG_SECRET=\"$$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)\"; exec /usr/local/searxng/entrypoint.sh"]
     environment:
-      TZ: ${TZ:-Asia/Seoul}
+      TZ: ${TZ:-UTC}
       FORCE_OWNERSHIP: "false"
     volumes:
       - searxng-conf:/etc/searxng                               # named, so a recreate reuses it

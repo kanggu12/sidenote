@@ -689,6 +689,24 @@ def _in_its_container() -> bool:
         return False
 
 
+def _share_socket(path: str) -> None:
+    """Open the socket to the server's group, when the server runs as the PC's user instead of root (compose.yaml's
+    RUNNER_SOCKET_GID). The group, not the user: this process has no CAP_DAC_OVERRIDE, so its own health check needs the
+    socket to stay root's. A run's user has a group of its own and no other, so it stays out, unless the server's group is
+    one of those: then the socket stays closed, as a server without code checks is better than runs that can reach it."""
+    try:
+        gid = int(os.environ.get("RUNNER_SOCKET_GID") or 0)
+    except ValueError:
+        gid = 0
+    if not gid:   # the server is root too: the file being root's is all it needs
+        return
+    if gid in RUN_UIDS:
+        print(f"RUNNER_SOCKET_GID {gid} is the group of a run's user: the socket stays closed to it", flush=True)
+        return
+    os.chown(path, -1, gid)   # before the mode: the mode must never give the group to root's group for a moment
+    os.chmod(path, 0o660)
+
+
 def main() -> None:
     if sys.argv[1:] == ["--health"]:
         sys.exit(_health())
@@ -714,7 +732,7 @@ def main() -> None:
         DIRTY.set()
         print("leftovers from an earlier run could not be removed: unhealthy until restarted", flush=True)
     path = os.environ.get("RUNNER_SOCKET")
-    if path:   # the server's only way in: a socket only root (the server in its own container) may open
+    if path:   # the server's only way in: a socket only this process and the server's group may open
         try:
             os.unlink(path)
         except FileNotFoundError:
@@ -723,6 +741,7 @@ def main() -> None:
         srv = UnixServer(path, Handler)
         os.umask(old)
         os.chmod(path, 0o600)
+        _share_socket(path)
         print(f"sidenote runner on {path}", flush=True)
     else:
         port = int(os.environ.get("RUNNER_PORT", "8000"))
