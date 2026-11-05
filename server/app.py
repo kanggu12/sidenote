@@ -382,6 +382,9 @@ class AppState:
     # (after_the_answer), and does not answer it again. A place, not its words: the same words said again later are asked again.
     voice_answered_to: int = 0
     voice_retake_to: int = 0      # the same for the spoken problem waiting to be asked again (voice_retake)
+    # When a spoken problem began waiting behind an analysis (0: none is). Age is counted from here while it waits, so what
+    # was said does not age out behind a long answer and leave nothing to ask (recent_group).
+    voice_held_at: float = 0.0
     last_closed: str = ""         # the words of the last sentence that ended or was noted (note_the_card)
     # The answers a problem seen again can point back to, by id, without their screens (remember_answer)
     answers: dict = field(default_factory=dict)
@@ -398,6 +401,7 @@ class AppState:
         self.voice_runs = 0
         self.voice_retake = ""        # a spoken problem waiting to be asked again is speech heard too
         self.voice_answered_to = 0
+        self.voice_held_at = 0.0
         self.last_closed = ""
         self.transcript = ""
         self.speech_epoch += 1
@@ -420,8 +424,9 @@ class AppState:
     def recent_group(self) -> list:
         """The spoken problem in progress: the latest run of utterances whose pauses are
         shorter than speech_group_gap (one problem read in several sentences), within
-        speech_context_sec. A longer pause means a new problem, so earlier ones drop out."""
-        cutoff = time.time() - CONFIG.speech_context_sec
+        speech_context_sec. A longer pause means a new problem, so earlier ones drop out. While a spoken problem waits for
+        its turn the age is counted up to when it began to wait: what is waiting has not been read yet."""
+        cutoff = (self.voice_held_at or time.time()) - CONFIG.speech_context_sec
         self.utterances = [u for u in self.utterances if u["ts"] >= cutoff]
         group: list = []
         for u in reversed(self.utterances):
@@ -1557,13 +1562,19 @@ VAD_TAIL_SEC = 20  # recent audio the VAD looks at each pass (covers the gap bet
 # tell you" is still the speaker going on, and so is having written or explained something: a task word counts in the
 # form that asks for the task. An English question word or task counts at the start of a clause: in the middle of one
 # it is mostly the speaker going on ("that is why", "we had to write", ", which was"). What misses this still goes,
-# once the speaker pauses (voice_waiting), so being strict here costs a few seconds and never a question.
+# once the speaker pauses (voice_waiting), so being strict here costs a few seconds and never a question. A sentence too
+# short to go at the pause (speech_min_chars) has only this test, so "정답은 뭘까", said with no question mark, is read here.
+# What a problem is written with ("값을 구하는 함수") counts unless its sentence ends in the past: that is somebody saying
+# what they did ("출력하는 부분을 고쳤습니다"). KO_PAST is that ending, up to the end of the sentence.
+KO_PAST = r"[^.!?…]*[았었였했짰갔왔봤됐줬썼쳤렸졌섰났샀](?:습니다|어요|죠|어|다)\s*(?:[.…]|$)"
 QUESTION_RE = re.compile(
-    r"\?|무엇(?!보다)|어떻게(?!든)|왜(?!냐)|어느(?!\s?(?:날|새|덧|정도))|몇(?!몇)|인가요|일까요|입니까|습니까|나요|까요|"
-    r"하시오|(?<!안녕)하세요|쓰시오|구하(?:시오|세요|라|는)|구해\s?(?:줘|주세요|주시|주실|보세요|봐)|고르(?:시오|세요|라)|"
+    r"\?|무엇(?!보다)|어떻게(?!든)|왜(?!냐)|어느(?!\s?(?:날|새|덧|정도))|몇(?!몇)|인가요|일까요|입니까|습니까|나요|(?<!그러니)까요|뭘까|"
+    r"맞나(?=\s*(?:[.!…]|$))|"
+    rf"하시오|(?<!안녕)(?<!참고)(?<!수고)(?<!고생)(?<!구독)하세요|쓰시오|구하(?:시오|세요|라|는(?!{KO_PAST}))|구해\s?(?:줘|주세요|주시|주실|보세요|봐)|고르(?:시오|세요|라)|"
     r"골라\s?(?:줘|주세요|주시|주실|보세요|봐)|말씀해\s?(?:주세요|주시|주실|보세요|봐)|주시겠|주실래|뭔가요|뭐예요|뭐에요|뭔지|뭐야|뭐지|뭐죠|뭐냐(?!면)|"
     r"알려\s?(?:줘|주세요|주실|줄래|주라)|가르쳐\s?(?:줘|주세요|주실|줄래)|"
-    r"(?:설명|작성|구현|계산)해\s?(?:줘|주세요|주시|주실|보세요|봐|라)|(?:반환|출력)하(?:시오|세요|라|는)|"
+    r"(?:설명|작성|구현|계산)해\s?(?:줘|주세요|주시|주실|보세요|봐|라)|"
+    rf"(?:반환|출력)하(?:시오|세요|라|는(?!{KO_PAST}))|"
     r"찾(?:으시오|으세요|아\s?(?:줘|주세요|주시|주실|보세요|봐|라))|맞으면|틀리면|옳은|옳지|아닌 것|"
     r"\b(?:true or false|which of (?:the|these|those|following))\b|"
     # the start of a clause, past the words a speaker opens with
@@ -1573,7 +1584,10 @@ QUESTION_RE = re.compile(
     r"what\s+(?!happened|we\b|i\b|they\b|he\b|she\b|it\b|you\b)\w+(?:\s+\w+){0,2}?\s+(?:is|are|does|do|did|can|could|should|would|will|has|have)\b|"
     # asking for a task, and asking politely
     r"(?:explain|describe|write|implement|find|calculate|compute|determine|choose|select|return|compare|define|"
-    r"tell me)\b|(?:can|could|would) you\b)|"
+    r"tell me|show me)\b|(?:can|could|would) you\b|"
+    # a task whose word also names a thing ("List comprehensions were slow", "Name resolution failed"): with what it asks for
+    r"name\s+(?:an?|the|one|two|three|four|five|some|\d+)\b|solve\s+(?:this|the|these|for)\b|give\s+(?:me|an?|one|two|three|some|\d+)\b|"
+    r"list\s+(?:the|all|some|every|one|two|three|four|five|\d+)\b|list\s+\w+\s*(?:[.!…]|$))|"
     # after a comma "which" goes on with the sentence, so only at the start of one
     r"(?:^|[.!?;:…]\s+)which\s+\w+", re.I)
 
@@ -1595,8 +1609,9 @@ RHETORICAL_RE = re.compile(
     r"^\W*(?:(?:so|and|but|then|well|okay|ok)[,\s]+)*(?:guess what|you know what|(?:you )?(?:know|see) what i mean|so what|what(?: then)?|"
     r"then what|what happened(?:\s+\w+){0,3}|(?:what|why|how|where|when)\s+did\s+(?:we|i)\b[^.?!…]*|"
     r"sorry|pardon|really|seriously|excuse me|is it|are you sure|you sure)\s*\?\W*$", re.I)
-# A tag at the end of a clause, with its question mark. "Is that right?" and "What is correct?" ask with the same
-# word, so without a comma before it a tag counts only in a clause that does not open as a question does.
+# A tag at the end of a clause, with its question mark, or the whole of a sentence ("Is that right?", "Okay?": a check on the
+# room, with nothing in it to answer, and it still goes at the pause). "Is it right to retry?" and "What is correct?" ask with the
+# same word, so without a comma before it a tag counts only in a clause that does not open as a question does.
 TAG_WORDS = (r"right|you know|okay|ok|yeah|correct|huh|eh|got it|agreed|you see|make sense|makes sense|"
              r"does that make sense|is that right|is that correct|"
              r"(?:is|are|was|were|do|does|did|wo|ca|could|should|would|has|have)n['’]?t\s+(?:it|that|they|we|you|he|she)")
@@ -2619,7 +2634,10 @@ async def load_speech(app: FastAPI) -> None:
         return
     ready_speech(tr)
     app.state.transcriber = tr
-    app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
+    # A choice in the panel that loaded first has its worker running, and that worker reads this model at its next pass. A
+    # second one would cut every sentence twice, and nothing would hold it to cancel at shutdown.
+    if getattr(app.state, "transcribe_worker", None) is None or app.state.transcribe_worker.done():
+        app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
     if getattr(tr, "available", False):
         log.info("speech model ready (%s)", model)
         await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None),
@@ -2965,8 +2983,23 @@ async def analysis_worker(app: FastAPI) -> None:
         # written, 7 to 81 s after they started. With nothing written yet the problem is still being read, and the longer
         # version replaces it below.
         writing = bool(inflight and not inflight.done() and STATE.analysis_wrote)
+        # Held back for any of these, its words stop aging until its turn (recent_group); no flag, nothing is held for it
+        if not STATE.voice_pending:
+            STATE.voice_held_at = 0.0
+        elif STATE.paused or screen_busy or writing or time.time() < STATE.retry_after:
+            STATE.voice_held_at = STATE.voice_held_at or time.time()
         if STATE.voice_pending and not STATE.paused and not screen_busy and not writing and time.time() >= STATE.retry_after:
             STATE.voice_pending = False
+            # Read first, with the age still held: nothing to ask leaves whatever runs alone, and starts nothing. An empty
+            # voice would start a screen analysis from here, past the checks a screen goes through below.
+            group = STATE.recent_group()
+            STATE.voice_held_at = 0.0
+            if STATE.voice_retake and STATE.voice_retake in " ".join(u["text"] for u in group):
+                STATE.voice_retake = ""   # the same problem read on: this run carries the stopped one's words
+            # What the last answer was about is not asked again: this run is what came after it. Nothing after it: nothing to do
+            speech = after_the_answer(group, STATE.voice_answered_to)
+            if not speech:
+                continue
             if inflight and not inflight.done():   # only ever an earlier spoken problem (screen_busy above)
                 STATE.cancel_reason = "voice"
                 inflight.cancel()
@@ -2974,18 +3007,11 @@ async def analysis_worker(app: FastAPI) -> None:
                     await inflight
                 except asyncio.CancelledError:
                     pass
-            group = STATE.recent_group()
-            if STATE.voice_retake and STATE.voice_retake in " ".join(u["text"] for u in group):
-                STATE.voice_retake = ""   # the same problem read on: this run carries the stopped one's words
-            # What the last answer was about is not asked again: this run is what came after it. Nothing after it: nothing to do
-            speech = after_the_answer(group, STATE.voice_answered_to)
-            if group and not speech:
-                continue
             STATE.last_analyze_ts = time.time()
             STATE.analysis_seq += 1
             inflight_frame, inflight_voice = STATE.latest_frame, True
             inflight_speech, inflight_retake = speech, False
-            inflight_upto = group[-1]["end"] if group else 0
+            inflight_upto = group[-1]["end"]
             inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=speech, upto=inflight_upto))
             continue
 
@@ -3208,14 +3234,16 @@ def create_app() -> FastAPI:
                         agent_model=CONFIG.agent_model or None, mode=effective_mode(),
                         screen=STATE.screen_on, sound=STATE.audio_on, paused=STATE.paused)
 
-        async def prune_loop() -> None:   # age-based retention also while the server stays up
+        async def prune_loop() -> None:   # age-based retention at the start and while the server stays up
+            # At the start too: a server run for a few hours at a time, with nothing new being kept, would otherwise never
+            # come to this, and what was heard would stay past its age
             while True:
-                await asyncio.sleep(6 * 3600)
                 try:     # a full disk is when this matters most: one failure does not end it for good
                     telemetry.prune()
                     await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, HISTORY.prune)
                 except Exception:
                     log.exception("pruning failed; trying again in six hours")
+                await asyncio.sleep(6 * 3600)
 
         app.state.prune_task = asyncio.create_task(prune_loop())
         app.state.auth_task = asyncio.create_task(engine_watch())

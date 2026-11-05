@@ -385,7 +385,21 @@ async def model_choice():
     A.make_transcriber = lambda cfg, model="": (tried.append(model), Stand(model))[1]
     await A.load_speech(APP)
     check("a saved model that loads is the one that runs", tried == ["medium"] and model_in_use() == "medium", tried)
+    # A choice that loaded first has its worker running: the start's load, ending after it, starts no second one
     SETTINGS.values["whisper_model"] = "small"
+    started = []
+    A.transcription_worker = lambda app: (started.append(app), asyncio.sleep(0))[1]
+    A.make_transcriber = lambda cfg, model="": Stand(model)
+    running = asyncio.create_task(asyncio.sleep(60))
+    APP.state.transcribe_worker = running
+    await A.load_speech(APP)
+    check("a worker already running is the one that goes on: a second would cut every sentence twice",
+          started == [] and APP.state.transcribe_worker is running and model_in_use() == "small", started)
+    running.cancel()
+    await asyncio.gather(running, return_exceptions=True)
+    await A.load_speech(APP)
+    check("...and one that has ended is started again", len(started) == 1 and APP.state.transcribe_worker is not running, started)
+    await asyncio.gather(APP.state.transcribe_worker, return_exceptions=True)
     A.make_transcriber = real_make
     A.transcription_worker = worker
     A.CONFIG.transcriber, A.CONFIG.audio_enabled = was_tr, was_audio

@@ -103,8 +103,7 @@ class Pipe:
 
 
 def speak(text="이 문제 좀 풀어 줘"):
-    """What the transcriber would have left behind: recent_speech() reads these, and an empty one
-    makes the worker start a *screen* analysis from the voice branch, which looks like a pass."""
+    """What the transcriber would have left behind: the voice branch reads these, and starts nothing without them."""
     now = time.time()
     # A second of speech, half a second after the last: one run of speech, each at its own place in the sound
     at = A.STATE.utterances[-1]["end"] + 8000 if A.STATE.utterances else 0
@@ -602,6 +601,58 @@ async def case_a_newer_problem_takes_the_place_of_the_one_waiting():
     A.broadcast = lambda msg: asyncio.sleep(0)
 
 
+async def case_what_waits_does_not_age_out():
+    """What waits behind an answer being written is still asked, however long that answer takes; and with nothing to ask nothing starts."""
+    was = knobs(speech_context_sec=0.5)
+    pipe, det = Pipe(), Detector()
+    pipe.wrote = "TYPE: essay\nANSWER: 답"
+    pipe.answer = "TYPE: essay\nANSWER: 답"
+    msgs = said_to_panel()
+    task = await start_worker(pipe, det)
+    sentence("How does a bloom filter answer so fast?", 0); A.STATE.voice_pending = True
+    await asyncio.sleep(0.25)
+    sentence("And what makes a false yes happen?", 1); A.STATE.voice_pending = True
+    await asyncio.sleep(0.9)                  # the answer goes on past the age of what was said
+    check("the answer is still being written, and the newer question waits", len(pipe.started) == 1 and A.STATE.voice_pending is True, f"{pipe.started}")
+    await next_answer(pipe, msgs, 1)
+    await until(lambda: len(pipe.started) == 2)
+    check("what waited is asked when the answer ends, and it counts as speech", pipe.started[1:] == [(2, True)], f"{pipe.started}")
+    check("...in its own words", pipe.words[1:] == ["And what makes a false yes happen?"], f"{pipe.words}")
+    await next_answer(pipe, msgs, 2)
+    check("age counts as usual again once nothing waits", A.STATE.voice_held_at == 0.0, A.STATE.voice_held_at)
+    # A flag with no words behind it at all, and a screen already answered: nothing starts from the voice branch
+    await asyncio.sleep(0.6)
+    A.STATE.utterances.clear()
+    push("answered")
+    A.STATE.latest_frame.sig = "answered"
+    det.committed.append(A.STATE.latest_frame)
+    n = len(pipe.started)
+    A.STATE.voice_pending = True
+    await asyncio.sleep(0.4)
+    check("a flag with nothing left to read starts no analysis, of the speech or of the screen", len(pipe.started) == n, f"{pipe.started}")
+    check("...and goes down", A.STATE.voice_pending is False)
+    await stop(task)
+    knobs(**was)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
+async def case_nothing_to_ask_stops_nothing():
+    """A flag with no new words does not stop the spoken problem that is still being read."""
+    pipe, det = Pipe(), Detector()
+    pipe.answer = "TYPE: essay\nANSWER: 답"
+    msgs = said_to_panel()
+    task = await start_worker(pipe, det)
+    sentence("What does a bloom filter store?", 0); A.STATE.voice_pending = True
+    await asyncio.sleep(0.3)
+    A.STATE.voice_answered_to = A.STATE.utterances[-1]["end"]   # its words have their answer by another way (Reanalyze)
+    A.STATE.voice_pending = True
+    await asyncio.sleep(0.3)
+    check("the one still being read is not stopped for nothing", pipe.cancelled == [] and len(pipe.started) == 1, f"{pipe.cancelled} {pipe.started}")
+    await next_answer(pipe, msgs, 1)
+    await stop(task)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
 async def case_first_words_end_the_asking():
     """Once the answer is being written, what is said next asks for itself: it no longer extends the question."""
     pipe, det = Pipe(), Detector()
@@ -656,7 +707,8 @@ async def main():
                  case_quiet_after_a_run_of_empty_answers, case_an_answer_does_not_wait_for_its_picture,
                  case_a_problem_seen_again_is_the_one_asked_about, case_nothing_written_yet_the_longer_version_replaces_it,
                  case_an_answer_being_written_is_let_finish, case_a_quizs_options_go_with_their_question, case_a_place_in_the_sound_not_its_words,
-                 case_a_newer_problem_takes_the_place_of_the_one_waiting, case_first_words_end_the_asking,
+                 case_a_newer_problem_takes_the_place_of_the_one_waiting, case_what_waits_does_not_age_out,
+                 case_nothing_to_ask_stops_nothing, case_first_words_end_the_asking,
                  case_after_nothing_to_solve_it_is_all_still_to_read):
         print(case.__doc__.splitlines()[0])
         await case()

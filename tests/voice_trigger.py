@@ -207,7 +207,8 @@ async def case_asking_to_be_told_is_a_question():
 
 
 # What is asked of the listener, what only sounds like it, and what is neither. All made up.
-ASKED = ("What is GTID?", "TCP와 UDP의 차이가 뭔가요?", "GTID가 뭔가요?", "Can you explain the difference between a process and a thread?",
+ASKED = ("보기 중 정답은 뭘까", "이 설정이 맞나", "List joins.", "Name three kinds of locks.", "Give me an example of a race.", "Solve this for x.",
+         "Show me a merge.", "최댓값을 구하는 함수를 작성하시오.", "문자열을 출력하는 프로그램을 만드는 문제입니다.", "What is GTID?", "TCP와 UDP의 차이가 뭔가요?", "GTID가 뭔가요?", "Can you explain the difference between a process and a thread?",
          "So what is the difference between a mutex and a semaphore?", "and what about IPv6?", "what port does redis use by default",
          "how many bytes are in an ipv6 address", "Why is UDP faster than TCP?", "explain how a bloom filter works",
          "Could you walk me through a TLS handshake", "Write a function that reverses a list.", "Now, compare REST and gRPC.",
@@ -221,7 +222,7 @@ ASKED = ("What is GTID?", "TCP와 UDP의 차이가 뭔가요?", "GTID가 뭔가�
          "뭘 써야 하죠?", "가격이 얼마죠?", "어딜 고쳐야 하죠?", "메모리는 얼마나 필요하죠?", "설명해 주실 수 있나요?", "이 쿼리 설명해 봐", "최댓값을 구해 보세요",
          "If someone asked you to design a rate limiter, how would you do it?", "What is the most frequently asked question about Kubernetes?",
          "So, like, what is a pod?", "이게 뭔지 물어봐도 될까요?", "TCP랑 UDP 차이가 뭐냐고 묻는다면 어떻게 답할 건가요?")
-TOLD = ("So one restart costs us about nine minutes, right?", "The disk was full, you know?", "We kept the old index, okay?",
+TOLD = ("Is that right?", "Okay?", "So one restart costs us about nine minutes, right?", "The disk was full, you know?", "We kept the old index, okay?",
         "Then the pager went off, yeah?", "The certificate had expired, correct?", "That was the old cluster, isn't it?",
         "It writes to the log first, doesn't it?", "So that took two hours right?", "Right?", "You know?", "Does that make sense?", "Is that correct?",
         "The on-call engineer kept asking, was the disk full or did the replica fall behind?", "In the review somebody asked, could we have caught this?",
@@ -230,7 +231,8 @@ TOLD = ("So one restart costs us about nine minutes, right?", "The disk was full
         "So what did we do?", "Why did we pick Kafka?", "How did I fix it?", "What happened after that?",
         "그래서 사십 분쯤 걸렸어요, 그렇죠?", "서버가 또 죽었어요, 맞죠?", "다들 아시죠?", "그건 다 알죠?", "그렇죠?", "맞죠?", "알죠?", "서버가 죽었잖아요?", "아시겠어요?",
         "왜 카프카를 골랐냐고요?", "왜 그런지 물어보시길래 그래프를 보여 드렸어요?", "Sorry?", "Is it?", "Really?", "Pardon?", "He was like, what is this?")
-NEITHER = ("We moved the whole team to GitHub Actions last year.", "That is why we moved to Postgres.", "So I had to write a small script to find the bad rows.",
+NEITHER = ("출력하는 부분을 고쳤습니다.", "값을 구하는 함수를 짰습니다.", "반환하는 값이 없었어요.", "그러니까요.", "참고하세요.", "수고하세요.", "이게 맞나 싶었어요.",
+           "List comprehensions were slow.", "Name resolution failed.", "Give up on that.", "We moved the whole team to GitHub Actions last year.", "That is why we moved to Postgres.", "So I had to write a small script to find the bad rows.",
            "We did not know what was going on.", "This is how we fixed it.", "It came back, which was a relief.", "What we did was drain the node first.",
            "What happened was the disk filled up.", "I will explain that later.", "We return the value and go on.",
            "My manager asked why the deploy had failed.", "디스크가 꽉 찬 거냐고 계속 물어보셨어요.",
@@ -294,6 +296,10 @@ async def case_short_questions_and_what_is_not_taken():
     listening()
     await heard(stub, tracker, [(2.0, 4.0)], {2.0: "What's TCP?"}, upto=10.0)
     check("so is 'What's TCP?'", A.STATE.voice_pending is True)
+    stub, tracker = Stub(), fresh_state()
+    listening()
+    await heard(stub, tracker, [(2.0, 4.0)], {2.0: "정답은 뭘까"}, upto=10.0)
+    check("so is '정답은 뭘까', with no question mark, which has no pause to go at", A.STATE.voice_pending is True and [m.get("why") for m in said if m["type"] == "utterance"] == [None], said)
     stub, tracker = Stub(), fresh_state()
     listening()
     await heard(stub, tracker, [(2.0, 4.0)], {2.0: "뭐야?"}, upto=10.0)
