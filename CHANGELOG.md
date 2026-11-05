@@ -5,6 +5,15 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-05
+
+### Added
+
+- Running with no internet: [a guide](https://github.com/kanggu12/sidenote/blob/main/docs/air-gapped.md) to carrying the
+  images, the models and the capture packages to a closed network, `SIDENOTE_OFFLINE=1` so that `./sidenote up` builds and
+  pulls nothing, and `SIDENOTE_WHEELS` for `./sidenote setup-capture`. Cloud agents and web search cannot work there, and the
+  guide says so.
+
 ## [0.1.2] - 2026-11-05
 
 ### Changed
@@ -124,7 +133,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/kanggu12/sidenote/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kanggu12/sidenote/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kanggu12/sidenote/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kanggu12/sidenote/releases/tag/v0.1.0
