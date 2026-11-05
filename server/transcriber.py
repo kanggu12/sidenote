@@ -50,7 +50,7 @@ LANGS = ("ko", "en")  # speech languages the tool supports
 #
 # Those spans were all 2 s or shorter. A whole sentence is another matter, and Whisper can tell it: of 73 English sentences read by
 # people, held to Korean 30 came back in Korean with what was said lost, 12 of them as one phrase over and over, while each had
-# p(en) of 0.97 or more (0.95 or more in its first 3 s). Of 457 Korean ones, clean and with noise over a phone's band, cut from
+# p(en) of 0.97 or more (0.94 or more over its first 3 s). Of 457 Korean ones, clean and with noise over a phone's band, cut from
 # 3 s up to the whole, 13 of 1830 were read as English and none of those reached 0.6, where at 2 s one reached 0.9. So what is at
 # least HOLD_SEC long and that sure stays as it sounds.
 #
@@ -61,7 +61,7 @@ VOTE_DECAY = 0.7    # per utterance: the vote remembers about the last three, so
                     # switches language is followed instead of overruled for the next ten
 VOTE_TOWARDS = "ko"  # the one language the vote may move an utterance to
 HOLD_SEC = 3.0       # an utterance this long is held to the vote only when Whisper is not sure of it: shorter ones it can be wrong about
-HOLD_SURE = 0.8      # the odds that count as sure, between the Korean misread at 0.6 at most and the English at 0.95 at least
+HOLD_SURE = 0.8      # the odds that count as sure, between the Korean misread at 0.6 at most and the English at 0.94 at least
 HELD_SENTENCE_SEC = 12.0   # as long as a sentence is: decoded once when the vote holds it to Korean
 
 # The live line is read from whatever the last seconds hold, a sentence cut off in mid-word among it. A few cuts send Whisper
