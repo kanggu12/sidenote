@@ -170,8 +170,8 @@ kubectl -n sidenote exec -i deploy/sidenote-server -- tar xf - --no-same-owner -
 kubectl -n sidenote rollout restart deploy/sidenote-server
 ```
 
-`--no-same-owner` gives the files to the pod's own user. The pods run as root with its powers dropped, and unpacked as they
-were on the other PC, the files would belong to someone the pod can no longer read for.
+`--no-same-owner` makes the files the pod's own. The pods run as root with most of its powers dropped, and files that kept the
+owner they had on the other PC could not be read there.
 
 ## A new version
 
