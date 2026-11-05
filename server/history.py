@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -31,6 +32,20 @@ HEARD_ROW = 96
 HEARD_WORDS = 2
 
 
+def _private(path) -> None:
+    """The file and SQLite's two beside it readable by this user alone: they hold the answers and, with Keep what is heard on,
+    what other people said. Only a file this user owns: another's mode is not this server's to change. SQLite gives the -wal
+    and -shm it makes later the mode of the database, so this done at the open holds. No uid (Windows): the folder's ACL decides."""
+    if not hasattr(os, "getuid"):
+        return
+    for name in (str(path), f"{path}-wal", f"{path}-shm"):
+        try:
+            if os.stat(name).st_uid == os.getuid():
+                os.chmod(name, 0o600)
+        except OSError:   # not there (yet), or a file system with no modes: the history goes on all the same
+            pass
+
+
 class History:
     def __init__(self, path, days: float = 90.0, max_mb: float = 200.0, heard_mb: float = 20.0):
         self.days, self.max_bytes = days, int(max_mb * 1024 * 1024)
@@ -42,8 +57,9 @@ class History:
         if not path:
             return
         try:
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).parent.mkdir(mode=0o700, parents=True, exist_ok=True)   # a folder made here is this user's alone
             self._db = sqlite3.connect(str(path), check_same_thread=False)
+            _private(path)                                        # before anything is written, and so before any -wal is made
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.execute("PRAGMA secure_delete=ON")           # what Clear removes does not stay readable in free pages
             self._db.execute(f"PRAGMA journal_size_limit={8 * 1024 * 1024}")   # and the WAL does not stay large
@@ -63,6 +79,7 @@ class History:
                              " secs REAL NOT NULL, lang TEXT NOT NULL, words TEXT NOT NULL)")
             self._db.execute("CREATE INDEX IF NOT EXISTS heard_day ON heard (day, ts)")   # one day's lines, and the days
             self._db.commit()
+            _private(path)                                        # a -wal and -shm left by an older server's mode, now they are open
         except (sqlite3.Error, OSError) as exc:   # an answer is never lost to this: the panel only has less to look back on
             log.warning("no history (%s)", exc)
             self._db = None

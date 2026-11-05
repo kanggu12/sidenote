@@ -50,7 +50,7 @@ def setup() -> Path | None:
         return None
     d = Path(LOG_DIR)
     try:
-        d.mkdir(parents=True, exist_ok=True)
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)   # one made here is this user's alone: it holds what was heard and seen
         probe = d / ".write-test"
         probe.write_text("ok")
         probe.unlink()
