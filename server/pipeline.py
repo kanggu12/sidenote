@@ -221,6 +221,13 @@ def placed_region(region, view, windows=None) -> bool:
     return located(within(region, view), windows) is not None
 
 
+def box_aspect(frame, view) -> float:
+    """The height over the width of the picture a REGION line was written on, `view` of the screen (heads.TALL_BOX); 0 with
+    no screen to go by."""
+    w, h = (view[2] - view[0]) * getattr(frame, "width", 0), (view[3] - view[1]) * getattr(frame, "height", 0)
+    return h / w if w > 0 and h > 0 else 0.0
+
+
 def located(box, windows=None) -> tuple | None:
     """The problem box, or None when it does not place the problem: (nearly) the whole screen (measured:
     a 4K screen whose text the model could not read, two problems side by side, a task next to a
@@ -1419,7 +1426,7 @@ class Pipeline:
         text = build_user_text(transcript, pages, voice, bool(look))
         if think == "never" and mode in ("off", "verify"):   # local only, no thinking at all: one direct pass
             res = await local.deep(look, text, on_delta, think=False)
-            return self._local_outcome(res, view, stages, think=False, windows=windows)
+            return self._local_outcome(res, view, stages, think=False, windows=windows, aspect=box_aspect(frame, view))
 
         # When the agent could take this screen, the first pass gets local_first_token_sec for its first token: nothing
         # by then means another program has the GPU, and waiting out the whole first-pass limit cost 45 s each time.
@@ -1494,15 +1501,16 @@ class Pipeline:
             await self._warn(t("Nothing to solve in the drawn region · clear the region on the screen card to see "
                                "the whole screen"))
         if f.text is not None:   # answered at once (or nothing to solve)
-            region = parse_region(f.text, local.region_scale)
+            aspect = box_aspect(frame, view)
+            region = parse_region(f.text, local.region_scale, aspect)
             return Outcome(text=f.text, model=(f.model or local.model) + (f" (web {len(f.searches)})" if f.searches else ""),
                            usage=f.usage, cost_usd=None, engine="local",
                            region=within(region, view) if region else None,
                            region_placed=placed_region(region, view, windows),
-                           crop_box=self._box(f.text, local.region_scale, view, windows),
-                           seen=self._seen(f.text, local.region_scale, view), sent=sent, stages=stages)
+                           crop_box=self._box(f.text, local.region_scale, view, windows, aspect),
+                           seen=self._seen(f.text, local.region_scale, view, aspect), sent=sent, stages=stages)
 
-        seen = self._seen(f.head, local.region_scale, view)   # the model's box, for the duplicate check
+        seen = self._seen(f.head, local.region_scale, view, box_aspect(frame, view))   # the model's box, for the duplicate check
         box = located(seen, windows) if seen else None        # where the problem is, for the crops
         hard = f.type in DEEP_TYPES or f.route != "fast"     # the fast pass's own call (unknown counts as hard)
         # The problem answered a little while ago, seen again: scrolled, moved, or come back to after another screen.
@@ -1665,11 +1673,11 @@ class Pipeline:
             declined.stages = stages
             declined.sent = sent + _searches(getattr(res, "searches", None))   # what it searched for went out all the same
             return declined
-        out = self._local_outcome(res, view, stages, think=on, windows=windows)
+        out = self._local_outcome(res, view, stages, think=on, windows=windows, aspect=box_aspect(frame, view))
         out.sent = sent + out.sent
         # What may go out later (the verify mode's crop, a follow-up to the agent) is cut from the fast pass's box, as
         # the agent's crop is, and the duplicate check watches that box too. The thinking pass at times writes its
-        # REGION y first, Gemma's own order (the fast pass never did), and with a zoom or the halves beside the
+        # REGION y first, Gemma's own order, in a shape TALL_BOX cannot tell, and with a zoom or the halves beside the
         # screen it may write it for another image: either can place the box in another window.
         out.crop_box = box
         out.seen = seen   # and the verify mode reads the agent's words from it as the answer's own path would (box_first)
@@ -1682,23 +1690,23 @@ class Pipeline:
         return out
 
     @staticmethod
-    def _seen(text: str, scale: float, view) -> tuple | None:
-        b = region_box(text, scale)
+    def _seen(text: str, scale: float, view, aspect: float = 0.0) -> tuple | None:
+        b = region_box(text, scale, aspect)
         return within(b, view) if b else None
 
     @staticmethod
-    def _box(text: str, scale: float, view, windows=None) -> tuple | None:
-        b = Pipeline._seen(text, scale, view)
+    def _box(text: str, scale: float, view, windows=None, aspect: float = 0.0) -> tuple | None:
+        b = Pipeline._seen(text, scale, view, aspect)
         return located(b, windows) if b else None
 
-    def _local_outcome(self, res, view, stages, think: bool, windows=None) -> Outcome:
+    def _local_outcome(self, res, view, stages, think: bool, windows=None, aspect: float = 0.0) -> Outcome:
         scale = self.engines.local.region_scale
-        region = parse_region(res.text, scale)
+        region = parse_region(res.text, scale, aspect)
         stages = {**stages, "think": think}
         return Outcome(text=res.text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
                        region=within(region, view) if region else None,
                        region_placed=placed_region(region, view, windows),
-                       crop_box=self._box(res.text, scale, view, windows),
+                       crop_box=self._box(res.text, scale, view, windows, aspect),
                        sent=_searches(getattr(res, "searches", None)), stages=stages)
 
     async def _editor_note(self, local, look, kind: str) -> tuple[str, str]:

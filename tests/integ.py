@@ -127,6 +127,21 @@ def test_heads():
     check("head_of answer", "hash map" in ans, ans)
     box = heads.parse_region(t, 1000)  # 100/1000=0.1, pulled in 0.01 at each edge -> 0.11
     check("parse_region scaled + inset", box is not None and abs(box[0] - 0.11) < 1e-6, str(box))
+    # a wide problem written y first reads as a strip standing on end: on a 16:9 screen this one is 234 by 608 pixels
+    wide = 1080 / 1920
+    on_end = "TYPE: mcq\nREGION: 189 242 311 805\n"
+    check("a box standing on end is read the other way round", heads.region_box(on_end, 1000, wide) == (0.242, 0.189, 0.805, 0.311),
+          str(heads.region_box(on_end, 1000, wide)))
+    check("...and pulled in from there", heads.parse_region(on_end, 1000, wide) == (0.252, 0.199, 0.795, 0.301),
+          str(heads.parse_region(on_end, 1000, wide)))
+    check("...only when the picture's shape is known", heads.region_box(on_end, 1000) == (0.189, 0.242, 0.311, 0.805))
+    check("a problem in the left half of the screen stays where it is, 1.1 times as tall as wide",
+          heads.region_box("REGION: 0 0 500 1000\n", 1000, wide) == (0.0, 0.0, 0.5, 1.0))
+    check("...and one in a narrow pane down the side, up to twice as tall",
+          heads.region_box("REGION: 0 100 300 1000\n", 1000, wide) == (0.0, 0.1, 0.3, 1.0))
+    check("the shape is in pixels: on a monitor stood upright a problem across it stays, and a strip does not",
+          heads.region_box("REGION: 100 100 900 900\n", 1000, 1920 / 1080) == (0.1, 0.1, 0.9, 0.9)
+          and heads.region_box("REGION: 100 100 300 800\n", 1000, 1920 / 1080) == (0.1, 0.1, 0.8, 0.3))
     # within maps a box given in fractions of `outer` into screen coords (no clamp; region_box clamps)
     check("within maps into outer", heads.within((0.1, 0.1, 0.5, 0.5), (0.0, 0.0, 0.5, 1.0)) == (0.05, 0.1, 0.25, 0.5))
     # a TYPE inside a code block is not a head
@@ -883,7 +898,7 @@ def test_window_clip():
     _, cut, _ = crop_image(frame, (0.31, 0.2, 0.37, 0.4))
     check("a wide left margin still picks the problem's window", abs(cut[0] - 0.3) < 1e-9, str(cut))
 
-    from server.pipeline import Pipeline, clip_to_window, in_front, located
+    from server.pipeline import Pipeline, box_aspect, clip_to_window, in_front, located
     side = [(0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 1.0, 1.0)]
     got = clip_to_window((0.3, 0.1, 0.8, 0.5), side)
     check("a box over two windows goes to the one showing more of it", got == (0.5, 0.1, 0.8, 0.5), str(got))
@@ -899,6 +914,12 @@ def test_window_clip():
     check("the fast pass's box goes through the same test",
           Pipeline._box("TYPE: coding\nREGION: 300 100 700 500\n", 1000, (0.0, 0.0, 1.0, 1.0), side) is None
           and Pipeline._box("TYPE: coding\nREGION: 550 100 900 500\n", 1000, (0.0, 0.0, 1.0, 1.0), side) is not None)
+    check("a box written y first lands in the window it means: read as written it stands in the other one",
+          Pipeline._box("TYPE: coding\nREGION: 100 550 200 950\n", 1000, (0.0, 0.0, 1.0, 1.0), side, 1080 / 1920) == (0.55, 0.1, 0.95, 0.2)
+          and Pipeline._box("TYPE: coding\nREGION: 100 550 200 950\n", 1000, (0.0, 0.0, 1.0, 1.0), side) == (0.1, 0.55, 0.2, 0.95))
+    check("the picture a box was written on is the part of the screen the model saw",
+          abs(box_aspect(type("F", (), {"width": 1920, "height": 1080})(), (0.0, 0.0, 0.5, 1.0)) - 1.125) < 1e-9
+          and box_aspect(None, (0.0, 0.0, 1.0, 1.0)) == 0.0)
     # a messenger in front of the problem's window: its part of the crop is painted over, pixel for pixel
     red = io.BytesIO()
     Image.new("RGB", (200, 120), (255, 0, 0)).save(red, format="PNG")

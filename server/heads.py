@@ -51,9 +51,18 @@ _NUM = r"(-?\d+(?:\.\d+)?)"
 REGION_RE = re.compile(rf"^\s*REGION:\s*[\[(]?\s*{_NUM}[\s,]+{_NUM}[\s,]+{_NUM}[\s,]+{_NUM}", re.M | re.I)
 
 
-def region_box(text: str, scale: float = 100) -> tuple[float, float, float, float] | None:
-    """The REGION line as fractions of the image, exactly as the model gave it. None when missing,
-    malformed, out of range or too small to trust."""
+# How many times taller than wide a box may stand before it is taken as written y first. A problem is lines of writing, so its
+# box is wide, or not much taller than wide: the tallest whole problem of the known-answer set stands 1.07 times its width, and
+# a problem in a pane down the side of the screen about 1.5. The local model, asked for x0 y0 x1 y1, now and then writes y
+# first, Gemma's own order, and a wide problem then reads as a strip standing on end somewhere else on the screen. At this
+# height no box that held its problem was turned, in five runs of the first pass (docs/DECISIONS.md, note 107).
+TALL_BOX = 2.0
+
+
+def region_box(text: str, scale: float = 100, aspect: float = 0.0) -> tuple[float, float, float, float] | None:
+    """The REGION line as fractions of the image. None when missing, malformed, out of range or too small to trust.
+    `aspect`: the height over the width of the image it was written on, when that is known, which tells a box written y
+    first by its shape (TALL_BOX). With none, the line is read exactly as the model gave it."""
     i = head_start(text)
     head = text[i:] if i is not None else text.lstrip()
     m = REGION_RE.search("\n".join(head.split("\n")[:6]))
@@ -66,18 +75,20 @@ def region_box(text: str, scale: float = 100) -> tuple[float, float, float, floa
     if any(v < -1 or v > scale * 1.01 for v in vals):
         return None   # not percentages (seen: "21 85 99 150" for a log at the top): don't trust it
     x0, y0, x1, y1 = (min(1.0, max(0.0, v / scale)) for v in vals)
+    if aspect and (y1 - y0) * aspect > TALL_BOX * (x1 - x0):
+        x0, y0, x1, y1 = y0, x0, y1, x1   # read as written it holds the wrong part of the screen
     if x1 - x0 < 0.02 or y1 - y0 < 0.02:   # a one-line problem is only 2-3% tall
         return None
     return (x0, y0, x1, y1)
 
 
-def parse_region(text: str, scale: float = 100) -> tuple[float, float, float, float] | None:
+def parse_region(text: str, scale: float = 100, aspect: float = 0.0) -> tuple[float, float, float, float] | None:
     """The answer's REGION line (percent of the screen, or the 0-1000 grid at scale=1000) as
     fractions, pulled in a little at every edge: windows are often placed right against the
     problem, and a box that reaches into the neighbour would re-run the problem whenever that window
     scrolls. A change to the problem still shows inside. This is the box duplicate detection
     watches; cropping uses region_box with a margin instead."""
-    box = region_box(text, scale)
+    box = region_box(text, scale, aspect)
     if box is None:
         return None
     x0, y0, x1, y1 = box
