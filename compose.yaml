@@ -115,7 +115,8 @@ services:
   # the volume is what keeps the handover: Docker gives a named volume that is still empty the uid of the image's folder
   # again each time one is mounted.
   server-init:
-    image: sidenote:local
+    image: sidenote:local     # the server's image, which compose builds for that service
+    pull_policy: never        # no registry has it: with the image still to be built, compose would stop on a failed pull
     container_name: sidenote-init
     user: "0:0"
     restart: "no"
