@@ -439,6 +439,14 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   if [ "$(health | json 'd.get("runner", {}).get("configured", False)' 2>/dev/null)" = True ]; then
     for _ in $(seq 1 16); do [ "$(health | json 'd["runner"]["ok"]' 2>/dev/null)" = True ] && break; sleep 0.5; done
   fi
+  # The local model's server starts beside this one and the server looks at it every 2 s until it answers: a moment
+  # for that, so the status says how it stands and not how it stood at its start. It has answered once it lists its
+  # models, whether or not the model is among them ("missing"), and with no local model there is nothing to wait for.
+  local llm_starting='(lambda L: bool(L.get("present") and L.get("on") and not L.get("ok") and not L.get("missing")))((d.get("engines") or {}).get("local") or {})'
+  for _ in $(seq 1 24); do
+    [ "$(health | json "$llm_starting" 2>/dev/null)" = True ] || break
+    sleep 0.5
+  done
   capture_follow
   cmd_status
 }

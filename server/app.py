@@ -1387,12 +1387,36 @@ async def pull_model(name: str) -> None:
         await broadcast_engines()
 
 
+# The local server starts beside this one (compose starts them together), and this server's first look at it comes
+# before it listens. Looked at again only 20 s later, it read as not responding all that while: in the panel, and in
+# the last words of `./sidenote up`, on every start of the stack. So until it first answers it is looked at this often,
+# for this many looks: a minute is well over what it takes, and after that it is down, or was never there.
+STARTING_EVERY = 2.0
+STARTING_LOOKS = 30
+
+
+async def look_at_local() -> None:
+    """The local server's state read again, and the panels told when it has changed."""
+    before = (STATE.local.get("ok"), STATE.local.get("missing"), (STATE.local.get("loaded") or {}).get("model"))
+    STATE.local = await check_local()
+    if before != (STATE.local.get("ok"), STATE.local.get("missing"), (STATE.local.get("loaded") or {}).get("model")):
+        log.info("local engine: %s", STATE.local)
+        await broadcast_engines()
+        await broadcast({"type": "settings", "values": {}, "options": {k: SETTINGS.options(k) for k in ("local_model", "local_busy_model")}})
+
+
 async def engine_watch() -> None:
     """Every 10 s: release the GPU after the idle time set in the panel; every 20 s: look at the local
     server again (it may still be starting, or a model was pulled), and while the agent's CLI is not
     signed in, look at its login again, so signing in on the PC (./sidenote login, /login in any the agent
     Code session, or codex login) needs no server restart. A login the agent turned down counts again
     only once its login file changes (a new sign-in)."""
+    for _ in range(STARTING_LOOKS):
+        # "missing" answered (it lists its models), and "off" has no local server to wait for
+        if STATE.local.get("ok") or STATE.local.get("missing") or STATE.local.get("off"):
+            break
+        await asyncio.sleep(STARTING_EVERY)
+        await look_at_local()
     cred = agents.login_file(CONFIG.agent)   # ~/.claude/.credentials.json, ~/.codex/auth.json; None for an API key
 
     def changed_at():
@@ -1489,12 +1513,7 @@ async def engine_watch() -> None:
                 await broadcast_engines()
         if tick % 2:
             continue
-        before = (STATE.local.get("ok"), STATE.local.get("missing"), (STATE.local.get("loaded") or {}).get("model"))
-        STATE.local = await check_local()
-        if before != (STATE.local.get("ok"), STATE.local.get("missing"), (STATE.local.get("loaded") or {}).get("model")):
-            log.info("local engine: %s", STATE.local)
-            await broadcast_engines()
-            await broadcast({"type": "settings", "values": {}, "options": {k: SETTINGS.options(k) for k in ("local_model", "local_busy_model")}})
+        await look_at_local()
         now = changed_at()
         if now != seen and PIPELINE is not None:   # a new sign-in, perhaps another plan: it does not go on resting on the old one's limit
             PIPELINE.spend.signed_in()

@@ -672,6 +672,70 @@ async def release():
         SETTINGS.values.update(was[5])
 
 
+# ---------- 11b: the local server that starts beside this one ----------
+
+async def starting():
+    print("\n[11b the local server starting beside this one]")
+    import server.app as A
+    eng = make_engines(CONFIG)
+    down = {"ok": False, "method": "local", "model": eng.local.model, "error": "the local LLM server does not answer"}
+    real_sleep = asyncio.sleep
+    was = (A.ENGINES, A.PIPELINE, A.asyncio, A.STATE.local, A.STATE.agent, A.check_local, A.broadcast_engines)
+
+    async def watch(answers):
+        """engine_watch from a state of `down` with the local server's next answers: the waits it asked for, and the
+        panels told, once it has gone on past the first looks."""
+        asked = []
+        told = []
+        looks = iter(answers)
+
+        def sleep(s, *a, **k):
+            asked.append(s)
+            return real_sleep(0.001)
+        quick = types.SimpleNamespace(**{k: getattr(asyncio, k) for k in dir(asyncio) if not k.startswith("__")})
+        quick.sleep = sleep
+
+        async def check():
+            return dict(next(looks, answers[-1]))
+
+        async def tell():
+            told.append(dict(A.STATE.local))
+        A.ENGINES, A.PIPELINE, A.asyncio, A.check_local, A.broadcast_engines = eng, None, quick, check, tell
+        A.STATE.local, A.STATE.agent = dict(down), {"ok": True, "method": "mock"}
+        task = asyncio.ensure_future(A.engine_watch())
+        await real_sleep(0.3)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return asked, told
+
+    try:
+        up = {"ok": True, "method": "local", "model": eng.local.model, "loaded": None}
+        asked, told = await watch([down, down, up])
+        check("a local server that is starting is looked at every 2 s, and answers after 6 s, not after the 20 s of a normal look",
+              asked[:3] == [A.STARTING_EVERY] * 3 and asked[3] == 10, f"waits {asked[:5]}")
+        check("...and the panels are told as soon as it answers", bool(told) and told[0].get("ok"), f"told {told[:1]}")
+        asked, _ = await watch([down])
+        short = [s for s in asked if s == A.STARTING_EVERY]
+        check("one that does not come goes back to the normal looks after a minute", len(short) == A.STARTING_LOOKS and asked[A.STARTING_LOOKS] == 10,
+              f"{len(short)} short looks")
+        A.STATE.local = {"ok": False, "method": "local", "model": eng.local.model, "missing": True}
+        asked = []
+
+        def sleep_missing(s, *a, **k):
+            asked.append(s)
+            return real_sleep(0.001)
+        quick = types.SimpleNamespace(**{k: getattr(asyncio, k) for k in dir(asyncio) if not k.startswith("__")})
+        quick.sleep = sleep_missing
+        A.asyncio = quick
+        task = asyncio.ensure_future(A.engine_watch())
+        await real_sleep(0.05)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        check("a server that answered without the model is not looked at more often: it is up", asked[:1] == [10], f"waits {asked[:3]}")
+    finally:
+        A.ENGINES, A.PIPELINE, A.asyncio, A.STATE.local, A.STATE.agent, A.check_local, A.broadcast_engines = was
+
+
 # ---------- 12: the GPU from the panel, and a GPU too busy to read a screen ----------
 
 def gpu():
@@ -851,7 +915,7 @@ def gap():
 async def main():
     only = set(sys.argv[1:])
     runs = [("handoff", handoff), ("misfile", misfile), ("voice", voice), ("brake", brake), ("slots", slots),
-            ("remark", remark), ("region", region), ("pages", pages), ("shared", shared), ("release", release),
+            ("remark", remark), ("region", region), ("pages", pages), ("shared", shared), ("release", release), ("starting", starting),
             ("gpu", gpu), ("gap", gap)]
     for name, fn in runs:
         if only and name not in only:

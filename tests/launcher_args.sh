@@ -27,6 +27,7 @@
 #   when it fails shows the reason in a message box (printed here, with --dry-run): the last lines, without
 #   terminal colour codes, wsl.exe's own UTF-16 messages readable, capture options passed on as typed;
 # - `capture --up` with no terminal (as launch.pyw runs it) ends with a failing status and waits for no key;
+# - up gives a local model server that is starting a moment before it reports on it;
 # - the language: the checks above read the Korean words (SIDENOTE_LANG=ko), which are the words the launcher had
 #   before it spoke English too. With SIDENOTE_LANG=en every command prints no Korean, a locale picks the language when
 #   SIDENOTE_LANG is not set, a SIDENOTE_LANG that is set is handed on to the Windows programs (WSLENV), and launch.pyw's
@@ -140,8 +141,13 @@ printf '%s\0' "$@" > "$FAKE/calls/curl.$(date +%s%N)"
 [ -f "$FAKE/state/server-down" ] && exit 7
 case "$*" in
   */capture/quit*) [ -f "$FAKE/state/unkillable" ] || rm -f "$FAKE/state/running"; echo '{"asked": 1}' ;;
-  # state/health.json, when a check wrote one, is the answer as it stands (the engines' states the status reads)
-  */health*) if [ -f "$FAKE/state/health.json" ]; then cat "$FAKE/state/health.json"; exit 0; fi
+  # state/health.json, when a check wrote one, is the answer as it stands (the engines' states the status reads), and
+  # state/health-later.json the answer from the fifth ask on: what is still starting when the first ones ask
+  */health*) if [ -f "$FAKE/state/health-later.json" ]; then
+               asks="$(cat "$FAKE/state/health-asks" 2>/dev/null || echo 0)"; echo $((asks + 1)) > "$FAKE/state/health-asks"
+               if [ "$asks" -ge 4 ]; then cat "$FAKE/state/health-later.json"; exit 0; fi
+             fi
+             if [ -f "$FAKE/state/health.json" ]; then cat "$FAKE/state/health.json"; exit 0; fi
              n=0; [ -f "$FAKE/state/running" ] && n=1
              printf '{"ok": true, "audio": true, "paused": false, "engines": {"ready": true}, '
              printf '"capture": {"clients": %d, "screen_on": true, "audio_on": true}}\n' "$n" ;;
@@ -700,6 +706,23 @@ for lang in en ko; do
 done
 if [ -z "$missing" ]; then ok "help names the start commands, setup-capture, the capture options, gpu status and the CI switch"
 else bad "help names the start commands, setup-capture, the capture options, gpu status and the CI switch" "missing:$missing"; fi
+
+# 42. The local model's server is started beside the server, and answers a moment later: up gives it that moment, so its
+#     status does not call a model server that is starting "not responding". One that does not come is still called
+#     that, and up does not wait on it for longer than it takes.
+starting='{"present": true, "on": true, "ok": false, "model": "sidenote-gemma4:26b", "error": "the local LLM server does not answer"}'
+state; health_with "$starting"; mv "$work/state/health.json" "$work/state/first.json"
+health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+mv "$work/state/health.json" "$work/state/health-later.json"; mv "$work/state/first.json" "$work/state/health.json"
+EXTRA_ENV="SIDENOTE_LANG=en" run up; came="$(cat "$work/out")"
+state; health_with "$starting"; began=$SECONDS
+EXTRA_ENV="SIDENOTE_LANG=en" run up; never="$(cat "$work/out")"; took=$((SECONDS - began))
+if grep -qF "Local model: idle (sidenote-gemma4:26b)" <<<"$came" && ! grep -qF "not responding (./sidenote llm logs)" <<<"$came"; then
+  ok "up gives a local model server that is starting its moment, and reports how it stands"
+else bad "up gives a local model server that is starting its moment, and reports how it stands" "$(grep -F "Local model" <<<"$came")"; fi
+if grep -qF "Local model: not responding (./sidenote llm logs)" <<<"$never" && [ "$took" -lt 30 ]; then
+  ok "up still says not responding of one that does not come, and goes on after a bounded wait"
+else bad "up still says not responding of one that does not come, and goes on after a bounded wait" "$took s: $(grep -F "Local model" <<<"$never")"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

@@ -9,6 +9,7 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 - The desktop shortcut `./sidenote shortcut` makes wears Sidenote's icon, not Windows' printer. Run the command again to
   change a shortcut already made.
+- A local model server that is still starting is no longer called "not responding", by `./sidenote up` or in the panel.
 
 ## [0.1.1] - 2026-11-05
 
