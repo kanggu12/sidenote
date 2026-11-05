@@ -1537,6 +1537,18 @@ off them as the starred answers' do, and it is counted high: a row at its words 
 page in the order they come and sentences of 3 KB left a fifth of each page unused. Counted low, a long transcript would
 push answers out by the difference; counted high, the answers get a little more room.
 
+**The live line holds nothing up.** It is read from whatever the last seconds hold, a sentence cut in mid-word among them, in
+the same loop as the utterances. With Whisper's defaults a few cuts sent it round on one sound ("the database kept
+ffffffff") to its limit of tokens and through its retries at each higher temperature: 26 s of a quiet CPU, 67 s of a busy
+one, for a sentence that takes 1.5 s at any other cut. What was said meanwhile fell out of the tail, and on the whole spoken
+path with the real models that lost a sentence or more each run, the question after a story among them. Read with no
+retries and no more tokens than speech makes, the same cut takes 5 s, and over a stream of sentences cut every 2 s the
+median and the worst pass are unmoved (1.8 s, 2.2 s). A window held to the Korean vote against steady English took 14 s for
+words of no use, so the live line goes by the language the window sounds like. An utterance is still held to the vote; a
+sentence held so is decoded once, as Whisper's retries took it from 1 s to 5 to 8 s for the same words. Over a long stretch
+the first try goes round on a phrase, so longer speech keeps them. On that same path, afterwards, all ten sentences said
+came through in their own words and languages, and the question was answered.
+
 **A short question, and what is not taken.** A spoken "GTID가 뭔가요?", 11 characters as it was written down, was dropped
 as under 12 while the live words on the card showed it. A sentence that looks like a question is now taken from 6. A
 sentence that ended and was not taken says why under it: too short at once, and nothing asked, or told rather than

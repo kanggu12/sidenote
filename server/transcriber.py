@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from . import forksafe
 
@@ -53,6 +54,17 @@ VOTE_SHARE = 0.6    # how much of the vote the leading language needs
 VOTE_DECAY = 0.7    # per utterance: the vote remembers about the last three, so somebody who
                     # switches language is followed instead of overruled for the next ten
 VOTE_TOWARDS = "ko"  # the one language the vote may move an utterance to
+HELD_SENTENCE_SEC = 12.0   # as long as a sentence is: decoded once when the vote holds it to Korean
+
+# The live line is read from whatever the last seconds hold, a sentence cut off in mid-word among it. A few cuts send Whisper
+# round on one sound ("the database kept ffffffff") to the limit of its tokens, and with its retries at each higher
+# temperature one pass took 26 s of a quiet CPU and 67 s of a busy one. The utterances wait behind it in the same loop, and
+# what was said meanwhile fell out of the tail, a question among it. So this reading gets no retries, and no more tokens
+# than speech makes, which ends the same pass in 5 s. Fast Korean is about 14 tokens a second.
+LIVE_TOKENS_PER_SEC = 15
+LIVE_TOKENS_MAX = 200    # with the longest prompt (PROMPT_TOKENS) Whisper's 448 leaves about this; asked for more it raises an error
+LOOP_RATIO = 2.4         # the compression ratio over which Whisper itself calls a text a loop, and would try again
+LOOP_RE = re.compile(r"(\S.{0,11}?)\1{4,}", re.S)   # a piece of up to 12 characters, five times running or more
 
 # What Whisper writes when it is given near silence. Heard here every few seconds with nothing but
 # room noise ("Thank you." over and over), which filled the live transcript and the
@@ -76,6 +88,15 @@ def filler(text: str) -> bool:
 # (faster_whisper's WhisperModel.get_prompt). A longer prompt loses its beginning, which is where a person's own words
 # go, so the prompt is cut to this before it is handed over, from its end.
 PROMPT_TOKENS = 223
+
+
+def unlooped(segment) -> str:
+    """A segment's words without the sound Whisper went round on, for a reading that does not try again."""
+    text = segment.text.strip()
+    if getattr(segment, "compression_ratio", 0.0) <= LOOP_RATIO:
+        return text
+    loop = LOOP_RE.search(text)
+    return text[:loop.start()].strip() if loop else text
 
 
 def hint_words(hint) -> dict:
@@ -218,11 +239,21 @@ class FasterWhisperTranscriber:
             spans = get_speech_timestamps(audio, opts)
         return [(int(s["start"] * k), int(s["end"] * k)) for s in spans]
 
-    def transcribe(self, pcm_bytes: bytes, sample_rate: int) -> str:
+    def transcribe_live(self, pcm_bytes: bytes, sample_rate: int) -> str:
+        """The words on the panel's live line, read quickly from the last seconds of sound: no retries and no more tokens
+        than speech makes (LIVE_TOKENS_PER_SEC). In whatever language they sound like, where an utterance is held to the
+        vote: a window of steady English held to Korean took 14 s for words no use to anyone, and a window is long enough
+        for its language to be told."""
+        return self.transcribe(pcm_bytes, sample_rate, live=True)
+
+    def transcribe(self, pcm_bytes: bytes, sample_rate: int, live: bool = False) -> str:
         audio = self._audio(pcm_bytes, sample_rate)
         if audio is None:
             return ""
         lang = self._language if self._language in LANGS else None
+        quick = {}
+        if live:
+            quick = {"temperature": 0.0, "max_new_tokens": min(LIVE_TOKENS_MAX, int(LIVE_TOKENS_PER_SEC * len(audio) / 16000.0) + 16)}
         # The hint is chosen by the language the decode runs in, and on auto that is known only once the language
         # is detected: the first call is given the hint of the language this session most likely speaks, and is
         # asked again with the right one when the utterance turns out to be in the other
@@ -232,22 +263,26 @@ class FasterWhisperTranscriber:
         # they are read, so a rejected auto pick costs a detection pass, not a decode.
         with forksafe.native_work():
             segments, info = self._model.transcribe(audio, language=lang, vad_filter=True,
-                                                    initial_prompt=self.prompt(first))
+                                                    initial_prompt=self.prompt(first), **quick)
             if lang is None:
                 probs = dict(info.all_language_probs or [])
                 # Whichever of the two this utterance looks like on its own, then what the session has
                 # voted for. The vote is counted from the odds, not from the decision, so an utterance
                 # decoded against it still says what it sounded like.
                 pick = info.language if info.language in LANGS else max(LANGS, key=lambda l: probs.get(l, 0.0))
-                if self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS:
+                if not live and self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS:
                     pick = self.voted
                 self._count(probs, len(audio) / 16000.0)   # counted after, so it never votes on itself
                 # Asked again in the language picked, or with that language's hint: nothing has been decoded yet, and
                 # a call with the language given detects nothing, so the second call adds no decode and no detection
                 if pick != info.language or self.prompt(pick) != self.prompt(first):
-                    segments, info = self._model.transcribe(audio, language=pick, vad_filter=True,
-                                                            initial_prompt=self.prompt(pick))
-            text = " ".join(seg.text.strip() for seg in segments).strip()
+                    # Held to Korean against what it sounds like, a sentence reads as poor text and Whisper tries it again
+                    # at each higher temperature: English of 5 s took 5 to 8 s to come to the words the first try wrote in
+                    # 1 s. Longer speech goes round on one phrase at that first try, so the retries stay for it.
+                    held = pick != info.language and len(audio) / 16000.0 <= HELD_SENTENCE_SEC
+                    segments, info = self._model.transcribe(audio, language=pick, vad_filter=True, initial_prompt=self.prompt(pick),
+                                                            **(quick or ({"temperature": 0.0} if held else {})))
+            text = " ".join((unlooped(seg) if live else seg.text.strip()) for seg in segments).strip()
         self.last_language = info.language
         if filler(text):
             log.debug("dropped a stock phrase from silence: %r", text)

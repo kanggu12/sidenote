@@ -22,6 +22,10 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 - With Docker on a PC whose user is not root, the server runs as that user: it reads the agents' logins, which it could
   not do before, and the log folder stays the user's. A folder an earlier version gave to root comes back at the next
   `./sidenote up`.
+- What is heard no longer goes missing while the live line is written: a sentence caught in mid-word could send the
+  speech model round on one sound for a minute, and whatever was said meanwhile, a question among it, was lost.
+- English after Korean is read as English sooner, and a sentence held to Korean no longer takes the speech model's
+  retries, which could hold up what came next.
 - A spoken question waiting behind a long answer is still asked when that answer ends; it could age out and leave an
   analysis of the screen with no words in its place.
 - Practice's hints stop before the answer however it is written: a heading with bold or a number, a heading of a lower
