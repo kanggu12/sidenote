@@ -2,7 +2,8 @@
 # The Helm chart on a throwaway k3d cluster: what only a running cluster can show. The pods come up, port-forward
 # reaches the panel, the runner reaches nothing and only the server reaches it, a run needs the runner's token (also
 # from inside the runner pod), a request from the node is refused (loopback only), the runner cleans up what a run
-# left when its container restarts, the token survives an upgrade, and Codex's login is copied into a writable home.
+# left when its container restarts, the token survives an upgrade, Codex's login is copied into a writable home, and the
+# speech model the guide for no internet unpacks through kubectl is found there, and stays when the pod is replaced.
 # The cluster and its kubeconfig are removed at the end whatever happens; ~/.kube/config is never touched.
 #
 #   tests/k3d_check.sh [server image] [runner image]      (default sidenote:local sidenote-runner:local)
@@ -179,6 +180,20 @@ OUT=$(kc exec "$RPOD" -- sh -c 'test -e /work/leftover && echo present || echo g
 check "...and the file a run user left in /work is gone" test "$OUT" = gone
 check "...and it is healthy" kc exec "$RPOD" -- python3 /app/runner.py --health
 
+echo "[no internet: the speech bundle, unpacked as docs/air-gapped.md does]"
+BUNDLE="$WORK/bundle"                                 # a model's files as the guide's command writes them, with no links
+SNAPSHOT="$BUNDLE/hub/models--Systran--faster-whisper-small/snapshots/0123456789012345678901234567890123456789"
+mkdir -p "$SNAPSHOT" "$BUNDLE/hub/models--Systran--faster-whisper-small/refs"
+printf %s 0123456789012345678901234567890123456789 > "$BUNDLE/hub/models--Systran--faster-whisper-small/refs/main"
+echo "the model" > "$SNAPSHOT/model.bin"
+tar cf "$WORK/speech.tar" -C "$BUNDLE" hub
+kc exec -i deploy/sidenote-server -- tar xf - -C /data/hf < "$WORK/speech.tar" > "$SP/k3d_bundle.log" 2>&1
+FIND='import sys
+from faster_whisper import download_model
+sys.exit(open(download_model("small") + "/model.bin").read().strip() != "the model")'
+check "kubectl unpacks it into the server's volume, and the library finds the model with no network" \
+  kc exec deploy/sidenote-server -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
+
 echo "[upgrade: the token kept, Codex's login copied into a writable home]"
 TOKEN_BEFORE=$(kc get secret sidenote-runner-token -o jsonpath='{.data.token}')
 kc create secret generic sidenote-agent --from-literal=auth.json='{"stand-in": true}' > /dev/null
@@ -191,6 +206,8 @@ check "the runner's token is the same after the upgrade" \
 check "Codex's login is in its home, and the home is writable" kc exec deploy/sidenote-server -- \
   sh -c 'test -s /root/.codex/auth.json && touch /root/.codex/written && ls -ld /root/.codex | grep -q "^drwx------"'
 check "the server's runs still work after the upgrade" kc exec deploy/sidenote-server -- python3 -c "$PROBE" token
+check "the speech model unpacked before it is still there in the new pod" \
+  kc exec deploy/sidenote-server -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
 
 echo
 echo "==== $PASS passed, $FAIL failed ===="

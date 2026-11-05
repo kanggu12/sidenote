@@ -7,6 +7,9 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ### Fixed
 
+- With the speech language on **Auto**, an English sentence in a session that has been speaking Korean stays English when it
+  is 3 s or more and Whisper is sure of it. Held to Korean, 30 of 73 sentences read by people came back in Korean with what was
+  said lost, 12 of them as one phrase over and over. What is still held no longer writes such a phrase.
 - [Running with no internet](https://github.com/kanggu12/sidenote/blob/main/docs/air-gapped.md): the speech model goes in the
   bundle as plain files, as the links its cache keeps them behind unpack on Windows only with Developer Mode on. The guide
   also says where an Ollama on Linux keeps its models when it runs as a service.
