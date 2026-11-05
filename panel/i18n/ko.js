@@ -707,7 +707,6 @@ CATALOGS.ko = {
   "What was heard": "들린 말 기록",
   "What was heard, kept by the day": "날짜별로 보관한 들린 말",
   "Stays on this PC. Clear history in the menu clears it": "이 PC에만 남습니다. 메뉴의 기록 지우기로 지웁니다",
-  "Copy all": "모두 복사",
   "Save as .md": ".md로 저장",
   "{n} sentence": "{n}문장",
   "{n} sentences": "{n}문장",

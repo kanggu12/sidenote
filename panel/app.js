@@ -2741,7 +2741,9 @@ function updateHidden(version) {
 function hideUpdate(version) {
   hiddenNow.add(version);
   try { localStorage.setItem(UPDATE_HIDDEN_KEY, version); } catch (_) {}   // a newer version than this one shows again
+  const had = document.activeElement?.dataset?.act === "update-hide";     // the key is about to go, and the keyboard with it
   renderAlerts();
+  if (had) $("more").focus({ preventScroll: true });                      // the bar's key above the band: not back at the page's top
 }
 function updateBand() {
   const u = status.update;
@@ -3349,20 +3351,73 @@ function answerCuts(md) {
   }
   // A part starts at each, what stands before the first is a part too, and none starts inside a formula set on lines of
   // its own (a $$ block with a blank line in it reads as two paragraphs)
-  const evenMath = (c) => ((text.slice(0, c).replace(/(```|~~~)[\s\S]*?\1/g, "").match(/\$\$/g) || []).length % 2) === 0;
+  // Counted without code, and only where a formula's fence stands, at a line's start or end: a shell's `$$` in a sentence opens no
+  // formula, and counted as one it took away every cut after it, which ran the rest of the solution into one hint
+  const evenMath = (c) => {
+    let fences = 0;
+    const prose = text.slice(0, c).replace(/(```|~~~)[\s\S]*?(?:\1|$)/g, "").replace(/`[^`\n]*`/g, "");
+    for (const line of prose.split("\n")) {
+      const l = line.trim();
+      if (l === "$$") fences++;                              // the fence alone on its line is one, not a start and an end
+      else fences += Number(l.startsWith("$$")) + Number(l.endsWith("$$"));
+    }
+    return fences % 2 === 0;
+  };
   const cuts = [...new Set(starts.filter((s) => s > first))].sort((a, b) => a - b).filter(evenMath);
   return [...cuts, text.length];                              // each part ends where the next starts, the last at the end
 }
-// A part headed by the answer itself ("## 정답: ③", "**Answer**"): no hint, it is what the hints lead up to
-const ANSWER_HEAD = /^\s*(?:#{1,6}\s+|\*\*)\s*(?:정답|해답|최종\s*답|답|결론|final\s+answer|answer|conclusion)(?=$|[\s:：*.])/i;
-// An answer's parts, worked out once for the text it has. The hints stop before a part headed by the answer: Show the
-// answer opens that one, so an answer that starts with it has no hints at all
+// The words that name the answer, the longest of each first so "최종 정답" is not read as a word "최종" and the rest
+const ANSWER_WORD = /^(?:최종\s*(?:정답|답안|답|결론)|정답|해답|답안|답|결론|the\s+final\s+answer|final\s+answer|the\s+answer|answer|conclusion)/iu;
+// What a line's words may start after: a quote mark, a heading's hashes, a list's mark, a number and bold, in any order ("## 3. **정답**")
+const LINE_MARK = /^(?:>\s*|#{1,6}\s+|[-*+]\s+|\d+[.)]\s*|\(\d+\)\s*|[①-⑳]\s*|\*\*|__)/u;
+// The word that leads into a closing sentence ("따라서 정답은 ③입니다")
+const LEAD_IN = /^(?:따라서|그러므로|그래서|결국|즉|so|thus|therefore|hence)[,\s]+/iu;
+// Whether a line of the solution gives the answer. On any line, the word with a colon, 은 or 는, or "is" after it, or alone on the
+// line; a heading or a bold line may also go on as a title does ("정답 및 해설", "**정답** ③"). Other words after it make it a line
+// about something else ("## Answer format", "**답 구하기**", "정답 확인을 위해").
+function answerLine(line) {
+  let s = line.trim(), titled = false;
+  for (let m = LINE_MARK.exec(s); m; m = LINE_MARK.exec(s)) {
+    if (/^(?:#|\*\*|__)/.test(m[0])) titled = true;   // a heading or bold: what may read as a title
+    s = s.slice(m[0].length);
+  }
+  s = s.replace(/^[^\p{L}\p{N}]+/u, "").replace(LEAD_IN, "");   // brackets or a sign before the word ("[정답]")
+  const word = ANSWER_WORD.exec(s);
+  if (!word) return false;
+  const rest = s.slice(word[0].length);
+  if (/^\s*[:：]/u.test(rest) || /^[은는](?:[\s*_]|$)/u.test(rest) || /^\s+is\b/iu.test(rest)) return true;   // it says the answer
+  if (/^[\s*_.)\]]*$/u.test(rest)) return true;       // the word alone on its line, closing marks aside: what follows is the answer
+  if (!titled) return false;                          // a plain sentence that only starts with the word
+  if (/^\s*(?:\*\*|__)/u.test(rest)) return true;     // the bold ends at the word: it is the label of what follows
+  if (/^\s*(?:및|과|와|and|&)(?:\s|$)/iu.test(rest)) return true;      // "정답 및 해설", "정답과 풀이", "Answer and explanation"
+  if (/^\s+(?:코드|풀이|해설)(?:[\s*_.:：)\]]|$)/u.test(rest)) return true;   // "정답 코드"
+  return /^\s*[^\p{L}\s]/u.test(rest);                // a value or a bracket straight after it: "## 정답 ③", "## 정답 (③)"
+}
+// Where the first line that gives the answer starts, outside fenced code (a comment there is the code's), or -1
+function answerAt(md) {
+  let fence = "", at = 0;
+  for (const line of md.split("\n")) {
+    const open = /^\s*(`{3,}|~{3,})/.exec(line);
+    // a fence ends at the kind of mark that opened it: ~~~ inside ``` is the code's own
+    if (open && (!fence || open[1][0] === fence)) fence = fence ? "" : open[1][0];
+    else if (!fence && answerLine(line)) return at;
+    at += line.length + 1;
+  }
+  return -1;
+}
+// An answer's parts, worked out once for the text it has. The hints end where the first line that gives the answer starts: Show
+// the answer opens that, so an answer that starts with it has no hints at all. Here and not in answerCuts, since the Anki file's
+// back takes its key point from those cuts whether or not it holds the answer
 function practiceParts(it) {
   const body = it.head?.body || "";
   if (it.cutsOf !== body) {
-    const cuts = answerCuts(body);
-    const stop = [0, ...cuts.slice(0, -1)].findIndex((from) => ANSWER_HEAD.test(body.slice(from, from + 80)));
-    it.cuts = stop < 0 ? cuts : cuts.slice(0, stop);
+    const cuts = answerCuts(body), stop = answerAt(body);
+    if (stop < 0) it.cuts = cuts;
+    else {
+      const before = cuts.filter((c) => c < stop);
+      // What stands between the last cut before it and that line is a part too, ending at the line
+      it.cuts = body.slice(before[before.length - 1] || 0, stop).trim() ? [...before, stop] : before;
+    }
     it.cutsOf = body;
   }
   return it.cuts;
@@ -3388,6 +3443,12 @@ function practiceRows(it) {
   return row(t("Practice"), `${hint}${all}${count}`, "asks practice")
     + (n ? row(t("Hints"), `<div class="md" data-body></div>`) : "");
 }
+// Asked for more of an answer: words selected in it would put off the drawing (renderEntry, selectionIn) until the selection ends, the
+// count going up with nothing to see. The selection goes, so what was asked for shows at once
+function dropSelection(it) {
+  const el = entryEl(it.id);
+  if (el && selectionIn(el)) window.getSelection().removeAllRanges();
+}
 // The next part of the current answer's solution; false when there is none to show
 function showHint(it, key = null) {
   if (!it || !held(it) || it.live) return false;                     // only an answer kept back, once it is written
@@ -3395,6 +3456,7 @@ function showHint(it, key = null) {
   if (total < 2 || n >= total) return false;                          // one part, or all of them out
   practiceCards.set(String(it.id), n + 1);                            // one more, kept across a reload
   keepCards();
+  dropSelection(it);
   renderEntry(it);
   // A key pressed keeps the keyboard; once the last hint is out, the answer key next to it takes it
   if (key) afterDraw(it, (el) => { if (!el.contains(document.activeElement)) el.querySelector("[data-act='hint'], [data-act='reveal']")?.focus({ preventScroll: true }); });
@@ -3405,6 +3467,7 @@ function showAnswer(it, key = null) {
   if (!it || !held(it) || it.live) return false;
   practiceCards.set(String(it.id), OPENED);
   keepCards();
+  dropSelection(it);
   unfolded.add(it.id);              // opened by hand: an older answer shows whole, as one opened from its fold does
   renderEntry(it); renderIndex();   // the contents row says what it answers now
   afterDraw(it, (el) => {
@@ -3641,7 +3704,8 @@ function fillPending() {
   if (!pend.length) { document.querySelectorAll("[data-thought]").forEach((p) => { p.hidden = true; }); return; }
   document.querySelectorAll("[data-pending]").forEach((p) => { p.textContent = pendingText(pend[0]); });
   // the thinking pass's last finished sentence (pipeline.thought_line), quieter, under the status while it thinks
-  const th = pend[0].stage?.stage === "think" ? pend[0].stage.thought || "" : "";
+  // Not with Practice on: this comes before the answer has a card to keep it back, and a last sentence can be the answer itself
+  const th = pend[0].stage?.stage === "think" && practiceSince == null ? pend[0].stage.thought || "" : "";
   document.querySelectorAll("[data-thought]").forEach((p) => { if (p.textContent !== th) p.textContent = th; p.hidden = !th; });
 }
 // Counted from when this panel heard about it. Reading the server's own ts against the browser's
@@ -4374,7 +4438,7 @@ const ANKI_BLOCK = /^(P|DIV|OL|UL|LI|TABLE|BLOCKQUOTE|PRE|H[1-6]|HR|SECTION)$/; 
 // Words as they are, made safe for a field
 const ankiText = (s) => ankiField(escapeHtml(String(s || "")));
 // One field of a line: a tab or a line break never ends it, and it does not open as a comment or a quoted field
-const ankiField = (html) => html.trim().replace(/\t/g, "&#9;").replace(/\r?\n/g, "<br>").replace(/^#/, "&#35;").replace(/^"/, "&quot;");
+const ankiField = (html) => html.trim().replace(/\t/g, "&#9;").replace(/\r\n?|\n/g, "<br>").replace(/^#/, "&#35;").replace(/^"/, "&quot;");
 // The front: the question as the panel shows it, what was heard for a spoken one, the problem written out, or else its kind and time
 // (never empty: Anki leaves out a note whose first field is)
 function ankiFront(it) {
@@ -5289,7 +5353,7 @@ function closeSettings() {
   settingsOpener = null;
   back.focus({ preventScroll: true });
 }
-const CAN_FOCUS = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href]';
+const CAN_FOCUS = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex="0"]';
 $("settings").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); closeSettings(); return; }
   if (e.key !== "Tab") return;
@@ -5883,8 +5947,16 @@ function practiceKey(which) {
 // The keys' sheet: the settings sheet's look, a row a key. The menu's item, ? and Escape open and close it, and so do its close key
 // and a press on the veil
 let keysOpener = null;
+// Where the keyboard goes when a sheet closes: where it was, or for a menu closed by then the key that menu hangs from
+function focusBack(was) {
+  if (was && was !== document.body && document.body.contains(was) && was.offsetParent) was.focus({ preventScroll: true });
+  else if (was?.closest?.("#export-menu")) $("hist-export").focus({ preventScroll: true });
+  else if (was?.closest?.(".menu")) $("more").focus({ preventScroll: true });
+  else document.activeElement?.blur?.();
+}
 function openKeys() {
   toggleMenu(false); exportMenu(false);
+  comboClose(false);   // a list stands on the page's body, over the sheet, and its arrows and Enter would still choose behind it
   keysOpener = document.activeElement;
   $("keys-overlay").hidden = false;
   $("keys-close").focus({ preventScroll: true });
@@ -5895,9 +5967,7 @@ function closeKeys() {
   // The keyboard goes back where it was: to the gear when the sheet came from the menu (closed by now), to nothing from the page
   const was = keysOpener;
   keysOpener = null;
-  if (was && was !== document.body && document.body.contains(was) && was.offsetParent) was.focus({ preventScroll: true });
-  else if (was?.closest?.(".menu")) $("more").focus({ preventScroll: true });
-  else document.activeElement?.blur?.();
+  focusBack(was);
 }
 $("keys-close").onclick = closeKeys;
 // The keyboard stays inside the sheet while it is open, as in the settings sheet
@@ -5953,6 +6023,7 @@ async function loadHeard(day = "") {
 }
 function openHeard() {
   toggleMenu(false); exportMenu(false);
+  comboClose(false);   // as for the keys' sheet
   heardOpener = document.activeElement;
   $("heard-overlay").hidden = false;
   $("heard-close").focus({ preventScroll: true });
@@ -5965,9 +6036,7 @@ function closeHeard() {
   // The keyboard goes back where it was, as from the keys' sheet
   const was = heardOpener;
   heardOpener = null;
-  if (was && was !== document.body && document.body.contains(was) && was.offsetParent) was.focus({ preventScroll: true });
-  else if (was?.closest?.(".menu")) $("more").focus({ preventScroll: true });
-  else document.activeElement?.blur?.();
+  focusBack(was);
 }
 $("heard-close").onclick = closeHeard;
 $("hear-kept").onclick = openHeard;
@@ -5998,7 +6067,12 @@ document.addEventListener("keydown", (e) => {
     if (!$("export-menu").hidden) { exportMenu(false, true); return; }
     if (drawing) { stopDrawing(); return; }
     const open = !$("menu").hidden; toggleMenu(false);
-    if (open) $("more").focus({ preventScroll: true }); else if (document.activeElement?.id === "ask") document.activeElement.blur();
+    if (open) $("more").focus({ preventScroll: true });
+    else if (document.activeElement?.id === "ask") document.activeElement.blur();
+    else if (document.activeElement?.id === "hist-q") {   // the letters are shortcuts again; the search goes on narrowing the contents
+      e.preventDefault();                                 // a search field's own Escape empties it
+      document.activeElement.blur();
+    }
     return;
   }
   if (e.target.closest("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
@@ -6010,7 +6084,8 @@ document.addEventListener("keydown", (e) => {
   if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
   if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
-  if (SHORTCUTS[key] && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {
+  // Drawing a region is its own mode, ended by Escape: nothing starts behind it
+  if (SHORTCUTS[key] && !drawing && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {
     e.preventDefault();                                    // the letter is not typed anywhere, and / opens no find bar
     if (!e.repeat || key === "j" || key === "k") SHORTCUTS[key]();   // held down, only j and k go on
     return;

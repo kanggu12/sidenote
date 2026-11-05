@@ -12,6 +12,7 @@ so are the server's own words in the settings sheet (server/settings.py), which 
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -160,6 +161,10 @@ def group_english(br, s):
 def group_korean(br, s):
     if not T.group("korean"):
         return
+    # A key written twice is not an error in a script: the later one wins, and changes the word where the first was meant
+    table = re.findall(r'^\s*("(?:[^"\\]|\\.)*")\s*:', (h.PANEL / "i18n" / "ko.js").read_text(encoding="utf-8"), re.M)
+    twice = sorted({k for k in table if table.count(k) > 1})
+    check(f"no key stands twice in the Korean table ({len(table)})", table and not twice, twice)
     words = "() => [document.documentElement.lang, $('pause-text').textContent, $('reanalyze').textContent.trim(), $('settings-title').textContent]"
     want = ["ko", "일시정지", "다시 분석", "풀이 설정"]
     p = Page(br, s, [], locale=EN, query="?lang=ko")

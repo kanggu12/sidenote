@@ -1,7 +1,7 @@
 """Practice mode, the keyboard shortcuts and Export to Anki, through the page's own paths over panel_harness.py's stand-in socket.
 
     PY=.venv/bin/python .venv-panel/bin/python tests/panel_study.py
-    ONLY="practice,keys,anki,words" ...             # only the groups named
+    ONLY="practice,edges,keys,anki,words" ...       # only the groups named
     PANEL_DIR=/an/older/copy/of/panel ...           # watch the checks fail there
 
 Practice keeps each answer that arrives back until it is asked for: its question shows, Show a hint opens the solution's own parts
@@ -259,6 +259,171 @@ def group_practice(br, s):
     p.close()
 
 
+# ---------------------------------------------------------------- where what is kept back ends, and the keys at the edges of the sheets
+# A solution that gives its answer under each form the models write it in: the hints end before SECRET in every one
+SECRET = "③ 숨은 값"
+STEPS_BEFORE = "## 풀이\n\n첫 단계입니다.\n\n## 계산\n\n둘째 단계입니다.\n\n"
+GIVEN = {"bold in a heading": STEPS_BEFORE + f"## **정답**\n\n{SECRET}", "final in a heading": STEPS_BEFORE + f"## 최종 정답\n\n{SECRET}",
+         "numbered heading": STEPS_BEFORE + f"## 3. 정답\n\n{SECRET}", "numbered bold": f"**풀이**\n\n첫 단계입니다.\n\n**계산**\n\n둘째 단계입니다.\n\n**3. 정답**\n\n{SECRET}",
+         "number before bold": f"1. **풀이**: 첫 단계입니다.\n2. **계산**: 둘째 단계입니다.\n3. **정답**\n\n{SECRET}",
+         "list item": f"- 첫 단계입니다.\n- 둘째 단계입니다.\n- 정답: {SECRET}", "plain with a colon": f"첫 단계입니다.\n\n둘째 단계입니다.\n\n정답: {SECRET}",
+         "plain sentence": f"첫 단계입니다.\n\n둘째 단계입니다.\n\n정답은 {SECRET}입니다", "closing sentence": f"첫 단계입니다.\n\n둘째 단계입니다.\n\n따라서 정답은 {SECRET}입니다",
+         "lower heading": "## 풀이\n\n첫 단계입니다.\n\n## 살필 점\n\n둘째 단계입니다.\n\n### 정답\n\n" + SECRET,
+         "answer and explanation": STEPS_BEFORE + f"## 정답 및 해설\n\n{SECRET}", "answer with working": STEPS_BEFORE + f"## 정답과 풀이\n\n{SECRET}",
+         "english": "## Approach\n\nThe first step.\n\n## Working\n\nThe second step.\n\n## The answer\n\n" + SECRET,
+         "inside a part": f"## 풀이\n\n첫 단계입니다.\n\n## 계산\n\n둘째 단계입니다.\n정답: {SECRET}"}
+# Lines that only mention such a word end nothing: each of these has all its parts as hints
+NOT_GIVEN = {"## 준비\n\n첫 문단입니다.\n\n## Answer format\n\n둘째 문단입니다.\n\n## 계산\n\n셋째 문단입니다.": 3,
+             "정답 확인을 위해 표를 봅니다.\n\n둘째 문단입니다.": 2, "## 답 구하기\n\n첫 문단입니다.\n\n## 결론 도출 과정\n\n둘째 문단입니다.": 2,
+             "## 풀이\n\n첫 문단입니다.\n\n```python\n# 정답: 코드의 주석\nprint(1)\n```\n\n## 복잡도\n\n둘째 문단입니다.": 2,
+             "**답변 요령**\n\n첫 문단입니다.\n\n**결론적으로 볼 점**\n\n둘째 문단입니다.": 2}
+
+
+def group_edges(br, s):
+    if not T.group("edges"):
+        return
+    p = Page(br, s, [row(i, "essay", f"이전 물음 {i}", f"이전 답 {i}", "이전 풀이입니다", ago=900 - i) for i in range(1, 4)], w=1400, h=700)
+    p.js("() => setPractice(true)")
+    # Every hint out, by the page's own path: what shows then is all a student can get without asking for the answer
+    all_hints = "(i) => { const it = items.get(i); while (showHint(it)); return entryEl(i).innerText; }"
+    for n, (name, body) in enumerate(GIVEN.items()):
+        i = 400 + n
+        p.answer(i, "work", f"물음 {i}", "열쇠", body)
+        p.wait(60)
+        seen = p.js(all_hints, i)
+        check(f"given as {name}: every hint out, the answer still kept back", SECRET not in seen, seen[-160:])
+        check(f"...and {name} opens with Show the answer", p.js("(i) => { showAnswer(items.get(i)); return entryEl(i).innerText; }", i).count(SECRET) >= 1)
+    for n, (body, parts) in enumerate(NOT_GIVEN.items()):
+        i = 430 + n
+        p.answer(i, "work", f"물음 {i}", "열쇠", body)
+        p.wait(60)
+        check(f"a line that only mentions the word ends no hint: {body[:24]!r}", p.js("(i) => practiceParts(items.get(i)).length", i) == parts,
+              p.js("(i) => practiceParts(items.get(i))", i))
+    # A shell's $$ in a sentence opens no formula, and a set formula with a blank line in it is still not cut
+    p.answer(440, "work", "셸 물음", "열쇠", "## 첫째\n\n첫 문단입니다.\n\n## 셸\n\n`$$`는 셸의 PID입니다.\n\n## 셋째\n\n셋째 문단입니다.\n\n## 넷째\n\n넷째 문단입니다.")
+    p.answer(441, "work", "수식 물음", "열쇠", "첫 문단입니다.\n\n$$\na = 1\n\nb = 2\n$$\n\n끝 문단입니다.")
+    p.wait(60)
+    check("`$$` in inline code leaves the parts after it apart", p.js("() => practiceParts(items.get(440)).length") == 4, p.js("() => practiceParts(items.get(440))"))
+    cuts = p.js("() => { const b = items.get(441).head.body; return practiceParts(items.get(441)).map((c) => b.slice(0, c).split('$$').length % 2 === 1); }")
+    check("...and a formula on lines of its own is still never cut inside", cuts and all(cuts), cuts)
+    # The thinking line stands before the answer has a card to keep it back
+    p.js("() => { manualUntil = Date.now() + 5000; }")
+    thinking = [{"type": "analysis_start", "id": 450, "ts": p.js("() => Date.now() / 1000"), "thumb": None, "transcript": "", "pages": 0, "trigger": "screen"},
+                {"type": "stage", "id": 450, "stage": "think", "thought": "따라서 값은 3이다."}]
+    p.send(*thinking)
+    p.wait(150)
+    line = "() => [...document.querySelectorAll('[data-thought]')].filter((x) => !x.hidden && x.offsetParent).map((x) => x.textContent)"
+    check("with Practice on the thinking line is not shown", p.js(line) == [], p.js(line))
+    p.js("() => setPractice(false)")
+    p.send({"type": "stage", "id": 450, "stage": "think", "thought": "따라서 값은 4이다."})
+    p.wait(150)
+    check("...with it off it is", p.js(line) == ["따라서 값은 4이다."], p.js(line))
+    p.js("() => { dropItem(items.get(450)); setPractice(true); }")
+    # Words selected in the answer put off a redraw: h and a show at once
+    p.answer(451, "work", "선택할 물음", "열쇠", "## 첫째\n\n첫 문단입니다.\n\n## 둘째\n\n둘째 문단입니다.\n\n## 셋째\n\n셋째 문단입니다.")
+    p.wait(100)
+    pick = """() => { goTo(451); const r = document.createRange(); r.selectNodeContents(entryEl(451).querySelector('[data-asked]'));
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }"""
+    p.js(pick)
+    p.wait(80)
+    p.page.keyboard.press("h")
+    p.wait(120)
+    check("h with words selected in the answer: the hint shows at once", "첫 문단입니다" in text_of(p, 451) and held_state(p, 451)["count"] == "힌트 3개 중 1개", held_state(p, 451))
+    p.js(pick)
+    p.wait(80)
+    p.page.keyboard.press("a")
+    p.wait(120)
+    check("a with words selected in it: the answer shows at once", "셋째 문단입니다" in text_of(p, 451) and not held_state(p, 451)["held"], held_state(p, 451))
+    p.js("() => setPractice(false)")
+    # A list open when a sheet opens goes, so its keys choose nothing behind the sheet
+    p.js("() => document.querySelector('.combo-btn[data-proxy=hist-kind]').click()")
+    p.wait(80)
+    p.page.keyboard.press("?")
+    p.wait(100)
+    p.page.keyboard.press("ArrowDown")
+    p.wait(80)
+    state = "() => ({ sheet: !$('keys-overlay').hidden, list: !!comboOpen, inside: !!document.activeElement.closest('#keys') })"
+    check("? with a list open: the list goes, and the keyboard stays in the sheet", p.js(state) == {"sheet": True, "list": False, "inside": True}, p.js(state))
+    p.page.keyboard.press("Enter")   # the sheet's close key has the keyboard: this closes the sheet, and chooses no filter behind it
+    p.wait(100)
+    check("...and Enter chooses nothing behind the sheet", p.js("() => histKind") == "", p.js("() => histKind"))
+    p.page.route("**/heard*", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(
+        {"days": [{"day": "2026-11-04", "n": 200, "first": 1793800000, "last": 1793800200}], "day": "2026-11-04",
+         "lines": [{"ts": 1793800000 + i, "text": f"문장 {i}"} for i in range(200)]})))
+    p.js("() => document.querySelector('.combo-btn[data-proxy=hist-kind]').click()")
+    p.wait(80)
+    p.js("() => openHeard()")
+    p.wait(250)
+    check("...and when the sheet of what was heard opens", not p.js("() => !!comboOpen"))
+    # Each list is reached with Tab and scrolled by the keys, with Tab still inside its sheet
+    for _ in range(4):
+        p.page.keyboard.press("Tab")
+    check("the sheet of what was heard: Tab reaches its sentences", p.js("() => document.activeElement.id") == "heard-lines", p.js("() => document.activeElement.id"))
+    p.page.keyboard.press("End")
+    p.wait(250)
+    check("...and End goes down them", p.js("() => $('heard-lines').scrollTop") > 500, p.js("() => $('heard-lines').scrollTop"))
+    p.page.keyboard.press("Tab")
+    check("...and Tab goes round to the close key", p.js("() => document.activeElement.id") == "heard-close", p.js("() => document.activeElement.id"))
+    p.page.keyboard.press("Escape")
+    p.wait(80)
+    p.page.set_viewport_size({"width": 800, "height": 300})
+    p.wait(80)
+    p.js("() => { document.activeElement?.blur?.(); openKeys(); }")
+    p.wait(80)
+    p.page.keyboard.press("Tab")
+    p.page.keyboard.press("End")
+    p.wait(250)
+    check("the keys' sheet in a low window: Tab and End reach its last rows", p.js("() => document.querySelector('.keys-list').scrollTop") > 50, p.js("() => document.querySelector('.keys-list').scrollTop"))
+    p.page.keyboard.press("Escape")
+    p.page.set_viewport_size({"width": 1400, "height": 700})
+    p.wait(80)
+    # / into the search, Escape out of it with its words kept
+    p.page.keyboard.press("/")
+    p.page.keyboard.type("이전")
+    p.wait(80)
+    p.page.keyboard.press("Escape")
+    p.wait(80)
+    check("Escape leaves the search and keeps its words", p.js("() => [document.activeElement.id, $('hist-q').value]") == ["", "이전"], p.js("() => [document.activeElement.id, $('hist-q').value]"))
+    before = p.js("() => viewId")
+    p.page.keyboard.press("k")
+    p.wait(200)
+    check("...and the letters are keys again", p.js("() => $('hist-q').value") == "이전" and p.js("() => viewId") != before, [before, p.js("() => viewId"), p.js("() => $('hist-q').value")])
+    p.js("() => { const q = $('hist-q'); q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); }")
+    # Drawing a region: no key starts anything behind it, and Escape still ends it
+    p.js("() => { document.activeElement?.blur?.(); window.__sent.length = 0; drawing = { url: '', start: null, box: null }; }")
+    for key in "rpj?":
+        p.page.keyboard.press(key)
+    p.wait(80)
+    check("while a region is drawn r and p send nothing, and ? opens no sheet", p.js("() => [window.__sent.length, $('keys-overlay').hidden]") == [0, True], p.js("() => [window.__sent, $('keys-overlay').hidden]"))
+    p.page.keyboard.press("Escape")
+    check("...and Escape ends it", p.js("() => drawing") is None)
+    # The keyboard after a sheet opened from Export's menu, and after the band's close key
+    p.js("() => $('hist-export').focus()")
+    p.page.keyboard.press("Enter")
+    p.wait(80)
+    p.page.keyboard.press("?")
+    p.wait(80)
+    p.page.keyboard.press("Escape")
+    p.wait(80)
+    check("the keys' sheet opened from Export's menu gives the keyboard back to Export", p.js("() => document.activeElement.id") == "hist-export", p.js("() => document.activeElement.id"))
+    p.send({"type": "status", "update": {"version": "9.9.9", "url": "https://github.com/kanggu12/sidenote/releases/tag/v9.9.9"}})
+    p.wait(80)
+    p.js("() => document.querySelector('[data-act=update-hide]').focus()")
+    p.page.keyboard.press("Enter")
+    p.wait(80)
+    check("the band's close key pressed: the keyboard goes to the bar's key above it", p.js("() => document.activeElement.id") == "more" and not p.js("() => !!document.querySelector('[data-act=update-hide]')"),
+          p.js("() => document.activeElement.tagName"))
+    # A carriage return alone would end a line of the Anki file
+    p.answer(460, "work", "", "열쇠", "풀이입니다")
+    p.js("() => { const it = items.get(460); it.head.asked = ''; it.trigger = 'voice'; it.transcript = '앞\\r뒤'; }")
+    with p.page.expect_download() as got:
+        p.js("() => exportAnki()")
+    raw = Path(got.value.path()).read_bytes().decode("utf-8")
+    check("a carriage return alone in a field does not reach the Anki file", "\r" not in raw and "앞<br>뒤" in raw, repr(raw[-120:]))
+    no_errors(p, "edges")
+    p.close()
+
+
 # ---------------------------------------------------------------- the keys
 KEYS = ["j", "k", "c", "r", "p", "/", "h", "a", "?", "Esc"]
 WORDS_KO = ["다음 답", "이전 답", "정답 한 줄 복사", "다시 분석", "일시정지 또는 계속하기", "답 찾기", "힌트 보기", "정답 보기", "단축키", "닫기"]
@@ -356,6 +521,7 @@ def group_keys(br, s):
     p.wait(200)
     check("...and with it open the keys behind it do nothing", view() == 201, view())
     p.page.keyboard.press("Tab")
+    p.page.keyboard.press("Tab")   # its list of keys takes the keyboard too, so it scrolls in a low window; then round to the close key
     check("...Tab stays inside it", p.js("() => document.activeElement?.id") == "keys-close", p.js("() => document.activeElement?.id"))
     p.page.keyboard.press("?")
     p.wait(150)
@@ -635,7 +801,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_practice, group_keys, group_anki, group_words):
+        for group in (group_practice, group_edges, group_keys, group_anki, group_words):
             group(br, s)
         br.close()
     return T.end()

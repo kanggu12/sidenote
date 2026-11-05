@@ -556,7 +556,7 @@ the one the contents' ribbon marks, whose screen the right column shows.
 | `h` | with **Practice** on, the current answer's next hint |
 | `a` | with **Practice** on, the current answer's whole answer |
 | `?` | the list of keys |
-| `Esc` | closes the list, a menu or **Solver settings** |
+| `Esc` | closes the list, a menu or **Solver settings**; leaves the search and keeps its words |
 
 ## 6. Screen and sound switches
 
@@ -1466,7 +1466,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 정답 한 줄 복사 | Copy the one-line answer | the tooltip of **Copy** beside the answer line |
 | 복사됨 | Copied | a copy button after a press |
 | 복사 실패 | Copy failed | a copy button that could not copy |
-| 전체 복사 | Copy all | an answer's tools |
+| 전체 복사 | Copy all | an answer's tools; **What was heard** |
 | 별표 | Star | an answer's tools: stars or unstars it |
 | 별표됨 · 누르면 해제 | Starred · press to unstar | the tooltip of a starred answer's **Star** |
 | 접기 | Fold | an answer's tools |
@@ -1568,7 +1568,6 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 질문 없음 · 풀지 않음 | No question · not solved | under a sentence on **What is heard** |
 | 이야기 속 물음 · 풀지 않음 | Part of a story · not solved | under a sentence on **What is heard** |
 | 들린 말 기록 | What was heard | the key at the foot of **What is heard**, the gear menu, and the sheet they open |
-| 모두 복사 | Copy all | **What was heard** |
 | .md로 저장 | Save as .md | **What was heard** |
 | 목차 | Contents | a card in the right column |
 | 풀이 엔진 | Solving | a section of **Solver settings** |

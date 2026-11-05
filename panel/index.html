@@ -3034,13 +3034,13 @@
     <footer class="set-foot"><button class="btn sm ghost" id="settings-reset" type="button" data-t>Reset to defaults</button></footer>
   </section>
 </div>
-<!-- The keyboard shortcuts (app.js, SHORTCUTS): the settings sheet's look, a row a key, each key in the command chip -->
+<!-- The keyboard shortcuts (app.js, SHORTCUTS): the settings sheet's look, a row a key, each key in the command chip. The list takes the keyboard (tabindex): its only other key is Close, and arrows on that would not scroll it -->
 <div class="overlay" id="keys-overlay" hidden>
   <section class="card settings" id="keys" role="dialog" aria-modal="true" aria-labelledby="keys-title">
     <header><h2 id="keys-title" data-t>Keyboard shortcuts</h2>
       <button class="btn icon" id="keys-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
     <p class="lede" data-t>Not while typing in a field, nor with Ctrl, Alt or Meta held. c, h and a act on the answer the contents mark</p>
-    <div class="keys-list">
+    <div class="keys-list" tabindex="0" role="group" aria-labelledby="keys-title">
       <div class="set"><span class="lbl" data-t>Next answer</span><span class="ctl"><kbd class="cmd">j</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Previous answer</span><span class="ctl"><kbd class="cmd">k</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Copy the one-line answer</span><span class="ctl"><kbd class="cmd">c</kbd></span></div>
@@ -3054,7 +3054,7 @@
     </div>
   </section>
 </div>
-<!-- What was heard, kept (app.js, openHeard; the server's /heard): the keys' sheet's look, a row a sentence with its time -->
+<!-- What was heard, kept (app.js, openHeard; the server's /heard): the keys' sheet's look, a row a sentence with its time. The list takes the keyboard (tabindex), for a day's sentences to be read without a pointer -->
 <div class="overlay" id="heard-overlay" hidden>
   <section class="card settings" id="heard" role="dialog" aria-modal="true" aria-labelledby="heard-title">
     <header><h2 id="heard-title" data-t>What was heard</h2>
@@ -3065,7 +3065,7 @@
       <button class="btn sm" id="heard-copy" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11.5" height="11.5" rx="2.5"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3h-7A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15"/></svg><span data-t>Copy all</span></button>
       <button class="btn sm" id="heard-save" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/></svg><span data-t>Save as .md</span></button>
     </div>
-    <ol class="heard-lines" id="heard-lines"></ol>
+    <ol class="heard-lines" id="heard-lines" tabindex="0" aria-labelledby="heard-title"></ol>
     <p class="lede" id="heard-none" hidden></p>
   </section>
 </div>
