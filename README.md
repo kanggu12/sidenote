@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.6" src="docs/assets/badges/release.svg"></a>
+  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.7" src="docs/assets/badges/release.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
   <img alt="Runs on Windows, Linux and macOS" src="docs/assets/badges/runs-on.svg">
   <img alt="GPU: NVIDIA, AMD or none" src="docs/assets/badges/gpu.svg">
