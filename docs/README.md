@@ -6,8 +6,8 @@ agent you are signed in to: Claude Code, Codex or the Anthropic API.
 
 It runs in one of three ways:
 
-- **The app** (Windows or Linux, no Docker): `Sidenote.exe` starts everything on this PC, with Ollama for the local
-  model (section 3).
+- **The app** (Windows or Linux, no Docker): `Sidenote.exe` (`Sidenote` on Linux) starts everything on this PC, with
+  Ollama for the local model (section 3).
 - **With Docker** (Linux, or Windows with WSL 2): `./sidenote <command>`, typed in a terminal in this repository's
   folder, runs the server in containers and adds web search for the local model and a sandbox for code checks.
   `./sidenote help` lists the commands. Most of this guide describes this setup.
@@ -62,12 +62,11 @@ virtual environment of its own (`.venv-capture`).
 
 What each setup needs before its first start:
 
-- **The app**: Windows 10 or 11, or Linux with an X11 desktop and glibc 2.35 or newer (Ubuntu 22.04, Debian 12 or
-  newer; the 0.1.0 build needs glibc 2.38, Ubuntu 24.04 or newer). [Ollama](https://ollama.com/download) runs the
-  local model.
-- **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux the NVIDIA Container
-  Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture` installs the capture
-  program's packages into it.
+- **The app**: Windows 10 or 11, or Linux with an X11 session and glibc 2.35 or newer (Ubuntu 22.04 or newer, Debian
+  12 or newer). [Ollama](https://ollama.com/download) runs the local model.
+- **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux
+  the NVIDIA Container Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
+  installs the capture program's packages into it.
 - **The local model**: an NVIDIA or AMD GPU. Sidenote reads its memory and picks the largest measured model that fits:
   `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. With less, or no GPU, the cloud agent
   solves everything (a model can still be pulled to run on the CPU, slowly). `SIDENOTE_LOCAL_MODEL` names one by hand.
@@ -85,15 +84,16 @@ Install Sidenote, start it once, and sign the cloud agent in.
    in **Solver settings** so the panel stops asking for it.
 2. Download `Sidenote-windows-x64.zip` or `Sidenote-linux-x64.zip` from the
    [releases](https://github.com/kanggu12/sidenote/releases/latest). On Windows, right-click the zip, choose
-   **Extract All**, and run `Sidenote.exe` from the extracted folder: it does not start from inside the zip. The first
-   time, Windows may warn about an unknown publisher: **More info**, then **Run anyway**. On Linux,
+   **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`: it does not start from inside the
+   zip. The first time, Windows may warn about an unknown publisher: **More info**, then **Run anyway**. On Linux,
    `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
 3. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the notification
    area (on Windows 11 it may be hidden under the **^** by the clock). When the model for this GPU is not there yet,
    the **Local model** card offers it with **Download**, shows how far the download has got, and says when the model
    is ready.
 4. For the cloud agent, install Claude Code or Codex and sign in once in a terminal (`claude`, or `codex login`). The
-   app uses the CLI it finds, Claude Code first.
+   app uses the CLI it finds when it starts, Claude Code first: after installing one while the app runs, quit Sidenote
+   and start it again.
 
 While it runs, the app starts Ollama when it is installed but not running, and starts again any part that stops.
 **Quit Sidenote** in the tray icon's menu stops everything. Starting the app again while it runs opens the panel.
@@ -108,7 +108,7 @@ While it runs, the app starts Ollama when it is installed but not running, and s
 | `--check` | Start the server with stand-in models on a free port, check that it answers, and stop |
 
 On Linux, `./Sidenote/Sidenote --check` prints its result in the terminal. The Windows app has no console, so there it
-writes the result to the file `SIDENOTE_CHECK_LOG` names. In PowerShell, in the extracted folder:
+writes the result to the file `SIDENOTE_CHECK_LOG` names. In PowerShell, in the `Sidenote` folder that holds `Sidenote.exe`:
 
 ```powershell
 $env:SIDENOTE_CHECK_LOG = "$env:TEMP\sidenote-check.txt"
@@ -133,8 +133,9 @@ in at a limit** off.
 ```
 
 `install` runs the steps in the order they need and skips the ones already done, so it is safe to run again after a
-change. It does not download the models by itself, since they are tens of gigabytes; it points at `llm pull` instead
-(`./sidenote install --with-models` does both). Until a model is there, a signed-in agent solves everything.
+change. It does not download the models by itself, since they take a few to tens of gigabytes; it points at
+`llm pull` instead (`./sidenote install --with-models` does both). Until a model is there, a signed-in agent solves
+everything.
 
 The GPU is found by itself: `./sidenote` adds `docker/compose.nvidia.yaml`, `docker/compose.amd.yaml` or
 `docker/compose.cpu.yaml` to `compose.yaml`, and `./sidenote doctor` says which (`COMPOSE_FILE` in `.env` picks one by
@@ -150,8 +151,8 @@ hand). The steps of `install`, by hand:
 ### The cloud agent
 
 By default the problems that need reasoning go to a cloud coding agent: algorithm, coding, math, work, essay and other
-problems, and any problem the local model would be 1.5 times as slow to start answering. **Solver settings** (in the
-gear menu) changes which problems go, or switches the agent off. `SIDENOTE_AGENT` in `.env` chooses the agent; its
+problems, and any problem the local model would take 1.5 times as long as the agent to start answering.
+**Solver settings** (in the gear menu) changes which problems go, or switches the agent off. `SIDENOTE_AGENT` in `.env` chooses the agent; its
 other settings are in section 12.
 
 | `SIDENOTE_AGENT` | Uses | Sign in |
@@ -170,7 +171,7 @@ Signing in:
 - The CLI agents use this PC's own login as it is; there is no token to create or paste.
 - `./sidenote login` signs in the agent the server is set to use, when it is not signed in.
 - `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
-  own copy shows an address and a code to type there (the server has to be running, and the login lands in the same
+  own copy shows an address to open and a code to enter there (the server has to be running, and the login lands in the same
   `~/.codex`).
 - The server notices a new login within 20 seconds, with no restart.
 - Without a login the local model solves everything, but the **Agent** card says **Sign-in needed** and an alert asks
@@ -204,9 +205,9 @@ icon; the rest of this section is the Docker setup.
 When the server is in use, `./sidenote up` waits until it is idle before restarting it; `--now` restarts at once.
 With `SIDENOTE_CI_GATE=1` in `.env`, `up` also refuses a commit that CI failed ([QA.md](QA.md)).
 
-When you are done, quit the capture program with **Quit** in its tray icon's menu or with `./sidenote capture-stop`,
-then stop the server with `./sidenote down`, which also ends a capture program still running. `./sidenote restart`
-restarts the server, which also applies a change to `.env` or to the code. The server does not start by itself when
+When you are done, `./sidenote down` stops the server and the capture program. To stop only the capture program, use
+**Quit** in its tray menu or `./sidenote capture-stop`. `./sidenote restart` restarts the server, which also applies a
+change to `.env` or to the code. The server does not start by itself when
 the PC or Docker restarts.
 
 `./sidenote capture-stop` also stops a capture program left behind (one started with `--console` whose terminal was
@@ -218,13 +219,13 @@ closed, for example), and if some are still left, it says how many.
 area. What it prints goes to `capture.log`, kept under 4 MB (a trim keeps the newest half). `--console` keeps it in
 the terminal instead, where Ctrl+C ends it; that is the way to see what stops it from starting.
 
-Clicking the icon opens the panel. Its menu, on the right button, has **Open the panel**, the **Screen capture** and
+Clicking the icon opens the panel. Right-clicking it opens a menu with **Open the panel**, the **Screen capture** and
 **Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole
 app). The menu uses the panel's look: the same icons, the same status pill (green while it captures, red with no
 server, amber with **Skipped window** while a window named in **Skip windows** is on screen) and the same switches.
 
-The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program runs as before and says so
-once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
+The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program still runs, with no icon,
+and says so once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
 it, with `./sidenote capture-stop` as the way to end it. `./sidenote install` installs the package, and
 `./sidenote doctor` reports it missing.
 
@@ -1025,7 +1026,7 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | Setting | Default | Meaning |
 |:---|:---:|:---|
 | `SIDENOTE_LOCAL_MODEL` | `auto` | The local model: `auto` picks the largest measured model the local server has that fits the GPU's memory (server/models.py), or names one (pulled with `./sidenote llm pull`; also chosen in the panel) |
-| `SIDENOTE_LOCAL_URL` | `http://llm:11434/v1` (the `llm` container) | The local model's server: Ollama, or any OpenAI-compatible server that takes images (LM Studio, llama.cpp's server, vLLM), as an address ending in `/v1` (the server asks `/chat/completions` and `/models` under it). The app uses `http://127.0.0.1:11434/v1` |
+| `SIDENOTE_LOCAL_URL` | `http://llm:11434/v1` (the `llm` container) | The local model's server: Ollama, or any OpenAI-compatible server that takes images (LM Studio, llama.cpp's server, vLLM), as an address ending in `/v1` (the server asks `/chat/completions` and `/models` under it). With another server `./sidenote up` starts no `llm` container. The app uses `http://127.0.0.1:11434/v1` |
 | `SIDENOTE_LOCAL_VRAM_GB` | (read from the GPU) | The GPU memory `auto` sizes the model by, when it cannot be read |
 | `SIDENOTE_LOCAL_PULL` | `0` (`1` in the app) | `1`: the local model's card offers to download a missing model through Ollama (the app; in Docker the model container has no internet, and `./sidenote llm pull` fetches it) |
 | `SIDENOTE_LOCAL_THINK` | `auto` | When the local model thinks before answering: `auto` (multiple choice, math, code and whatever the first pass says needs reasoning), `always`, `never` |
@@ -1139,7 +1140,7 @@ stopped (section 11 lists the rest).
 | Symptom | What to do |
 |:---|:---|
 | Windows says it protected your PC, or warns about an unknown publisher | The app is not code-signed yet: choose **More info**, then **Run anyway** |
-| `Sidenote.exe` does not start, or says files are missing | Extract the zip first (right-click it, **Extract All**) and run `Sidenote.exe` from the extracted folder |
+| `Sidenote.exe` does not start, or says files are missing | Extract the zip first (right-click it, **Extract All**), then run `Sidenote.exe` from the `Sidenote` folder inside |
 | Nothing appears after starting it | The first start can take a minute or two. If no panel opens after that, open `http://127.0.0.1:8777` yourself; if nothing answers there, read `app.log` and `server-console.log` |
 | A message box says the server did not start | The message box shows the end of `server-console.log`, which says why. Start Sidenote again; if it happens again, open an issue with the logs |
 | A message box says another program is using the port | Close that program, or start the app on another port: `Sidenote.exe --port 8778` |

@@ -81,7 +81,7 @@ sentence also goes into `history.sqlite`.
 ## Who answers
 
 `Pipeline.solve` picks the engine for each problem. The local model's fast pass reads every problem first, and on most
-screens it finds nothing to solve in under a second (about 0.7 s with the 26b). The spend brake holds back only what the
+screens it finds nothing to solve in about a second (1.2 s median in use, with the 26b). The spend brake holds back only what the
 watching sends by itself: **Reanalyze** and a question go through.
 
 <picture>
@@ -345,7 +345,7 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 | Real-model tests need this PC's login | the regression tests that call Claude Code run in a container with this PC's `~/.claude` bound, and are skipped when it is not signed in |
 | The local model wants the GPU to itself | under WSL2 the runtime does not see other programs' GPU memory, so a busy GPU shows as slowness (the 26b generated 4.6 times slower beside another program writing 8 GiB of GPU memory); an answer under half its model's usual rate (`.pace.json`) moves to **Model when the GPU is busy** for 30 s (`SIDENOTE_LOCAL_BUSY_HOLD_SEC`), doubling up to 10 minutes while the GPU stays as busy |
 | The problem box | the agent's crop and the thinking pass's zoom are cut from `REGION` with a margin of 15% on the left and 6% elsewhere, inside the window that shows most of it; a box of 80% of the screen or more, one mostly over the wallpaper, or one more than a fifth covered by other windows places nothing. Over 3 runs of 30 screens, 63 of 66 cut boxes held the whole problem and none held a pixel of another window. On a landscape screen 3200 px or wider with no usable box, the thinking pass gets the screen's two halves (the 4K desktop right 8 of 8 times, against 0 of 4 without) A box standing on end was written y first, and is read the other way round ([note 107](DECISIONS.md#note-107)). |
-| A screen with nothing to solve takes about 0.7 s | with the 26b and two runtime slots (`SIDENOTE_LOCAL_SLOTS`, about 740 MiB of GPU memory each); one slot took 0.98 to 1.49 s after a thinking pass, and three made every request slower in a later run |
+| A screen with nothing to solve takes about a second | 1.2 s median in use with the 26b, and 0.7 s on an idle GPU, with two runtime slots (`SIDENOTE_LOCAL_SLOTS`, about 740 MiB of GPU memory each); one slot took 0.98 to 1.49 s after a thinking pass, and three made every request slower in a later run |
 | A thinking pass can reach the output limit | `SIDENOTE_MAX_TOKENS` (8,000) covers the local model's thinking and answer together; a pass that ends there with little answer is answered once more with thinking off, from the end of its reasoning, and labeled `cut` |
 | Next | horizontal scrolling and 2D stitching |
 

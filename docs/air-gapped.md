@@ -238,10 +238,15 @@ SIDENOTE_LOCAL_URL=http://model-server.internal:8000/v1
 SIDENOTE_LOCAL_MODEL=gemma-4-26b
 ```
 
-With such a server the panel cannot download a model, switch to a smaller one while the GPU is busy, or take a stuck model
-off the GPU: those go through Ollama's own API. The Docker setup still starts its Ollama container, which stays idle, so its
-image stays in the bundle. Sidenote is measured with Ollama; the other servers are checked only against a stand-in that
-answers as they do.
+With Docker, `./sidenote up` then leaves its Ollama container out, so the bundle needs no Ollama image: save only
+`sidenote:local` and `sidenote-runner:local`. The panel cannot download a model, switch to a smaller one while the GPU is
+busy, or take a stuck model off the GPU with such a server: those go through Ollama's own API.
+
+Start vLLM with the model's reasoning and tool parsers, for Gemma 4
+`--reasoning-parser gemma4 --enable-auto-tool-choice --tool-call-parser gemma4`. Without the reasoning parser a pass that
+thinks comes back empty, and without tool calling Sidenote leaves the web search out. With Gemma 4 E4B on the project's
+known-answer set, llama.cpp's server got 35 of 56 and vLLM 30, against Ollama's 38 in the same run
+([note 108](DECISIONS.md#note-108)).
 
 ## A new version
 

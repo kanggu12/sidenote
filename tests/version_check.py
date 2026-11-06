@@ -134,6 +134,11 @@ check("the chart's NOTES asks for no path of a checkout", "deploy/helm/sidenote"
 values = (ROOT / "deploy" / "helm" / "sidenote" / "values.yaml").read_text(encoding="utf-8")
 check("the chart's values say the published chart needs no image built", "published chart" in values)
 doc = lambda *parts: (ROOT.joinpath(*parts)).read_text(encoding="utf-8")   # noqa: E731
+# The release badge names the version itself: one shields.io works out from GitHub's API came slower than GitHub's image proxy
+# waits (504 after 4 s), and the README showed it as a broken picture
+badges = re.findall(r"img\.shields\.io/badge/release-v([0-9][^-]*)-", doc("README.md"))
+check("README's release badge names this release, and asks shields.io for nothing it must look up",
+      badges == [VERSION] and "img.shields.io/github/" not in doc("README.md"), badges)
 check("README's Docker setup names python3", "`python3`" in doc("README.md").split("### With Docker")[1].split("```")[0])
 check("the guide's requirements name python3", "`python3`" in doc("docs", "README.md").split("## 2. Requirements")[1].split("## 3.")[0])
 check("the guide names the TZ setting", "| `TZ` |" in doc("docs", "README.md"))

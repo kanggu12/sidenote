@@ -5,6 +5,32 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Fixed
+
+- A model that `./sidenote llm pull` or the chart's pull job makes carries Sidenote's context, as one the panel downloads
+  does. Loaded by an Ollama that Sidenote did not start, such as the one Ollama's installer starts at sign-in, it had that
+  Ollama's 4096 tokens.
+- On a model server other than Ollama, Sidenote turns the model's thinking on and off through its chat template
+  (`enable_thinking`), as it already did through Ollama. llama.cpp's server thinks by default, and Gemma 4 E4B took 7 to
+  8 s there to call a screen empty; vLLM does not, so a pass meant to think did not.
+- A model server that turns down a request for its tools, as vLLM does when started without its tool-calling switches, is
+  asked again without them, and the local model there answers without web search. Before, every answer there failed.
+- The README's release badge names the version itself. The one shields.io looked up from GitHub came slower than
+  GitHub's image proxy waits, and showed as a broken picture.
+
+### Changed
+
+- With `SIDENOTE_LOCAL_URL` naming another model server, such as vLLM or llama.cpp's server, `./sidenote up` leaves the Ollama
+  container out, and `./sidenote llm` and `./sidenote install` say the models are that server's.
+- The panel: on the dark theme the red pen is brighter (5.3:1 against the paper, from 4.4:1); on the light theme the punch
+  holes read as holes, not as empty radio buttons; the kind chips line up with the labels at 821 to 1000 px; the star keeps
+  its place beside Copy all; a chosen option looks pressed in; a table's number column takes its numbers' width; the
+  keyboard shortcuts sheet speaks in short phrases; and Reset to defaults looks like a button.
+- The README is shorter, with a quick-start table, and the user guide's first steps say which folder holds the app and
+  when to sign in to the agent.
+- How to start vLLM for Sidenote (its reasoning and tool parsers), and how llama.cpp's server and vLLM compare with Ollama
+  on the known-answer set: [note 108](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-108).
+
 ## [0.1.4] - 2026-11-06
 
 ### Fixed
