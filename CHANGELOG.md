@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-07
+
 ### Fixed
 
 - A problem's box the local model wrote y first, up to twice as tall as wide, is turned when the picture shows it: its
@@ -228,7 +230,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/kanggu12/sidenote/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/kanggu12/sidenote/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/kanggu12/sidenote/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/kanggu12/sidenote/compare/v0.1.3...v0.1.4
