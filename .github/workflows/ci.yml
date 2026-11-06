@@ -76,6 +76,33 @@ jobs:
             ${{ runner.temp }}/sidenote-tests/cases.md
           retention-days: 14
 
+  macos:
+    name: macOS (the control script on bash 3.2, the capture program)
+    runs-on: macos-15
+    timeout-minutes: 20   # the capture program reads the screen: a prompt that never comes ends here
+    steps:
+      - uses: actions/checkout@v7
+      - name: The control script under macOS's own bash 3.2 and BSD tools, with nothing from Homebrew on the PATH
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash -n sidenote
+          env -i HOME="$HOME" PATH=/usr/bin:/bin SIDENOTE_LANG=en /bin/bash ./sidenote help > /dev/null
+          env -i HOME="$HOME" PATH=/usr/bin:/bin SIDENOTE_LANG=en /bin/bash ./sidenote setup-capture
+          env -i HOME="$HOME" PATH=/usr/bin:/bin SIDENOTE_LANG=en /bin/bash ./sidenote capture --list-monitors
+      - name: The sound device it records from on a Mac, a loopback input or a word on how to get one
+        run: |
+          .venv-capture/bin/python - <<'PY'
+          import sys
+          sys.path.insert(0, "client")
+          import soundcard as sc
+          import capture
+          try:
+              print("loopback input:", capture.mac_loopback(sc))
+          except RuntimeError as exc:
+              assert "BlackHole" in str(exc), exc
+              print("no loopback input, and it says how:", exc)
+          PY
+
   panel:
     name: panel suites (${{ matrix.part.name }})
     runs-on: ubuntu-24.04
@@ -127,8 +154,15 @@ jobs:
           retention-days: 14
 
   images:
-    name: build the images
-    runs-on: ubuntu-24.04
+    name: build the images (${{ matrix.arch }})
+    # arm64 as well: a Mac with Apple silicon, and an ARM server, build the images for that, agents' CLIs included
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, os: ubuntu-24.04 }
+          - { arch: arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -139,8 +173,8 @@ jobs:
           file: docker/Dockerfile
           load: true          # into this runner's Docker, for the check below
           tags: sidenote:ci
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          cache-from: type=gha,scope=server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
       - name: Code runner image
         uses: docker/build-push-action@v7
         with:
@@ -148,8 +182,10 @@ jobs:
           file: runner/Dockerfile
           load: true
           tags: sidenote-runner:ci
-          cache-from: type=gha,scope=runner
-          cache-to: type=gha,mode=max,scope=runner
+          cache-from: type=gha,scope=runner-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=runner-${{ matrix.arch }}
+      - name: The agents' CLIs in the image are this machine's own build
+        run: docker run --rm --entrypoint sh sidenote:ci -c 'uname -m && claude --version && codex --version'
       # This runner's user is not root, as most users of ./sidenote are not: compose.yaml's server and runner, started as
       # it, have to reach the login files, the log folder and the socket. What root alone can do passes every other job.
       - name: The server and the code runner as an ordinary user
@@ -200,7 +236,7 @@ jobs:
   qa:
     name: QA gate
     if: always()
-    needs: [syntax, server, panel, images, chart]
+    needs: [syntax, server, macos, panel, images, chart]
     runs-on: ubuntu-24.04
     steps:
       - name: Every job passed

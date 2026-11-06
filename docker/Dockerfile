@@ -35,34 +35,38 @@ RUN python /tmp/vendor/fetch_vendor.py /tmp/vendor/vendor.json /app/panel/vendor
 # always fetches the latest build first). After pip, so a CLI update re-downloads only this layer.
 # WITH_CLAUDE_CODE=0 leaves it out: the published images are built so, as Claude Code is Anthropic's to distribute;
 # a pod then fetches it when it starts (the Helm chart), and `./sidenote up` builds the image with it on the PC.
+# TARGETARCH (BuildKit's): the build for this machine, amd64 or arm64 (a Mac with Apple silicon builds arm64).
+ARG TARGETARCH=amd64
 ARG CLAUDE_VERSION=2.1.307
 ARG WITH_CLAUDE_CODE=1
 RUN set -eu; \
     [ "$WITH_CLAUDE_CODE" = 1 ] || { echo "Claude Code left out of this image"; exit 0; }; \
+    case "$TARGETARCH" in arm64) plat=linux-arm64 ;; *) plat=linux-x64 ;; esac; \
     base="https://downloads.claude.ai/claude-code-releases/${CLAUDE_VERSION}"; \
-    sum="$(curl -fsSL --retry 3 --retry-delay 2 "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"]["linux-x64"]["checksum"])')"; \
-    curl -fsSL --retry 3 --retry-delay 2 -o /usr/local/bin/claude "$base/linux-x64/claude"; \
+    sum="$(curl -fsSL --retry 3 --retry-delay 2 "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"][sys.argv[1]]["checksum"])' "$plat")"; \
+    curl -fsSL --retry 3 --retry-delay 2 -o /usr/local/bin/claude "$base/$plat/claude"; \
     echo "$sum  /usr/local/bin/claude" | sha256sum -c -; \
     chmod 755 /usr/local/bin/claude
 
 RUN mkdir -p /data/hf /data/logs
-# Codex CLI (OpenAI), for SIDENOTE_AGENT=codex: the static Linux build npm publishes as @openai/codex@<v>-linux-x64,
-# checked against the registry's own sha512 before it is unpacked. ./sidenote up passes this PC's own version when
+# Codex CLI (OpenAI), for SIDENOTE_AGENT=codex: the static Linux build npm publishes as @openai/codex@<v>-linux-x64 (or
+# -linux-arm64), checked against the registry's own sha512 before it is unpacked; the pinned sum is the x64 one. ./sidenote up passes this PC's own version when
 # it has Codex, so the container and the PC's ~/.codex are on the same release; otherwise this one.
 ARG CODEX_VERSION=0.165.0
 ARG CODEX_SHA512=FotDc7bVHwaommtsdDP8PPrH0a5IwC/t8H/LhdEcH4EBqgeYFRCtptiHcuwgvNRCLbTbOyFE/Ur6GzYCljgaSQ==
 RUN set -eu; \
-    url="https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_VERSION}-linux-x64.tgz"; \
+    case "$TARGETARCH" in arm64) plat=linux-arm64; triple=aarch64-unknown-linux-musl ;; *) plat=linux-x64; triple=x86_64-unknown-linux-musl ;; esac; \
+    url="https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_VERSION}-${plat}.tgz"; \
     curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz "$url"; \
     want="${CODEX_SHA512}"; \
-    if [ "$CODEX_VERSION" != "0.165.0" ]; then \
-      want="$(curl -fsSL --retry 3 "https://registry.npmjs.org/@openai/codex/${CODEX_VERSION}-linux-x64" \
+    if [ "$CODEX_VERSION" != "0.165.0" ] || [ "$plat" != linux-x64 ]; then \
+      want="$(curl -fsSL --retry 3 "https://registry.npmjs.org/@openai/codex/${CODEX_VERSION}-${plat}" \
               | python -c 'import json,sys; print(json.load(sys.stdin)["dist"]["integrity"].split("-",1)[1])')"; \
     fi; \
     got="$(python -c 'import base64,hashlib,sys; print(base64.b64encode(hashlib.sha512(open(sys.argv[1],"rb").read()).digest()).decode())' /tmp/codex.tgz)"; \
     [ "$got" = "$want" ] || { echo "codex tarball checksum mismatch"; exit 1; }; \
     mkdir -p /tmp/codex && tar -xzf /tmp/codex.tgz -C /tmp/codex; \
-    install -m 755 /tmp/codex/package/vendor/x86_64-unknown-linux-musl/bin/codex /usr/local/bin/codex; \
+    install -m 755 "/tmp/codex/package/vendor/$triple/bin/codex" /usr/local/bin/codex; \
     rm -rf /tmp/codex /tmp/codex.tgz; \
     codex --version
 

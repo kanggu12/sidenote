@@ -5,7 +5,10 @@
 # is ended from that icon or with `./sidenote capture-stop`; with --console it stays in the
 # terminal and Ctrl+C ends it.
 set -euo pipefail
-cd "$(dirname "$(readlink -f "$0")")"
+# This script's folder, through any links to it: by hand, as macOS before 12.3 has no readlink -f
+self="$0"
+while [ -L "$self" ]; do link="$(readlink "$self")"; case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac; done
+cd "$(dirname "$self")"
 
 # Settings in .env apply here too (compose reads the same file); the environment wins. Read the
 # way compose reads it: an "export " prefix, quotes, and a " # comment" after an unquoted value.
@@ -113,6 +116,7 @@ CLIENT_WIN="$(wslpath -w "$PWD/client/capture.py" 2>/dev/null || true)"   # this
 # desktop of its own (no WSL_DISTRO_NAME, which WSL sets in every session) they are this desktop's: the capture program
 # runs here, with the packages of client/requirements.txt in a virtual environment of its own (CAPTURE_VENV).
 if [ -n "${WSL_DISTRO_NAME:-}" ]; then ON_WSL=1; else ON_WSL=0; fi
+if [ "$(uname -s)" = Darwin ]; then ON_MAC=1; else ON_MAC=0; fi   # a Mac reads its own screen, with no X11 display to check
 CAPTURE_VENV="$PWD/.venv-capture"
 # Docker refuses a CPU limit above the machine's cores, and the server would not start on a 6-core WSL: the defaults come
 # down to what is there. What .env or the environment sets is left as it is.
@@ -256,7 +260,7 @@ server_user() {
 host_tz() {
   local etc="${1:-/etc}" tz found
   for tz in "$(setting TZ "")" "$(timeout 3 timedatectl show -p Timezone --value 2>/dev/null || true)" \
-            "$(head -1 "$etc/timezone" 2>/dev/null || true)" "$(readlink -f "$etc/localtime" 2>/dev/null || true)"; do
+            "$(head -1 "$etc/timezone" 2>/dev/null || true)" "$(readlink "$etc/localtime" 2>/dev/null || true)"; do
     case "$tz" in */zoneinfo/*) tz="${tz##*/zoneinfo/}" ;; esac
     if [ "$tz" != n/a ] && [[ $tz =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]]; then found="$tz"; break; fi
   done
@@ -285,7 +289,7 @@ ACCOUNT
 # (capture.log.1 .. .$LOG_FILES; older ones age out with the server's 14-day prune too).
 rotate_capture_log() {
   local f="$LOG_PATH/capture.log" max=$((LOG_MAX_MB * 1024 * 1024)) i
-  [ -f "$f" ] && [ "$(stat -c %s "$f")" -ge "$max" ] || return 0
+  [ -f "$f" ] && [ "$(wc -c < "$f" | tr -d ' ')" -ge "$max" ] || return 0   # wc, not stat -c: the BSD stat has no -c
   for ((i = LOG_FILES - 1; i >= 1; i--)); do [ -f "$f.$i" ] && mv -f "$f.$i" "$f.$((i + 1))"; done
   mv -f "$f" "$f.1"
 }
@@ -341,7 +345,7 @@ print("yes" if used else "")' 2>/dev/null
 capture_follow() {
   [ "$(clients)" -gt 0 ] 2>/dev/null || return 0
   local mine theirs
-  mine="$(sha256sum "$PWD/client/capture.py" 2>/dev/null | cut -c1-12)"
+  mine="$({ sha256sum "$PWD/client/capture.py" 2>/dev/null || shasum -a 256 "$PWD/client/capture.py" 2>/dev/null; } | cut -c1-12)"
   # (under set -e a /health that takes too long just after a deploy would otherwise end ./sidenote up, saying nothing)
   theirs="$(health | json '((d.get("capture") or {}).get("caps") or {}).get("code", "")' 2>/dev/null)" || return 0
   if [ -z "$theirs" ]; then
@@ -469,7 +473,7 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   fi
   if [ "$rc" = 0 ]; then
     wait_idle
-    docker compose up -d --no-build "${nopull[@]}" --quiet-pull ${1:+--force-recreate} "${services[@]}" 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+    docker compose up -d --no-build ${nopull[@]+"${nopull[@]}"} --quiet-pull ${1:+--force-recreate} ${services[@]+"${services[@]}"} 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
   fi
   if [ "$rc" != 0 ]; then
     # A taken port leaves a created but never started server behind; the next up would start it
@@ -743,7 +747,7 @@ CAPTURE_PROCS="\$_.CommandLine -like ${CLIENT_LIKE} -and @('cmd.exe', 'py.exe', 
 capture_running() {
   local n
   if [ "$ON_WSL" = 0 ]; then         # this desktop's own: the processes running client/capture.py for a server
-    n="$(pgrep -fc -- "[c]lient/capture[.]py --server" || true)"
+    n="$(pgrep -f -- "[c]lient/capture[.]py --server" | wc -l | tr -d ' ')"   # counted by wc: macOS's pgrep has no -c
     printf '%s' "${n:-0}"; return 0
   fi
   [ -n "$CLIENT_WIN" ] || { printf '?'; return 0; }
@@ -866,11 +870,11 @@ cmd_capture() {
          if [ "$a" = --once ]; then console=1; fi ;;
     esac
   done
-  check_win_args "${opts[@]}"   # before cmd.exe sees any of them
+  check_win_args ${opts[@]+"${opts[@]}"}   # before cmd.exe sees any of them
   # Only listing the monitors, or the options: capture.py answers and ends, so it runs here and now.
-  for a in "${opts[@]}"; do
+  for a in ${opts[@]+"${opts[@]}"}; do
     case "$a" in --list-monitors|--help|-h)
-      (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" "${opts[@]}" 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
+      (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
       return 0 ;;
     esac
   done
@@ -915,7 +919,7 @@ cmd_capture() {
     # window nor an icon. That is said before it starts, with the one way left to end it.
     local tray=1
     [ "$packages" = tray ] || tray=0
-    for a in "${opts[@]}"; do if [ "$a" = --no-tray ]; then tray=0; fi; done
+    for a in ${opts[@]+"${opts[@]}"}; do if [ "$a" = --no-tray ]; then tray=0; fi; done
     if [ "$packages" != tray ]; then
       warn "$(L "Starting without a tray icon: pystray is not in Windows Python ${D}(install: ./sidenote setup-capture)${N}. To end it: ${B}./sidenote capture-stop${N}" \
                 "트레이 아이콘 없이 시작합니다: Windows Python에 pystray가 없습니다 ${D}(설치: ./sidenote setup-capture)${N}. 끝낼 때는 ${B}./sidenote capture-stop${N}")"
@@ -936,11 +940,11 @@ cmd_capture() {
     # </dev/null: there is no terminal left to read from once the launcher has moved on.
     # The capture program is a Windows process and outlives the helper regardless (measured: helper
     # killed, program still capturing), so nothing on this side holds it open.
-    # "${opts[@]}": every option one argument, as typed (see the top of this function). WSL puts a value
+    # ${opts[@]+"${opts[@]}"}: every option one argument, as typed (see the top of this function). WSL puts a value
     # with spaces in quotes for the Windows command line, and cmd.exe and start pass it on whole
     # (measured with a script that only writes down its arguments).
     (cd /mnt/c && setsid --fork cmd.exe /c start "" /b pyw -3 -X utf8 "$CLIENT_WIN" \
-        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" "${opts[@]}" >/dev/null 2>&1 </dev/null) || true
+        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null) || true
     local n=0
     while [ "$n" -lt 20 ]; do          # about ten seconds at most
       capture_started "$base" && break
@@ -970,8 +974,8 @@ cmd_capture() {
   # device names and error messages into mojibake here and in capture.log.
   # sed -u, not tr: tr holds about 4 KB before passing anything on, so lines showed up late and
   # Ctrl+C threw away what it held (also from capture.log).
-  # "${opts[@]}": the options as typed, without --console (see the top of this function).
-  (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" "${opts[@]}" 2>&1 | sed -u 's/\r$//' \
+  # ${opts[@]+"${opts[@]}"}: the options as typed, without --console (see the top of this function).
+  (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
     | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture) || true
 }
 
@@ -998,7 +1002,7 @@ setup_capture_here() {
   fi
   local source=()
   if [ -n "$(setting SIDENOTE_WHEELS "")" ]; then source=(--no-index --find-links "$(setting SIDENOTE_WHEELS "")"); fi   # no internet here: docs/air-gapped.md
-  "$(here_py)" -m pip install -q "${source[@]}" -r client/requirements.txt 2>&1 | tail -3
+  "$(here_py)" -m pip install -q ${source[@]+"${source[@]}"} -r client/requirements.txt 2>&1 | tail -3
 }
 cmd_capture_here() {
   local a up=0 console=0 opts=() packages
@@ -1011,10 +1015,10 @@ cmd_capture_here() {
   done
   packages="$(here_packages)" || { setup_capture_here; packages="$(here_packages)"; } \
     || die "$(L "The capture packages did not install. ./sidenote setup-capture shows why." "캡처 패키지가 설치되지 않았습니다. ./sidenote setup-capture로 원인을 확인하세요.")"
-  for a in "${opts[@]}"; do
-    case "$a" in --list-monitors|--help|-h) "$(here_py)" -X utf8 -u client/capture.py "${opts[@]}"; return 0 ;; esac
+  for a in ${opts[@]+"${opts[@]}"}; do
+    case "$a" in --list-monitors|--help|-h) "$(here_py)" -X utf8 -u client/capture.py ${opts[@]+"${opts[@]}"}; return 0 ;; esac
   done
-  [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
+  [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
                                     "X11 화면이 없습니다(DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽으니 데스크톱 세션에서 실행하세요.")"
   if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
@@ -1030,12 +1034,16 @@ cmd_capture_here() {
   local cmd=("$(here_py)" -X utf8 -u client/capture.py --server "ws://127.0.0.1:${PORT}/ingest")
   if [ "$console" = 1 ]; then
     echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it)${N}" "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C)${N}")"
-    "${cmd[@]}" "${opts[@]}" 2>&1 | log_capture || true
+    ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} 2>&1 | log_capture || true
     return 0
   fi
   local base; base="$(clients)"
   # setsid --fork: a session of its own, so closing this terminal does not end it (see the WSL start above)
-  setsid --fork "${cmd[@]}" --log "$LOG_PATH/capture.log" "${opts[@]}" >/dev/null 2>&1 </dev/null || true
+  if command -v setsid >/dev/null; then
+    setsid --fork ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null || true
+  else   # macOS has no setsid: nohup, in the background, keeps it past this terminal
+    nohup ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null &
+  fi
   local n=0
   while [ "$n" -lt 20 ]; do
     capture_started "$base" && break
@@ -1070,12 +1078,12 @@ cmd_llm() {   # the local LLM: pull, list, logs
           no_fit warn   # the words install, doctor and status use for the same case
           return 0
         fi
-        mapfile -t models <<<"$names"
+        models=(); while IFS= read -r m; do [ -n "$m" ] && models+=("$m"); done <<<"$names"   # not mapfile: bash 3.2 has none
       fi
       # sidenote-<model> is <model> with a larger batch (compose.yaml: llm-pull), made right after the pull.
       echo "$(L "${B}Downloading the local model${N}: ${models[*]} ${D}(a few GB to tens of GB; only this download container uses the internet)${N}" \
                 "${B}이 PC의 모델을 받습니다${N}: ${models[*]} ${D}(수 GB에서 수십 GB, 인터넷은 이 받기 컨테이너만 씁니다)${N}")"
-      docker compose --profile tools run --rm --no-deps llm-pull "${models[@]}" 2>&1 | grep -vE "^\s*$|pulling [0-9a-f]{12}" | sed 's/^/  /'
+      docker compose --profile tools run --rm --no-deps llm-pull ${models[@]+"${models[@]}"} 2>&1 | grep -vE "^\s*$|pulling [0-9a-f]{12}" | sed 's/^/  /'
       # an if, not &&: with the server down the pull still succeeded (set -e would end on the failed test)
       if health >/dev/null; then echo "  $(L "The server picks up the model within 20 seconds." "서버가 20초 안에 모델을 반영합니다.")"; fi ;;
     list)
@@ -1095,7 +1103,8 @@ cmd_gpu() {   # give the GPU back while you need it yourself, and take it again
 cmd_open() {
   health >/dev/null || die "$(L "The server is off. Run ./sidenote up first" "서버가 꺼져 있습니다. 먼저 ./sidenote up을 실행하세요")"
   local opened=1
-  if [ "$ON_WSL" = 0 ]; then xdg-open "$URL" >/dev/null 2>&1 || opened=0
+  if [ "$ON_MAC" = 1 ]; then open "$URL" >/dev/null 2>&1 || opened=0
+  elif [ "$ON_WSL" = 0 ]; then xdg-open "$URL" >/dev/null 2>&1 || opened=0
   else (cd /mnt/c && cmd.exe /c start "" "$URL" >/dev/null 2>&1) || opened=0; fi
   if [ "$opened" = 1 ]; then ok "$(L "Opened in the browser: $URL" "브라우저에서 열었습니다: $URL")"
   else warn "$(L "Could not open the browser. Open it yourself: $URL" "브라우저를 열지 못했습니다. 직접 여세요: $URL")"; fi
@@ -1300,7 +1309,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   local lnk="$desktop\\$name"
   if [ "${1:-}" = "--remove" ]; then
     local gone=0 f
-    for f in "$name" "${old_names[@]}"; do
+    for f in "$name" ${old_names[@]+"${old_names[@]}"}; do
       if [ -n "$(winps "if (Test-Path -LiteralPath '$desktop\\$f') { 'y' }")" ]; then
         winps "Remove-Item -LiteralPath '$desktop\\$f' -ErrorAction SilentlyContinue" >/dev/null || true
         ok "$(L "Shortcut removed: $f" "바로가기를 지웠습니다: $f")"
@@ -1351,7 +1360,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   if [ -n "$(winps "if (Test-Path -LiteralPath '$lnk') { 'y' }")" ]; then
     ok "$(L "Desktop shortcut made: $name" "바탕화면에 바로가기를 만들었습니다: $name")"
     local f
-    for f in "${old_names[@]}"; do   # one left over from when this command used another name
+    for f in ${old_names[@]+"${old_names[@]}"}; do   # one left over from when this command used another name
       if [ -n "$(winps "if (Test-Path -LiteralPath '$desktop\\$f') { 'y' }")" ]; then
         winps "Remove-Item -LiteralPath '$desktop\\$f' -ErrorAction SilentlyContinue" >/dev/null || true
         ok "$(L "Removed the shortcut under its old name: $f" "옛 이름의 바로가기를 지웠습니다: $f")"
@@ -1378,7 +1387,7 @@ cmd_setup_capture() {
   echo "${B}$(L "Installing the capture packages into Windows Python" "Windows Python에 캡처 패키지를 설치합니다")${N} ($req)"
   local source=()
   if [ -n "$(setting SIDENOTE_WHEELS "")" ]; then source=(--no-index --find-links "$(wslpath -w "$(setting SIDENOTE_WHEELS "")")"); fi   # no internet here: docs/air-gapped.md
-  (cd /mnt/c && cmd.exe /c py -3 -m pip install --user "${source[@]}" -r "$req" 2>&1 | tr -d '\r' | tail -3)
+  (cd /mnt/c && cmd.exe /c py -3 -m pip install --user ${source[@]+"${source[@]}"} -r "$req" 2>&1 | tr -d '\r' | tail -3)
 }
 
 cmd_doctor() {
@@ -1438,7 +1447,7 @@ PY
       tray|notray) ok "$(L "Capture packages installed" "캡처 패키지 설치됨") ${D}($CAPTURE_VENV)${N}" ;;
       *) bad "$(L "Capture packages missing (./sidenote setup-capture)" "캡처 패키지 없음 (./sidenote setup-capture)")" ;;
     esac
-    [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에 X11 화면 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작")"
+    [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에 X11 화면 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작")"
   elif win py -3 --version >/dev/null; then
     ok "Windows Python: $(win py -3 --version | tail -1)"
     local packages; packages="$(win_packages)" || packages=""   # "tray", "notray", or nothing when one is missing

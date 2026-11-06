@@ -215,7 +215,7 @@ STUB
 # state/linux-capture, and no process of this machine is ever looked at or ended.
 cat > "$work/bin/pgrep" <<'STUB'
 #!/usr/bin/env bash
-if [ -f "$FAKE/state/linux-capture" ]; then echo 1; else echo 0; exit 1; fi
+if [ -f "$FAKE/state/linux-capture" ]; then echo 4242; else exit 1; fi   # one process id a line, as pgrep prints them
 STUB
 cat > "$work/bin/pkill" <<'STUB'
 #!/usr/bin/env bash
@@ -317,13 +317,13 @@ calls_of() { ls "$work/calls/$1".* 2>/dev/null | sort; }    # the records are na
 last_call() {   # $1 = cmd|ps|curl|docker, $2 = a whole argument the call holds
   local f found=""
   for f in $(calls_of "$1"); do tr '\0' '\n' < "$f" | grep -qxF -- "$2" && found="$f"; done
-  CALL=(); [ -n "$found" ] && mapfile -d '' -t CALL < "$found"
+  CALL=(); [ -n "$found" ] && while IFS= read -r -d '' x; do CALL+=("$x"); done < "$found"   # not mapfile -d: bash 3.2
   return 0
 }
 last_call_with() {   # $1 = cmd|ps|curl|docker, $2 = text inside one of the call's arguments
   local f found=""
   for f in $(calls_of "$1"); do tr '\0' '\n' < "$f" | grep -qF -- "$2" && found="$f"; done
-  CALL=(); [ -n "$found" ] && mapfile -d '' -t CALL < "$found"
+  CALL=(); [ -n "$found" ] && while IFS= read -r -d '' x; do CALL+=("$x"); done < "$found"   # not mapfile -d: bash 3.2
   return 0
 }
 # What follows the given argument in CALL, as one string with each word in <>, for a readable comparison.
@@ -355,7 +355,7 @@ last_call cmd start; got="$(after --log)"
 # 4. --list-monitors goes to capture.py directly; the launcher's own --console must not go with it.
 state; run capture --console --list-monitors
 last_call cmd --list-monitors
-if [ ${#CALL[@]} -gt 0 ] && ! printf '%s\n' "${CALL[@]}" | grep -qx -- --console; then ok "--list-monitors is passed on without --console"
+if [ ${#CALL[@]} -gt 0 ] && ! printf '%s\n' ${CALL[@]+"${CALL[@]}"} | grep -qx -- --console; then ok "--list-monitors is passed on without --console"
 else bad "--list-monitors is passed on without --console" "got ${CALL[*]:-no call}"; fi
 
 # 5. A character cmd.exe would act on: the launcher says so instead of letting cmd.exe run part of it.
@@ -530,10 +530,10 @@ cases=("|help" "|bogus" "|up --bogus" "running|status" "ps-broken|status" "serve
        "|qa" "|down" "|restart" "|logs" "|gpu off" "|stats" "|setup-capture" "|setup-windows" "no-py|setup-capture"
        "|llm pull" "docker-denied|up" "no-toolkit|up" "|up --when-green" "|gpu status")
 korean=() silent=()
-for c in "${cases[@]}"; do
+for c in ${cases[@]+"${cases[@]}"}; do
   read -r -a mood <<<"${c%%|*}"; read -r -a cmd <<<"${c#*|}"
-  state "${mood[@]}"; [ -f "$work/state/notray" ] && echo notray > "$work/state/tray"
-  EXTRA_ENV="SIDENOTE_LANG=en" run "${cmd[@]}"
+  state ${mood[@]+"${mood[@]}"}; [ -f "$work/state/notray" ] && echo notray > "$work/state/tray"
+  EXTRA_ENV="SIDENOTE_LANG=en" run ${cmd[@]+"${cmd[@]}"}
   # The shortcut's old file name is a name on the desktop, not a word of the launcher's (the stand-in finds every file)
   sed -i 's/Sidenote 캡처\.lnk/OLD-SHORTCUT/g' "$work/out"
   if hangul "$work/out"; then korean+=("${c#*|}: $(grep -m1 -P '[\x{AC00}-\x{D7A3}]' "$work/out" 2>/dev/null || head -c 120 "$work/out")"); fi
@@ -580,8 +580,9 @@ else bad "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it" 
 # 30. With no COMPOSE_FILE set, the GPU picks compose.yaml's companion file (server/hardware.py: nvidia, amd, or cpu
 #     when there is neither); one that is set, in the environment or in .env, is left as it is.
 top() { sed -n '1,/^LOCAL_MODEL=/p' "$launcher"; }       # the launcher's settings, up to where the models are read
-picked="$(cd "$work" && env -u COMPOSE_FILE bash -c 'source /dev/stdin >/dev/null 2>&1; printf %s "$COMPOSE_FILE"' < <(top))"
-kept="$(cd "$work" && COMPOSE_FILE=compose.yaml:mine.yaml bash -c 'source /dev/stdin >/dev/null 2>&1; printf %s "$COMPOSE_FILE"' < <(top))"
+top > "$work/top.sh"   # a file, not /dev/stdin: bash 3.2's source reads nothing from a pipe
+picked="$(cd "$work" && env -u COMPOSE_FILE bash -c 'source ./top.sh >/dev/null 2>&1; printf %s "$COMPOSE_FILE"')"
+kept="$(cd "$work" && COMPOSE_FILE=compose.yaml:mine.yaml bash -c 'source ./top.sh >/dev/null 2>&1; printf %s "$COMPOSE_FILE"')"
 if [[ "$picked" =~ ^compose\.yaml:docker/compose\.(nvidia|amd|cpu)\.yaml$ ]] && [ "$kept" = compose.yaml:mine.yaml ]; then
   ok "the GPU picks the compose file (${picked#*:}), and a COMPOSE_FILE that is set stays"
 else bad "the GPU picks the compose file, and a COMPOSE_FILE that is set stays" "picked: ${picked:-none}, kept: ${kept:-none}"; fi
@@ -875,8 +876,8 @@ else bad "offline, an image that is not here is named, with the way out" "rc $(c
 state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LANG=en" run llm pull gemma4:e4b; last_call docker llm-pull; pulled=${#CALL[@]}
 if [ "$(cat "$work/rc")" != 0 ] && [ "$pulled" = 0 ] && said "docs/air-gapped.md"; then ok "offline, a model is not downloaded, and it says where one comes from"
 else bad "offline, a model is not downloaded, and it says where one comes from" "rc $(cat "$work/rc"), pulls $pulled: $(tail -1 "$work/out")"; fi
-state; EXTRA_ENV="SIDENOTE_WHEELS=/mnt/c/bundle/wheels" run setup-capture; last_call cmd pip; wheels=" ${CALL[*]} "
-state; run setup-capture; last_call cmd pip; online=" ${CALL[*]} "
+state; EXTRA_ENV="SIDENOTE_WHEELS=/mnt/c/bundle/wheels" run setup-capture; last_call cmd pip; wheels=" ${CALL[*]-} "
+state; run setup-capture; last_call cmd pip; online=" ${CALL[*]-} "
 if [[ $wheels == *" --no-index --find-links "* ]] && [[ $online != *"--no-index"* ]]; then ok "the capture packages come from a folder of wheels when one is named"
 else bad "the capture packages come from a folder of wheels when one is named" "with:$wheels without:$online"; fi
 
@@ -900,6 +901,23 @@ else bad "...llm pull pulls nothing, and says the models are that server's" "rc 
 state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other SIDENOTE_LANG=en" run install; last_call docker llm-pull; pulled=${#CALL[@]}
 if [ "$pulled" = 0 ] && said "Served by $other (SIDENOTE_LOCAL_URL): no model to download here"; then ok "...and install points at no download"
 else bad "...and install points at no download" "pulls $pulled: $(grep -F "3/4" -A2 "$work/out" | tr '\n' ' ')"; fi
+
+# 45. A Mac (uname says Darwin): it reads its own screen with no X11 display, so capture goes on past that to the server,
+#     doctor does not ask for one, and open uses macOS's own open. On Linux with no DISPLAY, capture still stops there.
+mkdir -p "$work/macbin"
+printf '#!/usr/bin/env bash\necho Darwin\n' > "$work/macbin/uname"
+printf '#!/usr/bin/env bash\nprintf "%%s\\0" "$@" > "$FAKE/calls/open.$(date +%%s%%N)"\n' > "$work/macbin/open"
+chmod +x "$work/macbin/uname" "$work/macbin/open"
+mac="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/macbin:$work/venvbin:$work/bin:/usr/bin:/bin"
+state server-down; EXTRA_ENV="$mac" run capture; mac_capture="$(cat "$work/out")"
+state server-down; EXTRA_ENV="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/venvbin:$work/bin:/usr/bin:/bin" run capture; linux_capture="$(cat "$work/out")"
+state; EXTRA_ENV="$mac" run doctor; mac_doctor="$(cat "$work/out")"
+state; EXTRA_ENV="$mac" run open; last_call open "http://127.0.0.1:8777"; opened=${#CALL[@]}
+if ! grep -qF "X11" <<<"$mac_capture$mac_doctor" && grep -qF "The server is off" <<<"$mac_capture" \
+   && grep -qF "No X11 display" <<<"$linux_capture" && [ "$opened" -gt 0 ]; then
+  ok "on a Mac capture needs no X11 display, doctor asks for none, and open uses macOS's open"
+else bad "on a Mac capture needs no X11 display, doctor asks for none, and open uses macOS's open" \
+         "mac capture: $(tail -1 <<<"$mac_capture"); linux: $(tail -1 <<<"$linux_capture"); X11 in doctor: $(grep -c X11 <<<"$mac_doctor"); open calls: $opened"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]
