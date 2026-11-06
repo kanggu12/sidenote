@@ -1799,8 +1799,9 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
         try:
             # Looked up at every open, so headphones plugged in or a device that came back are
             # picked up. Loopback of the default speaker = whatever you hear.
-            speaker = None if args.audio_device else str(sc.default_speaker().name)
-            mic = sc.get_microphone(args.audio_device or speaker, include_loopback=True)
+            device = args.audio_device or (mac_loopback(sc) if sys.platform == "darwin" else "")
+            speaker = None if device else str(sc.default_speaker().name)
+            mic = sc.get_microphone(device or speaker, include_loopback=True)
             # The device is open only while sound capture is on: a recorder left open but unread
             # would hand back the sound from while it was off. channels=2 then downmix: WASAPI
             # loopback records garbage in mono.
@@ -1867,6 +1868,20 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
                 sender.set_caps(audio=False, audio_device="")
                 failing = True
             stop.wait(3.0)
+
+
+# macOS hands no program the sound its speakers play. A loopback driver makes an input of it (BlackHole, free): the
+# sound reaches it when the output is a Multi-Output Device of the speakers and BlackHole (Audio MIDI Setup). Asked
+# again every 3 s, so one installed while this runs is picked up.
+MAC_LOOPBACK = ("blackhole", "loopback", "soundflower")
+
+
+def mac_loopback(sc) -> str:
+    for m in sc.all_microphones():
+        if any(w in str(m.name).lower() for w in MAC_LOOPBACK):
+            return str(m.name)
+    raise RuntimeError("no loopback input on this Mac: install BlackHole (brew install blackhole-2ch), make a Multi-Output "
+                       "Device of the speakers and BlackHole the output, or name an input with --audio-device")
 
 
 LOG_MAX_BYTES = 4_000_000   # one file, kept small enough to open: the launcher rotates it at start
