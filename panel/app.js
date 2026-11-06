@@ -3493,7 +3493,7 @@ function showOpened(el) {
   // up to six tenths of the room at a time, so what was in view stays partly in view; not past its own top while that shows
   let step = Math.min(over, (room - top) * 0.6);
   if (r.top > top) step = Math.min(step, r.top - top);
-  if (step > 0) { autoUntil = Date.now() + 120; window.scrollBy(0, step); }   // the panel's own scroll, not the reader's
+  if (step > 0) { autoUntil = Date.now() + 120; window.scrollBy(0, step); }   // the panel's own scroll, not one by hand
 }
 function showHint(it, key = null) {
   if (!it || !held(it) || it.live) return false;                     // only an answer kept back, once it is written
