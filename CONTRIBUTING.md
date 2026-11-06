@@ -179,6 +179,25 @@ on a throwaway k3d cluster.
 A pull request is ready when `./sidenote qa` passes, the new behavior has a check, and the docs say what changed for
 the person running Sidenote.
 
+## Release a version
+
+Versions follow [Semantic Versioning](https://semver.org/), and [CHANGELOG.md](CHANGELOG.md) holds each release's notes in
+the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+- **Which number.** A release that only fixes raises the patch number (0.1.8). One that adds something, such as a
+  feature, a setting or a platform, raises the minor number (0.2.0). One that asks people to change a setting, their
+  `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
+- **One place.** The number is written in `server/version.py`. The chart (`version`, `appVersion`), the `V=` lines of
+  [docs/air-gapped.md](docs/air-gapped.md) and the README's release badge follow it, and `tests/version_check.py` fails
+  when one does not.
+- **The steps.**
+  1. Move what is under `## [Unreleased]` into a new `## [x.y.z] - YYYY-MM-DD` section, under `### Added`, `### Changed`,
+     `### Fixed`, `### Removed` or `### Security`, and give it its link at the end of the file.
+  2. Set the number in `server/version.py`, `deploy/helm/sidenote/Chart.yaml` and `docs/air-gapped.md`, then run
+     `sh .github/badges.sh`.
+  3. Commit as `Sidenote x.y.z`, tag it `vx.y.z` and push both. `release.yml` checks the number, runs CI and publishes
+     ([docs/QA.md](docs/QA.md)).
+
 ## Recipes
 
 ### Add a local model

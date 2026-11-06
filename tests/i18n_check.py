@@ -275,5 +275,18 @@ check("the server it cannot reach is said in the same language",
       "Cannot reach the server" in report("stats", LANG="en_US.UTF-8", SIDENOTE_PORT="9")
       and "서버 연결 실패" in report("stats", LANG="ko_KR.UTF-8", SIDENOTE_PORT="9"))
 
+
+print("\n[the settings' help says the server's own limits]")
+# Keep answers and Keep what is heard say how long and how much the server keeps, as it is set (docs/README.md): a help
+# line once said 90 days and 200 MB with SIDENOTE_HISTORY_DAYS=30 set
+probe = ("from server.settings import SETTINGS; import json; m = {i['key']: i['help'] for i in SETTINGS.meta()['items']}; "
+         "print(json.dumps([m['history_keep'], m['speech_keep']], ensure_ascii=False))")
+with tempfile.TemporaryDirectory() as data:
+    env = {**os.environ, "SIDENOTE_LANG": "ko", "SIDENOTE_DATA": data, "SIDENOTE_HISTORY_DAYS": "30", "SIDENOTE_HISTORY_MB": "50",
+           "SIDENOTE_HEARD_MB": "5"}
+    kept = json.loads(subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env, capture_output=True, text=True).stdout or "[\"\", \"\"]")
+check("Keep answers and Keep what is heard give the days and megabytes set, not fixed ones",
+      "30일" in kept[0] and "50 MB" in kept[0] and "30일" in kept[1] and "5 MB" in kept[1], kept)
+
 print(f"==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)   # tests/run.sh counts a suite by its exit status

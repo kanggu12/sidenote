@@ -1,9 +1,35 @@
 # Changelog
 
 What changed in each release of Sidenote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and versions follow [Semantic Versioning](https://semver.org/). Each release's section here is its release notes.
+and versions follow [Semantic Versioning](https://semver.org/): a release that adds something raises the minor number, one
+that only fixes raises the patch number. Each release's section here is its release notes.
 
 ## [Unreleased]
+
+### Fixed
+
+- The turn of a problem's box written y first, added in 0.1.7, turned nothing in the server: it read the screen as a
+  picture, and the server holds it as the PNG that arrived. It reads that now, and leaves alone a box against the screen's
+  own edge, where it could not tell. Through the server's own path, over 559 first-pass boxes from earlier runs, it turned
+  6, each from at most a quarter of its problem to most or all of it, and none that held its problem
+  ([note 107](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-107)).
+- The panel, from 0.1.7: where the bands fit in the bar, a small scroll took them out of it and moved the thread down by
+  their height; above 1000 px they float again, and in one column they take their room and scroll inside themselves past
+  a third of the window. Solver settings runs past the window no more under a bar of two rows or in a short window.
+- The contents' search finds an answer's code as it is written (`__init__`, `$files`), and no longer a chart's numbers or
+  a diagram's source after a blank line in it; a table's rule and a formula's environment names are gone from its rows.
+- A review of starred answers keeps back a starred answer that the Starred choice brings in from the server, opened
+  before.
+- **Keep answers** and **Keep what is heard** give the days and megabytes the server is set to, not fixed ones.
+- What a press opens at the foot of the page comes into view as the panel's own scroll, so an answer chosen in the
+  contents stays chosen. A toast's bold part no longer ends inside brackets, and at 1000 px and below a toast is as wide
+  as the bands.
+- Korean words: an answer seen again reads "새로 풀려면 다시 분석", and the welcome's tip has no particle after its chip.
+
+### Changed
+
+- How a release is numbered is written down ([CONTRIBUTING](https://github.com/kanggu12/sidenote/blob/main/CONTRIBUTING.md#release-a-version)):
+  a release that adds something raises the minor number, one that only fixes raises the patch number.
 
 ## [0.1.7] - 2026-11-07
 

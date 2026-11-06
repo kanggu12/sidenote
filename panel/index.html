@@ -1158,7 +1158,7 @@
   /* As tall as the window allows less the bar over it and a little under it: at 1920x1040 the agent's section ran 7 px past 88 px of room
      and its last line sat under the edge */
   .settings { width: min(880px, 100%); padding: 16px 20px 18px;
-    display: flex; flex-direction: column; max-height: calc(100vh - 80px);
+    display: flex; flex-direction: column; max-height: calc(100vh - var(--bar-h, 56px) - 50px);
     background: var(--sheet); border-color: var(--rule-2); border-radius: 16px;
     box-shadow: var(--glass-rim), var(--lift);
     backdrop-filter: none; -webkit-backdrop-filter: none;   /* .card's blur: nothing shows through to blur */
@@ -1166,7 +1166,7 @@
   @keyframes sheet-in { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
   /* Solver settings keeps one height for every section: it grew and shrank with each tab, and Reset to defaults under it
      jumped. Where the tabs stack (720 px and narrower) it is as tall as its section, as before. */
-  @media (min-width: 721px) { #settings.settings { height: min(820px, calc(100vh - 80px)); } }
+  @media (min-width: 721px) { #settings.settings { height: min(820px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
   /* The pane answers the click on a section: it is the only thing that changed, so it is the only
      thing that moves. */
   .set-pane.enter { animation: pane-in .18s var(--ease); }
@@ -1562,11 +1562,12 @@
      between them, the width of the column. The right column does not move for them. */
   :root[data-skin="classic"] .alerts { top: calc(var(--bar-h, 56px) + 18px); padding: 0; margin: 0 auto; max-width: none; border-radius: 14px; overflow: hidden auto;
     width: calc(100% - 56px); }     /* a note laid on the page, not the page: the width the floating question box has */
-  /* At the top of the page it takes its room above the thread: floating there, it lay over the first answer's head and its
-     keys could not be pressed (at 1000 px and below, where the bands do not fit in the bar). Scrolled, it sticks level with
-     the right column, over the page. */
-  :root[data-skin="classic"] .alerts:not(:empty) { margin-top: 16px; margin-bottom: 0; background: color-mix(in srgb, var(--sheet) 58%, transparent); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  /* It floats: it takes no room, so the thread starts level with the right column whether or not a band is up (--alerts-h: fitRail) */
+  /* At the top of the page it lies a little inside the page's edge, not on it; scrolled, it sticks level with the right column */
+  :root[data-skin="classic"] .alerts:not(:empty) { margin-top: 16px; margin-bottom: calc(-1 * var(--alerts-h, 0px) - 16px); background: color-mix(in srgb, var(--sheet) 58%, transparent); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
     border: 1px solid var(--glass-line); box-shadow: var(--glass-rim), var(--lift); }
+  /* Over the welcome, before any answer, the bands take their room instead: floating, two or more covered its headline */
+  :root[data-skin="classic"]:has(#welcome:not([hidden])) .alerts:not(:empty) { margin-bottom: 0; }
   /* What needs attention is the one place the frame takes colour: a plain notice in green, a warning in orange, a fault in red */
   :root[data-skin="classic"] .alert { --tone: #2eb67d; }
   :root[data-skin="classic"] .alert.warn { --tone: #e8912d; }
@@ -1939,7 +1940,7 @@
   :root[data-skin="classic"] .combo-list li { white-space: nowrap; }
   /* A passing notice is the same glass as a band, in the same place: under the bar, over the page's column */
   :root[data-skin="classic"] .toast { top: calc(var(--bar-h, 56px) + 18px + var(--toast-off, 0px)); bottom: auto !important; left: var(--col-mid, 50%); max-width: min(760px, calc(var(--col-w, 100vw) - 32px)); }
-  @media (max-width: 1000px) { :root[data-skin="classic"] .toast { left: 50%; max-width: calc(100vw - 24px); } }
+  @media (max-width: 1000px) { :root[data-skin="classic"] .toast { left: 50%; max-width: calc(100vw - 56px); } }   /* the bands' width */
   /* Loading onto the GPU: the button says so with a bar running along its foot, and a press stops it */
   :root[data-skin="classic"] #gpu-load.loading { position: relative; overflow: hidden; color: #ff9f43; border-color: color-mix(in srgb, #ff9f43 60%, transparent); }
   #gpu-load.loading::after { content: ""; position: absolute; left: 0; bottom: 0; width: 40%; height: 2px; background: currentColor; animation: load-run 1.1s ease-in-out infinite alternate; }
@@ -2852,6 +2853,12 @@
   :root[data-skin="classic"] .v-seg { flex: 1 1 auto; min-width: 72px; }
   /* Two bands stacked over the thread read as one block: what passes under them does not show between them */
   html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { background: color-mix(in srgb, var(--paper) 78%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 4px; }
+  /* One column (1000 px and narrower): the bands are never in the bar there (placeBands), so they can take their room over the
+     thread without the page jumping when it scrolls; floating, they lay over the first answer, whose keys could not be
+     pressed. Up to a third of the window, past which they scroll inside themselves rather than spill over the page. */
+  @media (max-width: 1000px) {
+    html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { margin-bottom: 16px; overflow-y: auto; padding-bottom: 2px; }
+  }
 
   /* ---- Practice, the keyboard shortcuts and Export's menu: parts the panel has, put to these uses ---- */
   /* An answer Practice keeps back: its keys wear the follow-up row's look (.row.asks), how many hints it has stands on their middle */

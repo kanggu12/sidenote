@@ -675,6 +675,11 @@ def group_review(br, s):
     check("with Practice off, Starred shows its answers", not held_state(p, 20)["held"], held_state(p, 20))
     p.js("() => setPractice(true)")
     p.wait(150)
+    # A starred answer the Starred choice brings in from the server, opened in Practice before, comes in kept back too
+    came = p.js("""() => { practiceCards.set('777', OPENED); histStar = true;
+        practiceArrived({ id: 777, starred: true, ts: Date.now() - 86400000 }, true);
+        const back = practiceCards.get('777'); practiceCards.delete('777'); return back; }""")
+    check("in a review, a starred answer brought in later and opened before comes in kept back", came == 0, came)
     check("turned on with Starred chosen, the one opened before is kept back again, the unstarred one not",
           held_state(p, 20)["held"] and not p.js("() => held(items.get(21))"), [held_state(p, 20), p.js("() => held(items.get(21))")])
     p.close()

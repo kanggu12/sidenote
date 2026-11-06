@@ -237,31 +237,53 @@ def box_aspect(frame, view) -> float:
 UPRIGHT_CUT = 0.6
 
 
-def _side_cut(edges, box) -> float:
-    """How much writing a box's left and right edges cross, over how much is inside it, on an edge map of the picture."""
+def _side_cut(edges, box) -> float | None:
+    """How much writing a box's left and right edges cross, over how much is inside it, on an edge map of the picture.
+    None for a box with a side on the picture's own edge, where nothing can be crossed: a pane down the left of the
+    screen, turned, runs from edge to edge and would look as if it cut through nothing."""
     w, h = edges.size
     x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (w, h, w, h)))
-    x0, x1, y0, y1 = max(0, min(w - 3, x0)), max(0, min(w - 3, x1)), max(0, y0), min(h, y1)
+    if x0 < 2 or x1 > w - 3:
+        return None
+    y0, y1 = max(0, y0), min(h, y1)
     if x1 <= x0 + 2 or y1 <= y0 + 2:
-        return float("inf")
+        return None
     inside = ImageStat.Stat(edges.crop((x0, y0, x1, y1))).mean[0] + 1e-6
     side = sum(ImageStat.Stat(edges.crop((x - 1, y0, x + 2, y1))).mean[0] for x in (max(1, x0), x1)) / 2
     return side / inside
 
 
+def on_end(box, aspect: float) -> bool:
+    """Whether a box (fractions of the picture it was written on, `aspect` its height over its width) stands between once
+    and twice as tall as wide: the shape upright looks at."""
+    return bool(box) and bool(aspect) and 1.0 < (box[3] - box[1]) * aspect / max(1e-9, box[2] - box[0]) <= TALL_BOX
+
+
 def upright(frame, view, box, aspect: float = 0.0):
-    """`box` (fractions of `view` of the screen) turned, when it was written y first in a shape TALL_BOX lets through."""
-    if box is None or frame is None or not aspect:
+    """`box` (fractions of `view` of the screen) turned, when it was written y first in a shape TALL_BOX lets through.
+    `frame` is the screen the server holds (its PNG as it arrived, server/app.py Frame), or a picture. Runs in a thread:
+    a 4K screen is read and its edges found in about 0.15 s."""
+    if box is None or frame is None or not on_end(box, aspect):
         return box
     x0, y0, x1, y1 = box
-    if not 1.0 < (y1 - y0) * aspect / max(1e-9, x1 - x0) <= TALL_BOX:
-        return box
     turned = (y0, x0, y1, x1)
     try:
-        W, H = frame.size
-        pic = frame.crop((int(view[0] * W), int(view[1] * H), int(view[2] * W), int(view[3] * H)))
+        if hasattr(frame, "crop"):
+            pic = frame
+        elif getattr(frame, "full_png", b""):
+            pic = Image.open(io.BytesIO(frame.full_png))
+        else:
+            return box
+        W, H = pic.size
+        pic = pic.crop((int(view[0] * W), int(view[1] * H), int(view[2] * W), int(view[3] * H)))
         edges = pic.convert("L").filter(ImageFilter.FIND_EDGES)
-        return turned if _side_cut(edges, turned) < UPRIGHT_CUT * _side_cut(edges, box) else box
+        # FIND_EDGES leaves the picture's own brightness in its outermost pixels, a bright line down a box that starts at the
+        # picture's left edge: those go
+        ImageDraw.Draw(edges).rectangle((0, 0, edges.width - 1, edges.height - 1), outline=0)
+        as_written, other = _side_cut(edges, box), _side_cut(edges, turned)
+        if as_written is None or other is None:   # nothing to tell them apart by
+            return box
+        return turned if other < UPRIGHT_CUT * as_written else box
     except Exception:   # a picture that cannot be read leaves the box as written
         return box
 
@@ -1548,7 +1570,7 @@ class Pipeline:
                            crop_box=self._box(f.text, local.region_scale, view, windows, aspect),
                            seen=self._seen(f.text, local.region_scale, view, aspect), sent=sent, stages=stages)
 
-        seen = self._seen(f.head, local.region_scale, view, box_aspect(frame, view), frame)   # the model's box, for the duplicate check
+        seen = await self._seen_upright(f.head, local.region_scale, view, box_aspect(frame, view), frame)   # the model's box, for the duplicate check
         box = located(seen, windows) if seen else None        # where the problem is, for the crops
         hard = f.type in DEEP_TYPES or f.route != "fast"     # the fast pass's own call (unknown counts as hard)
         # The problem answered a little while ago, seen again: scrolled, moved, or come back to after another screen.
@@ -1728,8 +1750,17 @@ class Pipeline:
         return out
 
     @staticmethod
-    def _seen(text: str, scale: float, view, aspect: float = 0.0, frame=None) -> tuple | None:
-        b = upright(frame, view, region_box(text, scale, aspect), aspect)
+    def _seen(text: str, scale: float, view, aspect: float = 0.0) -> tuple | None:
+        b = region_box(text, scale, aspect)
+        return within(b, view) if b else None
+
+    @staticmethod
+    async def _seen_upright(text: str, scale: float, view, aspect: float, frame) -> tuple | None:
+        """The fast pass's box as _seen reads it, turned first when the screen shows it was written y first (upright),
+        which reads the screen in a thread."""
+        b = region_box(text, scale, aspect)
+        if b is not None and frame is not None and on_end(b, aspect):
+            b = await _in_thread(upright, frame, view, b, aspect)
         return within(b, view) if b else None
 
     @staticmethod

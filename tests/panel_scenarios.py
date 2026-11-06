@@ -484,6 +484,30 @@ def group_review_fixes(br, s):
     check("at 1000 px the band at the top of the page lies over no answer", not over[2] and over[0] <= over[1], over)
     no_errors(p, "band")
     p.close()
+    # ...and where the bands fit in the bar at the top, scrolling a little takes them out of it without moving the thread:
+    # taking their room there, the first answer jumped down by their height
+    p = Page(br, s, [row(905 + i, "essay", f"문제 {i}", "답", "풀이입니다 " * 40, ago=300 - i) for i in range(4)], w=1366, h=900)
+    p.js("() => { window.scrollTo(0, 0); paused = true; renderAlerts(); placeBands(); }")
+    p.wait(300)
+    before = p.js("() => [document.documentElement.classList.contains('bands-in-bar'), Math.round(document.querySelector('.entry:not([hidden])').getBoundingClientRect().top)]")
+    p.page.mouse.move(500, 500)
+    p.page.mouse.wheel(0, 10)
+    p.wait(400)
+    after = p.js("() => [document.documentElement.classList.contains('bands-in-bar'), Math.round(document.querySelector('.entry:not([hidden])').getBoundingClientRect().top), Math.round(window.scrollY)]")
+    check("at 1366 px a band in the bar leaves it on a small scroll, and the thread moves only by the scroll",
+          before[0] and not after[0] and abs((before[1] - after[1]) - after[2]) <= 2, [before, after])
+    no_errors(p, "band scroll")
+    p.close()
+    # ...and on a phone four bands, longer than a third of the window, scroll inside themselves, over no answer
+    p = Page(br, s, [row(908 + i, "essay", f"문제 {i}", "답", "풀이입니다", ago=300 - i) for i in range(3)], w=390, h=844)
+    p.js("""() => { window.scrollTo(0, 0); paused = true; settingsValues.roi_box = [0.1, 0.1, 0.6, 0.7]; capture.clients = 0;
+        capture.screen_on = true; status.update = { version: '9.9.9', url: '' }; renderAlerts(); placeBands(); }""")
+    p.wait(300)
+    four = p.js("""() => { const b = document.getElementById('alerts'), e = document.querySelector('.entry:not([hidden])').getBoundingClientRect();
+        return [b.children.length, Math.round(b.getBoundingClientRect().bottom), Math.round(e.top), b.scrollHeight > b.clientHeight]; }""")
+    check("at 390 px the bands, three or more, lie over no answer", four[0] >= 3 and four[1] <= four[2], four)
+    no_errors(p, "phone bands")
+    p.close()
     # 2. The answer opened at the foot of the page comes up above the question box
     body = "\n\n".join(f"## 부분 {i}\n\n" + "이 부분은 풀이입니다. " * 6 for i in range(3))
     p = Page(br, s, [row(910, "essay", "앞 문제", "앞 답", "풀이", ago=600)], w=1366, h=900)
@@ -501,11 +525,22 @@ def group_review_fixes(br, s):
     check("an answer opened at the foot comes up over the question box", gap[0] <= gap[1], gap)
     no_errors(p, "opened")
     p.close()
+    # ...Solver settings stays inside the window: under a bar of two rows (721 to about 780 px) and in a short window
+    for w, hh in ((768, 800), (1366, 768), (1280, 720)):
+        p = Page(br, s, [row(915, "essay", "문제", "답", "풀이", ago=60)], w=w, h=hh)
+        p.js("() => openSettings()")
+        p.wait(400)
+        fit = p.js("""() => { const r = document.getElementById('settings').getBoundingClientRect(), o = document.getElementById('settings').closest('.overlay');
+            return [Math.round(r.bottom), window.innerHeight, o ? o.scrollHeight - o.clientHeight : -1]; }""")
+        check(f"at {w}x{hh} Solver settings ends inside the window and its veil does not scroll", fit[0] <= fit[1] and fit[2] <= 1, fit)
+        p.close()
     # 3. The contents' rows and their search read the words the page shows, not the Markdown and TeX under them
-    md = "적분 값은 1/3입니다.\n\n```mermaid\nflowchart LR\nA-->B\n```\n\n$$\n\\int_0^1 x^2\\,dx\n$$"
+    md = ("적분 값은 1/3입니다.\n\n```mermaid\nsequenceDiagram\nA->>B: hello\n\nB->>A: world\n```\n\n$$\n\\int_0^1 x^2\\,dx\n$$\n\n"
+          "```chart\n{\"series\": [1, 2]}\n```\n\n```python\ndef __init__(self):\n    pass\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |")
     p = Page(br, s, [row(920, "math", "적분", "1/3", md, ago=60)], w=1366, h=900)
-    found = p.js("() => [searchText(items.get(920)).includes('mermaid'), searchText(items.get(920)).includes('flowchart'), searchText(items.get(920)).includes('∫')]")
-    check("a diagram's source is not what an answer is found by, and a formula reads as its signs", found == [False, False, True], found)
+    found = p.js("() => { const t = searchText(items.get(920)); return [t.includes('mermaid'), t.includes('world'), t.includes('series'), t.includes('∫'), t.includes('__init__'), t.includes('---')]; }")
+    check("a diagram's or a chart's source is not what an answer is found by, its code is, and a formula reads as its signs",
+          found == [False, False, False, True, True, False], found)
     no_errors(p, "rows")
     p.close()
 
