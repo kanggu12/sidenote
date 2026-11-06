@@ -2079,7 +2079,7 @@ function texPlain(t) {
   return t.replace(/\\(?:d|t)?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "$1/$2").replace(/\\sqrt\s*\{([^{}]*)\}/g, "√$1")
     .replace(/\\(?:left|right)\b/g, "").replace(/\\times\b/g, "×").replace(/\\cdot\b/g, "·").replace(/\\(?:le|leq)\b/g, "≤")
     .replace(/\\(?:ge|geq)\b/g, "≥").replace(/\\(?:ne|neq)\b/g, "≠").replace(/\\infty\b/g, "∞").replace(/\\pi\b/g, "π")
-    .replace(/\\(log|ln|sin|cos|tan|max|min)\b/g, "$1").replace(/\\[A-Za-z]+/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
+    .replace(/\\(log|ln|sin|cos|tan|max|min)\b/g, "$1").replace(/\\[,;:! ]/g, " ").replace(/\\int(?![A-Za-z])/g, "∫").replace(/\\sum(?![A-Za-z])/g, "Σ").replace(/\\sqrt(?![A-Za-z])/g, "√").replace(/\\[A-Za-z]+/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
 }
 // The line as the page draws it (inline Markdown): only the marks drawn away go, the emphasis, the code ticks and a formula's
 // dollars. A "#", ">" or "|" is what was written (C#, i >= n, ps aux | grep), so the copy key gives it as it stands.
@@ -3462,6 +3462,21 @@ function dropSelection(it) {
   if (el && selectionIn(el)) window.getSelection().removeAllRanges();
 }
 // The next part of the current answer's solution; false when there is none to show
+// What a press opened on an answer, brought above the question box that floats over the page's foot: on the newest answer
+// a hint, the answer or the details opened under the box and the page stayed where it was. Moved only as far as needed,
+// and never so far that the top of what opened goes under the bar.
+function showOpened(el) {
+  const box = $("askform")?.getBoundingClientRect(), r = el?.getBoundingClientRect();
+  if (!box || !r || !r.height) return;
+  const room = Math.min(box.top, window.innerHeight) - 12;
+  const top = (document.querySelector("header.bar")?.getBoundingClientRect().bottom || 56) + 12;
+  const over = r.bottom - room;
+  if (over <= 0) return;
+  // up to six tenths of the room at a time, so what was in view stays partly in view; not past its own top while that shows
+  let step = Math.min(over, (room - top) * 0.6);
+  if (r.top > top) step = Math.min(step, r.top - top);
+  if (step > 0) window.scrollBy(0, step);
+}
 function showHint(it, key = null) {
   if (!it || !held(it) || it.live) return false;                     // only an answer kept back, once it is written
   const total = practiceParts(it).length, n = hintsShown(it);
@@ -3471,7 +3486,10 @@ function showHint(it, key = null) {
   dropSelection(it);
   renderEntry(it);
   // A key pressed keeps the keyboard; once the last hint is out, the answer key next to it takes it
-  if (key) afterDraw(it, (el) => { if (!el.contains(document.activeElement)) el.querySelector("[data-act='hint'], [data-act='reveal']")?.focus({ preventScroll: true }); });
+  afterDraw(it, (el) => {
+    if (key && !el.contains(document.activeElement)) el.querySelector("[data-act='hint'], [data-act='reveal']")?.focus({ preventScroll: true });
+    showOpened(el);
+  });
   return true;
 }
 // All of it: the answer line, the whole solution and what came with it. Opened once, it stays open
@@ -3485,6 +3503,7 @@ function showAnswer(it, key = null) {
   afterDraw(it, (el) => {
     if (key && !el.contains(document.activeElement)) el.querySelector("[data-copy-answer]")?.focus({ preventScroll: true });   // the key's place
     sweepKey(el);                   // the highlighter goes along the answer line, as on an answer that has come in
+    showOpened(el);
   });
   announce(`${TYPE_LABEL[it.head.type] || t("Solution")}: ${plainAnswer(it.head.answer) || t("Solution done")}`);
   return true;
@@ -4159,12 +4178,20 @@ function forgetScreens() {   // screen capture off: the screenshots kept for the
 // answers), lower-cased once per search
 // (the answer as read: its head lines, "TYPE:", "ANSWER:", kept every row for "type" and showed in the row)
 function readText(raw) { const h = splitHead(raw || "", true); return [h.answer || "", h.body || ""].join("\n"); }
+// The same words as the page shows them, for the search and its rows: a diagram's source and the fences round code are
+// no words on the page, nor a formula's TeX (rows read "```mermaid flowchart L…" and were found by "mermaid")
+function plainRead(md) {
+  return String(md || "").replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => texPlain(tex)).split(/\n{2,}/).map((part) => part
+    .replace(/^[ \t]*```[ \t]*(mermaid|dot|graphviz|plantuml)\b[\s\S]*?(^[ \t]*```[ \t]*$|$(?![\s\S]))/gim, "")
+    .replace(/^[ \t]*```.*$/gm, ""))
+    .join("\n\n").split("\n").map((l) => plainAnswer(l, true)).filter(Boolean).join("\n");
+}
 // One Practice keeps back is found by what it shows: its question and the hints out, not the answer it keeps back, which a row
 // found by it would show
 function searchText(it) {
   const hold = held(it);
-  const parts = [TYPE_LABEL[it.head.type] || it.head.type || "", it.transcript || "", it.head.asked || "", hold ? shownText(it) : readText(it.raw), it.error || ""];
-  for (const tid of it.turns) { const t = turns.get(tid); if (t && !(hold && t.retry)) parts.push(t.q || "", readText(t.raw)); }
+  const parts = [TYPE_LABEL[it.head.type] || it.head.type || "", it.transcript || "", it.head.asked || "", plainRead(hold ? shownText(it) : readText(it.raw)), it.error || ""];
+  for (const tid of it.turns) { const t = turns.get(tid); if (t && !(hold && t.retry)) parts.push(t.q || "", plainRead(readText(t.raw))); }
   return parts.join("\n").toLowerCase();
 }
 // The row's text with the words searched for marked, escaped; around the first match when it is further in than
@@ -4371,7 +4398,7 @@ function renderIndex() {
       : (plainAnswer(it.head.asked) || says(it.head.answer) || firstLine(it.head.body) || label);
     // a row kept for words that are not in its first line shows where they are
     if (words.length && !words.every((w) => text.toLowerCase().includes(w))) {
-      const whole = hold ? shownText(it) : readText(it.raw), at = whole.toLowerCase().indexOf(words[0]);
+      const whole = plainRead(hold ? shownText(it) : readText(it.raw)), at = whole.toLowerCase().indexOf(words[0]);
       if (at >= 0) text = whole.replace(/\s+/g, " ");
     }
     return `${head}<li><button class="h${it.error ? " err" : ""}${it.live ? " live" : ""}" data-id="${id}" title="${escapeHtml(text)}"
@@ -5238,7 +5265,7 @@ function settingRow(item) {
   const pick = (item.opt_help || {})[String(v)];
   return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, v, !!why)}</span>
     ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
-    <p class="help">${escapeHtml(item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p></div>`;
+    <p class="help">${escapeHtml(extra ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p></div>`;
 }
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
 // sections become tabs down the side, so every setting is one click from any other.
@@ -5896,6 +5923,7 @@ document.addEventListener("click", (e) => {
     const tEl = mm.closest("[data-turn]");
     const owner = tEl ? turns.get(idOf(tEl.dataset.turn)) : items.get(idOf(mm.closest(".entry")?.dataset.id));
     if (owner?.meta) owner.meta.open = open;
+    if (open) showOpened(box);
   }
   const cpt = e.target.closest("[data-copy-ptext]");
   if (cpt) { const it = items.get(idOf(cpt.dataset.copyPtext)); if (it?.ptext?.text) copyText(it.ptext.text, cpt); }

@@ -10,7 +10,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
@@ -687,6 +687,13 @@ no box that tall, so nothing moves for them.
 What it cannot tell is a box written y first that is still wide enough, as on the 2160p screen of note 106: 0.77 times as
 tall as wide, a shape a long problem in a pane can have too.
 
+Between once and twice as tall as wide, the picture tells it instead (`upright` in `server/pipeline.py`). Read as written, a
+strip of a wide problem stands on end and its left and right edges run down through the lines of text; turned, they lie
+in the margins. So such a box is turned when the edges of the turned one cross less than `UPRIGHT_CUT` (0.6) as much
+writing as its own, each counted against the writing inside it. Over the 495 first-pass boxes kept from earlier runs of
+the known-answer set, it turned 5, each from 3 to 24 per cent of its problem to 35 to 100, and no box that held its
+problem; the panes down the left of the coding sites, which stand that tall, stayed as they were.
+
 ## The agents
 
 Also on this topic:
@@ -713,9 +720,64 @@ Measured on the known-answer set with Gemma 4 E4B, the agent off and web search 
 | llama.cpp's server, the Q8_0 GGUF | 35 | 0.3 to 0.4 s | 24.1 s |
 | vLLM 0.33, BF16, with its reasoning parser and tool calling | 30 | 0.1 to 0.3 s | 19.7 s |
 | vLLM without the reasoning parser | 8 | 0.1 s | 19.7 s |
+| vLLM 0.33, as above, with Gemma 4's picture budget at 1120 tokens | 39 | 0.4 s | 22.0 s |
 
 Before the change, llama.cpp's server, thinking on every pass, got 41 of 56 at a median of 37.4 s. Without its reasoning
 parser, vLLM brought no answer back from any pass that thought, so the guide starts it with `--reasoning-parser gemma4`.
+
+What was left between vLLM and Ollama was the picture. Gemma 4 reads an image as up to 1120 tokens; Sidenote gives Ollama
+that budget (`LLAMA_ARG_IMAGE_MAX_TOKENS` in `compose.yaml`, the chart and the app), and vLLM's processor takes 280 unless
+told otherwise, which blurs the small text of a screenshot. Started with `--mm-processor-kwargs '{"max_soft_tokens": 1120}'`,
+the same model on vLLM got 39 of 56, against 30 at 280 and Ollama's 38. The guide starts it so, and llama.cpp's server with
+`--image-max-tokens 1120`, the same budget (not measured there again).
+
+### <a id="note-109"></a>109. Think before answering stays on Auto
+
+**Think before answering** decides which problems the local model reasons through before it answers: Auto for the ones
+that call for it (multiple choice, calculation, code), Always for every one. Measured again on the 56 screens and spoken
+questions of the known-answer set with the 26b, one run each, the agent off:
+
+| | Right | Known answers, of 40 | Current facts, of 8 | Code passing, of 7 | Thinking passes |
+|:---|---:|---:|---:|---:|---:|
+| Auto | 50 | 38 | 4 | 7 | 47 |
+| Always | 49 | 38 | 6 | 6 | 51 |
+
+The two are one problem apart, and the current facts went 4 to 6 between runs with nothing changed but what the search
+engines returned (Auto alone, run again on those 8: 4). So the default stays Auto. The times are not compared: other work
+shared the PC's processor during the Auto run.
+
+### <a id="note-110"></a>110. Qwen3-VL is not suggested for a GPU
+
+Measured against Gemma 4 on the same known-answer set, the agent off: `qwen3-vl:30b-a3b-instruct` through Ollama, in a
+copy with Sidenote's context and batch, as the Gemma models are run. The instruct build, because Sidenote turns thinking on
+and off per pass and Qwen3-VL has no such switch: its thinking build thinks on every pass, and a screen with nothing on it
+has to be called empty in about a second.
+
+| | Right, of 56 | Known answers, of 40 | Current facts, of 8 | Code passing, of 7 | Screens of several windows, of 12 | Median time |
+|:---|---:|---:|---:|---:|---:|---:|
+| `gemma4:26b` (note 109) | 50 | 38 | 4 | 7 | 10 | 49.4 s |
+| `qwen3-vl:30b-a3b-instruct` | 18 | 18 | 0 | 3 | 0 | 5.1 s |
+
+It wrote Sidenote's head lines (`TYPE`, `ANSWER`, `REGION`) as asked, and its boxes held their problems. What it got wrong
+was the problems: it called a quiz screen empty, answered without working through what needed it (two dice summing to 8
+or more: 1/2, where 15 of 36 is 5/12), and answered none of the screens with several windows. So it gets no profile among
+the suggested models; it can still be chosen in the panel like any vision model the local server has.
+
+### <a id="note-111"></a>111. Gemma 4's MTP head on llama.cpp's server: about a tenth faster
+
+Gemma 4 ships a small head that guesses the next few tokens for the model to check (multi-token prediction), which
+llama.cpp's server runs with `--spec-type draft-mtp -md <the mtp GGUF>`. Ollama, which Sidenote starts, has no such
+switch. Measured on the test PC with the 26b (`gemma-4-26B-A4B-it-Q4_0.gguf` and its `mtp-…-Q8_0.gguf`, ggml-org's), six
+questions of up to 700 tokens each, greedy:
+
+| | Tokens a second, median | The six, in all |
+|:---|---:|---:|
+| Without the head | 83.3 | 49.8 s |
+| With it | 91.2 | 44.0 s |
+
+The head's guesses were taken 49 per cent of the time, and the 26b, a mixture of experts that runs about 4B of its weights
+for each token, was quick to begin with. So the guide names the switch for those who run llama.cpp's server, and nothing
+in Sidenote depends on it.
 
 ### <a id="note-5"></a>5. Streaming
 

@@ -8,7 +8,7 @@ It runs in one of three ways:
 
 - **The app** (Windows or Linux, no Docker): `Sidenote.exe` (`Sidenote` on Linux) starts everything on this PC, with
   Ollama for the local model (section 3).
-- **With Docker** (Linux, or Windows with WSL 2): `./sidenote <command>`, typed in a terminal in this repository's
+- **With Docker** (Linux, Windows with WSL 2, or a Mac): `./sidenote <command>`, typed in a terminal in this repository's
   folder, runs the server in containers and adds web search for the local model and a sandbox for code checks.
   `./sidenote help` lists the commands. Most of this guide describes this setup.
 - **On Kubernetes**: the Helm chart (section 16).
@@ -44,7 +44,7 @@ Sidenote is a few programs that work together. Which of them run, and where, dep
 
 | Part | What it does | In the app | With Docker |
 |:---|:---|:---|:---|
-| Capture program, `client/capture.py` | Captures the screen and the speaker sound and sends them to the server | a process the app starts | Windows Python, or the Python of a Linux desktop |
+| Capture program, `client/capture.py` | Captures the screen and the speaker sound and sends them to the server | a process the app starts | Windows Python, or the Python of a Linux desktop or a Mac |
 | Server, `server/` | Finds the problems in screens and speech, solves them with the local model or the agent, and reads the web pages the local model asks for | a process the app starts | the `sidenote` container |
 | Local model | The vision model that solves (Ollama) | this PC's Ollama | the `sidenote-llm` container, on the GPU, with no internet |
 | Web search | Sends the local model's searches to search engines (SearXNG) | none | the `sidenote-searxng` container |
@@ -55,12 +55,13 @@ Sidenote is a few programs that work together. Which of them run, and where, dep
 With Docker on Windows, the server runs in WSL, which cannot see the Windows screen or sound, so only the capture
 program runs on Windows. `./sidenote capture` starts it from the WSL terminal and returns at once: the program runs
 without a window, with an icon in the notification area, and is ended from that icon or with
-`./sidenote capture-stop` (section 4). On a Linux desktop the same command runs the capture program there, from a
+`./sidenote capture-stop` (section 4). On a Linux desktop or a Mac the same command runs the capture program there, from a
 virtual environment of its own (`.venv-capture`).
 
 ## 2. Requirements
 
-What each setup needs before its first start:
+What each setup needs before its first start. The memory, GPU and disk each model needs, with what was measured, are in the
+README's [What it runs on](../README.md#what-it-runs-on).
 
 - **The app**: Windows 10 or 11, or Linux with an X11 session and glibc 2.35 or newer (Ubuntu 22.04 or newer, Debian
   12 or newer). [Ollama](https://ollama.com/download) runs the local model.
@@ -74,9 +75,10 @@ What each setup needs before its first start:
 - **The local model**: an NVIDIA or AMD GPU. Sidenote reads its memory and picks the largest measured model that fits:
   `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. With less, or no GPU, the cloud agent
   solves everything (a model can still be pulled to run on the CPU, slowly). `SIDENOTE_LOCAL_MODEL` names one by hand.
-- **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
-  account that can use it, or an Anthropic API key. With Docker the CLI is the one in WSL, or for Codex the copy
-  inside the server (`./sidenote login codex`). The server uses the CLI's login as it is (section 3).
+- - **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
+  account that can use it, or an Anthropic API key. With Docker the server runs its own copy of the CLI with the login from
+  WSL (`~/.claude`, `~/.codex`); `./sidenote login codex` signs Codex in even without `codex` in WSL. The server uses the
+  CLI's login as it is (section 3).
 
 ## 3. First time
 
@@ -112,7 +114,8 @@ While it runs, the app starts Ollama when it is installed but not running, and s
 | `--check` | Start the server with stand-in models on a free port, check that it answers, and stop |
 
 On Linux, `./Sidenote/Sidenote --check` prints its result in the terminal. The Windows app has no console, so there it
-writes the result to the file `SIDENOTE_CHECK_LOG` names. In PowerShell, in the `Sidenote` folder that holds `Sidenote.exe`:
+writes the result to the file `SIDENOTE_CHECK_LOG` names. In PowerShell, in the `Sidenote` folder that holds
+`Sidenote.exe`:
 
 ```powershell
 $env:SIDENOTE_CHECK_LOG = "$env:TEMP\sidenote-check.txt"
@@ -155,8 +158,8 @@ hand). The steps of `install`, by hand:
 ### The cloud agent
 
 By default the problems that need reasoning go to a cloud coding agent: algorithm, coding, math, work, essay and other
-problems, and any problem the local model would take 1.5 times as long as the agent to start answering.
-**Solver settings** (in the gear menu) changes which problems go, or switches the agent off. `SIDENOTE_AGENT` in `.env` chooses the agent; its
+problems, and any problem the local model would take 1.5 times as long as the agent to start answering. **Solver settings**
+(in the gear menu) changes which problems go, or switches the agent off. `SIDENOTE_AGENT` in `.env` chooses the agent; its
 other settings are in section 12.
 
 | `SIDENOTE_AGENT` | Uses | Sign in |
@@ -166,17 +169,17 @@ other settings are in section 12.
 | `anthropic-api` | the Anthropic API | `ANTHROPIC_API_KEY` in `.env` |
 | `off` | no cloud agent: the local model answers everything | |
 
-The panel calls it **Agent**, whichever it is: its card in the right column, its section in **Solver settings**, and
-its signal in the top bar on a narrow window. The card names the product (Claude Code, Codex or Anthropic API) beside the account it is
-signed in as.
+The panel calls it **Agent**, whichever it is: its card in the right column, its section in **Solver settings**, and its
+signal in the top bar on a narrow window. The card names the product (Claude Code, Codex or Anthropic API) beside the
+account it is signed in as.
 
 Signing in:
 
 - The CLI agents use this PC's own login as it is; there is no token to create or paste.
 - `./sidenote login` signs in the agent the server is set to use, when it is not signed in.
-- `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
-  own copy shows an address to open and a code to enter there (the server has to be running, and the login lands in the same
-  `~/.codex`).
+- - `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
+  own copy shows an address to open and a code to enter there (the server has to be running, and the login lands in the
+  same `~/.codex`).
 - The server notices a new login within 20 seconds, with no restart.
 - Without a login the local model solves everything, but the **Agent** card says **Sign-in needed** and an alert asks
   for the login. Setting **Problems the agent solves** to **Off** clears both.
@@ -228,10 +231,10 @@ Clicking the icon opens the panel. Right-clicking it opens a menu with **Open th
 app). The menu uses the panel's look: the same icons, the same status pill (green while it captures, red with no
 server, amber with **Skipped window** while a window named in **Skip windows** is on screen) and the same switches.
 
-The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program still runs, with no icon,
-and says so once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
-it, with `./sidenote capture-stop` as the way to end it. `./sidenote install` installs the package, and
-`./sidenote doctor` reports it missing.
+The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program still runs, with no icon, and
+says so once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
+it, with `./sidenote capture-stop` as the way to end it. `./sidenote install` installs the package, and `./sidenote doctor`
+reports it missing.
 
 The capture program reads its code when it starts. After `./sidenote up` deploys new code for it, it restarts itself
 into that code at a quiet moment (the screen at rest for 20 seconds, nothing being analyzed or listened to, no answer
@@ -258,7 +261,7 @@ Capture options go after `./sidenote capture`:
 | `--audio-device "part of the name"` | The device to take sound from (default: the default speaker) |
 
 Each option reaches the capture program as typed, so a device name with spaces goes in quotes as usual
-(`--audio-device "Realtek USB2.0 Audio"`). On Windows the way there passes through cmd.exe, which would act on some
+(`--audio-device "Realtek USB2.0 Audio"`). On Windows the options pass through cmd.exe, which would act on some
 characters itself, so a value holding one of `" % & | < > ^` is refused with a message. Give a part of the name
 without it: any part of a device's name finds it.
 
@@ -310,7 +313,7 @@ where the right column moves below the notebook, it also shows five signals; on 
 notebook carry the same readings.
 
 - The signals: **Server**, **Local model**, **Agent** (the cloud agent, whichever the server uses), **Screen** and
-  **Sound**, colored as the cards' states are. Green: working. Orange: working, with something to look at (the sound
+  **Sound**, colored as the cards' states are. Green: working. Amber: working, with something to look at (the sound
   device could not be opened, the local model stands in or is downloading, the GPU is busy, the agent rests at its
   limit or has paused its automatic sending). Red: switched off, or unable to work (the server connection is lost,
   the local model is not downloaded or not answering, the agent needs signing in). Gray: the capture program is not
@@ -318,7 +321,7 @@ notebook carry the same readings.
   details.
 - **Reanalyze** solves the current screen again right away, including a screen that was skipped as unchanged.
 - **Pause** stops automatic analysis, and the analysis in progress; while paused, the button reads **Continue**. Its
-  mark is what pressing it does: two bars while it watches (green), a triangle while paused (orange). While paused,
+  mark is what pressing it does: two bars while it watches (green), a triangle while paused (amber). While paused,
   **Reanalyze** still solves the current screen, so pausing works as a manual mode that solves only when you ask.
 - The gear button opens the **Settings** menu:
   - **Theme**: **Auto**, **Light** or **Dark**.
@@ -334,7 +337,7 @@ notebook carry the same readings.
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest.
-  - At its foot, the version of Sidenote the server runs, such as **Version 0.1.0**.
+  - At its foot, the version of Sidenote the server runs, such as **Version 0.1.6**.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
 
@@ -360,8 +363,8 @@ got, marked "Stopped: connection lost". Once the server is back, solve it again 
 
 ### The notebook
 
-Solutions are written one below the other. Each answer is a page of its own; a flat red ribbon marks the current one,
-whose screen the right column shows, on its line in the contents.
+Solutions are written one below the other. Each answer is a page of its own; a flat red ribbon on its line in the contents
+marks the current one, whose screen the right column shows.
 
 - The margin shows the problem's type (multiple choice, short answer, coding and so on), the time, and marks such as
   answer, solution and question.
@@ -369,7 +372,7 @@ whose screen the right column shows, on its line in the contents.
   answer**), and **Copy all** copies the whole solution; a copy button reads **Copied** for a moment after a
   press. Every code box and every table has **Copy** too. A table pasted into a spreadsheet or a document keeps its
   rows and columns, and pasted into plain text it comes as tab-separated lines.
-- **Star**, the first key on an answer's head, stars a finished answer: the star fills with the highlighter's yellow,
+- **Star**, the star button on an answer's head, stars a finished answer: the star fills with the highlighter's yellow,
   the answer's line in the contents shows a small star, and every panel that is open shows the same. A starred answer
   is kept past the history's 90 days and size limit until it is unstarred, and the contents' **Starred** lists it.
   Press the star again to unstar it. An answer the server did not keep (with **Keep answers** off) cannot be starred,
@@ -432,7 +435,7 @@ arrives shows its question and keeps the rest back. The answers that were there 
 
 - **Show a hint** shows the solution's next part: its sections in their order (such as the approach, the code and the
   complexity), or its steps one by one. Beside it, how many hints there are and how many are shown.
-- **Show the answer** shows all of it: the answer line, the whole solution, the example check and the follow-up keys.
+- **Show the answer** shows all of it: the answer line, the whole solution, the example check and the follow-up buttons.
   An answer of a single part offers only **Show the answer**.
 - An answer being written says so, and shows nothing of itself until it is done and asked for. An answer kept back
   does not fold with the older ones, where it would show its answer line.
@@ -492,13 +495,13 @@ It stays at the window's foot wherever the page is scrolled, and rests at the pa
 ### The right column
 
 The cards stand in one column beside the notebook, and below it on a window 1000 pixels wide or less. On a very wide
-window, 2400 pixels or more (2560 x 1440), they stand in two columns: the controls (capture, the local model, the
-agent) on the left, and the screen, the heard speech and the contents on the right. Every card shows all it holds at every window size; nothing folds to fit. The column never scrolls inside
-itself. While it fits under the top bar, it follows you down the thread. When it is taller than the window, it moves
-with the page going down until its foot is in the window and stays there, and going up it moves back until its head
-is under the top bar.
+window, 2400 pixels or more (2560 x 1440), they stand in two columns: the controls (capture, the local model, the agent) on
+the left, and the screen, the heard speech and the contents on the right. Every card shows all it holds at every window
+size; nothing folds to fit. The column never scrolls inside itself. While it fits under the top bar, it follows you down
+the thread. When it is taller than the window, it moves with the page going down until its foot is in the window and stays
+there, and going up it moves back until its head is under the top bar.
 
-- **Capture**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
+- **The capture card**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
   arrived, which sound device). The **Screen capture** line reads **Watching quietly** while the watching has slowed
   itself down after a run of answers that found nothing, and says what brings it back (section 8). It reads
   **Skipped window**, in amber, while a window named in **Skip windows** is on screen and no screen is sent; it never
@@ -525,7 +528,7 @@ is under the top bar.
 - **What is heard**: with sound on, recent speech runs by as text. KO and EN show the recognized language. A sentence
   that ended and was not taken says why in a muted line under it: **Too short · not solved**, **No question · not
   solved** (the first pass found nothing asked in it) or **Part of a story · not solved** (a tag, or a question told
-  rather than asked). With **Keep what is heard** on, the key at the card's foot opens **What was heard**: one day's
+  rather than asked). With **Keep what is heard** on, the button at the card's foot opens **What was heard**: one day's
   sentences with the time of each, **Copy all**, and **Save as .md**. The gear menu holds the same item, for when the
   sound is off and the card is gone. Both are there as long as anything is kept.
 - **Contents**: the list of solutions, nine lines of it at a time, more on a window tall enough for the whole column;
@@ -571,7 +574,7 @@ the one the contents' ribbon marks, whose screen the right column shows.
 
 ## 6. Screen and sound switches
 
-The switches in the **Capture** card turn screen capture and sound capture on and off, each on its own.
+The switches on the capture card turn screen capture and sound capture on and off, each on its own.
 
 - With the screen off, the capture program takes no screenshots, and the server drops incoming screens and the one it
   was holding. Analyses and follow-up questions that include a screen stop. The panel deletes the screen
@@ -811,7 +814,7 @@ What makes Sidenote solve a screen again, and what does not.
 - If the screen keeps changing, an analysis in progress gives way to a new screen at most twice, then runs to the end.
 - When answer after answer finds nothing to solve, the watching quiets down: a small change on the same screen is
   then looked at once every 8 seconds instead of every 1.5. A new window or page, a question, **Reanalyze** and a drawn
-  region are never held back, and any of them puts it back to normal. The **Screen capture** line in **Capture** says
+  region are never held back, and any of them puts it back to normal. The **Screen capture** line on the capture card says
   **Watching quietly** while it holds.
 - A screen whose analysis failed is not retried by itself (use **Reanalyze**). If errors repeat, automatic analysis
   rests for a while: 1 minute on a usage limit, otherwise from 5 seconds up to 1 minute. **Reanalyze** always solves
@@ -995,11 +998,11 @@ The **Speech** section holds what shapes what is written down:
   and has a limit of its own, 20 MB, the oldest lines going first (`SIDENOTE_HEARD_MB`): the answers' 200 MB does not
   count it, so a long transcript pushes no answer out. **Clear history** clears it with the answers.
 
-The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While a
-window with one of them in its title or in its program's name, in any case, is on screen, the capture program sends no
-screen at all, whichever window has the focus. By default the list names the common password managers (1Password, Bitwarden, KeePass, KeePassXC,
-LastPass, Dashlane, Keeper, Enpass, NordPass, Proton Pass) and the browsers' private windows (InPrivate, Incognito,
-Private Browsing, and in Korean 시크릿 and 사생활 보호).
+The **Screen** section holds **Skip windows**: a list of words, typed into a box with commas between them. While a window
+with one of them in its title or in its program's name, in any case, is on screen, the capture program sends no screen at
+all, whichever window has the focus. By default the list names the common password managers (1Password, Bitwarden, KeePass,
+KeePassXC, LastPass, Dashlane, Keeper, Enpass, NordPass, Proton Pass) and the browsers' private windows (InPrivate,
+Incognito, Private Browsing, and in Korean 시크릿 and 사생활 보호).
 
 - A word matches any part of a title or a name, so `Keeper` also skips a page titled "ZooKeeper". Take out a word
   that skips more than you want. **Reset to defaults** puts the default list back, with every other setting.
@@ -1153,7 +1156,7 @@ stopped (section 11 lists the rest).
 | Nothing appears after starting it | The first start can take a minute or two. If no panel opens after that, open `http://127.0.0.1:8777` yourself; if nothing answers there, read `app.log` and `server-console.log` |
 | A message box says the server did not start | The message box shows the end of `server-console.log`, which says why. Start Sidenote again; if it happens again, open an issue with the logs |
 | A message box says another program is using the port | Close that program, or start the app on another port: `Sidenote.exe --port 8778` |
-| The Linux app stops with "version 'GLIBC_2.38' not found" | That build needs Ubuntu 24.04 or newer; builds after 0.1.0 run on Ubuntu 22.04 and Debian 12 too |
+| The Linux app stops with "version 'GLIBC_2.38' not found" | Sidenote 0.1.0 needs Ubuntu 24.04 or newer. Download the newest release, which also runs on Ubuntu 22.04 and Debian 12 |
 | No icon in the notification area | On Windows 11, look under the **^** by the clock. On Linux, the icon needs a desktop that shows tray icons (an AppIndicator or the X11 tray); without one, quit with Ctrl+C in the terminal. `capture.log` says why there is no icon |
 | The panel says "Ollama does not answer" | Install Ollama, or start it: Sidenote finds it within 20 seconds. To use the agent alone, turn **Local model** off in **Solver settings** |
 | The panel says "No local model yet" | Press **Download** in the band, or on the **Local model** card |
@@ -1171,7 +1174,7 @@ stopped (section 11 lists the rest).
 | A solution says "Stopped: connection lost" | It was cut off while the server restarted. Solve it again with **Reanalyze** |
 | The panel says "Model … missing" | `./sidenote llm pull` (the default model), or `./sidenote llm pull <model>` for the one the panel names. The server notices it within 20 seconds |
 | The panel says "The local model does not respond" | `./sidenote llm logs`. `./sidenote up` starts it again |
-| The panel says "Nothing to solve N times in a row: automatic sending to the agent stops for N min" | The brake on asking the agent about nothing. **Reanalyze**, a question or a drawn region still go, and it lifts itself after five minutes. The row and the hour are in `./sidenote events --errors` as `agent_brake` |
+| The panel says "Nothing to solve N times in a row: automatic sending to the agent stops for N min" | The brake on asking the agent about nothing. **Reanalyze**, a question or a drawn region still go, and it lifts itself after five minutes. Each time it happens is listed in `./sidenote events --errors` as `agent_brake` |
 | The panel says "The agent's cost in the last hour, $…, reached the limit ($…)" | The hour's ceiling (**Solver settings**, **Agent**, **Hourly cost limit**). **Reanalyze** and questions still go |
 | The panel says "Usage limit" | Continue with **Reanalyze** a little later |
 | The panel says "Agent sign-in needed" | `./sidenote login` signs in the agent the server uses (`./sidenote login codex` for Codex); analysis resumes within 20 seconds. The Anthropic API agent needs `ANTHROPIC_API_KEY` in `.env`, then `./sidenote up` |
@@ -1180,16 +1183,16 @@ stopped (section 11 lists the rest).
 | The panel says "Capture program off" | `./sidenote capture`. If that says the capture is already running, run `./sidenote capture-stop` and try again |
 | The tray says "Not connected (./sidenote up)" | The capture program is running but the server is not: `./sidenote up`. It stops grabbing the screen while there is nowhere to send it, and starts again by itself |
 | Capture has ended, but something seems to be left on Windows | `./sidenote capture-stop`. If it could not stop some, it says how many |
-| **Screen capture** in **Capture** says **Program off** | The capture program is not running: `./sidenote capture` |
+| **Screen capture** on the capture card says **Program off** | The capture program is not running: `./sidenote capture` |
 | **Screen capture** is green, but no solutions appear | Check that `capture.log` in the log folder (or the terminal, with `--console`) shows `[screen] sent frame`. With several monitors, use `--monitor` |
-| **Sound capture** says **Off** or **Device error** | Check the **Sound capture** switch in **Capture**. On **Device error**, name the device with `--audio-device "part of the name"` |
+| **Sound capture** says **Off** or **Device error** | Check the **Sound capture** switch on the capture card. On **Device error**, name the device with `--audio-device "part of the name"` |
 | The screen changed, but it did not solve again | The change was outside the problem's region. **Reanalyze** solves right away |
 | A code box has no **Run** | **Run** is added only to code marked as Python, Java, C, C++, JavaScript, TypeScript, Kotlin, Go or Bash. If it is still missing, look at the code runner's line in `./sidenote status` |
 | A run says "Cannot reach the runner" | `./sidenote up` starts the runner again |
 | A run says "No result in time" | The runner is up but stuck (`./sidenote status` says the code runner is not responding). `./sidenote restart` recreates it; `up` leaves a running container as it is |
 | A run says "Another code run is going" | Press it again when the previous run ends; runs go one at a time |
 | A run shows **Compile timed out** or **Timed out** | Check for an endless loop or an input that is too large. The limits are in section 5 |
-| Answers are slow | Put `SIDENOTE_FAST=1` in `.env` and run `./sidenote up`. Making the images smaller does not make it faster |
+| Answers are slow | Put `SIDENOTE_FAST=1` in `.env` and run `./sidenote up`.  |
 | Analysis errors keep coming | `./sidenote events --errors` shows the cause |
 | The browser does not open `localhost` | Open `127.0.0.1` instead. In some WSL network setups `localhost` resolves to IPv6 |
 
@@ -1282,12 +1285,12 @@ What leaves this PC, what can reach what, and what is kept.
   behind and every file it wrote are deleted when it ends. Code that runs there cannot reach the server or the
   internet, cannot read or change the files or the processes of another run or of the compile, and cannot read or
   stop the runner itself. A run's result goes only to the panel that sent the code.
-- Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
+- - Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
   `./sidenote`, so the login files and the logs stay that user's; a short-lived `server-init` container hands the log
   folder and the speech model's volume to that user first, as root with CHOWN and no network. The server adds back one
-  capability (CHOWN, of use only when that user is root) and the code runner four (SETUID, SETGID, CHOWN and KILL, to start each run as a user of its own); the others keep
-  none. The server, the code runner and the search engine run with a read-only root filesystem; the local model's is
-  writable, with the models in a volume of their own.
+  capability (CHOWN, of use only when that user is root) and the code runner four (SETUID, SETGID, CHOWN and KILL, to start
+  each run as a user of its own); the others keep none. The server, the code runner and the search engine run with a
+  read-only root filesystem; the local model's is writable, with the models in a volume of their own.
 - The limits in `compose.yaml`: the server 512 processes, 8 GB of memory and 8 CPUs; the code runner 128 processes,
   1 GB and 2 CPUs; the local model 256 processes, 24 GB and `SIDENOTE_LLM_CPUS` (8) CPUs; the search engine 128
   processes and 512 MB, with no CPU limit. The model download that `./sidenote llm pull` starts has the local model's
@@ -1546,8 +1549,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 수학 | Math | a problem's type |
 | 그림 | Diagram | a problem's type |
 | 기타 | Other | a problem's type |
-| 화면 캡처 | Screen capture | **Capture**, a switch |
-| 소리 캡처 | Sound capture | **Capture**, a switch |
+| 화면 캡처 | Screen capture | the capture card, a switch |
+| 소리 캡처 | Sound capture | the capture card, a switch |
 | 24시간 답, 응답 p50, 평균 TTFT, 평균 TPS | Answers, Response p50, Avg TTFT, Avg TPS | the cards of **Local model** and **Agent** |
 | TTFT, 쓰는 시간 | TTFT, Writing time | the key of the bars under them |
 | TTFT N초 | TTFT N s | a bar's tooltip, the line under an answer |

@@ -31,14 +31,14 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter, ImageStat
 
 from . import repeats, telemetry
 from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, build_user_text, error_hint, error_words, speech_request,
                        text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
-from .heads import head_of, head_start, parse_region, region_box, within
+from .heads import TALL_BOX, head_of, head_start, parse_region, region_box, within
 from .i18n import t
 from .settings import SETTINGS
 
@@ -226,6 +226,44 @@ def box_aspect(frame, view) -> float:
     no screen to go by."""
     w, h = (view[2] - view[0]) * getattr(frame, "width", 0), (view[3] - view[1]) * getattr(frame, "height", 0)
     return h / w if w > 0 and h > 0 else 0.0
+
+
+# A box written y first that TALL_BOX cannot tell by its shape: up to twice as tall as wide. Read as written, a strip of a
+# wide problem stands on end, and its left and right edges run down through the lines of text; turned, they lie in the
+# margins. So such a box is turned when the edges of the turned one cross less than UPRIGHT_CUT as much writing, counted
+# against the writing inside each. On the first passes kept from earlier runs of the known-answer set, 19 boxes stood
+# between once and twice as tall as wide: this turned 4 of them, each from 3 to 18 per cent of its problem to 71 to 100,
+# and none of the boxes that held their problem (a coding site's pane down the left is that shape too).
+UPRIGHT_CUT = 0.6
+
+
+def _side_cut(edges, box) -> float:
+    """How much writing a box's left and right edges cross, over how much is inside it, on an edge map of the picture."""
+    w, h = edges.size
+    x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (w, h, w, h)))
+    x0, x1, y0, y1 = max(0, min(w - 3, x0)), max(0, min(w - 3, x1)), max(0, y0), min(h, y1)
+    if x1 <= x0 + 2 or y1 <= y0 + 2:
+        return float("inf")
+    inside = ImageStat.Stat(edges.crop((x0, y0, x1, y1))).mean[0] + 1e-6
+    side = sum(ImageStat.Stat(edges.crop((x - 1, y0, x + 2, y1))).mean[0] for x in (max(1, x0), x1)) / 2
+    return side / inside
+
+
+def upright(frame, view, box, aspect: float = 0.0):
+    """`box` (fractions of `view` of the screen) turned, when it was written y first in a shape TALL_BOX lets through."""
+    if box is None or frame is None or not aspect:
+        return box
+    x0, y0, x1, y1 = box
+    if not 1.0 < (y1 - y0) * aspect / max(1e-9, x1 - x0) <= TALL_BOX:
+        return box
+    turned = (y0, x0, y1, x1)
+    try:
+        W, H = frame.size
+        pic = frame.crop((int(view[0] * W), int(view[1] * H), int(view[2] * W), int(view[3] * H)))
+        edges = pic.convert("L").filter(ImageFilter.FIND_EDGES)
+        return turned if _side_cut(edges, turned) < UPRIGHT_CUT * _side_cut(edges, box) else box
+    except Exception:   # a picture that cannot be read leaves the box as written
+        return box
 
 
 def located(box, windows=None) -> tuple | None:
@@ -1510,7 +1548,7 @@ class Pipeline:
                            crop_box=self._box(f.text, local.region_scale, view, windows, aspect),
                            seen=self._seen(f.text, local.region_scale, view, aspect), sent=sent, stages=stages)
 
-        seen = self._seen(f.head, local.region_scale, view, box_aspect(frame, view))   # the model's box, for the duplicate check
+        seen = self._seen(f.head, local.region_scale, view, box_aspect(frame, view), frame)   # the model's box, for the duplicate check
         box = located(seen, windows) if seen else None        # where the problem is, for the crops
         hard = f.type in DEEP_TYPES or f.route != "fast"     # the fast pass's own call (unknown counts as hard)
         # The problem answered a little while ago, seen again: scrolled, moved, or come back to after another screen.
@@ -1690,8 +1728,8 @@ class Pipeline:
         return out
 
     @staticmethod
-    def _seen(text: str, scale: float, view, aspect: float = 0.0) -> tuple | None:
-        b = region_box(text, scale, aspect)
+    def _seen(text: str, scale: float, view, aspect: float = 0.0, frame=None) -> tuple | None:
+        b = upright(frame, view, region_box(text, scale, aspect), aspect)
         return within(b, view) if b else None
 
     @staticmethod
