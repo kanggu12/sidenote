@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-07
+
 ### Added
 
 - Docker on a Mac: `./sidenote` runs on macOS's own bash 3.2 and BSD tools, the capture program reads the Mac's screen
@@ -200,7 +202,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/kanggu12/sidenote/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/kanggu12/sidenote/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/kanggu12/sidenote/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/kanggu12/sidenote/compare/v0.1.2...v0.1.3
