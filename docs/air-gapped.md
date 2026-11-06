@@ -142,10 +142,10 @@ The Windows and Linux apps hold the server and the capture program, so they need
 (`Sidenote-windows-x64.zip` or `Sidenote-linux-x64.zip`), and Ollama's own download: on Linux its archive, as its install
 script needs the internet.
 
-Install Ollama, but let Sidenote start it. Ollama's installer starts it at every sign-in with its own settings, which give a
-model a shorter context than Sidenote's, and Sidenote then uses that Ollama as it is. On Windows, turn Ollama off in
-**Settings**, **Apps**, **Startup**, or quit it from its tray icon before you start Sidenote. Then put the two in place, on
-Windows:
+Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a bundle
+made with Sidenote 0.1.5 or later carries Sidenote's context with it. With an older bundle, quit Ollama from its tray icon
+before you start Sidenote, which then starts it with its own settings: otherwise the model gets Ollama's 4096 tokens of
+context instead of 16384. Then put the two in place, on Windows:
 
 ```bat
 if not exist "%USERPROFILE%\.ollama" mkdir "%USERPROFILE%\.ollama"
