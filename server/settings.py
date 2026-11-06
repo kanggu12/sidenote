@@ -255,7 +255,7 @@ def _defs() -> list[Setting]:
                           "medium": t("About {s} s of CPU a pass, on the test PC. Hears technical terms better", s=SPEECH_CPU["medium"])}),
         # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
         Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
-                t("Saves each sentence heard, with its time, on this PC for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
+                t("Saves each sentence heard, with its time, on this PC only, for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
         # capture
         Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
                 t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),
