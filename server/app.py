@@ -2230,7 +2230,7 @@ async def load_local(local) -> None:
         log.warning("GPU load from the panel failed: %s", exc)
         STATE.gpu_loading = None
         await broadcast_engines()
-        await broadcast({"type": "notice", "level": "warn",
+        await broadcast({"type": "notice", "level": "bad",
                          "text": i18n.t("Loading onto the GPU failed · the GPU is short of memory or another program "
                                         "is using it")})
         return
@@ -2240,7 +2240,7 @@ async def load_local(local) -> None:
     STATE.gpu_loading = None
     STATE.local = await check_local()
     await broadcast_engines()
-    await broadcast({"type": "notice", "level": "info",
+    await broadcast({"type": "notice", "level": "done",
                      "text": i18n.t("Loaded onto the GPU ({s} s) · solves at once", s=f"{time.time() - t:.0f}")})
 
 
@@ -2444,8 +2444,8 @@ def watch_region(detector, answer_region) -> None:
 
 
 async def notice(text: str, level: str = "info") -> None:
-    """A short note on the panel. `level`: "warn" when something was not done (failed, refused, held back, not sent),
-    "info" for the rest; the panel draws the two apart."""
+    """A short note on the panel, drawn as a band is. `level`: "done" when what was asked for went through, "warn" when
+    it was not done (refused, held back, not sent), "bad" when something broke (failed), "info" for the rest."""
     await broadcast({"type": "notice", "level": level, "text": text})
 
 
@@ -2592,7 +2592,7 @@ async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
         log.warning("the speech model %s did not load (%s); %s stays", model, failed, old)
         SETTINGS.set("whisper_model", old)
         await broadcast({"type": "settings", "values": {"whisper_model": old}})
-        await notice(t("The speech model {model} did not load: {old} stays", model=model, old=old), "warn")
+        await notice(t("The speech model {model} did not load: {old} stays", model=model, old=old), "bad")
         return
     ready_speech(tr)
     app.state.transcriber = tr   # the worker reads it at its next pass (transcription_worker)
@@ -2601,7 +2601,7 @@ async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
         app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
     log.info("speech model ready (%s)", model)
     await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None), "voice": SETTINGS.on("voice_auto")})
-    await notice(t("The speech model {model} is ready", model=model))
+    await notice(t("The speech model {model} is ready", model=model), "done")
 
 
 async def load_speech(app: FastAPI) -> None:
@@ -2627,7 +2627,7 @@ async def load_speech(app: FastAPI) -> None:
     except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
         log.error("the speech model did not load (%s); the server goes on without speech", exc)
         await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
-                     "warn")
+                     "bad")
         return
     # Another model chosen in the panel while this one loaded, and already taken over: that one stays. Not yet: this one hears
     # until it does, and is what is left when that one cannot be had
@@ -3654,7 +3654,7 @@ def create_app() -> FastAPI:
                     if done:
                         STATE.local = {**STATE.local, "loaded": None}
                     await broadcast_engines()
-                    await reply({"type": "notice", "level": "info" if done else "warn",
+                    await reply({"type": "notice", "level": "done" if done else "bad",
                                  "text": t("Taken off the GPU · loaded again for the next problem")
                                  if done else t("Taking it off the GPU failed")})
                     continue
@@ -3666,7 +3666,7 @@ def create_app() -> FastAPI:
                     STATE.answers.clear()
                     STATE.repeat_said = 0
                     telemetry.event("history_clear", ok=cleared)
-                    await reply({"type": "notice", "level": "info" if cleared else "warn",
+                    await reply({"type": "notice", "level": "done" if cleared else "bad",
                                  "text": t("Cleared, the saved history too") if cleared
                                  else t("Clearing the saved history failed")})
                     continue
@@ -3726,7 +3726,7 @@ def create_app() -> FastAPI:
                         ok, _ = await apply_setting(app, k, v)
                         done += bool(ok)       # a default outside the live options (a model that is
                     left = len(back) - done    # no longer there) is refused, and is not counted
-                    await broadcast({"type": "notice", "level": "warn" if left else "info", "text":
+                    await broadcast({"type": "notice", "level": "warn" if left else "done" if back else "info", "text":
                                      t("Already all defaults") if not back else
                                      t("Settings back to default: {n}", n=done)
                                      + (t(", failed: {n}", n=left) if left else "")})

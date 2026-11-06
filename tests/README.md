@@ -65,6 +65,8 @@ SIDENOTE_ANALYZER=mock .venv/bin/python tests/integ.py
 .venv/bin/python tests/server_review.py gap                     # only the named sections
 PY=.venv/bin/python .venv-panel/bin/python tests/panel_viz.py   # PY: the prompt's examples come from the server
 ONLY="bug 3,design 5" .venv-panel/bin/python tests/panel_review.py   # only the groups named
+SKIP="motion" .venv-panel/bin/python tests/panel_layout.py            # all the groups but those named
+SUITES="panel_layout" PW=.venv-panel/bin/python tests/run.sh panel   # only the suites named (SKIP_SUITES: all but those)
 PANEL_DIR=/an/older/copy/of/panel .venv-panel/bin/python tests/panel_churn.py   # watch a check fail there
 ```
 
@@ -88,6 +90,9 @@ python -m playwright install --with-deps chromium
 python docker/fetch_vendor.py docker/vendor.json panel/vendor
 tests/run.sh panel
 ```
+
+The panel group runs as four jobs at once, chosen with `SUITES` and `SKIP_SUITES`, and `panel_layout` split by its
+groups with `ONLY` and `SKIP` (the matrix in `ci.yml`): its longest group is the release notice in the band.
 
 The measurement data is not there, so the checks that read it are skipped, and each suite that skipped some says how
 many and why in its line (see "The measurement data" below). Every other check runs as it does locally.

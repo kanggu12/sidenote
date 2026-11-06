@@ -327,7 +327,7 @@
   .bar.under { background: var(--glass); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
     border-bottom-color: var(--glass-line); box-shadow: var(--edge), var(--bar-shadow); }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .bar.under, .menu, .settings, .toast { background: var(--sheet); }
+    .bar.under, .menu, .settings { background: var(--sheet); }
   }
   .bar-in { display: flex; align-items: center; gap: 18px; padding: 10px 22px; flex-wrap: wrap; max-width: var(--page-w); margin: 0 auto; }
   /* The name with one stroke of the highlighter under its lower half, the stroke a little slanted and its ends
@@ -418,6 +418,7 @@
     box-shadow: var(--edge), var(--relief-sm); }
   .alert.bad { --tone: var(--bad); }
   .alert.warn { --tone: var(--warn); }
+  .alert.done { --tone: var(--ok); }
   .alert > svg { width: 18px; height: 18px; flex: none; color: var(--tone); }
   .alert .msg { flex: 1; min-width: 220px; }
   .alert .msg b { font-weight: 700; color: color-mix(in srgb, var(--tone) 55%, var(--ink)); }
@@ -1127,15 +1128,16 @@
   /* max-content: from left 50% the width shrinks to the half of the window to its right, 180 px of 360. Over the
      settings sheet (35) too, or what it says there is not seen. */
   .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(10px) scale(.98); z-index: 36; width: max-content; max-width: min(560px, calc(100vw - 32px));
-    background: var(--ink); color: var(--sheet); border-radius: 8px; padding: 10px 16px; font-size: 14px;
-    box-shadow: var(--lift); opacity: 0; pointer-events: none;
-    transition: opacity .2s var(--ease), transform .2s var(--ease); }
+    opacity: 0; pointer-events: none; transition: opacity .2s var(--ease), transform .2s var(--ease); }
+  /* A toast is a band that passes (app.js, toast): the band's own box, lifted off the page */
+  .toast > .alert { margin: 0; box-shadow: var(--edge), var(--lift); }
+  .toast > .alert .msg { min-width: 0; }
+  .toast > .alert > .btn { flex: none; pointer-events: none; }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
   /* On a phone's width a toast at the foot covers the card it speaks of, which has just appeared there */
   @media (max-width: 600px) { .toast { top: calc(var(--bar-h, 56px) + 8px); bottom: auto !important; } }
   /* A toast that goes somewhere when pressed (a problem seen again: to its answer) takes the press and says so */
   .toast.go.show { pointer-events: auto; cursor: pointer; }
-  .toast.go::after { content: var(--t-go, " ↑ to the answer"); font-weight: 600; white-space: nowrap; }
   input::placeholder, textarea::placeholder { color: var(--graphite); opacity: 1; }
   .alerts, .shot-empty, .src-state, .toast, .welcome, .cap, .errbox, .history .none, .confirm .msg, .history .none-found { word-break: keep-all; }
   .history .none { display: grid; place-items: center; gap: 8px; padding: 14px 0 6px; }
@@ -1634,13 +1636,13 @@
   /* The bands as a notice in the bar: nothing of the thread is covered, at the top of the page or scrolled */
   html.bands-in-bar[data-skin="classic"] .alerts, html.bands-in-bar[data-skin="classic"] .alerts:not(:empty) { position: fixed; top: calc((var(--bar-h, 56px) - 38px) / 2); left: var(--band-l); right: var(--band-r); width: auto; height: 38px; margin: 0; z-index: 21;
     display: flex; gap: 6px; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm), html.bands-in-bar[data-skin="classic"] .alerts .alert:first-child { flex: 1 1 0; min-width: 0; height: 38px; padding: 0 5px 0 10px; gap: 8px; flex-wrap: nowrap; font-size: 13px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm), html.bands-in-bar[data-skin="classic"] .alerts .alert:first-child { flex: 1 1 0; min-width: 0; height: 38px; padding: 0 5px 0 10px; gap: 8px; flex-wrap: nowrap; font-size: 13px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
     background: color-mix(in srgb, var(--tone) 18%, var(--sheet)); }
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm) + .alert { border-top: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); }
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm) .msg { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  html.bands-in-bar[data-skin="classic"] .alert .btn { height: 26px; flex: none; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm) + .alert { border-top: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm) .msg { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert .btn { height: 26px; flex: none; }
   /* The band's mark level with its words in the bar: its ink sat 2 px under theirs */
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm) > svg { translate: 0 -2px; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm) > svg { translate: 0 -2px; }
   /* The screen now and an answer's screen: now is lit green with a tag that says so, an answer's is a still with its date on the title */
   :root[data-skin="classic"] .shot[data-of="now"] { outline: 2px solid var(--viz-a); outline-offset: -2px; }
   :root[data-skin="classic"] .shot[data-of="answer"] { outline: 1px solid var(--rule-2); outline-offset: -1px; }
@@ -1707,7 +1709,7 @@
   :root[data-skin="classic"] #settings-close:hover:not(:disabled) { color: var(--ink); }
   /* Scrolled, each band is its own toast with its own glass, a gap between them */
   html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { display: flex; flex-direction: column; gap: 8px; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; overflow: visible; }
-  html:not(.bands-in-bar)[data-skin="classic"] .alert:not(.confirm), html:not(.bands-in-bar)[data-skin="classic"] .alerts .alert:first-child { margin: 0; border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); background: color-mix(in srgb, var(--tone) 12%, color-mix(in srgb, var(--sheet) 62%, transparent)); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); box-shadow: var(--lift); }
+  html:not(.bands-in-bar)[data-skin="classic"] .alert:not(.confirm), html:not(.bands-in-bar)[data-skin="classic"] .alerts .alert:first-child, :root[data-skin="classic"] .toast > .alert { margin: 0; border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); background: color-mix(in srgb, var(--tone) 12%, color-mix(in srgb, var(--sheet) 62%, transparent)); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); box-shadow: var(--lift); }
   html:not(.bands-in-bar)[data-skin="classic"] .alert:not(.confirm) + .alert { border-top: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); }
   /* A card's title: its mark, its name, and a ruled line running on to the card's edge, as a heading stands on a page */
   :root[data-skin="classic"] .rail .card > h2 { display: flex; align-items: center; gap: 8px; width: auto; margin: 0 0 10px; font-size: 13.5px; font-weight: 720; letter-spacing: -.005em; color: var(--ink); }
@@ -1878,8 +1880,8 @@
   :root[data-skin="classic"] .alerts { width: calc(100% - 32px); }
   :root[data-skin="classic"] .composer.floating { width: 100%; }
   html.bands-in-bar[data-skin="classic"] .alerts, html.bands-in-bar[data-skin="classic"] .alerts:not(:empty) { width: auto; justify-content: center; }
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm), html.bands-in-bar[data-skin="classic"] .alerts .alert:first-child { flex: 0 1 auto; padding: 0 12px; font-size: 13px; }
-  html.bands-in-bar[data-skin="classic"] .alert:not(.confirm) .msg { flex: 0 1 auto; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm), html.bands-in-bar[data-skin="classic"] .alerts .alert:first-child { flex: 0 1 auto; padding: 0 12px; font-size: 13px; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm) .msg { flex: 0 1 auto; }
   /* A date beside a title: the day in the ink, the time quieter, with nothing round it */
   :root[data-skin="classic"] .when::before, :root[data-skin="classic"] time.stamped::before { display: none; }
   :root[data-skin="classic"] .when { display: inline; font-size: 12px; font-weight: 500; color: var(--graphite); }
@@ -1934,10 +1936,7 @@
   :root[data-skin="classic"] .hist-tools .combo.pick .combo-val { overflow: visible; text-overflow: clip; }
   :root[data-skin="classic"] .combo-list li { white-space: nowrap; }
   /* A passing notice is the same glass as a band, in the same place: under the bar, over the page's column */
-  :root[data-skin="classic"] .toast { top: calc(var(--bar-h, 56px) + 18px + var(--toast-off, 0px)); bottom: auto !important; left: var(--col-mid, 50%); max-width: min(760px, calc(var(--col-w, 100vw) - 32px)); padding: 12px 18px; font-size: 14px; border-radius: 2px;
-    --tone: #2eb67d; color: var(--ink); background: color-mix(in srgb, var(--tone) 14%, color-mix(in srgb, var(--sheet) 62%, transparent)); border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--glass-line)); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 8px 22px -12px rgba(0, 0, 0, .55); }
-  :root[data-skin="classic"] .toast[data-tone="warn"] { --tone: #ff9f43; }
-  :root[data-skin="classic"] .toast[data-tone="bad"] { --tone: #ff4545; }
+  :root[data-skin="classic"] .toast { top: calc(var(--bar-h, 56px) + 18px + var(--toast-off, 0px)); bottom: auto !important; left: var(--col-mid, 50%); max-width: min(760px, calc(var(--col-w, 100vw) - 32px)); }
   @media (max-width: 1000px) { :root[data-skin="classic"] .toast { left: 50%; max-width: calc(100vw - 24px); } }
   /* Loading onto the GPU: the button says so with a bar running along its foot, and a press stops it */
   :root[data-skin="classic"] #gpu-load.loading { position: relative; overflow: hidden; color: #ff9f43; border-color: color-mix(in srgb, #ff9f43 60%, transparent); }
@@ -2893,7 +2892,7 @@
   :root[data-skin="classic"] .menu .about .ver { margin: 0 8px 2px 32px; }
   /* A band's close key is square, as the panel's other keys with a mark alone are, and as tall as the band's keys */
   .alert .btn.icon { width: 28px; padding: 0; }
-  html.bands-in-bar .alert .btn.icon { width: 26px; }
+  html.bands-in-bar .alerts .alert .btn.icon { width: 26px; }
   /* A link in a band wraps whole: "Release notes" broke between its two words on a narrow window */
   .alert .msg a { white-space: nowrap; }
 </style>

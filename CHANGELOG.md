@@ -5,8 +5,21 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Added
+
+- A review of starred answers: with **Practice** on, choosing **Starred** in the contents keeps every starred answer
+  back, however old, to be opened hint by hint.
+
 ### Changed
 
+- Every notice in the panel has one form. A toast is drawn as a band is: a mark for its kind (to know, done, not done,
+  failed), the fact in bold, then what follows or what to do, and a command as a chip. Its colours are the bands' own, and
+  it stays longer when it says more. The server says which of the four kinds each of its notices is.
+- Settings help is shorter, nine lines of it by a sentence or more.
+- The Anthropic API agent marks its instructions for the API's prompt cache: while problems come within five minutes of
+  each other, the about 1,300 tokens of them are read from the cache at a tenth of the price.
+- The same web search or page within ten minutes is answered from memory, without asking the search engines again.
+- The README puts the quick start before the reasons for Sidenote.
 - The README's badges are files in the repository (`.github/badges.sh`), so none waits on another site, and its picture
   of the panel and the user guide's numbered one show the panel as it is now. The README gathers everyday commands in a
   table of its own.

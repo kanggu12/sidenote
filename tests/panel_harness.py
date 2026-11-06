@@ -257,6 +257,8 @@ class Tally:
     def __init__(self):
         self.ok, self.bad, self.groups = 0, [], 0
         self.only = [x.strip() for x in os.environ.get("ONLY", "").split(",") if x.strip()]
+        self.skip = [x.strip() for x in os.environ.get("SKIP", "").split(",") if x.strip()]
+        self.took: list = []   # [group, when it began], for the time each took (end)
 
     def check(self, name, cond, detail=""):
         if cond:
@@ -266,13 +268,18 @@ class Tally:
         print(f"  {'ok' if cond else 'FAIL'} {name}" + (f": {str(detail)[:300]}" if detail != "" and not cond else ""), flush=True)
 
     def group(self, name) -> bool:
-        """A heading, and whether this group runs (ONLY="ladder,region" for some of them)."""
-        if self.only and not any(o in name for o in self.only):
+        """A heading, and whether this group runs (ONLY="ladder,region" for some of them, SKIP="motion" for all but some)."""
+        if self.only and not any(o in name for o in self.only) or any(o in name for o in self.skip):
             return False
+        self.took.append([name, time.monotonic()])
         print(f"[{name}]", flush=True)
         return True
 
     def end(self) -> int:
+        # How long each group took, for splitting a suite between CI's jobs (ONLY and SKIP)
+        if len(self.took) > 1:
+            ends = [t for _, t in self.took[1:]] + [time.monotonic()]
+            print("\ngroups took: " + ", ".join(f"{n} {e - t:.0f} s" for (n, t), e in zip(self.took, ends)))
         print(f"\n==== {self.ok} passed, {len(self.bad)} failed ====")
         for b in self.bad:
             print(f"  FAIL {b}")

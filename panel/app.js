@@ -4,9 +4,8 @@ const $ = (id) => document.getElementById(id);
 const MAX_ITEMS = 200;
 // The words are in the panel's language (panel/i18n.js, loaded before this file): it is fixed for the page's life.
 translateDom();   // the static words of index.html, before anything below reads or draws them
-// The two messages a style sheet writes itself (index.html, .shot.stale and .toast.go), as CSS strings
+// The message a style sheet writes itself (index.html, .shot.stale), as a CSS string
 document.documentElement.style.setProperty("--t-stale", JSON.stringify(t("Old screen")));
-document.documentElement.style.setProperty("--t-go", JSON.stringify(t(" ↑ to the answer")));
 const TYPE_LABEL = { mcq: t("MCQ"), short: t("Short"), essay: t("Essay"), coding: t("Coding"), algorithm: t("Algorithm"),
   work: t("Work"), math: t("Math"), diagram: t("Diagram"), other: t("Other"), conceptual: t("Concept"), followup: t("Follow-up") };
 // The same kinds by their whole names, where a list has room for them (the contents' type filter); the margin's chip keeps the short ones
@@ -2232,7 +2231,7 @@ function screenState() {
     // In the desktop app the tray icon is the capture program's own, gone with it: the app is quit and started again
     // The pill is a word or two: its column beside the switch has some 120 px at 1366
     return card("idle", t("Program off"), [], status.desktop
-      ? t("The capture program stopped. Quit Sidenote and start it again")
+      ? t("The capture program stopped · quit Sidenote and start it again")
       : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` }));
   }
   // Switched off here in the panel: the monitor still matters, because it is what will be read
@@ -2374,7 +2373,7 @@ function localState() {
     if (pulling) return card("warn", t("Downloading"), [[t("Model"), `<span class="model">${escapeHtml(pulling.model)}</span>`]], pullNote(pulling));
     if (missing && L.pull) return card("bad", t("No model"), [[t("Model"), model]], pullOffer(L));
     if (!missing && status.desktop) return card("bad", t("No response"), [[t("Model"), model]],
-      t("Ollama does not answer. Install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }));
+      t("Ollama does not answer · install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }));
     const cmd = missing ? "./sidenote llm pull" : "./sidenote doctor";
     return card("bad", missing ? t("No model") : t("No response"), [[t("Model"), model]],
       `${localTrouble(L)}. <code class="cmd">${cmd}</code>`);
@@ -2680,16 +2679,25 @@ function renderUsage() {
   }
   syncSrc();
 }
-// The mark says what kind of band this is without reading it, and it is the same mark everywhere:
-// a triangle for something to fix, a circle for something that is only worth knowing.
+// The mark says what kind of notice this is without reading it, and it is the same mark on a band and on a toast:
+// a triangle for something to fix (bad: it broke; warn: it was not done), a circle for something only worth knowing
+// (info), with a tick when it is what was asked for, done (done).
 const ALERT_ICON = {
   bad: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 4.2 2.6 20h18.8L12 4.2Z"/><path d="M12 10v4.4M12 17.3h.01"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 4.2 2.6 20h18.8L12 4.2Z"/><path d="M12 10v4.4M12 17.3h.01"/></svg>',
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7h.01"/></svg>',
+  done: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.2 12.3 2.6 2.6 5-5.4"/></svg>',
 };
 function alertHtml(kind, msgHtml, actionHtml = "") {
   return `<div class="alert ${kind}">${ALERT_ICON[kind] || ALERT_ICON.info}`
     + `<div class="msg">${msgHtml}</div>${actionHtml}</div>`;
+}
+// A toast's words as a band's: the fact in bold, then what follows from it or what to do. They come as one line, the
+// fact before its first " · " or ": " (the translations keep those marks); `cmd`, a command in them, is a chip as on a band.
+function noticeMsg(text, cmd = "") {
+  const s = String(text ?? ""), cut = /: | · /.exec(s), code = cmd ? escapeHtml(cmd) : "";
+  const chip = (x) => code ? escapeHtml(x).split(code).join(`<code class="cmd">${code}</code>`) : escapeHtml(x);
+  return `<b>${chip(cut ? s.slice(0, cut.index) : s)}</b>${cut ? ` ${chip(s.slice(cut.index + cut[0].length))}` : ""}`;
 }
 // The bands stand in the bar's free middle, covering nothing of the thread, where that leaves them room (index.html, html.bands-in-bar)
 function placeBands() {
@@ -2769,8 +2777,8 @@ function renderAlerts() {
   if (!demo && wsState === "down") {
     // the desktop app runs its own server: what to do there is to start the app again, with no command to copy
     out.push(status.desktop
-      ? alertHtml("bad", t("{title} Reconnecting. If Sidenote was closed, start the Sidenote app again", { title: `<b>${t("Server disconnected")}</b>` }), "")
-      : alertHtml("bad", t("{title} Reconnecting. If the server is off, run {cmd} in its terminal", { title: `<b>${t("Server disconnected")}</b>`, cmd: `<code class="cmd">./sidenote up</code>` }),
+      ? alertHtml("bad", t("{title} Reconnecting · if Sidenote was closed, start the Sidenote app again", { title: `<b>${t("Server disconnected")}</b>` }), "")
+      : alertHtml("bad", t("{title} Reconnecting · if the server is off, run {cmd} in its terminal", { title: `<b>${t("Server disconnected")}</b>`, cmd: `<code class="cmd">./sidenote up</code>` }),
         `<button class="btn sm" data-copy="./sidenote up">${COPY_MARK}<span>${t("Copy command")}</span></button>`));
   } else if (wsState === "up" && eng()) {
     // One engine down while the other answers is a warning; nothing left to answer is an error.
@@ -2780,7 +2788,7 @@ function renderAlerts() {
     if (localBad && (L.pull || status.desktop) && !(pullNow || L.pulling)) {
       // The desktop app: the download key itself, or where to get Ollama; no command to run
       out.push(alertHtml(kind, `<b>${localTrouble(L)}</b> ` + (L.missing && L.pull ? pullOffer(L)
-        : t("Ollama does not answer. Install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }))
+        : t("Ollama does not answer · install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }))
         + `${E.ready ? t(" · the agent solves meanwhile", { agent: AG() }) : ""}`, ""));
     } else if (localBad && !(pullNow || L.pulling)) {
       // The same command the rail gives: pull only when the model was never downloaded, otherwise
@@ -2820,7 +2828,7 @@ function renderAlerts() {
   }
   if (wsState === "up" && capture.clients === 0 && (capture.screen_on || capture.audio_on)) {
     out.push(alertHtml("warn", `<b>${t("Capture program off")}</b> ${status.desktop
-      ? t("The capture program stopped. Quit Sidenote and start it again")
+      ? t("The capture program stopped · quit Sidenote and start it again")
       : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` })}`, ""));
   }
   // A drawn region is easy to forget and it decides everything that follows: with one set, the models
@@ -3298,7 +3306,7 @@ function held(it) {
 // counts as come while Practice was on when it was answered after Practice was turned on (with the panel closed, say)
 function practiceArrived(it, restored = false) {
   if (practiceSince == null || practiceCards.has(String(it.id))) return;   // off, or known already
-  if (restored && it.ts < practiceSince) return;                           // answered before: shown as it was
+  if (restored && it.ts < practiceSince && !(histStar && it.starred)) return;   // answered before: shown as it was (not in a review)
   practiceCards.set(String(it.id), 0);                                     // kept back, no hint shown yet
   keepCards();
 }
@@ -3489,7 +3497,24 @@ function setPractice(on) {
   practiceSince = on ? Date.now() : null;                              // the answers from now on are kept back
   try { if (on) localStorage.setItem(PRACTICE_KEY, String(practiceSince)); else localStorage.removeItem(PRACTICE_KEY); } catch (_) {}
   syncPracticeSeg();
+  if (on) reviewStarred();   // turned on with Starred chosen: a review of them
   // Those kept back come and go with it: only the entries whose look changes are drawn again, the one read kept in its place
+  keepPlace(() => thread.forEach((id) => { const it = items.get(id), el = entryEl(id); if (it && el && el.classList.contains("held") !== held(it)) renderEntry(it); }));
+  renderIndex(); syncNextAsks();
+}
+// Starred chosen in the contents with Practice on is a review: the starred answers are kept back again, whenever they were
+// answered, and each opens hint by hint as a new one does. One opened before is kept back once more; one part way through
+// its hints stays where it is.
+function reviewStarred() {
+  if (practiceSince == null || !histStar) return;
+  let changed = false;
+  for (const it of items.values()) {
+    const id = String(it.id), card = practiceCards.get(id);
+    if (!it.starred || (card != null && card !== OPENED)) continue;
+    practiceCards.set(id, 0); changed = true;
+  }
+  if (!changed) return;
+  keepCards();
   keepPlace(() => thread.forEach((id) => { const it = items.get(id), el = entryEl(id); if (it && el && el.classList.contains("held") !== held(it)) renderEntry(it); }));
   renderIndex(); syncNextAsks();
 }
@@ -4123,7 +4148,7 @@ $("shot").addEventListener("pointerup", () => {
   drawing.start = null;
   if (!b || b[2] - b[0] < 0.03 || b[3] - b[1] < 0.03) { toast(t("The region is too small"), null, "warn"); drawing.box = null; renderShot(); return; }
   const box = b.map((v) => Math.round(v * 1000) / 1000);
-  if (setSetting("roi_box", box)) toast(t("Watching this region only"));
+  if (setSetting("roi_box", box)) toast(t("Watching this region only"), null, "done");
   stopDrawing();
 });
 function forgetScreens() {   // screen capture off: the screenshots kept for the rail are deleted, not just hidden
@@ -4390,7 +4415,7 @@ function exportMarkdown() {
   }
   if (!written) { toast(t("No answers to export"), null, "warn"); return; }
   saveFile(out.join("\n"), "text/markdown;charset=utf-8", `sidenote-${fileStamp()}.md`);
-  toast(written === 1 ? t("Exported {n} answer (Markdown)", { n: written }) : t("Exported {n} answers (Markdown)", { n: written }));
+  toast(written === 1 ? t("Exported {n} answer (Markdown)", { n: written }) : t("Exported {n} answers (Markdown)", { n: written }), null, "done");
 }
 // A file made here, downloaded as a link to it is
 function saveFile(text, type, name) {
@@ -4474,7 +4499,7 @@ function exportAnki() {
   }
   if (!written) { toast(t("No answers to export"), null, "warn"); return; }
   saveFile(lines.join("\n") + "\n", "text/plain;charset=utf-8", `sidenote-anki-${fileStamp()}.txt`);
-  toast(written === 1 ? t("Exported {n} answer (Anki)", { n: written }) : t("Exported {n} answers (Anki)", { n: written }));
+  toast(written === 1 ? t("Exported {n} answer (Anki)", { n: written }) : t("Exported {n} answers (Anki)", { n: written }), null, "done");
 }
 // Export offers its two files in a menu of the panel's own under its key, held to the window as the dropdowns are (comboPlace): the
 // contents' card would cut it off at its edge, and its glass would hold a fixed menu inside itself
@@ -4536,6 +4561,7 @@ $("hist-q").addEventListener("input", (e) => {
 $("hist-day").addEventListener("change", (e) => {
   // Starred is one of the day list's choices: the starred answers of every day
   choiceChange(() => { histStar = e.target.value === STARRED; histDay = histStar ? "" : e.target.value; });
+  reviewStarred();   // with Practice on, the starred answers already here are kept back for a review
   if (histDay || histStar) loadHistory(histStar ? { starred: 1, limit: 200 } : { day: histDay, limit: 200 }).then(() => {
     // Still in that day, the view stays. Otherwise today and Starred open on their newest answer and an earlier day on its first
     const now = items.get(viewId);
@@ -4913,7 +4939,7 @@ function onError(m) {
   const h = HINT[m.hint] || HINT[""];
   const turn = turns.get(m.id);
   if (turn) {
-    toast(h.title + (h.cmd ? `: ${h.cmd}` : ""), null, "bad");
+    toast(h.title + (h.cmd ? `: ${h.cmd}` : ""), null, "bad", h.cmd);
     turn.live = false; turn.error = m.text || t("Error"); turn.hint = m.hint || "";
     const p = items.get(turn.parent); if (p) renderEntry(p);
     if (followTurn === turn.id) { showTurn(turn); followTurn = null; readerMoved(); if (nearBottom()) stick = true; }
@@ -4921,7 +4947,7 @@ function onError(m) {
   }
   const it = items.get(m.id) || newItem(m);
   if (it.meta && !it.live && !it.error) return;   // a whole answer is not turned into an error by a late message, nor told as one
-  toast(h.title + (h.cmd ? `: ${h.cmd}` : ""), null, "bad");
+  toast(h.title + (h.cmd ? `: ${h.cmd}` : ""), null, "bad", h.cmd);
   items.set(it.id, it);
   it.live = false; it.error = m.text || t("Error"); it.hint = m.hint || "";
   addToThread(it); syncEmpty();
@@ -4969,14 +4995,15 @@ function handle(m) {
     // the model download the local model's card started: its progress, then done or why it failed
     case "llm_pull":
       pullNow = m.status === "done" || m.status === "failed" ? null : m;
-      if (m.status === "failed") toast(t("The download of {model} failed: {error}", { model: m.model || "", error: m.error || "" }), null, "warn");
-      if (m.status === "done") toast(t("{model} is ready", { model: m.model || "" }));
+      if (m.status === "failed") toast(t("The download of {model} failed: {error}", { model: m.model || "", error: m.error || "" }), null, "bad");
+      if (m.status === "done") toast(t("{model} is ready", { model: m.model || "" }), null, "done");
       renderAll();
       break;
     // The server words what it could not do this way; said once here rather than at each of its notices
-    // The server says how the notice reads (level: warn or info); an older one does not, and its Korean words tell it instead
+    // The server says what kind of notice it is (level: info, done, warn or bad, the bands' kinds); an older one does not,
+    // and its Korean words tell it instead
     case "notice": toast(m.text || "", m.of != null && items.has(m.of) ? () => goTo(m.of) : null,
-      (m.level ? m.level === "warn" : /못했|못합니다|실패|수 없습니다|못 |안 보냄|없음|불가/.test(m.text || "")) ? "warn" : ""); break;
+      m.level || (/못했|못합니다|실패|수 없습니다|못 |안 보냄|없음|불가/.test(m.text || "") ? "warn" : "info")); break;
     case "transcript": renderHear(m.text, m.lang, { waiting: !!m.waiting, pending: !!m.pending }); break;
     case "utterance": noteHeard(m.text, m.why); break;   // a sentence that ended: with a `why` when it was not taken
     case "analysis_start": onStart(m); break;
@@ -5065,7 +5092,7 @@ function handle(m) {
         renderShot();
         $("shot").scrollIntoView({ block: "nearest" });
       }
-      else toast(m.text || t("No screen received"));
+      else toast(m.text || t("No screen received"), null, "warn");
       break;
   }
 }
@@ -5628,18 +5655,24 @@ addEventListener("scroll", () => {
 }, true);
 
 // ---------- controls ----------
-// `go`: what pressing the toast does (it then says so with an arrow and stays a little longer); null for none
-// `tone`: how much it matters, as the bands say it (index.html): "" a passing notice, "warn", "bad"
-function toast(text, go = null, tone = "") {
-  const t = $("toast"); t.textContent = text;
-  t.dataset.tone = tone;
-  t.onclick = go ? () => { go(); t.classList.remove("show"); } : null;
-  t.tabIndex = go ? 0 : -1;                                 // a pressable one is reached by the keyboard too
-  t.onkeydown = go ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); t.onclick(); } } : null;
-  t.classList.toggle("go", !!go);
+// A toast is a band that passes: the same mark, words and box (alertHtml, noticeMsg), over the page for a few seconds.
+// `go`: what pressing it does (it then says where it goes, and stays a little longer); null for none
+// `tone`: the bands' kinds: "info" (or "") something to know, "done" what was asked for went through, "warn" it was
+// not done, "bad" something broke. `cmd`: a command the words name, drawn as a chip
+const TOAST_TONES = new Set(["info", "done", "warn", "bad"]);
+function toast(text, go = null, tone = "", cmd = "") {
+  const el = $("toast"), kind = TOAST_TONES.has(tone) ? tone : "info";
+  el.innerHTML = alertHtml(kind, noticeMsg(text, cmd), go ? `<span class="btn sm">${t("To the answer")}</span>` : "");
+  el.dataset.tone = kind;
+  el.onclick = go ? () => { go(); el.classList.remove("show"); } : null;
+  el.tabIndex = go ? 0 : -1;                                 // a pressable one is reached by the keyboard too
+  el.onkeydown = go ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.onclick(); } } : null;
+  el.classList.toggle("go", !!go);
   // Every notice comes in one place, under the bar, below any bands that are up; Classic places it, in index.html
-  t.classList.add("show");
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.classList.remove("show"); t.tabIndex = -1; t.onclick = t.onkeydown = null; }, go ? 7000 : 3600);   // gone: not to be reached by the keyboard, unseen
+  el.classList.add("show");
+  // Long enough to be read: 3.6 s for a few words and more for more, up to 9 s; one to press stays 3 s longer
+  const ms = Math.min(9000, Math.max(3600, 1600 + String(text ?? "").length * 70)) + (go ? 3000 : 0);
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { el.classList.remove("show"); el.tabIndex = -1; el.onclick = el.onkeydown = null; }, ms);   // gone: not to be reached by the keyboard, unseen
 }
 function send(msg) {
   if (demo) { toast(t("A preview: nothing is sent")); return false; }
@@ -5744,7 +5777,7 @@ function switchCapture(which) {
     capture[which === "screen" ? "screen_on" : "audio_on"] = on;   // optimistic; the server confirms
     if (which === "screen" && !on) { forgetScreens(); if (drawing) drawing = null; }
     renderSignals(); renderAlerts(); renderShot();
-    toast(which === "screen" ? (on ? t("Screen capture turned on") : t("Screen capture turned off")) : on ? t("Sound capture turned on") : t("Sound capture turned off"));
+    toast(which === "screen" ? (on ? t("Screen capture turned on") : t("Screen capture turned off")) : on ? t("Sound capture turned on") : t("Sound capture turned off"), null, "done");
   }
 }
 
@@ -5769,10 +5802,10 @@ $("sw-agent").onclick = () => {
   else { try { localStorage.setItem(AGENT_MODE_KEY, C.mode); } catch (_) {} }
   if (!setSetting("agent_mode", mode)) return;
   C.mode = mode; renderSignals();   // at once; the server's engines message confirms it
-  toast(on ? t("{agent} turned on", { agent: AG() }) : t("{agent} turned off · only the local model solves", { agent: AG() }));
+  toast(on ? t("{agent} turned on", { agent: AG() }) : t("{agent} turned off · only the local model solves", { agent: AG() }), null, "done");
 };
 $("roi-draw").onclick = startDrawing;
-const clearRoi = () => { if (setSetting("roi_box", null)) toast(t("Region cleared · watching the whole screen")); };
+const clearRoi = () => { if (setSetting("roi_box", null)) toast(t("Region cleared · watching the whole screen"), null, "done"); };
 $("roi-clear").onclick = clearRoi;
 $("pause").onclick = togglePause;
 $("sw-screen").onclick = () => switchCapture("screen");
@@ -5882,7 +5915,7 @@ $("clear").onclick = () => {
   }
   clearArmed = 0; $("clear").textContent = t("Clear history"); $("clear").classList.remove("on");
   // Not while offline: it said done, deleted nothing on the server, and a reload brought it all back. The server says when it is done.
-  if (!send({ type: "history_clear" })) { toggleMenu(false); $("more").focus({ preventScroll: true }); toast(t("No connection to the server, so the history cannot be cleared")); return; }
+  if (!send({ type: "history_clear" })) { toggleMenu(false); $("more").focus({ preventScroll: true }); toast(t("No connection to the server, so the history cannot be cleared"), null, "bad"); return; }
   // answers still being written stay (with their labels); everything finished goes
   const keep = new Set([...items.values()].filter((it) => it.live || it.turns.some((t) => turns.get(t)?.live)).map((it) => it.id));
   for (const [id, it] of [...items]) if (!keep.has(id)) { it.turns.forEach((t) => turns.delete(t)); items.delete(id); unfolded.delete(id); }
@@ -5930,10 +5963,10 @@ function stepAnswer(by) {
 // c: the current answer's answer line, as its Copy key copies it, said on the key and in a notice (the key may be out of view)
 async function copyCurrent() {
   const it = viewId != null ? items.get(viewId) : null;
-  if (it && held(it)) { toast(t("Answer hidden for practice")); return; }   // not a way round Practice
-  if (!it?.head.answer) { toast(t("No answer line to copy")); return; }
+  if (it && held(it)) { toast(t("Answer hidden for practice"), null, "warn"); return; }   // not a way round Practice
+  if (!it?.head.answer) { toast(t("No answer line to copy"), null, "warn"); return; }
   const ok = await copyText(plainAnswer(it.head.answer), entryEl(it.id)?.querySelector("[data-copy-answer]") || null);
-  toast(ok ? t("Answer line copied") : t("Copy failed"), null, ok ? "" : "warn");
+  toast(ok ? t("Answer line copied") : t("Copy failed"), null, ok ? "done" : "bad");
 }
 // /: the contents' search, its words picked so what is typed takes their place
 function findAnswer() {
@@ -5947,7 +5980,7 @@ function practiceKey(which) {
   const it = viewId != null ? items.get(viewId) : null;
   if (!it || !held(it) || it.live) return;
   if (which === "answer") showAnswer(it);
-  else if (!showHint(it)) toast(t("No more hints"));
+  else if (!showHint(it)) toast(t("No more hints"), null, "warn");
 }
 // The keys' sheet: the settings sheet's look, a row a key. The menu's item, ? and Escape open and close it, and so do its close key
 // and a press on the veil
@@ -6052,7 +6085,7 @@ $("heard-copy").onclick = () => copyText(heardLines.map((l) => `${heardClock(l.t
 $("heard-save").onclick = () => {
   const out = [`# ${t("What was heard")} (${heardDay})`, "", ...heardLines.map((l) => `- ${heardClock(l.ts)} ${l.text.replace(/\s+/g, " ")}`), ""];
   saveFile(out.join("\n"), "text/markdown;charset=utf-8", `sidenote-heard-${heardDay}.md`);
-  toast(heardLines.length === 1 ? t("Saved {n} sentence (Markdown)", { n: 1 }) : t("Saved {n} sentences (Markdown)", { n: heardLines.length }));
+  toast(heardLines.length === 1 ? t("Saved {n} sentence (Markdown)", { n: 1 }) : t("Saved {n} sentences (Markdown)", { n: heardLines.length }), null, "done");
 };
 $("heard").addEventListener("keydown", (e) => {   // the keyboard stays inside the sheet, as in the keys' sheet
   if (e.key !== "Tab") return;

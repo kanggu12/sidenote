@@ -138,7 +138,7 @@ def group_english(br, s):
     info = p.js(tone)
     p.send({"type": "notice", "text": "GPU에 올리기 실패"})
     old = p.js(tone)
-    check("a notice takes the server's level, and an older server's by its words", [warn, info, old] == ["warn", "", "warn"], [warn, info, old])
+    check("a notice takes the server's level, and an older server's by its words", [warn, info, old] == ["warn", "info", "warn"], [warn, info, old])
     no_errors(p, "answers")
     p.close()
 

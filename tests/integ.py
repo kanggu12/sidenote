@@ -2214,6 +2214,26 @@ async def test_search_turned_away():
     second = json.loads(await web.web_search("node latest"))
     check("results from the engines that did answer: no error", "error" not in second and second["results"], str(second))
 
+    # Through the tool call: the same search within minutes is answered without asking the engines again, one that
+    # came back empty is asked again, and a kept one runs out
+    asked = []
+    replies[:] = [{"results": []}, {"results": [{"title": "Go", "url": "https://go.dev/dl/", "content": "go1.27.3"}]},
+                  {"results": [{"title": "Go", "url": "https://go.dev/dl/", "content": "go1.27.4"}]}]
+
+    class Counting:
+        async def get(self, url, params=None):
+            asked.append(params["q"])
+            return Resp(replies.pop(0))
+    web._client = Counting()
+    empty = json.loads(await web.call("web_search", {"query": "Go 1.27 release"}))
+    got = json.loads(await web.call("web_search", {"query": "Go 1.27 release"}))
+    again = json.loads(await web.call("web_search", {"query": "go 1.27 release "}))
+    check("an empty search is asked again, a found one is kept for the same words", not empty["results"]
+          and got["results"] and again == got and len(asked) == 2, str(asked))
+    web._kept = {k: (v[0] - web.KEEP_SECONDS, v[1]) for k, v in web._kept.items()}
+    late = json.loads(await web.call("web_search", {"query": "Go 1.27 release"}))
+    check("...and asked again once its time is up", len(asked) == 3 and "1.27.4" in late["results"][0]["snippet"], str(asked))
+
 
 async def test_page_dials_checked_address():
     """A page is fetched only from an address that was resolved and checked: a name that resolves to a public address

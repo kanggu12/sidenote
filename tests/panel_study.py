@@ -650,6 +650,36 @@ def anki_rows(text):
     return heads, data, list(csv.reader(io.StringIO("\n".join(data)), delimiter="\t"))
 
 
+def group_review(br, s):
+    """Starred chosen in the contents with Practice on: the starred answers, old as they are, are kept back for a review."""
+    if not T.group("review"):
+        return
+    rows = [row(20, "essay", "별표 물음", "별표 열쇠말", ONE, ago=7200, starred=True),
+            row(21, "essay", "보통 물음", "보통 열쇠말", ONE, ago=7100)]
+    p = Page(br, s, rows, w=1400, h=900)
+    p.js("() => setPractice(true)")
+    p.wait(150)
+    check("Practice on its own leaves answers from before it as they were", not held_state(p, 20)["held"] and not held_state(p, 21)["held"],
+          [held_state(p, 20), held_state(p, 21)])
+    p.js("() => { const d = $('hist-day'); d.value = 'starred'; d.dispatchEvent(new Event('change')); }")
+    p.wait(600)
+    check("with Starred chosen, the starred answer is kept back for a review", held_state(p, 20)["held"], held_state(p, 20))
+    p.js("() => showAnswer(items.get(20))")
+    p.wait(100)
+    check("...and opens when asked, as a new one does", not held_state(p, 20)["held"], held_state(p, 20))
+    p.js("() => { const d = $('hist-day'); d.value = ''; d.dispatchEvent(new Event('change')); }")
+    p.wait(300)
+    p.js("() => setPractice(false)")
+    p.js("() => { const d = $('hist-day'); d.value = 'starred'; d.dispatchEvent(new Event('change')); }")
+    p.wait(400)
+    check("with Practice off, Starred shows its answers", not held_state(p, 20)["held"], held_state(p, 20))
+    p.js("() => setPractice(true)")
+    p.wait(150)
+    check("turned on with Starred chosen, the one opened before is kept back again, the unstarred one not",
+          held_state(p, 20)["held"] and not p.js("() => held(items.get(21))"), [held_state(p, 20), p.js("() => held(items.get(21))")])
+    p.close()
+
+
 def group_anki(br, s):
     if not T.group("anki"):
         return
@@ -801,7 +831,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_practice, group_edges, group_keys, group_anki, group_words):
+        for group in (group_practice, group_edges, group_keys, group_review, group_anki, group_words):
             group(br, s)
         br.close()
     return T.end()

@@ -306,7 +306,7 @@ async def model_choice():
     await APP.state.speech_model_task
     check("a model that cannot be had leaves the one in use", APP.state.transcriber is now)
     check("...and the choice back on it, so the next start finds a model", SETTINGS.get("whisper_model") == "medium", SETTINGS.get("whisper_model"))
-    warned = [m for m in BROADCAST if m.get("type") == "notice" and m.get("level") == "warn"]
+    warned = [m for m in BROADCAST if m.get("type") == "notice" and m.get("level") == "bad"]
     check("...and says so", len(warned) == 1 and "small" in warned[0]["text"], BROADCAST)
     check("...and the panel's choice shows it", any(m.get("type") == "settings" and m.get("values") == {"whisper_model": "medium"} for m in BROADCAST), BROADCAST)
     A.make_transcriber = lambda cfg, model="": tr.NullTranscriber()   # "auto": no faster-whisper for it, and no exception

@@ -347,8 +347,11 @@ When a newer release of Sidenote is out, the alert bar says so in a band of its 
 next release shows again. The server asks GitHub once a day (section 14); **Check for new versions** in **Solver
 settings** turns that off.
 
-If the server connection drops or the capture program stops while you are reading further down, a short notice also
-appears at the bottom of the screen. A solution that was being written when the connection dropped stays as far as it
+A short notice says what just happened, such as an export written or a capture switched off, under the top bar for a few
+seconds. It has the band's form: a mark for its kind (a circle with *i* for something to know, a tick for what you asked
+for done, a triangle for what was not done or failed), the fact in bold, then what follows or what to do. One about an
+earlier answer has **To the answer**. If the server connection drops or the capture program stops while you are reading
+further down, a notice says that too. A solution that was being written when the connection dropped stays as far as it
 got, marked "Stopped: connection lost". Once the server is back, solve it again with **Reanalyze**.
 
 ### The notebook
@@ -436,6 +439,8 @@ arrives shows its question and keeps the rest back. The answers that were there 
   shown. Answers the server gave while the panel was closed, after Practice was turned on, are kept back too.
 - The server is not told: it solves and keeps the answers as before. **Off** shows every answer whole again, and
   **On** keeps back again those it kept back before.
+- To review, choose **Starred** in the contents with Practice on: every starred answer is kept back, however old, and
+  opens hint by hint as a new one does. Choosing **Starred** again starts a new round.
 
 ### Running code
 
