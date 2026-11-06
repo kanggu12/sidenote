@@ -214,8 +214,14 @@ check("the walk down a table with a rule under each row still reaches its last r
       box_tab[3] >= 0.30 + 7 * 0.022 + 14 / 1080, f"bottom {box_tab[3]:.3f}, the last row ends at 0.467")
 
 # A box written y first, up to twice as tall as wide, is turned when its edges cut through the lines and the turned one's
-# do not; a pane of code that really stands that tall is left as it is.
+# do not; a pane of code that really stands that tall is left as it is, and so is one against the screen's own edge, where
+# no line can be cut. Through the server's own path: the fast pass's REGION line, the screen as the server holds it (a
+# Frame with its PNG), Pipeline._seen_upright. A picture handed in place of the Frame let the 0.1.7 turn pass its check and
+# never run in the server, which holds no picture.
 print("\n[a box written y first in a shape TALL_BOX lets through]")
+import asyncio  # noqa: E402
+from server.app import Frame  # noqa: E402
+from server.pipeline import Pipeline, box_aspect  # noqa: E402
 scr = Image.new("RGB", (1920, 1080), "white")
 d = ImageDraw.Draw(scr)
 for k in range(8):   # a wide problem: eight lines of words across x 0.25 to 0.80, y 0.17 to 0.33
@@ -225,14 +231,27 @@ for k in range(8):   # a wide problem: eight lines of words across x 0.25 to 0.8
 for k in range(40):  # a pane of code down the left, x 0.02 to 0.20, y 0.40 to 0.95
     y = int(0.40 * 1080) + k * 14
     d.rectangle((int(0.03 * 1920), y, int(0.03 * 1920) + 40 + (k * 37) % 250, y + 8), fill="black")
-aspect = 1080 / 1920
+png = io.BytesIO()
+scr.save(png, "PNG")
+frame = Frame(model_b64="", thumb_url="", sig=b"", ts=0.0, width=1920, height=1080, full_png=png.getvalue())
+whole = (0.0, 0.0, 1.0, 1.0)
+
+
+def seen(box):
+    """The fast pass's box as the server reads it from a REGION line on the 0 to 1000 grid."""
+    line = "TYPE: short\nANSWER: x\nREGION: " + " ".join(str(round(v * 1000)) for v in box) + "\n\nbody"
+    got = asyncio.run(Pipeline._seen_upright(line, 1000, whole, box_aspect(frame, whole), frame))
+    return tuple(round(v, 3) for v in got) if got else got
+
+
 wide = (0.16, 0.24, 0.34, 0.81)   # the problem's box with a margin, 0.24 0.16 0.81 0.34, written in y-first order
-check("a wide problem's box written y first comes back turned", upright(scr, (0, 0, 1, 1), wide, aspect) == (0.24, 0.16, 0.81, 0.34),
-      upright(scr, (0, 0, 1, 1), wide, aspect))
+check("a wide problem's box written y first comes back turned, from the screen the server holds", seen(wide) == (0.24, 0.16, 0.81, 0.34),
+      seen(wide))
 pane = (0.01, 0.38, 0.22, 0.97)
-check("...and the box of a pane that stands that tall stays as it is", upright(scr, (0, 0, 1, 1), pane, aspect) == pane,
-      upright(scr, (0, 0, 1, 1), pane, aspect))
-check("...as does any box with no picture to look at", upright(None, (0, 0, 1, 1), wide, aspect) == wide)
+check("...the box of a pane that stands that tall stays as it is", seen(pane) == pane, seen(pane))
+edge = (0.0, 0.38, 0.22, 0.97)
+check("...and so does one against the screen's edge, which turned would run edge to edge and seem to cut nothing", seen(edge) == edge, seen(edge))
+check("...as does any box with no screen to look at", upright(None, whole, wide, 1080 / 1920) == wide)
 
 print(f"\n==== {ok} passed, {bad} failed ====")
 sys.exit(1 if bad else 0)

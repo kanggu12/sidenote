@@ -2076,7 +2076,7 @@ function splitHead(text, final = false) {
 
 // An answer line as plain text: for the index, the copy button and the screen-reader note.
 function texPlain(t) {
-  return t.replace(/\\(?:d|t)?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "$1/$2").replace(/\\sqrt\s*\{([^{}]*)\}/g, "√$1")
+  return t.replace(/\\(?:begin|end)\s*\{[^{}]*\}/g, " ").replace(/\\\\/g, " ").replace(/&/g, "").replace(/\\(?:d|t)?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "$1/$2").replace(/\\sqrt\s*\{([^{}]*)\}/g, "√$1")
     .replace(/\\(?:left|right)\b/g, "").replace(/\\times\b/g, "×").replace(/\\cdot\b/g, "·").replace(/\\(?:le|leq)\b/g, "≤")
     .replace(/\\(?:ge|geq)\b/g, "≥").replace(/\\(?:ne|neq)\b/g, "≠").replace(/\\infty\b/g, "∞").replace(/\\pi\b/g, "π")
     .replace(/\\(log|ln|sin|cos|tan|max|min)\b/g, "$1").replace(/\\[,;:! ]/g, " ").replace(/\\int(?![A-Za-z])/g, "∫").replace(/\\sum(?![A-Za-z])/g, "Σ").replace(/\\sqrt(?![A-Za-z])/g, "√").replace(/\\[A-Za-z]+/g, "").replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
@@ -2695,7 +2695,15 @@ function alertHtml(kind, msgHtml, actionHtml = "") {
 // A toast's words as a band's: the fact in bold, then what follows from it or what to do. They come as one line, the
 // fact before its first " · " or ": " (the translations keep those marks); `cmd`, a command in them, is a chip as on a band.
 function noticeMsg(text, cmd = "") {
-  const s = String(text ?? ""), cut = /: | · /.exec(s), code = cmd ? escapeHtml(cmd) : "";
+  const s = String(text ?? ""), code = cmd ? escapeHtml(cmd) : "";
+  // outside brackets only: "(CUDA error: out of memory)" is what went wrong, not where the fact ends
+  let cut = null;
+  for (let i = 0, depth = 0; i < s.length && !cut; i++) {
+    const c = s[i];
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth) depth--;
+    else if (!depth && (s.startsWith(": ", i) || s.startsWith(" · ", i))) cut = { index: i, 0: s.startsWith(": ", i) ? ": " : " · " };
+  }
   const chip = (x) => code ? escapeHtml(x).split(code).join(`<code class="cmd">${code}</code>`) : escapeHtml(x);
   return `<b>${chip(cut ? s.slice(0, cut.index) : s)}</b>${cut ? ` ${chip(s.slice(cut.index + cut[0].length))}` : ""}`;
 }
@@ -2705,7 +2713,9 @@ function placeBands() {
   if (!sig || !act) return;
   const left = sig.right + 16, right = window.innerWidth - act.left + 12;
   // Only at the very top of the page: there a band would lie over the head of the thread. Scrolled, it floats under the bar as a toast does.
-  let fits = window.scrollY <= 4 && window.innerWidth - left - right >= 380 && sig.top < 40;
+  // Not in one column (1000 px and narrower), where the bands take their room over the thread (index.html): in the bar at the
+  // top and in the page once scrolled, they moved the thread by their height as it scrolled
+  let fits = !window.matchMedia("(max-width: 1000px)").matches && window.scrollY <= 4 && window.innerWidth - left - right >= 380 && sig.top < 40;
   document.documentElement.classList.toggle("bands-in-bar", fits);
   document.documentElement.style.setProperty("--band-l", `${Math.round(left)}px`);
   document.documentElement.style.setProperty("--band-r", `${Math.round(right)}px`);
@@ -3305,9 +3315,17 @@ function held(it) {
 // An answer comes into the notebook: with Practice on it is kept back from now on, across a reload. One from the history
 // counts as come while Practice was on when it was answered after Practice was turned on (with the panel closed, say)
 function practiceArrived(it, restored = false) {
-  if (practiceSince == null || practiceCards.has(String(it.id))) return;   // off, or known already
-  if (restored && it.ts < practiceSince && !(histStar && it.starred)) return;   // answered before: shown as it was (not in a review)
-  practiceCards.set(String(it.id), 0);                                     // kept back, no hint shown yet
+  if (practiceSince == null) return;                                       // off
+  const id = String(it.id), card = practiceCards.get(id);
+  // In a review of the starred ones (reviewStarred), one the Starred choice brings in is kept back as those already here
+  // were, an answer opened before among them: it was let through as known and came in opened
+  if (restored && histStar && it.starred) {
+    if (card == null || card === OPENED) { practiceCards.set(id, 0); keepCards(); }
+    return;
+  }
+  if (card != null) return;                                                // known already
+  if (restored && it.ts < practiceSince) return;                           // answered before: shown as it was
+  practiceCards.set(id, 0);                                                // kept back, no hint shown yet
   keepCards();
 }
 // Where each of an answer's parts ends in its text: the solution's own sections in their order. The hints shown so far
@@ -3475,7 +3493,7 @@ function showOpened(el) {
   // up to six tenths of the room at a time, so what was in view stays partly in view; not past its own top while that shows
   let step = Math.min(over, (room - top) * 0.6);
   if (r.top > top) step = Math.min(step, r.top - top);
-  if (step > 0) window.scrollBy(0, step);
+  if (step > 0) { autoUntil = Date.now() + 120; window.scrollBy(0, step); }   // the panel's own scroll, not the reader's
 }
 function showHint(it, key = null) {
   if (!it || !held(it) || it.live) return false;                     // only an answer kept back, once it is written
@@ -4178,13 +4196,30 @@ function forgetScreens() {   // screen capture off: the screenshots kept for the
 // answers), lower-cased once per search
 // (the answer as read: its head lines, "TYPE:", "ANSWER:", kept every row for "type" and showed in the row)
 function readText(raw) { const h = splitHead(raw || "", true); return [h.answer || "", h.body || ""].join("\n"); }
-// The same words as the page shows them, for the search and its rows: a diagram's source and the fences round code are
-// no words on the page, nor a formula's TeX (rows read "```mermaid flowchart L…" and were found by "mermaid")
+// The same words as the page shows them, for the search and its rows: what drawPictures draws as a picture (a chart's
+// numbers, a diagram's source) is no words on the page, nor are the fences round code or a formula's TeX outside code
+// (rows read "```mermaid flowchart L…" and were found by "mermaid"). The code inside a fence is kept as it is written, so
+// "__init__" or "$files" still finds the answer that has it.
+const PICTURE_FENCES = /^(chart|mermaid)$/i;
 function plainRead(md) {
-  return String(md || "").replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => texPlain(tex)).split(/\n{2,}/).map((part) => part
-    .replace(/^[ \t]*```[ \t]*(mermaid|dot|graphviz|plantuml)\b[\s\S]*?(^[ \t]*```[ \t]*$|$(?![\s\S]))/gim, "")
-    .replace(/^[ \t]*```.*$/gm, ""))
-    .join("\n\n").split("\n").map((l) => plainAnswer(l, true)).filter(Boolean).join("\n");
+  const out = [], prose = [];
+  const flush = () => {
+    if (!prose.length) return;
+    prose.join("\n").replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => texPlain(tex)).split("\n")
+      .filter((line) => !/^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/.test(line))   // a table's rule under its head
+      .forEach((line) => { const p = plainAnswer(line, true); if (p) out.push(p); });
+    prose.length = 0;
+  };
+  let fence = null;   // the open fence's marks and whether it is a picture, while inside one
+  for (const line of String(md || "").split("\n")) {
+    const open = /^[ \t]*(`{3,}|~{3,})[ \t]*([\w+-]*)/.exec(line);
+    if (!fence && open) { flush(); fence = { mark: open[1], picture: PICTURE_FENCES.test(open[2]) }; continue; }
+    if (fence && line.trim().startsWith(fence.mark) && !line.trim().slice(fence.mark.length).trim()) { fence = null; continue; }
+    if (!fence) prose.push(line);
+    else if (!fence.picture && line.trim()) out.push(line.trim());
+  }
+  flush();
+  return out.join("\n");
 }
 // One Practice keeps back is found by what it shows: its question and the hints out, not the answer it keeps back, which a row
 // found by it would show

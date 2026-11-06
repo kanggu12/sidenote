@@ -690,9 +690,13 @@ tall as wide, a shape a long problem in a pane can have too.
 Between once and twice as tall as wide, the picture tells it instead (`upright` in `server/pipeline.py`). Read as written, a
 strip of a wide problem stands on end and its left and right edges run down through the lines of text; turned, they lie
 in the margins. So such a box is turned when the edges of the turned one cross less than `UPRIGHT_CUT` (0.6) as much
-writing as its own, each counted against the writing inside it. Over the 495 first-pass boxes kept from earlier runs of
-the known-answer set, it turned 5, each from 3 to 24 per cent of its problem to 35 to 100, and no box that held its
-problem; the panes down the left of the coding sites, which stand that tall, stayed as they were.
+writing as its own, each counted against the writing inside it. A box with a side on the screen's own edge is left as
+written: nothing can be crossed there, and a pane down the left of the screen, turned, runs from edge to edge and looked
+as if it cut through nothing. Measured through the server's own path (the fast pass's REGION line, the screen as the
+server holds it, `Pipeline._seen_upright`) over the 559 first-pass boxes kept from earlier runs of the known-answer set,
+it turned 6, each from 3 to 24 per cent of its problem to 35 to 100, and no box that held its problem; the panes of the
+coding sites stayed as they were. The first version of it, in 0.1.7, was measured on the screens as pictures, and in the
+server, which holds a screen as the PNG that arrived, it turned nothing.
 
 ## The agents
 

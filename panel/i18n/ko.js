@@ -328,7 +328,7 @@ CATALOGS.ko = {
   "Run a code answer with {run} to see its output": "코드 풀이는 {run} 버튼으로 실행해 출력 확인",
   "For a long problem, turn on {setting} in Solver settings and scroll": "긴 문제는 풀이 설정의 {setting}를 켜고 스크롤",
   "Scroll stitching": "스크롤 이어 붙이기",
-  "{roi} on the screen card: only the place you draw is looked at and sent": "화면 카드의 {roi}로 고른 곳만 보고 보냄",
+  "{roi} on the screen card: only the place you draw is looked at and sent": "화면 카드의 {roi}: 그린 곳만 보고 보냄",
   "Draw a region": "영역 그리기",
   "Not running": "꺼짐",
   "Web search": "웹 검색",

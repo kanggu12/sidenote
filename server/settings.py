@@ -202,7 +202,7 @@ def _defs() -> list[Setting]:
                   "minutes", agent=name)),
         # screen processing
         Setting("history_keep", "bool", True, "screen", t("Keep answers"),
-                t("Keeps answers and their screens on the server for 90 days (up to 200 MB), starred ones until unstarred. Clear them with Clear history in the menu",
+                t("Keeps answers and their screens on the server for {days} days (up to {mb} MB), starred ones until unstarred. Clear them with Clear history in the menu",
                   days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.history_mb:g}")),
         Setting("face_mask", "bool", True, "screen", t("Cover faces"),
                 t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
@@ -255,7 +255,7 @@ def _defs() -> list[Setting]:
                           "medium": t("About {s} s of CPU a pass, on the test PC. Hears technical terms better", s=SPEECH_CPU["medium"])}),
         # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
         Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
-                t("Saves each sentence heard, with its time, on this PC only, for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
+                t("Saves each sentence heard, with its time, on this PC only, for {days} days (up to {mb} MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
         # capture
         Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
                 t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),
