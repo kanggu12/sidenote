@@ -655,7 +655,7 @@
   .md table { border-collapse: separate; border-spacing: 0; font-size: 14.5px; line-height: 1.55; }
   /* A column of numbers (app.js marks the cells .num) lines up on its last digit, as numbers are
      compared: right-aligned, every digit the width of the others. */
-  .md :where(td, th).num { text-align: right; font-variant-numeric: tabular-nums; }
+  .md :where(td, th).num { text-align: right; font-variant-numeric: tabular-nums; width: 1%; white-space: nowrap; }
   .md th, .md td { border-bottom: 1px solid var(--rule); padding: 9px 16px; text-align: left; vertical-align: top; min-width: 3.5em; }
   .md th { background: var(--code-bar); color: var(--ink-2); font-weight: 650; font-size: 13px; letter-spacing: .01em;
     border-bottom-color: var(--rule-2); padding-top: 8px; padding-bottom: 8px; white-space: nowrap; }
@@ -1465,9 +1465,9 @@
      grain and its own dot grid, the page on a stack of pages with holes punched down its margin. The right column is glass over
      the desk, colourless. The frame of the panel (buttons, switches, cards) stays graphite and white: the pens' colours,
      yellow and red and white, are for what is written on the page. The page itself stays solid: it is read. All under data-skin="classic". ---- */
-  :root[data-skin="classic"][data-theme="dark"] { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff4545; }
+  :root[data-skin="classic"][data-theme="dark"] { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; }
   :root[data-skin="classic"][data-theme="light"] { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; }
-  @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff4545; } }
+  @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; } }
   @media (prefers-color-scheme: light) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; } }
   :root[data-skin="classic"][data-theme="dark"] { --lamp-glow: rgba(255, 255, 255, .03); --page-dot: rgba(255, 255, 255, .11); --tone-mix: 4%; --stack-1: #1a1b1e; --stack-2: #17181a; --pool-1: rgba(255, 255, 255, .05); --pool-2: rgba(255, 255, 255, .03); --pool-3: rgba(255, 255, 255, .04); }
   @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --lamp-glow: rgba(255, 255, 255, .03); --page-dot: rgba(255, 255, 255, .11); --tone-mix: 4%; --stack-1: #1a1b1e; --stack-2: #17181a; --pool-1: rgba(255, 255, 255, .05); --pool-2: rgba(255, 255, 255, .03); --pool-3: rgba(255, 255, 255, .04); } }
@@ -1489,6 +1489,8 @@
   /* Holes punched down the margin, one every two lines of a printed page */
   :root[data-skin="classic"] .sheet::after { content: ""; position: absolute; top: 18px; bottom: 18px; left: 7px; width: 12px; pointer-events: none;
     background: radial-gradient(circle at 6px 6px, var(--paper-low) 0 4.4px, var(--rule-2) 4.6px 5.2px, transparent 5.5px) 0 0 / 12px 168px repeat-y; opacity: .85; }
+  :root[data-skin="classic"][data-theme="light"] .sheet::after {
+    background: radial-gradient(circle at 6px 6px, var(--rule) 0 4.4px, var(--rule-2) 4.6px 5.2px, transparent 5.5px) 0 0 / 12px 168px repeat-y; }
   :root[data-skin="classic"] .mg { padding-left: 22px; }
   /* The right column: slips of the same paper, each its own tint and its name under its own highlighter */
   /* The right column is glass, the opposite of the paper: smooth, see-through and frosted, a bright hairline at its edge and no gloss on its face */
@@ -1763,9 +1765,11 @@
   :root[data-skin="classic"] .menu .seg { padding: 0 0 10px; gap: 4px; background: none; }
   :root[data-skin="classic"] .menu .seg button { flex: 1; height: 30px; background: rgba(255, 255, 255, .05); border: 1px solid transparent; box-shadow: none; color: var(--ink-2); font-weight: 500; }
   :root[data-skin="classic"] .menu .seg button:hover { background: rgba(255, 255, 255, .1); color: var(--ink); }
-  :root[data-skin="classic"] .menu .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, .16); border-color: var(--float-line); color: var(--ink); font-weight: 650; box-shadow: none; }
+  :root[data-skin="classic"] .menu .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, .1); border-color: transparent; color: var(--ink); font-weight: 650; box-shadow: var(--sunken); }
   :root[data-skin="classic"][data-theme="light"] .menu .seg button { background: rgba(0, 0, 0, .04); }
-  :root[data-skin="classic"][data-theme="light"] .menu .seg button[aria-pressed="true"] { background: rgba(0, 0, 0, .1); }
+  :root[data-skin="classic"][data-theme="light"] .menu .seg button[aria-pressed="true"] { background: rgba(0, 0, 0, .08); box-shadow: var(--sunken); }
+  /* In a sheet the chosen choice's edge is a rule, not the ink colour of the focus ring beside it */
+  :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { border-color: var(--rule-2); }
   :root[data-skin="classic"] .menu hr { margin: 2px 0 6px; border-top-color: var(--float-line); }
   :root[data-skin="classic"] .menu .item { padding: 8px 8px; font-size: 13.5px; }
   :root[data-skin="classic"] .menu .item:hover { background: rgba(255, 255, 255, .09); }
@@ -2311,6 +2315,8 @@
   /* The holes down each page's margin, as many as its height has room for and none cut by its edge */
   :root[data-skin="classic"] .thread > :is(.entry, #thread-tail)::after { content: ""; position: absolute; top: 18px; bottom: 12px; left: 7px; width: 12px; pointer-events: none; opacity: .85;
     background: radial-gradient(circle at 6px 6px, var(--paper-low) 0 4.4px, var(--rule-2) 4.6px 5.2px, transparent 5.5px) 0 0 / 12px 168px no-repeat round; }
+  :root[data-skin="classic"][data-theme="light"] .thread > :is(.entry, #thread-tail)::after {
+    background: radial-gradient(circle at 6px 6px, var(--rule) 0 4.4px, var(--rule-2) 4.6px 5.2px, transparent 5.5px) 0 0 / 12px 168px no-repeat round; }
   /* A page gone to from the contents says so with its edge: its ground stays its ground */
   :root[data-skin="classic"] .thread > .entry.flash { animation: page-flash 1.2s ease-out 1; }
   @keyframes page-flash { from { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 60%, transparent); } to { box-shadow: inset 0 0 0 2px transparent; } }
@@ -2420,6 +2426,7 @@
   :root[data-skin="classic"] :is(.when, time.stamped)::before { align-self: center; }
   :root[data-skin="classic"] .entry > .row.head.err { align-items: first baseline; }
   @media (min-width: 1001px) { :root[data-skin="classic"] .entry > .row.head.err .mg time { margin-top: 1.4px; } }
+  @media (min-width: 821px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { justify-content: flex-end; } }
   @media (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; } :root[data-skin="classic"] .entry > .row .mg:has(.kind) > * { align-self: baseline; margin-block: 0; } }
   /* A key's name in a sentence: on the sentence's baseline, its mark beside it */
   .key-hint { align-items: baseline; }
@@ -2720,6 +2727,9 @@
   /* A source's state beside its name, not out at a column of its own: the gap read as a badge that belonged to nothing.
      The switch or the key at the card's right edge, as before */
   :root[data-skin="classic"] .src-top { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; }
+  :root[data-skin="classic"] .rail #gpu-load { padding-inline: 7px; }
+  :root[data-skin="classic"] #settings-reset { color: var(--ink); background: var(--sheet-2); border: 1px solid var(--rule-2); box-shadow: var(--relief-sm); }
+  :root[data-skin="classic"] .rail .gpu-says:has(> mark.key) { white-space: nowrap; }
   :root[data-skin="classic"] .rail .src-top .pill { justify-self: start; }
   /* The plan's usage: a name, a meter of the share used in the agent's colour, the share and when it starts again, on the card's columns */
   :root[data-skin="classic"] .rail .quotas { display: grid; grid-template-columns: var(--col-name) minmax(0, 1fr) auto; column-gap: var(--col-gap); row-gap: 7px; align-items: center; margin: 2px 0 6px; }
@@ -2773,6 +2783,9 @@
   :root[data-skin="classic"] .rail .usage-top { grid-template-columns: calc(var(--col-name) + var(--col-gap)) calc(55% + 5.4px - var(--col-name) - var(--col-gap)) calc(var(--col-name) + var(--col-gap)) minmax(0, 1fr); }
   /* its second gauge on the second half's line, 55 % and 5.4 px in, as the second figure of the tiles under it (.usage-top) */
   :root[data-skin="classic"] .rail .gpu-viz { grid-template-columns: calc(55% - 8.6px) minmax(0, 1fr); column-gap: 14px; }
+  :root[data-skin="classic"] .rail .gpu-viz > div:nth-child(2) { position: relative; }
+  :root[data-skin="classic"] .rail .gpu-viz > div:nth-child(2)::before { content: ""; position: absolute; left: -7px; top: 2px; bottom: 2px;
+    width: 1px; background: var(--pane-rule); }
   /* the screen's and the sound's first values at 66 too: at 55 % a monitor's size fits before the second half */
   :root[data-skin="classic"] .rail .card:not(.engine) .fact dt { min-width: var(--col-name); }
 
@@ -3039,16 +3052,16 @@
   <section class="card settings" id="keys" role="dialog" aria-modal="true" aria-labelledby="keys-title">
     <header><h2 id="keys-title" data-t>Keyboard shortcuts</h2>
       <button class="btn icon" id="keys-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
-    <p class="lede" data-t>Not while typing in a field, nor with Ctrl, Alt or Meta held. c, h and a act on the answer the contents mark</p>
+    <p class="lede" data-t>Off while typing or holding Ctrl, Alt or Meta</p>
     <div class="keys-list" tabindex="0" role="group" aria-labelledby="keys-title">
       <div class="set"><span class="lbl" data-t>Next answer</span><span class="ctl"><kbd class="cmd">j</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Previous answer</span><span class="ctl"><kbd class="cmd">k</kbd></span></div>
-      <div class="set"><span class="lbl" data-t>Copy the one-line answer</span><span class="ctl"><kbd class="cmd">c</kbd></span></div>
+      <div class="set"><span class="lbl" data-t>Copy the one-line answer</span><span class="ctl"><kbd class="cmd">c</kbd></span><p class="help" data-t>The marked answer</p></div>
       <div class="set"><span class="lbl" data-t>Reanalyze</span><span class="ctl"><kbd class="cmd">r</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Pause or continue</span><span class="ctl"><kbd class="cmd">p</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Find an answer</span><span class="ctl"><kbd class="cmd">/</kbd></span></div>
-      <div class="set"><span class="lbl" data-t>Show a hint</span><span class="ctl"><kbd class="cmd">h</kbd></span><p class="help" data-t>In practice mode</p></div>
-      <div class="set"><span class="lbl" data-t>Show the answer</span><span class="ctl"><kbd class="cmd">a</kbd></span><p class="help" data-t>In practice mode</p></div>
+      <div class="set"><span class="lbl" data-t>Show a hint</span><span class="ctl"><kbd class="cmd">h</kbd></span><p class="help" data-t>In practice mode, the marked answer</p></div>
+      <div class="set"><span class="lbl" data-t>Show the answer</span><span class="ctl"><kbd class="cmd">a</kbd></span><p class="help" data-t>In practice mode, the marked answer</p></div>
       <div class="set"><span class="lbl" data-t>Keyboard shortcuts</span><span class="ctl"><kbd class="cmd">?</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Close</span><span class="ctl"><kbd class="cmd">Esc</kbd></span></div>
     </div>

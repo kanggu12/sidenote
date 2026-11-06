@@ -3524,11 +3524,12 @@ function entryHtml(it) {
   const tools = [];
   // Every one of these wears its mark, the same drawing as the copy button inside a code block.
   if (foldable(it)) tools.push(`<button class="btn sm ghost" data-fold="${it.id}" aria-expanded="${!folded(it)}">${folded(it) ? OPEN_MARK + `<span>${t("Show the solution")}</span>` : FOLD_MARK + `<span>${t("Fold")}</span>`}</button>`);
-  if (!it.live && !it.error && !hold) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
   if (ptextOffered(it)) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}" title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}</span></button>`);
   if (it.ptext?.text) tools.push(`<button class="btn sm ghost" data-copy-ptext="${it.id}" title="${t("Copy the problem text written out")}">${PTEXT_COPY_MARK}<span>${t("Copy problem text")}</span></button>`);
-  // The star leads the keys, so the others keep their places: on a whole answer the server keeps, by its id (a follow-up's stand-in parent has none)
-  if (starrable(it)) tools.unshift(`<button class="btn sm ghost" data-star="${it.id}" aria-pressed="${!!it.starred}" title="${starTitle(it)}">${STAR_MARK}<span>${t("Star")}</span></button>`);
+  // The star and Copy all come last, so they keep their places from one answer to the next whatever comes before them.
+  // The star is on a whole answer the server keeps, by its id (a follow-up's stand-in parent has none)
+  if (starrable(it)) tools.push(`<button class="btn sm ghost" data-star="${it.id}" aria-pressed="${!!it.starred}" title="${starTitle(it)}">${STAR_MARK}<span>${t("Star")}</span></button>`);
+  if (!it.live && !it.error && !hold) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
   // An error says what went wrong on its first line, beside its label. Its head used to be the headline
   // row, which an error leaves empty (no buttons, and mostly nothing about how it came in), so the label
   // stood beside a blank line and the message began some 50 px further down. A half-written answer
