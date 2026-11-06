@@ -33,7 +33,7 @@ jobs:
           python -m compileall -q server client desktop docker runner tests
           python -m py_compile client/launch.pyw   # compileall leaves a .pyw out
           # one file per bash -n: given two, bash checks the first and passes the second to it as an argument
-          for f in sidenote docker/entrypoint.sh tests/run.sh tests/launcher_args.sh tests/k3d_check.sh tests/offline_check.sh tests/nonroot_check.sh; do bash -n "$f"; done
+          for f in sidenote docker/entrypoint.sh tests/run.sh tests/launcher_args.sh tests/k3d_check.sh tests/offline_check.sh tests/nonroot_check.sh .github/badges.sh; do bash -n "$f"; done
           node --check panel/app.js
           node --check panel/theme.js
           node --check panel/i18n.js

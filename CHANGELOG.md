@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Changed
+
+- The README's badges are files in the repository (`.github/badges.sh`), so none waits on another site, and its picture
+  of the panel and the user guide's numbered one show the panel as it is now. The README gathers everyday commands in a
+  table of its own.
+
 ## [0.1.5] - 2026-11-06
 
 ### Fixed

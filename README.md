@@ -12,10 +12,10 @@
 
 <p align="center">
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.5" src="https://img.shields.io/badge/release-v0.1.5-ea7233.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2a78d6.svg"></a>
-  <img alt="Runs on Windows and Linux" src="https://img.shields.io/badge/runs%20on-Windows%20%7C%20Linux-555.svg">
-  <img alt="GPU: NVIDIA, AMD or none" src="https://img.shields.io/badge/GPU-NVIDIA%20%7C%20AMD%20%7C%20none-555.svg">
+  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.5" src="docs/assets/badges/release.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
+  <img alt="Runs on Windows and Linux" src="docs/assets/badges/runs-on.svg">
+  <img alt="GPU: NVIDIA, AMD or none" src="docs/assets/badges/gpu.svg">
 </p>
 
 <p align="center">
@@ -170,6 +170,19 @@ kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777
 The install downloads the model, which is what `--timeout 2h` is for. The [chart's README](deploy/helm/sidenote/README.md)
 has the Secret for each agent, an AMD GPU and a full values file. The capture program then runs on your PC
 ([docs/capture-client.md](docs/capture-client.md)).
+
+<details>
+<summary>Everyday use: starting, stopping, updating</summary>
+
+| To | The app | Docker |
+|:---|:---|:---|
+| Start | `Sidenote.exe`, or `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
+| Open the panel | click the tray icon | `./sidenote open` |
+| See what runs | the panel's cards | `./sidenote status` |
+| Stop | **Quit Sidenote** in the tray icon's menu | `./sidenote down` |
+| Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
+| Read the logs | `%LOCALAPPDATA%\Sidenote\logs`, or `~/.local/share/sidenote/logs` | `./sidenote logs` |
+</details>
 
 ## What it runs on
 

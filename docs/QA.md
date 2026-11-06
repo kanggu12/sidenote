@@ -79,7 +79,9 @@ publishes nothing if any of them fails. Before tagging, set the release's number
 and in `deploy/helm/sidenote/Chart.yaml` (`version` and `appVersion`), and commit them. The workflow's first job
 runs `.github/check_version.py`, which refuses a tag that is not `v` and that number, or a chart that says another, and
 takes the release's notes from that number's section of `CHANGELOG.md`, before anything is built; `version_check.py`
-and `changelog_check.py` hold the files to one number on every push.
+and `changelog_check.py` hold the files to one number on every push. With the number set, `sh .github/badges.sh`
+writes the README's badges into `docs/assets/badges/`, the release's among them: a badge shields.io looked up as the
+page was shown came slower than GitHub's image proxy waits.
 
 ## What no check here can say
 
