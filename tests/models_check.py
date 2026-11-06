@@ -145,6 +145,9 @@ async def backends():
     check("...nothing is unloaded from it", await local.unload() is False)
     body = local._body([{"role": "user", "content": "x"}], think=False, tools=None)
     check("...and it is not sent Ollama's way of turning thinking off", "reasoning_effort" not in body, body)
+    check("...but the chat template's switch, off for a pass that does not think",
+          body.get("chat_template_kwargs") == {"enable_thinking": False}, body)
+    check("...and on for one that does", local._body([], think=True, tools=None).get("chat_template_kwargs") == {"enable_thinking": True})
     check("only Ollama's own addresses were tried on it, each answered 'not here'", seen and all(p.startswith("/api/") for p in seen), seen)
 
     ollama = LocalLlmAnalyzer(Config())
@@ -154,9 +157,43 @@ async def backends():
     body = ollama._body([{"role": "user", "content": "x"}], think=False, tools=None)
     check("...and is sent the profile's way of turning thinking off", body.get("reasoning_effort") == "none", body)
     check("...but not when the pass thinks", "reasoning_effort" not in ollama._body([], think=True, tools=None))
+    check("...and never the chat template's switch, which Ollama does not take",
+          "chat_template_kwargs" not in body and "chat_template_kwargs" not in ollama._body([], think=True, tools=None))
     check("the box grid comes from the model's profile", ollama.region_scale == 1000)
     await local._client.aclose()
     await ollama._client.aclose()
+
+    # vLLM started without its tool-calling switches turns down every request that offers a tool, with this 400
+    sent = []
+
+    def vllm(request):
+        if request.url.path.startswith("/api/"):
+            return httpx2.Response(404, text="not here")
+        asked = json.loads(request.content or b"{}")
+        sent.append("tools" in asked)
+        if asked.get("tools"):
+            return httpx2.Response(400, json={"error": {"message": '"auto" tool choice requires --enable-auto-tool-choice '
+                                                                   'and --tool-call-parser to be set', "code": 400}})
+        return httpx2.Response(200, text='data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+                                         'data: [DONE]\n\n')
+
+    async def nothing_streamed(*a, **k):
+        return None
+
+    plain = LocalLlmAnalyzer(Config())
+    plain._client = httpx2.AsyncClient(transport=httpx2.MockTransport(vllm))
+    plain.native, plain.web = False, object()     # a web search to offer, as the server has one
+    tools = [{"type": "function", "function": {"name": "web_search", "parameters": {"type": "object", "properties": {}}}}]
+    check("a server with no tool calling is offered the web search at first", plain._search_on())
+    try:
+        text = (await plain._stream(plain._body([{"role": "user", "content": "x"}], think=False, tools=tools), nothing_streamed))[0]
+    except Exception as exc:   # noqa: BLE001 - the check below says what went wrong
+        text = f"{type(exc).__name__}: {exc}"
+    check("...and when it turns the tools down, the request is sent again without them and answered",
+          text == "ok" and sent == [True, False], (text, sent))
+    check("...and from then on the model there answers without the web search", plain.no_tools and not plain._search_on()
+          and plain._tools() is None)
+    await plain._client.aclose()
 
 asyncio.run(backends())
 
@@ -239,6 +276,15 @@ async def downloads():
         (A.CONFIG.local_url, A.CONFIG.local_pull, A.ENGINES, A.broadcast, A.check_local, A.broadcast_engines) = saved
 
 asyncio.run(downloads())
+
+print("\n[the tuned copy, as compose.yaml and the chart make it]")
+# ./sidenote llm pull and the chart's pull job write a Modelfile of their own. A copy made there without the context went to
+# an Ollama that Sidenote did not start (the app finds one its installer started at sign-in) with that Ollama's 4096.
+for where, path in (("compose.yaml", ROOT / "compose.yaml"),
+                    ("the chart's pull job", ROOT / "deploy" / "helm" / "sidenote" / "templates" / "llm-pull-job.yaml")):
+    line = next((l for l in path.read_text(encoding="utf-8").splitlines() if "Modelfile" in l and "printf" in l), "")
+    check(f"{where} makes the copy with every parameter the panel's download gives it",
+          bool(line) and all(f"PARAMETER {name}" in line for name in models.TUNED_PARAMS), line.strip())
 
 print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)

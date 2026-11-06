@@ -828,6 +828,10 @@ class LocalServerError(RuntimeError):
     """The model's server answered 500, or put an error in its stream: the first pass hands the screen on."""
 
 
+class ToolsRefused(RuntimeError):
+    """The model's server turned a request down for its tools: vLLM does unless it was started with tool calling on."""
+
+
 class GpuPace:
     """Tells a busy GPU from how fast answers are generated. Under WSL2 the runtime does not see other
     programs' GPU memory, so it loads the model whole even when that memory is in use, and the answer
@@ -1026,6 +1030,8 @@ class LocalLlmAnalyzer:
         # Whether the local server is Ollama, which can load, unload and report the model on the GPU (its /api); any other
         # OpenAI-compatible server can only answer. None until asked (_native), or as set by SIDENOTE_LOCAL_BACKEND
         self.native: bool | None = {"ollama": True, "openai": False}.get(cfg.local_backend)
+        # A server that has turned tools down: the model answers there without the web search (_stream)
+        self.no_tools = False
 
     @property
     def model(self) -> str:
@@ -1064,7 +1070,7 @@ class LocalLlmAnalyzer:
         return self.pace.busy()
 
     def _search_on(self) -> bool:
-        return self.web is not None and SETTINGS.on("web_search")
+        return self.web is not None and SETTINGS.on("web_search") and not self.no_tools
 
     def _tools(self) -> list | None:
         if not self._search_on():
@@ -1087,6 +1093,15 @@ class LocalLlmAnalyzer:
         return [{"role": "system", "content": self._system()},
                 {"role": "user", "content": self._content(images, text + (route_note(self._search_on()) if route else ""))}]
 
+    def _think_fields(self, think: bool, model: str | None) -> dict:
+        """How a request turns the model's thinking on or off. Ollama is sent the model's own field (server/models.py), which
+        it maps. Another server is sent the chat template's switch both ways, as servers differ on it: llama.cpp's turns it
+        on by default, and Gemma 4 E4B took 7 s there to call a screen empty, against 0.7 s on Ollama; vLLM leaves it off,
+        so a pass meant to think did not. A template with no such switch (one that always thinks, or never) leaves it alone."""
+        if self.native is False:
+            return {"chat_template_kwargs": {"enable_thinking": bool(think)}}
+        return {} if think else models.profile_for(model or self.model).think_off
+
     def _body(self, messages: list[dict], think: bool, tools: list | None, max_tokens: int | None = None,
               model: str | None = None) -> dict:
         return {
@@ -1095,9 +1110,7 @@ class LocalLlmAnalyzer:
             "stream": True,
             "stream_options": {"include_usage": True},
             "max_tokens": max_tokens or self.cfg.max_tokens,
-            # The model's own way to turn thinking off (server/models.py), sent to Ollama, which maps it; another server
-            # is sent nothing and the model thinks as it does by default
-            **({} if think or self.native is False else models.profile_for(model or self.model).think_off),
+            **self._think_fields(think, model),
             **({"tools": tools} if tools else {}),
         }
 
@@ -1112,6 +1125,12 @@ class LocalLlmAnalyzer:
         began, got = time.time(), {"no_pace": not pace}
         try:
             return await self._attempt(body, on_delta, got)
+        except ToolsRefused as exc:
+            # vLLM, started without its tool-calling switches, turns down every request that offers a tool: the model
+            # answers without the web search there from now on, and this one is asked again without it
+            self.no_tools = True
+            log.warning("local LLM: the model's server takes no tools (%s); web search is off for it", str(exc)[:160])
+            return await self._attempt({k: v for k, v in body.items() if k != "tools"}, on_delta, {"no_pace": not pace})
         except asyncio.CancelledError:
             raise
         except TimeoutError:
@@ -1155,6 +1174,8 @@ class LocalLlmAnalyzer:
             async with self._client.stream("POST", url, json=body) as r:
                 if r.status_code != 200:
                     detail = (await r.aread()).decode("utf-8", "replace")[:400]
+                    if r.status_code == 400 and body.get("tools") and re.search(r"(?i)\btool", detail):
+                        raise ToolsRefused(detail)
                     # a 404 (no such model) needs fixing by hand; the server failing is handed on (fast)
                     raise (LocalServerError if r.status_code >= 500 else RuntimeError)(
                         f"local LLM: HTTP {r.status_code}: {detail}")
