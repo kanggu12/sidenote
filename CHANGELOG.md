@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-07
+
 ### Fixed
 
 - The turn of a problem's box written y first, added in 0.1.7, turned nothing in the server: it read the screen as a
@@ -256,7 +258,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/kanggu12/sidenote/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/kanggu12/sidenote/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/kanggu12/sidenote/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/kanggu12/sidenote/compare/v0.1.4...v0.1.5
