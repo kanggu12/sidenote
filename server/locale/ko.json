@@ -327,10 +327,10 @@
  "While a window whose title or program has one of these words is on screen, no screen is sent (sound still is). Comma-separated, any case. Not on Wayland": "제목이나 프로그램 이름에 이 낱말이 든 창이 보이면 화면을 보내지 않음(소리는 계속). 쉼표로 구분, 대소문자 무관. Wayland에서는 안 됨",
  "Runs the code of algorithm and coding answers on the problem's examples and adds the result. Python, Java, C++, JavaScript, TypeScript, Kotlin, Go, C and Bash": "알고리즘, 코딩 답의 코드를 문제의 입출력 예로 실행해 결과를 붙임. Python, Java, C++, JavaScript, TypeScript, Kotlin, Go, C, Bash",
  "Written-out words that hold resident registration, phone, card or account numbers are not sent: the local model solves. A spoken problem sends its words only": "옮겨 적은 글에 주민등록, 전화, 카드, 계좌번호가 있으면 보내지 않고 이 PC의 모델이 풂. 음성 문제는 질문 글만 감",
- "Saves each sentence heard, with its time, on this PC for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu": "들린 문장을 시각과 함께 이 PC에 90일(최대 20 MB) 저장함. 다른 사람 말과 재생 소리도 들어감. 지우기는 메뉴의 기록 지우기",
  "The types 'Hard problems' hands to the agent. The local model thinks through the rest": "'어려운 문제'에서 에이전트에 넘기는 유형. 나머지는 이 PC의 모델이 생각 후 답",
  "When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still go. Codex signed in with ChatGPT is not counted": "지난 한 시간 비용이 이만큼 되면 자동 전송 멈춤. 다시 분석과 질문은 그대로. ChatGPT 로그인 Codex는 제외",
  "Keeps answers and their screens on the server for 90 days (up to 200 MB), starred ones until unstarred. Clear them with Clear history in the menu": "답과 화면을 서버에 90일(최대 200 MB), 별표한 답은 별표를 풀 때까지 남김. 지우기는 메뉴의 기록 지우기",
  "Words speech recognition should spell as written, such as product names. Comma-separated, ahead of the built-in hints": "음성 인식이 적힌 그대로 쓸 낱말(제품 이름 등). 쉼표로 구분, 기본 힌트보다 앞에 둠",
- "The model that writes down what is heard, on the CPU. One not downloaded yet is fetched when first chosen": "들리는 말을 받아 적는 모델, CPU에서 돎. 받지 않은 모델은 처음 고를 때 내려받음"
+ "The model that writes down what is heard, on the CPU. One not downloaded yet is fetched when first chosen": "들리는 말을 받아 적는 모델, CPU에서 돎. 받지 않은 모델은 처음 고를 때 내려받음",
+ "Saves each sentence heard, with its time, on this PC only, for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu": "들린 문장을 시각과 함께 이 PC에만 90일(최대 20 MB) 저장함. 다른 사람 말과 재생 소리도 들어감. 지우기는 메뉴의 기록 지우기"
 }

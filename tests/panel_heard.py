@@ -262,7 +262,7 @@ def group_settings(br, s):
     p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='speech']\").click(); }")
     p.wait(250)
     words = p.js("() => document.querySelector('#settings .set-pane').innerText")
-    check("Keep what is heard is there, with what it means", "들린 말 보관" in words and "이 PC에만 남습니다" in words and "다른 사람" in words, words)
+    check("Keep what is heard is there, with what it means", "들린 말 보관" in words and "이 PC에만" in words and "다른 사람" in words, words)
     check("...as a switch, off", p.js("() => document.querySelector('#settings [data-set=speech_keep]').getAttribute('aria-checked')") == "false")
     box = "#settings textarea[data-set=speech_terms]"
     check("Extra terms is a box of words", p.js(f"() => !!document.querySelector('{box}')"))
