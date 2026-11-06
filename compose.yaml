@@ -323,7 +323,7 @@ services:
             sidenote-*)
               base="$${m#sidenote-}"
               ollama pull "$$base" || exit 1
-              printf 'FROM %s\nPARAMETER num_batch 1152\n' "$$base" > /tmp/Modelfile
+              printf 'FROM %s\nPARAMETER num_batch 1152\nPARAMETER num_ctx %s\n' "$$base" "${SIDENOTE_LOCAL_CONTEXT:-16384}" > /tmp/Modelfile
               ollama create "$$m" -f /tmp/Modelfile || exit 1 ;;
             *) ollama pull "$$m" || exit 1 ;;
           esac
