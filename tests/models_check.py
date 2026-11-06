@@ -286,5 +286,47 @@ for where, path in (("compose.yaml", ROOT / "compose.yaml"),
     check(f"{where} makes the copy with every parameter the panel's download gives it",
           bool(line) and all(f"PARAMETER {name}" in line for name in models.TUNED_PARAMS), line.strip())
 
+print("\n[the Anthropic API agent's request]")
+
+
+async def api_request():
+    """The request the API agent sends, through a stand-in for the SDK's stream: its instructions marked for the cache."""
+    from server import agents
+    from server.config import CONFIG
+    sent = {}
+
+    class Stream:
+        text_stream = None
+
+        async def __aenter__(self):
+            async def chunks():
+                yield "ANSWER: 3"
+            self.text_stream = chunks()
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get_final_message(self):
+            usage = type("U", (), {"input_tokens": 10, "output_tokens": 2, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0})()
+            return type("M", (), {"usage": usage, "stop_reason": "end_turn", "content": []})()
+
+    agent = agents.AnthropicApiAgent.__new__(agents.AnthropicApiAgent)
+    agent.cfg, agent._resolved = CONFIG, {}
+    agent._client = type("C", (), {"messages": type("Ms", (), {"stream": staticmethod(lambda **kw: sent.update(kw) or Stream())})()})()
+
+    async def on_delta(_):
+        return None
+    try:
+        await agent.run([], "1 + 2", on_delta)
+    except Exception as exc:   # what is checked is the request, sent before anything the stand-in leaves out
+        print(f"  (the stand-in's reply: {exc!r})")
+    system = sent.get("system")
+    check("the instructions go as one block marked for the prompt cache",
+          isinstance(system, list) and len(system) == 1 and system[0].get("cache_control") == {"type": "ephemeral"}
+          and len(system[0].get("text", "")) > 2000, str(system)[:200])
+
+asyncio.run(api_request())
+
 print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)

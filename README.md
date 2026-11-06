@@ -43,34 +43,6 @@ panel beside your work. It runs on your own PC, and the cloud agent sees only th
 Sidenote is made for learning, practice and your own work. Please do not use it where outside help is not allowed,
 such as a graded exam, a certification test or a job interview. Thank you.
 
-## Why Sidenote
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/stats-dark.svg">
-  <img alt="Four figures from the author's own use: 1,271 empty screens checked on the GPU with no API tokens spent; 1.2 s median to decide that a screen has nothing to solve; 97% of empty screens kept off the paid agent (841 of 865 since Oct 28); 15.0k tokens per empty screen when the agent saw every screen" src="docs/assets/stats-light.svg" width="100%">
-</picture>
-
-Most screens have nothing to solve: a chat, a blog, the editor between problems. A tool that sends every screen to a paid
-model pays for all of them. Sidenote asks the model on your GPU first, which says "nothing here" in about a second, for
-free.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/chart-screening-dark.svg">
-  <img alt="Bar chart of screens with nothing to solve, by day from Oct 26 to Nov 2. On Oct 27, before local-first screening, 158 of them went to the paid agent. From Oct 28 on almost all stayed on the GPU: 459 on the GPU that day, and only a sliver sent to the agent on any day after" src="docs/assets/chart-screening-light.svg" width="100%">
-</picture>
-
-<sub>From the author's own use, Oct 26 to Nov 2, read from Sidenote's event log. Before local-first screening, an
-empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
-
-- **Local first, and it shows the cost.** Each answer says which engine answered, how long it took and what it cost.
-- **Uses the agent you already have.** Claude Code or Codex with your own sign-in, so no API key; or the Anthropic API.
-- **Fits your GPU.** It reads the GPU's memory, NVIDIA or AMD, and picks the largest measured model that fits.
-- **Checks code answers.** With Docker or Kubernetes, code runs on the problem's examples in a sandbox with no network.
-- **Lets you try first.** **Practice** shows the question, then one hint at a time, and the answer when you ask.
-- **Keeps what you learn.** Star an answer, find it in the history, and export it as Markdown or as Anki notes.
-- **Private by design.** Faces are covered before any model sees the screen, and each answer lists what left your PC.
-- **Open source.** MIT licensed, with the test suite run on every push.
-
 ## Quick start
 
 | Your PC | What to do | What you need |
@@ -183,6 +155,34 @@ has the Secret for each agent, an AMD GPU and a full values file. The capture pr
 | Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
 | Read the logs | `%LOCALAPPDATA%\Sidenote\logs`, or `~/.local/share/sidenote/logs` | `./sidenote logs` |
 </details>
+
+## Why Sidenote
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/stats-dark.svg">
+  <img alt="Four figures from the author's own use: 1,271 empty screens checked on the GPU with no API tokens spent; 1.2 s median to decide that a screen has nothing to solve; 97% of empty screens kept off the paid agent (841 of 865 since Oct 28); 15.0k tokens per empty screen when the agent saw every screen" src="docs/assets/stats-light.svg" width="100%">
+</picture>
+
+Most screens have nothing to solve: a chat, a blog, the editor between problems. A tool that sends every screen to a paid
+model pays for all of them. Sidenote asks the model on your GPU first, which says "nothing here" in about a second, for
+free.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/chart-screening-dark.svg">
+  <img alt="Bar chart of screens with nothing to solve, by day from Oct 26 to Nov 2. On Oct 27, before local-first screening, 158 of them went to the paid agent. From Oct 28 on almost all stayed on the GPU: 459 on the GPU that day, and only a sliver sent to the agent on any day after" src="docs/assets/chart-screening-light.svg" width="100%">
+</picture>
+
+<sub>From the author's own use, Oct 26 to Nov 2, read from Sidenote's event log. Before local-first screening, an
+empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
+
+- **Local first, and it shows the cost.** Each answer says which engine answered, how long it took and what it cost.
+- **Uses the agent you already have.** Claude Code or Codex with your own sign-in, so no API key; or the Anthropic API.
+- **Fits your GPU.** It reads the GPU's memory, NVIDIA or AMD, and picks the largest measured model that fits.
+- **Checks code answers.** With Docker or Kubernetes, code runs on the problem's examples in a sandbox with no network.
+- **Lets you try first.** **Practice** shows the question, then one hint at a time, and the answer when you ask.
+- **Keeps what you learn.** Star an answer, find it in the history, and export it as Markdown or as Anki notes.
+- **Private by design.** Faces are covered before any model sees the screen, and each answer lists what left your PC.
+- **Open source.** MIT licensed, with the test suite run on every push.
 
 ## What it runs on
 

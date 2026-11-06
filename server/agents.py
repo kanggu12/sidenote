@@ -523,7 +523,9 @@ class AnthropicApiAgent:
             async with self._client.messages.stream(
                 model=model,
                 max_tokens=max(self.cfg.max_tokens, self.STREAM_MAX_TOKENS),
-                system=in_answer_language(SYSTEM_PROMPT),
+                # The instructions are the same on every request: marked, they are read from the API's cache at a tenth of
+                # the price while problems come within five minutes of each other (usage: cache_read, cache_write)
+                system=[{"type": "text", "text": in_answer_language(SYSTEM_PROMPT), "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": content}],
                 **self.request_options(),            # the panel's effort, when one is chosen
             ) as stream:

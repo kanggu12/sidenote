@@ -164,10 +164,7 @@ def _defs() -> list[Setting]:
                     "all": t("The agent solves every problem found", agent=name),
                 }),
         Setting("agent_payload", "choice", payload_default, "agent", t("What is sent to the agent", agent=name),
-                t("A spoken problem sends only the question's words (and the screen with Whole screen). Written-out "
-                  "words of a problem not found on the screen that hold resident registration, phone, card or account "
-                  "numbers are not sent: the local model solves. A coding problem also sends the language read off "
-                  "the screen"),
+                t("Written-out words that hold resident registration, phone, card or account numbers are not sent: the local model solves. A spoken problem sends its words only"),
                 [("crop", t("Problem area")), ("text", t("Problem text")), ("screen", t("Whole screen"))],
                 opt_help={
                     "crop": t("Sends only the problem, cut at full resolution. When it cannot be found, the written-out "
@@ -178,9 +175,7 @@ def _defs() -> list[Setting]:
                 }),
         Setting("agent_hard_types", "multi", ["algorithm", "coding", "math", "work", "essay", "other"], "agent",
                 t("Types the agent solves", agent=name),
-                t("The types 'Hard problems' hands to the agent. The local model thinks and answers the rest (the "
-                  "agent when it would be over 1.5 times slower). Default: Algorithm, Coding, Math, Work, Essay, "
-                  "Other", agent=name),
+                t("The types 'Hard problems' hands to the agent. The local model thinks through the rest", agent=name),
                 [(k, t(TYPE_NAMES[k])) for k in SOLVE_TYPES]),
         # The model and how hard it thinks: the environment sets where they start, the panel moves
         # them from there, and the next problem starts a CLI with the new ones.
@@ -190,8 +185,7 @@ def _defs() -> list[Setting]:
         Setting("agent_effort", "choice", CONFIG.agent_effort, "agent", t("Thinking effort"),
                 t("Higher is stronger on hard problems, slower and dearer"), efforts),
         Setting("agent_hourly_usd", "choice", CONFIG.agent_hourly_usd, "agent", t("Hourly cost limit"),
-                t("When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still "
-                  "go. Does not apply to Codex signed in with ChatGPT; Codex with an API key is estimated from tokens"),
+                t("When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still go. Codex signed in with ChatGPT is not counted"),
                 [(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]),
         # The rule: with the agent at a limit, the answers come from this PC's model where they
         # can, not from another agent. With that model switched on it answers then already; this is for one switched off.
@@ -208,17 +202,14 @@ def _defs() -> list[Setting]:
                   "minutes", agent=name)),
         # screen processing
         Setting("history_keep", "bool", True, "screen", t("Keep answers"),
-                t("Keeps answers and their screens on the server for {days} days (up to {mb} MB), and starred answers "
-                  "until they are unstarred. Off: new answers are not kept. Clear them with Clear history in the menu",
+                t("Keeps answers and their screens on the server for 90 days (up to 200 MB), starred ones until unstarred. Clear them with Clear history in the menu",
                   days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.history_mb:g}")),
         Setting("face_mask", "bool", True, "screen", t("Cover faces"),
                 t("A face (a video call, a photo) is greyed out before a model sees it. Off: left as it is")),
         # The capture program gets the words in its control message (server/app.py, control_message) and reads the
         # windows itself: their titles and their programs' names never leave that program (client/capture.py).
         Setting("skip_windows", "words", list(SKIP_WINDOWS), "screen", t("Skip windows"),
-                t("While a window on screen has one of these words in its title or its program's name, no screen is "
-                  "sent at all, whichever window has the focus. Comma-separated, any case. Windows and Linux with X11: on "
-                  "Wayland the windows cannot be read. Sound capture goes on")),
+                t("While a window whose title or program has one of these words is on screen, no screen is sent (sound still is). Comma-separated, any case. Not on Wayland")),
         Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),
                 t("Solves again only when the answer's problem area changes. Off: on every screen change")),
         Setting("roi", "bool", True, "screen", t("Zoom in on the problem"),
@@ -236,9 +227,7 @@ def _defs() -> list[Setting]:
         Setting("run_button", "bool", True, "code", t("Run button"),
                 t("A run button on code answers (a separate container with no internet)")),
         Setting("autocheck", "bool", True, "code", t("Check the examples"),
-                t("Runs the code of algorithm and coding answers on the problem's examples and adds the result (Python, "
-                  "Java, C++, JavaScript, TypeScript, Kotlin and Go: functions and standard input; C and Bash: "
-                  "standard input)"),
+                t("Runs the code of algorithm and coding answers on the problem's examples and adds the result. Python, Java, C++, JavaScript, TypeScript, Kotlin, Go, C and Bash"),
                 needs=["run_button", "local_llm", "extract"]),
         # speech
         Setting("voice_auto", "bool", CONFIG.voice_trigger, "speech", t("Solve spoken problems"),
@@ -247,8 +236,7 @@ def _defs() -> list[Setting]:
                 t("Gives speech recognition technical terms in advance (Kubernetes, hash table and the like)")),
         # Ahead of the built-in words, and given with them switched off too: these were typed on purpose
         Setting("speech_terms", "words", [], "speech", t("Extra terms"),
-                t("Words speech recognition should spell as they are written, such as a product's name. Comma-separated. "
-                  "They go ahead of the built-in hints")),
+                t("Words speech recognition should spell as written, such as product names. Comma-separated, ahead of the built-in hints")),
         # Measured on 126 spans of real recordings: 32 of the 108 Korean ones were read as
         # English by the automatic pick, and not one of the 18 English ones was read as Korean. The
         # session's own evidence takes that down (server/transcriber.py), but pinning the language is
@@ -260,17 +248,14 @@ def _defs() -> list[Setting]:
         # What each costs is measured on the test PC (docs/DECISIONS.md, note 106). A model the environment names is
         # always offered as well, as the agent's models are.
         Setting("whisper_model", "choice", CONFIG.whisper_model, "speech", t("Speech model"),
-                t("The model that writes down what is heard. Runs on the CPU. A model not downloaded yet is fetched the "
-                  "first time it is chosen"),
+                t("The model that writes down what is heard, on the CPU. One not downloaded yet is fetched when first chosen"),
                 [("small", "small"), ("medium", "medium")]
                 + ([(CONFIG.whisper_model, CONFIG.whisper_model)] if CONFIG.whisper_model not in ("small", "medium") else []),
                 opt_help={"small": t("About {s} s of CPU a pass, on the test PC", s=SPEECH_CPU["small"]),
                           "medium": t("About {s} s of CPU a pass, on the test PC. Hears technical terms better", s=SPEECH_CPU["medium"])}),
         # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
         Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
-                t("Saves every sentence heard, with its time, for {days} days (up to {mb} MB), other people and whatever "
-                  "is playing included. It stays on this PC. Read it from What is heard, and clear it with Clear history "
-                  "in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
+                t("Saves each sentence heard, with its time, on this PC for 90 days (up to 20 MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
         # capture
         Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
                 t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),

@@ -77,8 +77,18 @@ jobs:
           retention-days: 14
 
   panel:
-    name: panel suites (headless browser)
+    name: panel suites (${{ matrix.part.name }})
     runs-on: ubuntu-24.04
+    # Four jobs at once, about as long as each other: in one, the suites took 25 minutes. The audit of the layout is split by
+    # its groups (the release notice in the band at 9 widths took 254 s of its 633 here); tests/README.md
+    strategy:
+      fail-fast: false
+      matrix:
+        part:
+          - { id: suites, name: "most suites", suites: "", skip_suites: "panel_layout panel_design", skip: "", only: "" }
+          - { id: design, name: "design", suites: "panel_design panel_update", skip_suites: "", skip: "", only: "" }
+          - { id: layout-band, name: "layout: the band", suites: "panel_layout", skip_suites: "", skip: "", only: "the release notice" }
+          - { id: layout-rest, name: "layout: the rest", suites: "panel_layout", skip_suites: "", skip: "the release notice", only: "" }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -99,12 +109,16 @@ jobs:
       - name: Run the suites
         env:
           SIDENOTE_TEST_OUT: ${{ runner.temp }}/sidenote-tests
+          SUITES: ${{ matrix.part.suites }}
+          SKIP_SUITES: ${{ matrix.part.skip_suites }}
+          ONLY: ${{ matrix.part.only }}
+          SKIP: ${{ matrix.part.skip }}
         run: tests/run.sh panel
       - name: Keep the logs, the table of what ran and the screens to look at
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: panel-results
+          name: panel-results-${{ matrix.part.id }}
           path: |
             ${{ runner.temp }}/sidenote-tests/logs
             ${{ runner.temp }}/sidenote-tests/results.md

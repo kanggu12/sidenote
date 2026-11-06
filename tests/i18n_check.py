@@ -185,7 +185,7 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         pws.send_text(json.dumps({"type": "ui_lang", "lang": "fr"}))
         time.sleep(0.5)
         check("a language with no table is English", i18n.LANG == "en", i18n.LANG)
-        check("every notice carries a level", all(m.get("level") in ("warn", "info")
+        check("every notice carries a level", all(m.get("level") in ("info", "done", "warn", "bad")
                                                   for m in p.msgs if m.get("type") == "notice"),
               str([m for m in p.msgs if m.get("type") == "notice"]))
 

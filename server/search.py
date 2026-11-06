@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import socket
+import time
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
@@ -234,6 +235,29 @@ class WebTools:
         transport._pool = httpcore2.AsyncConnectionPool(ssl_context=transport._pool._ssl_context,
                                                         network_backend=public_backend())
         self._pages = httpx2.AsyncClient(timeout=timeout, headers=headers, transport=transport)
+        self._kept: dict[tuple, tuple[float, str]] = {}   # (tool, query or address) -> (when, result): _cached
+
+    # The same search and the same page within a few minutes are answered from here: a problem solved again, its check
+    # and the thinking pass after the fast one ask the same things, and the search engines turn away a client that asks
+    # often (after a day of benches: too many requests, CAPTCHA). Results that failed or came back empty are not kept.
+    KEEP_SECONDS = 600
+    KEEP_MAX = 64
+
+    async def _cached(self, key: tuple, make) -> str:
+        now = time.monotonic()
+        hit = self._kept.get(key)
+        if hit and now - hit[0] < self.KEEP_SECONDS:
+            return hit[1]
+        out = await make()
+        try:
+            good = not (d := json.loads(out)).get("error") and (d.get("results") or d.get("text"))
+        except ValueError:
+            good = False
+        if good:
+            if len(self._kept) >= self.KEEP_MAX:   # the oldest goes
+                self._kept.pop(min(self._kept, key=lambda k: self._kept[k][0]))
+            self._kept[key] = (now, out)
+        return out
 
     # A question about the newest version of something is the one search where a snippet is reliably
     # useless: a search engine answers it with release notes and blog posts, and the number itself is
@@ -357,9 +381,11 @@ class WebTools:
         try:
             args = arguments if isinstance(arguments, dict) else json.loads(arguments or "{}")
             if name == "web_search":
-                return await self.web_search(str(args.get("query", ""))[:300])
+                query = str(args.get("query", ""))[:300]
+                return await self._cached(("search", query.strip().lower()), lambda: self.web_search(query))
             if name == "fetch_page":
-                return await self.fetch_page(str(args.get("url", "")))
+                url = str(args.get("url", ""))
+                return await self._cached(("page", url), lambda: self.fetch_page(url))
             return json.dumps({"error": f"unknown tool {name}"})
         except Exception as exc:
             log.warning("tool %s failed: %s", name, exc)

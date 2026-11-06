@@ -7,6 +7,8 @@
 #   tests/run.sh panel            the panel suites, each run with $PW (default python3)
 #   tests/run.sh --list [group]   the suites a run would start, and with what, without running any
 #
+# SUITES="panel_layout" runs only the suites named, SKIP_SUITES="panel_layout panel_design" all but those: CI splits the
+# panel group between jobs this way, and a panel suite's own ONLY and SKIP pick its groups (tests/README.md).
 # Every suite runs with SIDENOTE_ANALYZER=mock. What the suites write (a log for each, screenshots, the settings
 # message) goes to $SIDENOTE_TEST_OUT, a new temporary folder unless it is set. The checks that read the measurement
 # data, which is not in the repository (SIDENOTE_BENCH, SIDENOTE_CORPUS, SIDENOTE_FACES), are skipped where it is
@@ -76,6 +78,11 @@ for arg in "$@"; do
   esac
 done
 
+# Whether a suite is in this run (SUITES, SKIP_SUITES above)
+chosen() {
+  { [ -z "${SUITES:-}" ] || [[ " $SUITES " == *" $1 "* ]]; } && [[ " ${SKIP_SUITES:-} " != *" $1 "* ]]
+}
+
 suite() {   # suite <name> <interpreter>: the command that runs one suite, into the array CMD
   if [ "$1" = launcher_args ]; then CMD=(bash "tests/$1.sh"); else CMD=("$2" "tests/$1.py"); fi
 }
@@ -86,11 +93,11 @@ accounted || exit 2
 if [ "$list" = 1 ]; then               # what a run would start, one line a suite, and nothing else
   if [ "$group" != panel ]; then
     echo "server and capture (mock mode)"
-    for s in "${SERVER[@]}"; do suite "$s" "$PY"; printf '  %-15s %s\n' "$s" "${CMD[*]}"; done
+    for s in "${SERVER[@]}"; do chosen "$s" || continue; suite "$s" "$PY"; printf '  %-15s %s\n' "$s" "${CMD[*]}"; done
   fi
   if [ "$group" != server ]; then
     echo "panel (headless browser)"
-    for s in "${PANEL[@]}"; do suite "$s" "$PW"; printf '  %-15s %s\n' "$s" "${CMD[*]}"; done
+    for s in "${PANEL[@]}"; do chosen "$s" || continue; suite "$s" "$PW"; printf '  %-15s %s\n' "$s" "${CMD[*]}"; done
   fi
   exit 0
 fi
@@ -166,11 +173,11 @@ one() {   # one <name> <interpreter>: run a suite with its output in a log of it
 
 if [ "$group" != panel ]; then
   echo "server and capture (mock mode, $PY)"
-  for s in "${SERVER[@]}"; do one "$s" "$PY"; done
+  for s in "${SERVER[@]}"; do chosen "$s" && one "$s" "$PY"; done
 fi
 if [ "$group" != server ]; then
   echo "panel (headless browser, $PW)"
-  for s in "${PANEL[@]}"; do one "$s" "$PW"; done
+  for s in "${PANEL[@]}"; do chosen "$s" && one "$s" "$PW"; done
 fi
 
 echo
