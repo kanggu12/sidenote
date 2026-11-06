@@ -35,13 +35,13 @@ RUN python /tmp/vendor/fetch_vendor.py /tmp/vendor/vendor.json /app/panel/vendor
 # always fetches the latest build first). After pip, so a CLI update re-downloads only this layer.
 # WITH_CLAUDE_CODE=0 leaves it out: the published images are built so, as Claude Code is Anthropic's to distribute;
 # a pod then fetches it when it starts (the Helm chart), and `./sidenote up` builds the image with it on the PC.
-# TARGETARCH (BuildKit's): the build for this machine, amd64 or arm64 (a Mac with Apple silicon builds arm64).
-ARG TARGETARCH=amd64
+# Each agent's build for the machine the image is built on, x64 or arm64 (a Mac with Apple silicon builds arm64), read
+# from uname: an ARG TARGETARCH given a default kept that default on an arm64 builder.
 ARG CLAUDE_VERSION=2.1.307
 ARG WITH_CLAUDE_CODE=1
 RUN set -eu; \
     [ "$WITH_CLAUDE_CODE" = 1 ] || { echo "Claude Code left out of this image"; exit 0; }; \
-    case "$TARGETARCH" in arm64) plat=linux-arm64 ;; *) plat=linux-x64 ;; esac; \
+    case "$(uname -m)" in aarch64|arm64) plat=linux-arm64 ;; *) plat=linux-x64 ;; esac; \
     base="https://downloads.claude.ai/claude-code-releases/${CLAUDE_VERSION}"; \
     sum="$(curl -fsSL --retry 3 --retry-delay 2 "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"][sys.argv[1]]["checksum"])' "$plat")"; \
     curl -fsSL --retry 3 --retry-delay 2 -o /usr/local/bin/claude "$base/$plat/claude"; \
@@ -55,7 +55,7 @@ RUN mkdir -p /data/hf /data/logs
 ARG CODEX_VERSION=0.165.0
 ARG CODEX_SHA512=FotDc7bVHwaommtsdDP8PPrH0a5IwC/t8H/LhdEcH4EBqgeYFRCtptiHcuwgvNRCLbTbOyFE/Ur6GzYCljgaSQ==
 RUN set -eu; \
-    case "$TARGETARCH" in arm64) plat=linux-arm64; triple=aarch64-unknown-linux-musl ;; *) plat=linux-x64; triple=x86_64-unknown-linux-musl ;; esac; \
+    case "$(uname -m)" in aarch64|arm64) plat=linux-arm64; triple=aarch64-unknown-linux-musl ;; *) plat=linux-x64; triple=x86_64-unknown-linux-musl ;; esac; \
     url="https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_VERSION}-${plat}.tgz"; \
     curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz "$url"; \
     want="${CODEX_SHA512}"; \
