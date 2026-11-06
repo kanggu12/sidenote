@@ -739,12 +739,14 @@ questions of the known-answer set with the 26b, one run each, the agent off:
 
 | | Right | Known answers, of 40 | Current facts, of 8 | Code passing, of 7 | Thinking passes |
 |:---|---:|---:|---:|---:|---:|
-| Auto | 50 | 38 | 4 | 7 | 47 |
+| Auto | 54 | 38 | 8 | 7 | 47 |
 | Always | 49 | 38 | 6 | 6 | 51 |
 
-The two are one problem apart, and the current facts went 4 to 6 between runs with nothing changed but what the search
-engines returned (Auto alone, run again on those 8: 4). So the default stays Auto. The times are not compared: other work
-shared the PC's processor during the Auto run.
+The current facts are graded against the releases out on the day of the runs: four of the set's answers dated from ten days
+before, and three of Auto's that the old answers marked wrong (Ollama 0.40.15, Docker 29.9.3, Terraform 1.17.1) were the
+newest. Always, which went to the same search engines, gave two releases that had been replaced (Node.js 26.12.1, Docker
+29.9.2). Auto run again on those 8 got 7. So the default stays Auto. The times are not compared: other work shared the PC's
+processor during the Auto run.
 
 ### <a id="note-110"></a>110. Qwen3-VL is not suggested for a GPU
 
