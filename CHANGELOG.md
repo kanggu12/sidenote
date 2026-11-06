@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-06
+
 ### Fixed
 
 - A model that `./sidenote llm pull` or the chart's pull job makes carries Sidenote's context, as one the panel downloads
@@ -174,7 +176,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/kanggu12/sidenote/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/kanggu12/sidenote/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/kanggu12/sidenote/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kanggu12/sidenote/compare/v0.1.1...v0.1.2
