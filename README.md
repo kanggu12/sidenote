@@ -135,6 +135,11 @@ printf 'SIDENOTE_LOCAL_URL=http://host.docker.internal:11434/v1\nSIDENOTE_LOCAL_
 ./sidenote capture --up
 ```
 
+Another model server on the Mac that takes images, such as llama.cpp's server or LM Studio, can stand in for Ollama: name
+it in `SIDENOTE_LOCAL_URL` as `http://host.docker.internal:<its port>/v1`, with the settings in
+[With a model server you already run](docs/air-gapped.md#with-a-model-server-you-already-run). Only with Ollama can the
+panel download a model, switch to a smaller one while the GPU is busy, or free the GPU.
+
 The first capture makes macOS ask for **Screen Recording** for your terminal: allow it in **System Settings**, then run
 `./sidenote capture --up` again. For the sound, install [BlackHole](https://github.com/ExistentialAudio/BlackHole)
 (`brew install blackhole-2ch`), and in **Audio MIDI Setup** make a **Multi-Output Device** of your speakers and
