@@ -85,8 +85,8 @@ def group_practice(br, s):
     old = row(10, "essay", "옛 물음", "옛 답 열쇠말", "옛 풀이입니다", ago=900)
     p = Page(br, s, [old], w=1600, h=1000)
     seg = "() => [...document.querySelectorAll('#practice-seg button')].map((b) => [b.dataset.practice, b.getAttribute('aria-pressed'), b.textContent.trim()])"
-    check("the menu offers Practice beside Theme, Motion and Language, Off and On, Off at first",
-          p.js(seg) == [["off", "true", "끔"], ["on", "false", "켬"]] and p.js("() => [...document.querySelectorAll('#menu h3')].map((x) => x.textContent.trim())") == ["화면 모드", "움직임", "언어", "연습"],
+    check("the menu offers Practice beside Theme, Motion and Language, On then Off as Motion has them, Off at first",
+          p.js(seg) == [["on", "false", "켬"], ["off", "true", "끔"]] and p.js("() => [...document.querySelectorAll('#menu h3')].map((x) => x.textContent.trim())") == ["화면 모드", "움직임", "언어", "연습"],
           [p.js(seg), p.js("() => [...document.querySelectorAll('#menu h3')].map((x) => x.textContent.trim())")])
     p.answer(11, "short", "첫 물음", "보이는 답", "보이는 풀이입니다")
     p.wait(200)
@@ -95,7 +95,7 @@ def group_practice(br, s):
     menu_pick(p, "on")
     stored = p.js("() => [localStorage.getItem('sidenote-practice'), Date.now()]")
     check("on: kept in this browser, as when it was turned on", stored[0] is not None and abs(int(stored[0]) - stored[1]) < 5000, stored)
-    check("...and the menu says so", p.js(seg)[1][1] == "true", p.js(seg))
+    check("...and the menu says so", p.js(seg)[0][1] == "true", p.js(seg))
     check("the answers from before it was turned on show as they did", not held_state(p, 10)["held"] and not held_state(p, 11)["held"]
           and "옛 답 열쇠말" in text_of(p, 10) and "보이는 답" in text_of(p, 11), [held_state(p, 10), held_state(p, 11)])
     spy(p)
@@ -596,7 +596,7 @@ def group_keys(br, s):
     p.wait(150)
     seen = {"the menu": p.js(hangul, "#menu"), "the answers kept back": p.js(hangul, ".entry[data-id='220'] .row.practice, .entry[data-id='221'] .row.practice")}
     check("English: Practice and Keyboard shortcuts in the menu", p.js("() => [...document.querySelectorAll('#practice-seg button')].map((b) => b.textContent.trim()).concat($('open-keys').textContent.trim())")
-          == ["Off", "On", "Keyboard shortcuts"])
+          == ["On", "Off", "Keyboard shortcuts"])
     p.page.keyboard.press("Escape")
     p.page.locator("#hist-export").scroll_into_view_if_needed()
     p.page.click("#hist-export")

@@ -5,6 +5,32 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ## [Unreleased]
 
+### Fixed
+
+- A problem's box the local model wrote y first, up to twice as tall as wide, is turned when the picture shows it: its
+  edges cut through the lines of text and the turned box's do not. Over 495 boxes from earlier runs, 5 were turned, each
+  from at most a quarter of its problem to most or all of it, and none that was right
+  ([note 107](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-107)).
+- The panel: at 1000 px and below a band at the top of the page lay over the first answer, whose keys could not be pressed;
+  it now takes its room. A hint, the answer or the details opened on the newest answer came up under the question box,
+  and now come into view. The contents' rows and their search read an answer's words, not its Markdown, diagram source
+  or TeX. Solver settings keeps one height for every section, so Reset to defaults stays where it is.
+- Korean words in the panel: a sequence diagram is named as one (it was called a flowchart), no particle stands apart
+  from the Reanalyze chip, and Practice's choices come in the order Motion's do.
+
+### Changed
+
+- The README says what a PC needs for each model (GPU, memory, disk), with what was measured on the test PC, and the
+  guides say the Mac where they named only Linux, with a few facts put right and sentences made plainer.
+- The guide starts vLLM with Gemma 4's picture budget at 1120 tokens, as Sidenote runs Ollama: Gemma 4 E4B there went
+  from 30 of 56 to 39, against Ollama's 38. llama.cpp's server gets the same budget
+  ([note 108](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-108)).
+- Measured and written down: **Think before answering** stays on Auto
+  ([note 109](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-109)), and Qwen3-VL 30B got 18 of 56,
+  so it is not suggested ([note 110](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-110)). On
+  llama.cpp's server, Gemma 4's multi-token prediction head made the 26b about a tenth faster
+  ([note 111](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-111)).
+
 ## [0.1.6] - 2026-11-07
 
 ### Added

@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("SIDENOTE_ANALYZER", "mock")
 
 from server.pipeline import (CROP_MAX_SIDE, CROP_PAD, SNAP_GROW, block_grown,  # noqa: E402
-                             crop_image, halves, shown_box)
+                             crop_image, halves, shown_box, upright)
 from server.settings import SETTINGS  # noqa: E402
 
 ok = bad = 0
@@ -212,6 +212,27 @@ _, box_tab, _ = crop_image(with_lines(table=8), (0.32, 0.366, 0.42, 0.40), CROP_
 print(f"     a table {tuple(round(v, 3) for v in box_tab)}")
 check("the walk down a table with a rule under each row still reaches its last row",
       box_tab[3] >= 0.30 + 7 * 0.022 + 14 / 1080, f"bottom {box_tab[3]:.3f}, the last row ends at 0.467")
+
+# A box written y first, up to twice as tall as wide, is turned when its edges cut through the lines and the turned one's
+# do not; a pane of code that really stands that tall is left as it is.
+print("\n[a box written y first in a shape TALL_BOX lets through]")
+scr = Image.new("RGB", (1920, 1080), "white")
+d = ImageDraw.Draw(scr)
+for k in range(8):   # a wide problem: eight lines of words across x 0.25 to 0.80, y 0.17 to 0.33
+    y = int(0.17 * 1080) + k * 22
+    for x in range(int(0.25 * 1920), int(0.80 * 1920), 46):
+        d.rectangle((x, y, x + 34, y + 12), fill="black")
+for k in range(40):  # a pane of code down the left, x 0.02 to 0.20, y 0.40 to 0.95
+    y = int(0.40 * 1080) + k * 14
+    d.rectangle((int(0.03 * 1920), y, int(0.03 * 1920) + 40 + (k * 37) % 250, y + 8), fill="black")
+aspect = 1080 / 1920
+wide = (0.16, 0.24, 0.34, 0.81)   # the problem's box with a margin, 0.24 0.16 0.81 0.34, written in y-first order
+check("a wide problem's box written y first comes back turned", upright(scr, (0, 0, 1, 1), wide, aspect) == (0.24, 0.16, 0.81, 0.34),
+      upright(scr, (0, 0, 1, 1), wide, aspect))
+pane = (0.01, 0.38, 0.22, 0.97)
+check("...and the box of a pane that stands that tall stays as it is", upright(scr, (0, 0, 1, 1), pane, aspect) == pane,
+      upright(scr, (0, 0, 1, 1), pane, aspect))
+check("...as does any box with no picture to look at", upright(None, (0, 0, 1, 1), wide, aspect) == wide)
 
 print(f"\n==== {ok} passed, {bad} failed ====")
 sys.exit(1 if bad else 0)

@@ -1164,6 +1164,9 @@
     backdrop-filter: none; -webkit-backdrop-filter: none;   /* .card's blur: nothing shows through to blur */
     animation: sheet-in .2s var(--ease); }
   @keyframes sheet-in { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
+  /* Solver settings keeps one height for every section: it grew and shrank with each tab, and Reset to defaults under it
+     jumped. Where the tabs stack (720 px and narrower) it is as tall as its section, as before. */
+  @media (min-width: 721px) { #settings.settings { height: min(820px, calc(100vh - 80px)); } }
   /* The pane answers the click on a section: it is the only thing that changed, so it is the only
      thing that moves. */
   .set-pane.enter { animation: pane-in .18s var(--ease); }
@@ -1171,7 +1174,7 @@
   /* Sections down the left, one section at a time on the right: every setting is one click away
      instead of a scroll through two dozen. Under 720px they stack and the tabs become a row. */
   #settings-body { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 0 18px;
-    min-height: 0; margin-top: 10px; }
+    min-height: 0; margin-top: 10px; flex: 1 1 auto; }
   .set-nav { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--rule);
     padding: 3px 10px 3px 3px; overflow-y: auto; }   /* the padding keeps a focus ring from being cut */
   .set-tab { text-align: left; border: 0; border-radius: 6px; background: transparent; cursor: pointer;
@@ -1559,12 +1562,11 @@
      between them, the width of the column. The right column does not move for them. */
   :root[data-skin="classic"] .alerts { top: calc(var(--bar-h, 56px) + 18px); padding: 0; margin: 0 auto; max-width: none; border-radius: 14px; overflow: hidden auto;
     width: calc(100% - 56px); }     /* a note laid on the page, not the page: the width the floating question box has */
-  /* It floats: it takes no room, so the thread starts level with the right column whether or not a band is up (--alerts-h: fitRail) */
-  /* At the top of the page it lies a little inside the page's edge, not on it; scrolled, it sticks level with the right column */
-  :root[data-skin="classic"] .alerts:not(:empty) { margin-top: 16px; margin-bottom: calc(-1 * var(--alerts-h, 0px) - 16px); background: color-mix(in srgb, var(--sheet) 58%, transparent); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  /* At the top of the page it takes its room above the thread: floating there, it lay over the first answer's head and its
+     keys could not be pressed (at 1000 px and below, where the bands do not fit in the bar). Scrolled, it sticks level with
+     the right column, over the page. */
+  :root[data-skin="classic"] .alerts:not(:empty) { margin-top: 16px; margin-bottom: 0; background: color-mix(in srgb, var(--sheet) 58%, transparent); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
     border: 1px solid var(--glass-line); box-shadow: var(--glass-rim), var(--lift); }
-  /* Over the welcome, before any answer, the bands take their room instead: floating, two or more covered its headline */
-  :root[data-skin="classic"]:has(#welcome:not([hidden])) .alerts:not(:empty) { margin-bottom: 0; }
   /* What needs attention is the one place the frame takes colour: a plain notice in green, a warning in orange, a fault in red */
   :root[data-skin="classic"] .alert { --tone: #2eb67d; }
   :root[data-skin="classic"] .alert.warn { --tone: #e8912d; }
@@ -2934,7 +2936,7 @@
         <!-- Practice keeps each new answer back until it is asked for (app.js, setPractice). Its two words have keys of their own (data-t): in Korean the states Off and On are other words -->
         <h3 data-t>Practice</h3>
         <div class="seg" id="practice-seg">
-          <button type="button" data-practice="off" data-t="Practice: Off">Off</button><button type="button" data-practice="on" title="New answers show their question first, and their hints and the answer when asked" data-t="Practice: On" data-t-title>On</button>
+          <button type="button" data-practice="on" title="New answers show their question first, and their hints and the answer when asked" data-t="Practice: On" data-t-title>On</button><button type="button" data-practice="off" data-t="Practice: Off">Off</button>
         </div>
         <hr />
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>

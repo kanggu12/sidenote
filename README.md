@@ -30,7 +30,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-dark.png">
-    <img alt="The Sidenote panel: a practice problem's answer with its key point, the approach, the code and its complexity, beside the screen, sound, local model and agent cards" src="docs/assets/screenshot-light.png" width="920">
+    <img alt="The Sidenote panel: a practice problem's answer with its key point, the approach, the code and its complexity, beside the capture, local model and agent cards" src="docs/assets/screenshot-light.png" width="920">
   </picture>
 </p>
 
@@ -61,13 +61,14 @@ checks code answers. Not sure? On a Windows PC, use the app.
 No Docker and no Python needed.
 
 1. Install [Ollama](https://ollama.com/download) for the local model. Without it, the cloud agent answers everything;
-   turn **Local model** off in **Solver settings** (the gear menu) so the panel stops asking for Ollama.
+   turn **Local model** off in **Solver settings** (in the gear menu) so the panel stops asking for Ollama.
 2. Optional, for the hard problems: install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
    [Codex](https://github.com/openai/codex), and sign in once in a terminal: `claude`, or `codex login`. Sidenote uses
    the one it finds when it starts, Claude Code first.
-3. Download [Sidenote-windows-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip),
-   right-click it, choose **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`. If Windows
-   warns about an unknown publisher, choose **More info**, then **Run anyway**.
+3. 3. Download
+   [Sidenote-windows-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip),
+   right-click it, choose **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`. If Windows warns
+   about an unknown publisher, choose **More info**, then **Run anyway**.
 4. After a minute the panel opens in your browser, and an icon appears by the clock (on Windows 11 perhaps under the
    **^**). A band at the top offers the model that fits your GPU: choose **Download**.
 
@@ -123,7 +124,7 @@ GPU, and the server in Docker asks it. You need [Docker Desktop](https://www.doc
 `python3` (macOS offers to install it the first time you type it).
 
 ```bash
-# the model, with the context and batch Sidenote's own copy has (pick it by memory, as in What it runs on)
+# the model, with the context and batch Sidenote sets (pick the size for your memory from "What it runs on")
 ollama pull gemma4:e4b
 printf 'FROM gemma4:e4b\nPARAMETER num_ctx 16384\nPARAMETER num_batch 1152\n' > Modelfile
 ollama create sidenote-gemma4:e4b -f Modelfile
@@ -211,6 +212,18 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
 
 ## What it runs on
 
+| | No local model | `gemma4:e4b` | `gemma4:26b` (recommended) |
+|:---|:---|:---|:---|
+| GPU | none: the agent answers | 10 GB or more, NVIDIA or AMD | 24 GB, such as an RTX 3090 or 4090 |
+| Memory | 8 GB | 16 GB | 32 GB |
+| Disk, beside the app or the images | none | 6.6 GB | 18 GB |
+
+It runs on Windows 10 or 11, Linux with X11 (Ubuntu 22.04 or newer), Docker on Linux or WSL 2, and Docker on a Mac.
+Measured on the test PC (Ryzen 9 9950X, RTX 4090 24 GB): the server takes about 0.1 GB of memory, the speech model 0.6 GB,
+and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each figure is room for the system and the
+browser. The speech model runs on the CPU, about 8 s of it a sentence with `small`. The Windows app downloads as 110 MB;
+with Docker, the images take about 8.5 GB, Ollama's 5.6 GB of it.
+
 | GPU memory | Local model | Right, of 56 | Code passing, of 7 | Spoken, of 8 | Empty screen |
 |:---:|:---:|---:|---:|---:|---:|
 | 24 GB or more | `gemma4:26b` | 51 | 7 | 8 | 1.3 s |
@@ -222,12 +235,12 @@ Each local model alone, with the cloud agent off, on an RTX 4090: 56 real screen
 answers, 7 of them coding problems whose code is run. The last column is how long it takes to decide that a screen has
 nothing to solve. With the agent on, what the small models miss most (code, multi-step reasoning) goes to the agent.
 
-Most of the screens are Korean and were answered in Korean; asked to answer in English, the 26b got 52 of the 56 right.
-Any other OpenAI-compatible server that takes images (LM Studio, llama.cpp's server, vLLM) can be used too: set
-`SIDENOTE_LOCAL_URL` (its `/v1` address) and `SIDENOTE_LOCAL_MODEL`. With Gemma 4 E4B, llama.cpp's server got 35 of 56
-and vLLM 30, against Ollama's 38 in the same run ([how to start them](docs/air-gapped.md#with-a-model-server-you-already-run)).
-Reports from other GPUs are welcome:
-[open a hardware report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml).
+Most of the screens are Korean and were answered in Korean; asked to answer in English, the 26b got 52 of the 56 right. Any
+other OpenAI-compatible server that takes images (LM Studio, llama.cpp's server, vLLM) can be used too: set
+`SIDENOTE_LOCAL_URL` (its `/v1` address) and `SIDENOTE_LOCAL_MODEL`. With Gemma 4 E4B, vLLM got 39 of 56 and llama.cpp's
+server 35, against Ollama's 38 in that separate run ([how to start
+them](docs/air-gapped.md#with-a-model-server-you-already-run)). Reports from other GPUs are welcome: [open a hardware
+report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml).
 
 | | The app on Windows | The app on Linux (X11) | Docker on Linux or WSL 2 | Kubernetes |
 |:---|:---:|:---:|:---:|:---:|
@@ -258,7 +271,7 @@ like this:
 - **It answers locally first.** Explanations, definitions and short questions come within a second or two, and multiple
   choice gets a moment of thought first.
 - **It hands the hard ones to the agent:** code, algorithms, math, essays and work problems such as a log to debug, and
-  anything the local model would be much slower to start. The agent gets only the problem's part of the screen by
+  anything the local model would be much slower to start answering. The agent gets only the problem's part of the screen by
   default. With no agent, the local model thinks them through itself.
 
 ## How it compares
@@ -308,7 +321,8 @@ The details are in [Security and privacy](docs/README.md#14-security-and-privacy
 - [Local-first design](docs/DESIGN-local-first.md): why the local model answers first, and when the agent takes over.
 - [Quality](docs/QA.md): from a test case through CI to a release.
 - [Helm chart](deploy/helm/sidenote/README.md) and [the capture program on its own](docs/capture-client.md).
-- [Running with no internet](docs/air-gapped.md): the local model and speech on a closed network, and what cannot work there.
+- - [Running with no internet](docs/air-gapped.md): the local model and speech on a closed network, and what cannot work
+  there.
 - [Changelog](CHANGELOG.md): what changed in each release.
 
 The panel, the server's messages and the command line speak English, or Korean when your browser or system is set to

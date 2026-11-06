@@ -21,7 +21,7 @@ from a fresh clone to a pull request.
 - **Model profiles.** A vision model that reads screens well in 8 to 16 GB of GPU memory, measured on real problems
   ([add a model](#add-a-local-model)).
 - **Translations.** English and Korean today ([add a language](#add-a-language)).
-- **The capture program on macOS and Wayland.** It runs on Windows and on Linux with X11 today
+- **The capture program on Wayland.** It runs on Windows, on Linux with X11 and on macOS today
   ([docs/capture-client.md](docs/capture-client.md)).
 - **Docs.** Anything that made you stop and search is worth a sentence.
 
@@ -76,7 +76,7 @@ about a single problem happens in `pipeline.py`. The arrows are imports.
 | `server/models.py`, `server/hardware.py` | the model profiles, and the GPU and memory they are picked by | `choose`, `detect` |
 | `server/config.py`, `server/settings.py` | the `SIDENOTE_*` environment, and the switches the panel changes at run time | `Config`, `Settings` |
 | `panel/` | the panel: plain HTML, CSS and JavaScript, no build step | `app.js`, its `onmessage` |
-| `client/capture.py` | the capture program (Windows, Linux with X11): screen, speaker sound, tray icon | `main` |
+| `client/capture.py` | the capture program (Windows, Linux with X11, macOS): screen, speaker sound, tray icon | `main` |
 | `sidenote` | the launcher: `install`, `up`, `capture`, `status`, `doctor`, ... | `cmd_help`, and the `case` at its end |
 | `desktop/` | the app for one PC without Docker: starts and watches the server, the capture program and Ollama; its build | `app.py`, `run()` |
 | `runner/` | the code runner and its sandbox image: runs code answers with no network | `runner.py`, its `LANGS` |
@@ -115,7 +115,7 @@ the speech model, which is otherwise downloaded on the first start. Add `?lang=k
 Korean. A warning from onnxruntime that "GPU device discovery failed" is harmless: the face detector then runs on the
 CPU.
 
-To run everything the way the Windows and Linux app does (the server, the capture program, and Ollama when it is
+To run everything the way the Windows and Linux apps do (the server, the capture program, and Ollama when it is
 installed), add the capture program's packages and start the app from the checkout:
 
 ```bash
@@ -127,11 +127,11 @@ Then open http://127.0.0.1:8800. Its own port and data folder keep it apart from
 would otherwise open. `SIDENOTE_ANALYZER=mock` and `--no-capture` run it with stand-in models and no capture program.
 `desktop/build.py` builds the app itself with PyInstaller.
 
-To work with a real local model, run [Ollama](https://ollama.com), pull a model (`ollama pull gemma4:e4b`), and start
-the server with `SIDENOTE_ANALYZER=local SIDENOTE_LOCAL_URL=http://127.0.0.1:11434/v1` instead. Sidenote also speaks
-the OpenAI-compatible `/v1/chat/completions` API with images, which LM Studio, llama.cpp's server and vLLM serve: set
-`SIDENOTE_LOCAL_MODEL` to the model's name. Only Ollama has been measured so far; a report on another server is
-welcome.
+To work with a real local model, run [Ollama](https://ollama.com), pull a model (`ollama pull gemma4:e4b`), and start the
+server with `SIDENOTE_ANALYZER=local SIDENOTE_LOCAL_URL=http://127.0.0.1:11434/v1` instead. Sidenote also speaks the
+OpenAI-compatible `/v1/chat/completions` API with images, which LM Studio, llama.cpp's server and vLLM serve: set
+`SIDENOTE_LOCAL_MODEL` to the model's name. Ollama, llama.cpp's server and vLLM have been measured ([note
+108](docs/DECISIONS.md#note-108)); a report on another server is welcome.
 
 ## Run the tests
 
@@ -243,8 +243,8 @@ through `on_delta` and returns the result. Then name it where the agents are lis
 
 - `server/config.py`: the names `SIDENOTE_AGENT` accepts (`Config.__post_init__`), and `AGENT_LABELS` and
   `AGENT_SHORT`, the names the panel shows.
-- `server/agents.py`: `make_agent()`; `auth_status()`, which tells the panel whether it is signed in or has its key;
-  and `LOGIN_HINTS` and `DESKTOP_LOGIN_HINTS`, what the panel says to run to sign in.
+- - `server/agents.py`: `make_agent()`; the class's `auth_status()` method, which tells the panel whether it is signed in
+  or has its key; and `LOGIN_HINTS` and `DESKTOP_LOGIN_HINTS`, what the panel says to run to sign in.
 - For an agent with a CLI: `cmd_login` and the agent's line in `cmd_doctor` in `sidenote`, and `agent_found()` in
   `desktop/app.py`, which picks the CLI up from the PATH.
 

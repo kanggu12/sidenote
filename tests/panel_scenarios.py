@@ -470,13 +470,53 @@ def group_keys(br, s):
     p.close()
 
 
+def group_review_fixes(br, s):
+    """What a look through the panel found: a band over the first answer, what opened under the question box, and the
+    contents' rows read in Markdown."""
+    if not T.group("a band at the top, what opens at the foot, the rows in plain words"):
+        return
+    # 1. At 1000 px and below the bands do not fit in the bar: at the top of the page a band takes its room, over no answer
+    p = Page(br, s, [row(900 + i, "essay", f"문제 {i}", "답", "풀이입니다", ago=300 - i) for i in range(3)], w=1000, h=800)
+    p.js("() => { window.scrollTo(0, 0); paused = true; renderAlerts(); placeBands(); }")
+    p.wait(300)
+    over = p.js("""() => { const b = document.getElementById('alerts').getBoundingClientRect(), e = document.querySelector('.entry:not([hidden])').getBoundingClientRect();
+        return [Math.round(b.bottom), Math.round(e.top), document.documentElement.classList.contains('bands-in-bar')]; }""")
+    check("at 1000 px the band at the top of the page lies over no answer", not over[2] and over[0] <= over[1], over)
+    no_errors(p, "band")
+    p.close()
+    # 2. The answer opened at the foot of the page comes up above the question box
+    body = "\n\n".join(f"## 부분 {i}\n\n" + "이 부분은 풀이입니다. " * 6 for i in range(3))
+    p = Page(br, s, [row(910, "essay", "앞 문제", "앞 답", "풀이", ago=600)], w=1366, h=900)
+    p.js("() => setPractice(true)")
+    p.answer(911, "essay", "새 문제", "새 답", body)
+    p.wait(300)
+    p.page.mouse.move(500, 400)
+    p.page.mouse.wheel(0, 4000)   # down to the foot by hand, as a reader goes
+    p.wait(400)
+    p.page.click("#thread [data-id='911'] [data-act='reveal']")
+    p.wait(500)
+    gap = p.js("""() => { const e = entryEl(911).getBoundingClientRect(), box = document.getElementById('askform').getBoundingClientRect(),
+        bar = document.querySelector('header.bar').getBoundingClientRect();
+        return [Math.round(e.bottom), Math.round(box.top), Math.round(e.top), Math.round(bar.bottom)]; }""")
+    check("an answer opened at the foot comes up over the question box", gap[0] <= gap[1], gap)
+    no_errors(p, "opened")
+    p.close()
+    # 3. The contents' rows and their search read the words the page shows, not the Markdown and TeX under them
+    md = "적분 값은 1/3입니다.\n\n```mermaid\nflowchart LR\nA-->B\n```\n\n$$\n\\int_0^1 x^2\\,dx\n$$"
+    p = Page(br, s, [row(920, "math", "적분", "1/3", md, ago=60)], w=1366, h=900)
+    found = p.js("() => [searchText(items.get(920)).includes('mermaid'), searchText(items.get(920)).includes('flowchart'), searchText(items.get(920)).includes('∫')]")
+    check("a diagram's source is not what an answer is found by, and a formula reads as its signs", found == [False, False, True], found)
+    no_errors(p, "rows")
+    p.close()
+
+
 def main() -> int:
     support_ok = h.support.need_vendor(h.PANEL)   # noqa: F841  (exits with a word if the panel's libraries are missing)
     s = Stand("scenarios")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_reader, group_contents, group_dropped, group_order, group_hostile, group_region, group_keys):
+        for group in (group_reader, group_contents, group_dropped, group_order, group_hostile, group_region, group_keys, group_review_fixes):
             group(br, s)
         br.close()
     return T.end()

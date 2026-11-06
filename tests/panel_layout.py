@@ -1440,11 +1440,11 @@ def group_controls(br, s):
     check("a failed answer's date stands where every answer's does, over what went wrong", abs(dates[0][0] - dates[1][0]) <= 1 and dates[1][1] is not None and dates[1][1] >= 0, dates)
     box = p.js("() => { const b = entryEl(1802).querySelector('.errbox'); return [!!b.querySelector('code.cmd'), !!b.querySelector('[data-copy]'), b.querySelector('p').textContent]; }")
     check("the failure box gives its command as a chip with a copy key", box[0] and box[1], box)
-    check("the key's particle goes by its last letter: '다시 분석으로'", "다시 분석으로" in box[2] and "다시 분석로" not in box[2], box[2])
+    check("the key stands last in its clause, with no particle after it to stand apart from the chip", "한 번 더: 다시 분석" in box[2], box[2])
     p.send({"type": "status", "text": "connected", "paused": True, "lang": "auto", "audio": True, "voice": True, "can_ask": True, "run_enabled": True, "runner": True, "engines": eng()})
     p.wait(200)
     band = p.js("() => document.getElementById('alerts').textContent")
-    check("...and '다시 분석은' on the pause band", "다시 분석은" in band and "다시 분석는" not in band, band)
+    check("...and on the pause band", "지금 화면만 풀려면 다시 분석" in band, band)
     status(p, eng())
     # The agent's review: named on one line in the margin, and no colon standing alone in its line
     p.send({"type": "verify", "id": 1801, "verdict": "fix", "text": "TYPE: essay\nANSWER: 다른 답\n\n이유", "sent": []})

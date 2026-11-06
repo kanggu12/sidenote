@@ -21,7 +21,8 @@ With the agent off, the largest model answers most of what the agent would. On t
 
 ## What to bring
 
-Sidenote runs there in one of three ways. Step 1 makes the same bundle for all of them, and each takes what it needs from it.
+Sidenote runs there in one of three ways. Step 1 makes the same bundle for all of them, and each takes what it needs from
+it.
 
 | | Docker | The app | Kubernetes |
 |:---|:---|:---|:---|
@@ -34,8 +35,9 @@ Windows when Sidenote runs in WSL, and the `python3-venv` package on a Debian or
 
 ## 1. On a connected PC: make the bundle
 
-Use an x86-64 Linux or WSL 2 PC with Docker. The images are built for x86-64, so the PC with no internet must be x86-64 too.
-It needs no GPU, only room for the bundle: about 5 GB of images, half a GB for speech, and the models.
+Use a Linux or WSL 2 PC with Docker. The images are built for that PC's architecture, so the PC with no internet must have
+the same one (x86-64 or arm64). It needs no GPU, only room for the bundle: about 5 GB of images, half a GB for speech, and
+the models.
 
 Pick the models for the GPU of the PC with no internet. The second is the smaller one Sidenote answers with while another
 program keeps the GPU busy; leave it out if you do not want that.
@@ -56,15 +58,15 @@ until docker logs sidenote 2>&1 | grep -q "speech model ready"; do sleep 10; don
 ```
 
 Every model pulled on this PC goes into the bundle, so pull only the ones you want. The speech model `small` comes by
-default. To carry `medium` as well, choose it now, in the panel at <http://127.0.0.1:8777>: **Solver settings**, **Speech**,
-**Speech model**. Wait until `docker logs sidenote` shows `speech model ready (medium)`, then stop Sidenote:
+default. To carry `medium` as well, choose it now, in the panel at <http://127.0.0.1:8777>: **Solver settings**,
+**Speech**, **Speech model**. Wait until `docker logs sidenote` shows `speech model ready (medium)`, then stop Sidenote:
 
 ```bash
 ./sidenote down
 ```
 
-Then write the bundle. `docker save` takes the Ollama image the PC with no internet runs: `ollama/ollama:0.40.5`, or for an
-AMD GPU on Linux `ollama/ollama:0.40.5-rocm`, which you `docker pull` first and name below instead.
+Then write the bundle. `docker save` takes the Ollama image the PC with no internet will run: `ollama/ollama:0.40.5`. For
+an AMD GPU on Linux, `docker pull ollama/ollama:0.40.5-rocm` first and put that name in the command instead.
 
 ```bash
 mkdir bundle
@@ -79,8 +81,8 @@ git archive --format=tar.gz --prefix=sidenote/ -o bundle/sidenote.tar.gz HEAD
 The speech model goes as plain files: its cache keeps them behind links, which Windows unpacks only with Developer Mode on.
 `--dereference` follows the links, and `--exclude=blobs` keeps the model from going in twice.
 
-The capture program needs a few Python packages, downloaded for the system and Python version it will run on: Windows, for a
-Windows screen. On Linux:
+The capture program needs a few Python packages, downloaded for the system and Python version it will run on: Windows, for
+a Windows screen. On Linux:
 
 ```bash
 python3 -m pip download -r client/requirements.txt -d bundle/wheels
@@ -130,7 +132,7 @@ Compose says the two volumes were not created by it, which does no harm. The pan
 | `SIDENOTE_AGENT=off` | No cloud agent is asked, and none is shown as signed out |
 | `SIDENOTE_SEARCH_URL=` | No web search: a model would otherwise call it and wait |
 | `SIDENOTE_UPDATE_CHECK=0` | The server does not ask GitHub for a newer release |
-| `HF_HUB_OFFLINE=1` | The speech model is taken from the volume at once, with no try at the network |
+| `HF_HUB_OFFLINE=1` | The speech model is taken from the volume at once, without trying the network |
 | `SIDENOTE_WHEELS=...` | `./sidenote setup-capture` installs from this folder instead of the internet |
 
 A speech model that is not in the bundle cannot be chosen in the panel: the choice goes back to the one that is there.
@@ -142,10 +144,10 @@ The Windows and Linux apps hold the server and the capture program, so they need
 (`Sidenote-windows-x64.zip` or `Sidenote-linux-x64.zip`), and Ollama's own download: on Linux its archive, as its install
 script needs the internet.
 
-Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a bundle
-made with Sidenote 0.1.5 or later carries Sidenote's context with it. With an older bundle, quit Ollama from its tray icon
-before you start Sidenote, which then starts it with its own settings: otherwise the model gets Ollama's 4096 tokens of
-context instead of 16384. Then put the two in place, on Windows:
+Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a
+bundle made with Sidenote 0.1.5 or later carries Sidenote's context with it. With an older bundle, quit Ollama from its
+tray icon before you start Sidenote, which then starts it with its own settings: otherwise the model gets Ollama's 4096
+tokens of context instead of 16384. Then put the two in place, on Windows:
 
 ```bat
 if not exist "%USERPROFILE%\.ollama" mkdir "%USERPROFILE%\.ollama"
@@ -219,9 +221,9 @@ kubectl -n sidenote rollout restart deploy/sidenote-server
 kubectl -n sidenote port-forward svc/sidenote-server 8777:8777    # the panel, at http://127.0.0.1:8777
 ```
 
-`--no-same-owner` makes the unpacked files the pod's own: the pods run as root with most of its powers dropped, and that root
-cannot read files that kept the owner they had on the other PC. Helm's notes after the install offer a model download, which
-needs the internet; the two `tar` lines put the bundle's models in place instead.
+`--no-same-owner` makes the unpacked files the pod's own: the pods run as root with most of root's capabilities dropped,
+and that root cannot read files that kept the owner they had on the other PC. Helm's notes after the install offer a model
+download, which needs the internet; the two `tar` lines put the bundle's models in place instead.
 
 The capture program runs on the PC with the screen, from the release's `sidenote-capture-<version>.zip`, as
 [the capture program on its own](capture-client.md) says. Install its packages from the bundle's wheels, copied next to it:
@@ -242,11 +244,23 @@ With Docker, `./sidenote up` then leaves its Ollama container out, so the bundle
 `sidenote:local` and `sidenote-runner:local`. The panel cannot download a model, switch to a smaller one while the GPU is
 busy, or take a stuck model off the GPU with such a server: those go through Ollama's own API.
 
-Start vLLM with the model's reasoning and tool parsers, for Gemma 4
-`--reasoning-parser gemma4 --enable-auto-tool-choice --tool-call-parser gemma4`. Without the reasoning parser a pass that
-thinks comes back empty, and without tool calling Sidenote leaves the web search out. With Gemma 4 E4B on the project's
-known-answer set, llama.cpp's server got 35 of 56 and vLLM 30, against Ollama's 38 in the same run
-([note 108](DECISIONS.md#note-108)).
+Start vLLM with the model's reasoning and tool parsers and the picture budget Sidenote gives Ollama, and llama.cpp's
+server with the same budget. For Gemma 4:
+
+```bash
+# vLLM
+--reasoning-parser gemma4 --enable-auto-tool-choice --tool-call-parser gemma4
+--mm-processor-kwargs '{"max_soft_tokens": 1120}'
+# llama.cpp's server
+--image-max-tokens 1120
+```
+
+Without the reasoning parser a pass that thinks comes back empty, without tool calling Sidenote leaves the web search out,
+and at vLLM's own budget of 280 tokens a picture's small text is read worse. With Gemma 4 E4B on the project's known-answer
+set, vLLM got 39 of 56 at 1120 tokens and 30 at 280, and llama.cpp's server 35, against Ollama's 38
+([note 108](DECISIONS.md#note-108)). llama.cpp's server can also run Gemma 4's multi-token prediction head,
+`--spec-type draft-mtp -md` with the model's `mtp` GGUF: about a tenth faster with the 26b
+([note 111](DECISIONS.md#note-111)).
 
 ## A new version
 
@@ -267,8 +281,8 @@ with the new chart.
 
 ## How this is checked
 
-`tests/offline_check.sh` brings the server and the code runner up from `compose.yaml` on a network with no way out, with the
-settings above. It fails if the start waits on the internet, or if the page loads anything from outside. It also writes and
-unpacks the speech bundle with the command above, from a cache laid out as the real one is, and fails if a link is left in it
-or the model is not found. `tests/k3d_check.sh` unpacks one in the server's pod with the Kubernetes command above and finds
-the model there. CI runs the first on every commit, and the second whenever the chart or the images change.
+`tests/offline_check.sh` brings the server and the code runner up from `compose.yaml` on a network with no way out, with
+the settings above. It fails if the start waits on the internet, or if the page loads anything from outside. It also writes
+and unpacks the speech bundle with the command above, from a cache laid out as the real one is, and fails if a link is left
+in it or the model is not found. `tests/k3d_check.sh` unpacks one in the server's pod with the Kubernetes command above and
+finds the model there. CI runs the first on every commit, and the second whenever the chart or the images change.
