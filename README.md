@@ -14,7 +14,7 @@
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.5" src="docs/assets/badges/release.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
-  <img alt="Runs on Windows and Linux" src="docs/assets/badges/runs-on.svg">
+  <img alt="Runs on Windows, Linux and macOS" src="docs/assets/badges/runs-on.svg">
   <img alt="GPU: NVIDIA, AMD or none" src="docs/assets/badges/gpu.svg">
 </p>
 
@@ -50,9 +50,10 @@ such as a graded exam, a certification test or a job interview. Thank you.
 | **Windows 10 or 11** | [Download the app and run it](#windows-the-app) | Ollama, for the local model |
 | **A Linux desktop** | [Download the app and run it](#linux-the-app) | Ollama |
 | **Linux or WSL 2, with Docker** | [`./sidenote install`](#with-docker-linux-or-windows-with-wsl-2) | Docker and `python3` |
+| **A Mac** | [`./sidenote install`](#with-docker-on-a-mac) | Docker Desktop and Ollama for Mac |
 | **A Kubernetes cluster** | [`helm install`](#kubernetes) | Helm 3 |
 
-All four run the same server and panel. Docker and Kubernetes add web search for the local model and a sandbox that
+All of them run the same server and panel. Docker and Kubernetes add web search for the local model and a sandbox that
 checks code answers. Not sure? On a Windows PC, use the app.
 
 ### Windows: the app
@@ -114,6 +115,30 @@ git clone https://github.com/kanggu12/sidenote.git && cd sidenote
 
 `./sidenote doctor` shows which GPU it found, `./sidenote status` what is running, and `./sidenote down` stops
 everything and frees the GPU.
+
+### With Docker on a Mac
+
+Docker on a Mac has no GPU, so the local model runs in [Ollama for Mac](https://ollama.com/download), on Apple silicon's
+GPU, and the server in Docker asks it. You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and
+`python3` (macOS offers to install it the first time you type it).
+
+```bash
+# the model, with the context and batch Sidenote's own copy has (pick it by memory, as in What it runs on)
+ollama pull gemma4:e4b
+printf 'FROM gemma4:e4b\nPARAMETER num_ctx 16384\nPARAMETER num_batch 1152\n' > Modelfile
+ollama create sidenote-gemma4:e4b -f Modelfile
+
+git clone https://github.com/kanggu12/sidenote.git && cd sidenote
+printf 'SIDENOTE_LOCAL_URL=http://host.docker.internal:11434/v1\nSIDENOTE_LOCAL_MODEL=sidenote-gemma4:e4b\n' >> .env
+./sidenote install
+./sidenote capture --up
+```
+
+The first capture makes macOS ask for **Screen Recording** for your terminal: allow it in **System Settings**, then run
+`./sidenote capture --up` again. For the sound, install [BlackHole](https://github.com/ExistentialAudio/BlackHole)
+(`brew install blackhole-2ch`), and in **Audio MIDI Setup** make a **Multi-Output Device** of your speakers and
+BlackHole, then choose it as the output. CI checks the control script, the capture program and the arm64 images on
+macOS; the models' speed and answers have not been measured on a Mac yet.
 
 ### Kubernetes
 

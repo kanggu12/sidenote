@@ -27,7 +27,7 @@ badge() {
 
 badge release "release-v$version-ea7233"
 badge license "license-MIT-2a78d6"
-badge runs-on "runs%20on-Windows%20%7C%20Linux-555"
+badge runs-on "runs%20on-Windows%20%7C%20Linux%20%7C%20macOS-555"
 badge gpu "GPU-NVIDIA%20%7C%20AMD%20%7C%20none-555"
 
 # the README's alt text says the same, for a reader without images

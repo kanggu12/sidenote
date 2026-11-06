@@ -67,6 +67,10 @@ What each setup needs before its first start:
 - **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux
   the NVIDIA Container Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
   installs the capture program's packages into it.
+- **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
+  local model on Apple silicon's GPU (Docker on a Mac has none): the README's
+  [With Docker on a Mac](../README.md#with-docker-on-a-mac). For the sound, a loopback input such as BlackHole. Not yet
+  measured on a Mac: how fast the models are there and how well they answer.
 - **The local model**: an NVIDIA or AMD GPU. Sidenote reads its memory and picks the largest measured model that fits:
   `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. With less, or no GPU, the cloud agent
   solves everything (a model can still be pulled to run on the CPU, slowly). `SIDENOTE_LOCAL_MODEL` names one by hand.
@@ -143,7 +147,7 @@ hand). The steps of `install`, by hand:
 
 ```bash
 ./sidenote up              # build the server image and start it (a few minutes the first time)
-./sidenote setup-capture   # install the capture packages: into Windows Python, or .venv-capture on Linux
+./sidenote setup-capture   # install the capture packages: into Windows Python, or .venv-capture on Linux and macOS
 ./sidenote shortcut        # a desktop shortcut that starts the server and the capture program (Windows)
 ./sidenote doctor          # check the setup
 ```
