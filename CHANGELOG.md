@@ -7,6 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/). Each release's s
 
 ### Added
 
+- Docker on a Mac: `./sidenote` runs on macOS's own bash 3.2 and BSD tools, the capture program reads the Mac's screen
+  and records from a loopback input such as BlackHole (and says how to get one when there is none), and the local model
+  runs in Ollama for Mac. CI checks all three on macOS. The README says how to start.
+- The server image fetches Claude Code and Codex for the machine it is built on, so it builds on arm64 (Apple silicon,
+  ARM servers); CI builds both images on arm64 too.
 - A review of starred answers: with **Practice** on, choosing **Starred** in the contents keeps every starred answer
   back, however old, to be opened hint by hint.
 
