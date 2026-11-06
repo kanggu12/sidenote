@@ -10,7 +10,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
@@ -693,6 +693,29 @@ Also on this topic:
 
 - [71. A typed line holds the settle, and other server rules](#note-71)
 - [89. The local model stands in at the agent's limit, and the record says why](#note-89)
+
+### <a id="note-108"></a>108. Another model server is told when to think, and goes on without tools it will not take
+
+`SIDENOTE_LOCAL_URL` can name any OpenAI-compatible server. Two things kept one other than Ollama from working as Ollama
+does. Ollama is sent the model's own field for turning thinking off; another server was sent nothing, so each did what its
+chat template does by default. Gemma 4's template reads `enable_thinking`, which llama.cpp's server turns on by default and
+vLLM leaves off. On llama.cpp every pass thought, and a screen with nothing on it took 7 to 8 s instead of under one; on vLLM
+a pass meant to think did not. Such a server is now sent `chat_template_kwargs` with `enable_thinking` set both ways, which
+a template without the switch leaves alone. And vLLM started without `--enable-auto-tool-choice` turns down with a 400 any
+request that offers tools, which the web search does on every request, so nothing was answered there. A 400 that names
+tools now has the request sent again without them, and the model there answers without the web search from then on.
+
+Measured on the known-answer set with Gemma 4 E4B, the agent off and web search on, the same code on each server (RTX 4090):
+
+| Server | Right, of 56 | Empty screen | Median time |
+|:---|---:|---:|---:|
+| Ollama, `sidenote-gemma4:e4b` | 38 | 0.4 to 0.6 s | 14.8 s |
+| llama.cpp's server, the Q8_0 GGUF | 35 | 0.3 to 0.4 s | 24.1 s |
+| vLLM 0.33, BF16, with its reasoning parser and tool calling | 30 | 0.1 to 0.3 s | 19.7 s |
+| vLLM without the reasoning parser | 8 | 0.1 s | 19.7 s |
+
+Before the change, llama.cpp's server, thinking on every pass, got 41 of 56 at a median of 37.4 s. Without its reasoning
+parser, vLLM brought no answer back from any pass that thought, so the guide starts it with `--reasoning-parser gemma4`.
 
 ### <a id="note-5"></a>5. Streaming
 
