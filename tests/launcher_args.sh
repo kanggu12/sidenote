@@ -29,6 +29,7 @@
 # - `capture --up` with no terminal (as launch.pyw runs it) ends with a failing status and waits for no key;
 # - up gives a local model server that is starting a moment before it reports on it;
 # - on a PC with no internet up builds and pulls nothing, and the capture packages come from a folder of wheels;
+# - with a model server already running (SIDENOTE_LOCAL_URL) up leaves the llm container out, and nothing pulls a model;
 # - the language: the checks above read the Korean words (SIDENOTE_LANG=ko), which are the words the launcher had
 #   before it spoke English too. With SIDENOTE_LANG=en every command prints no Korean, a locale picks the language when
 #   SIDENOTE_LANG is not set, a SIDENOTE_LANG that is set is handed on to the Windows programs (WSLENV), and launch.pyw's
@@ -878,6 +879,27 @@ state; EXTRA_ENV="SIDENOTE_WHEELS=/mnt/c/bundle/wheels" run setup-capture; last_
 state; run setup-capture; last_call cmd pip; online=" ${CALL[*]} "
 if [[ $wheels == *" --no-index --find-links "* ]] && [[ $online != *"--no-index"* ]]; then ok "the capture packages come from a folder of wheels when one is named"
 else bad "the capture packages come from a folder of wheels when one is named" "with:$wheels without:$online"; fi
+
+# 44. A model server already running (SIDENOTE_LOCAL_URL, docs/air-gapped.md): up names the services and leaves the llm
+#     container out, offline too; llm pull and install say whose models they are and pull nothing; with Ollama's own
+#     address, or none, everything is as it was.
+other="http://model-server.internal:8000/v1"
+state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other" run up; last_call docker up; x_up=" ${CALL[*]} "; x_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LOCAL_URL=$other" run up; last_call docker up; xo_up=" ${CALL[*]} "
+state; EXTRA_ENV="SIDENOTE_LOCAL_URL=http://llm:11434/v1" run up; last_call docker up; own_up=" ${CALL[*]} "
+state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LOCAL_URL=http://llm:11434/v1" run up; last_call docker up; owno_up=" ${CALL[*]} "
+if [ "$x_rc" = 0 ] && [[ $x_up == *" server runner searxng "* ]] && [[ $x_up != *" llm "* ]] \
+   && [[ $xo_up == *" server runner "* ]] && [[ $xo_up != *" llm "* ]]; then
+  ok "with another model server up starts the server, the runner and the search engine, and no llm container"
+else bad "with another model server up starts the server, the runner and the search engine, and no llm container" "rc $x_rc, up:$x_up, offline:$xo_up"; fi
+if [[ $own_up != *" server runner"* ]] && [[ $owno_up == *" server runner llm "* ]]; then ok "...and with Ollama's own address up is as it was"
+else bad "...and with Ollama's own address up is as it was" "up:$own_up, offline:$owno_up"; fi
+state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other SIDENOTE_LANG=en" run llm pull gemma4:e4b; last_call docker llm-pull; pulled=${#CALL[@]}
+if [ "$(cat "$work/rc")" != 0 ] && [ "$pulled" = 0 ] && said "served by $other"; then ok "...llm pull pulls nothing, and says the models are that server's"
+else bad "...llm pull pulls nothing, and says the models are that server's" "rc $(cat "$work/rc"), pulls $pulled: $(tail -1 "$work/out")"; fi
+state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other SIDENOTE_LANG=en" run install; last_call docker llm-pull; pulled=${#CALL[@]}
+if [ "$pulled" = 0 ] && said "Served by $other (SIDENOTE_LOCAL_URL): no model to download here"; then ok "...and install points at no download"
+else bad "...and install points at no download" "pulls $pulled: $(grep -F "3/4" -A2 "$work/out" | tr '\n' ' ')"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

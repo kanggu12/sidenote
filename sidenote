@@ -101,6 +101,10 @@ elif main and busy:
 print("\n".join(names))
 PY
 }
+# The local model's server is the llm container (Ollama) unless SIDENOTE_LOCAL_URL names another: an OpenAI-compatible
+# one already running, such as vLLM, llama.cpp's server or LM Studio. That one has its models, and the container would sit idle.
+LOCAL_URL="$(setting SIDENOTE_LOCAL_URL "")"
+own_llm() { case "$LOCAL_URL" in ""|http://llm:11434|http://llm:11434/*) return 0 ;; esac; return 1; }
 # The local LLM and its web search belong to the "local" compose profile: every compose command here
 # (up, down, ps, logs) includes them in local mode, so down also frees the GPU.
 if [ "$ANALYZER" = local ]; then export COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}local"; fi
@@ -455,11 +459,13 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
     nopull=(--pull never)
     # Named one by one to leave the search engine out: it only asks the internet, and its image need not come along
     services=(server runner)
-    if [ "$ANALYZER" = local ]; then services+=(llm); fi
+    if [ "$ANALYZER" = local ] && own_llm; then services+=(llm); fi
   else
     # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
     # during it had the container replaced under it, the very thing the wait is there to prevent.
     docker compose build 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+    # With another model server the services are named, the llm one left out (a named one starts whatever its profile)
+    if [ "$ANALYZER" = local ] && ! own_llm; then services=(server runner searxng); fi
   fi
   if [ "$rc" = 0 ]; then
     wait_idle
@@ -1045,6 +1051,10 @@ cmd_capture_here() {
 }
 
 cmd_llm() {   # the local LLM: pull, list, logs
+  if ! own_llm; then
+    die "$(L "The local model is served by $LOCAL_URL (SIDENOTE_LOCAL_URL): its models are that server's, pulled and listed there" \
+             "이 PC의 모델은 $LOCAL_URL 서버가 맡습니다(SIDENOTE_LOCAL_URL): 모델 받기와 목록은 그 서버에서 합니다")"
+  fi
   docker_up
   case "${1:-}" in
     pull)
@@ -1127,6 +1137,8 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   echo "${B}3/4${N} $(L "Local model" "이 PC의 모델")"
   if [ "$ANALYZER" != local ]; then
     ok "$(L "Agent only (SIDENOTE_ANALYZER=$ANALYZER): no model to download" "에이전트만 사용 (SIDENOTE_ANALYZER=$ANALYZER): 받을 모델 없음")"
+  elif ! own_llm; then
+    ok "$(L "Served by $LOCAL_URL (SIDENOTE_LOCAL_URL): no model to download here" "$LOCAL_URL 서버가 맡음 (SIDENOTE_LOCAL_URL): 여기서 받을 모델 없음")"
   elif [ "$with_models" = 1 ]; then
     cmd_llm pull
   elif [ -n "$(cmd_llm list 2>/dev/null | grep -E "gemma4|${LOCAL_MODEL%%:*}" || true)" ]; then
@@ -1205,10 +1217,16 @@ cmd_version() {   # what is actually installed and running, in one place
   local xv; xv="$(codex_version)"
   printf "  Codex           %s $(L "(this PC) / %s (container)" "(이 PC) / %s (컨테이너)")\n" "${xv:--}" \
     "$(docker exec sidenote codex --version 2>/dev/null | awk '{print $2}' || echo '-')"
-  printf '  %s%s\n' "$(L 'Model server    ' '모델 서버       ')" "ollama/ollama:$(setting SIDENOTE_OLLAMA_VERSION 0.40.5)"
+  if own_llm; then
+    printf '  %s%s\n' "$(L 'Model server    ' '모델 서버       ')" "ollama/ollama:$(setting SIDENOTE_OLLAMA_VERSION 0.40.5)"
+  else
+    printf '  %s%s\n' "$(L 'Model server    ' '모델 서버       ')" "$LOCAL_URL (SIDENOTE_LOCAL_URL)"
+  fi
   printf '  %s%s\n' "$(L 'Search engine   ' '검색 엔진       ')" "searxng/searxng:$(setting SIDENOTE_SEARXNG_VERSION 2026.10.7-6671d89be)"
   # only from a model server that is up: asking with it down started a container, and could pull its image, for a version
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx sidenote-llm; then
+  if ! own_llm; then
+    :   # the models are that server's own
+  elif docker ps --format '{{.Names}}' 2>/dev/null | grep -qx sidenote-llm; then
     printf '  %s%s\n' "$(L 'Models pulled   ' '받아 둔 모델    ')" \
       "$(cmd_llm list 2>/dev/null | tail -n +2 | awk '$1 ~ /^sidenote-/ {print $1}' | paste -sd" " - || echo '-')"
   else

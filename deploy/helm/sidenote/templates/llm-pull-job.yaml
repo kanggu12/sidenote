@@ -61,7 +61,8 @@ spec:
           imagePullPolicy: {{ .Values.llm.image.pullPolicy }}
           # compose.yaml's script, unchanged: a server of its own on the same volume, then each model.
           # A name sidenote-<model> pulls <model> and makes sidenote-<model> from it with a larger
-          # batch (Ollama's default batch of 512 caps an image at 512 tokens).
+          # batch (Ollama's default batch of 512 caps an image at 512 tokens) and the context Ollama is
+          # given here, which the model carries to an Ollama started with less (as the app may find one).
           command:
             - sh
             - -c
@@ -73,7 +74,7 @@ spec:
                   sidenote-*)
                     base="${m#sidenote-}"
                     ollama pull "$base" || exit 1
-                    printf 'FROM %s\nPARAMETER num_batch 1152\n' "$base" > /tmp/Modelfile
+                    printf 'FROM %s\nPARAMETER num_batch 1152\nPARAMETER num_ctx %s\n' "$base" {{ .Values.llm.env.OLLAMA_CONTEXT_LENGTH | default "16384" | quote }} > /tmp/Modelfile
                     ollama create "$m" -f /tmp/Modelfile || exit 1 ;;
                   *) ollama pull "$m" || exit 1 ;;
                 esac
