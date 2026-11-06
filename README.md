@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.4" src="https://img.shields.io/badge/release-v0.1.4-ea7233.svg"></a>
+  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.5" src="https://img.shields.io/badge/release-v0.1.5-ea7233.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2a78d6.svg"></a>
   <img alt="Runs on Windows and Linux" src="https://img.shields.io/badge/runs%20on-Windows%20%7C%20Linux-555.svg">
   <img alt="GPU: NVIDIA, AMD or none" src="https://img.shields.io/badge/GPU-NVIDIA%20%7C%20AMD%20%7C%20none-555.svg">
