@@ -1552,7 +1552,9 @@ STAR_LOOK = """(id) => {
   const p = document.createElement('i'); p.style.color = 'var(--hl-yellow)'; document.body.append(p); const token = getComputedStyle(p).color; p.remove();
   // the answer's own inner edges: a head row laid out wider than the page carries its column out with it, so the column is no measure
   const page = e.getBoundingClientRect(), pad = getComputedStyle(e);
-  const out = { keys: keys.map(box), first: keys[0] === key, key: box(key), svg: box(svg), ct: box(ct), date: box(date), W: innerWidth,
+  // its place: just before Copy all, or last where an answer has none yet, so it stays put whatever keys come before it
+  const last = keys[keys.length - 1], placed = last === key || (!!last?.matches('[data-copy-item]') && keys[keys.length - 2] === key);
+  const out = { keys: keys.map(box), placed, fromEnd: tools.getBoundingClientRect().right - key.getBoundingClientRect().right, key: box(key), svg: box(svg), ct: box(ct), date: box(date), W: innerWidth,
                 inner: { l: page.left + parseFloat(pad.paddingLeft), r: page.right - parseFloat(pad.paddingRight) },
                 fill: getComputedStyle(svg).fill, token, pressed: key.getAttribute('aria-pressed') };
   const rowEl = document.querySelector(`#history .h[data-id="${id}"]`), star = rowEl?.querySelector('.h-star');
@@ -1576,17 +1578,19 @@ def group_star(br, s):
     # the newest three stand open, the older two folded with Fold beside the star; 1951 and 1953 starred
     rows = [row(1950 + i, "essay", f"이것은 꽤 길게 쓴 문제의 물음입니다 {i} " * 2, "답", "풀이", ago=900 - i * 30, starred=i in (1, 3)) for i in range(5)]
     for theme in ("dark", "light"):
-        bad = {k: [] for k in ("size", "row", "gap", "inside", "mark", "fill", "line", "rowstar")}
+        bad = {k: [] for k in ("size", "row", "gap", "inside", "mark", "fill", "line", "rowstar", "place")}
         for w in STAR_WIDTHS:
             p = Page(br, s, rows, w=w, h=900, theme=theme, settle=350)
+            ends = {}
             for i in (1951, 1953, 1954):   # folded and starred, open and starred, open and not
                 m, at = p.js(STAR_LOOK, i), f"{w} #{i}"
                 if m.get("missing"):
                     bad["size"].append([at, "no star key"])
                     continue
                 k, ks = m["key"], m["keys"]
-                # the same key as the others: a pressable square of their size, first in their row
-                if not (m["first"] and k["w"] >= 24 and k["h"] >= 24 and all(abs(x["w"] - k["w"]) <= .5 and abs(x["h"] - k["h"]) <= .5 for x in ks)):
+                ends[i] = round(m["fromEnd"], 1)
+                # the same key as the others: a pressable square of their size, in its place in their row
+                if not (m["placed"] and k["w"] >= 24 and k["h"] >= 24 and all(abs(x["w"] - k["w"]) <= .5 and abs(x["h"] - k["h"]) <= .5 for x in ks)):
                     bad["size"].append([at, [(round(x["w"], 1), round(x["h"], 1)) for x in ks]])
                 if not all(abs(x["t"] - k["t"]) <= .5 for x in ks):
                     bad["row"].append([at, [round(x["t"], 1) for x in ks]])
@@ -1616,10 +1620,14 @@ def group_star(br, s):
                           and r["plainH"] is not None and abs(r["row"]["h"] - r["plainH"]) <= .5 and r["fill"] == m["token"])
                     if not ok:
                         bad["rowstar"].append([at, r])
+            # a folded answer has Show the solution among its keys, an open one Fold: the star stands where it stood
+            if ends and max(ends.values()) - min(ends.values()) > .5:
+                bad["place"].append([w, ends])
             if p.errors:
                 check(f"{theme} {w}: the page threw nothing", False, p.errors[:2])
             p.close()
-        check(f"{theme}: the star key is the keys' size, the first of them, pressable", not bad["size"], bad["size"][:3])
+        check(f"{theme}: the star key is the keys' size, just before Copy all, pressable", not bad["size"], bad["size"][:3])
+        check(f"{theme}: ...at the same place on a folded answer as on an open one, whatever keys come before it", not bad["place"], bad["place"][:3])
         check(f"{theme}: ...in their row", not bad["row"], bad["row"][:3])
         check(f"{theme}: ...at their spacing", not bad["gap"], bad["gap"][:3])
         check(f"{theme}: ...inside the answer and the window, from 360 to 2560", not bad["inside"], bad["inside"][:3])
