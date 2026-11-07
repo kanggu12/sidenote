@@ -723,6 +723,15 @@ where its title took 3. The language of the answer is the server's (`in_answer_l
 bench answered in English, and a Korean question about processes and threads came back as `Explain the differences
 between processes and threads`.
 
+With the panel in English the same 21 questions twice each give the same: the old line and the new one are right on the
+same 38 of 42, the four left being the two questions about the speaker's own setup, which both leave as `TYPE: none`;
+the lines that name a topic go from 3 (`Comparison of Kubernetes Deployment and StatefulSet regarding characteristics
+and use cases.`) to none; the median case stays at 7.9 s. There the line's example is turned to English with the
+prompt's other rules on the answer's language (`ENGLISH_RULES`), as the example of an approach is. Run beside the Korean
+example on the same questions, the English one changed no answer's rightness and no topic line, and neither brought a
+word of Korean into any of the 42 answers, so what it holds off was not seen here: it is turned so that no English
+answer is shown a Korean line to follow.
+
 ## The agents
 
 Also on this topic:

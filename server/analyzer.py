@@ -266,7 +266,9 @@ ANSWER_IN_ENGLISH = (
 
 # The prompts' own rules on the language of the answer, and what each says when the answer is to be English. Measured
 # with the line above alone, the 26b kept a rule asking for Korean in some long answers (a coding answer's explanation
-# under a Korean heading): a rule that contradicts the last line is not reliably overruled by it, so it is replaced.
+# under a Korean heading): a rule that contradicts the last line is not reliably overruled by it, so it is replaced. An
+# example of what an answer's line holds is turned with them, so no English answer is shown a Korean line to copy; the
+# last pair is the local model's prompt alone.
 ENGLISH_RULES = (
     ("`ASKED: <무엇을 묻는지 한국어 한 줄로>`. 늘 쓴다. 문제가 한국어면 한 줄로 줄여 쓰고,\n  다른 언어면 한국어로 옮겨 쓴다",
      "`ASKED: <무엇을 묻는지 영어(English) 한 줄로>`. 늘 쓴다. 문제가 영어면 한 줄로 줄여 쓰고,\n  다른 언어면 영어로 옮겨 쓴다"),
@@ -275,6 +277,10 @@ ENGLISH_RULES = (
     ("- 음성으로 들어온 문제는 어느 언어로 들렸든 ANSWER 줄, 답안 문단, 해설을 모두 한국어로 쓴다.",
      "- 음성으로 들어온 문제는 어느 언어로 들렸든 ANSWER 줄, 답안 문단, 해설을 모두 영어(English)로 쓴다."),
     ("- 문제가 한국어면 ANSWER 줄과 답안도 한국어로 쓴다.", "- 문제가 한국어여도 ANSWER 줄과 답안은 영어로 쓴다."),
+    # The point of an answer beside the question restated as a title (note 115), in the words the answer is in
+    ("`HTTP/1.1과 HTTP/2의 차이점 설명` 대신 `HTTP/2는 한 연결로 여러 요청을 나눠 보내 HTTP/1.1의 줄 서기를 없앤다`",
+     "`Explain the differences between HTTP/1.1 and HTTP/2` 대신 `HTTP/2 multiplexes requests over one connection, ending "
+     "HTTP/1.1's head-of-line blocking`"),
     ("한국어 문제나 음성으로 들어온 문제면 요지, 접근법, 구성을 한국어로 쓰고(예: `해시맵으로 개수를 세며 슬라이딩 윈도우, 시간 $O(N)$ / 공간 $O(N)$`), "
      "화면의 영어 문제면 그 자리를 영어로 쓴다.",
      "요지, 접근법, 구성을 영어로 쓴다(예: `Count with a hash map over a sliding window, time $O(N)$ / space $O(N)$`)."),

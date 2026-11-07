@@ -6,6 +6,12 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- With the panel in English, the prompt's example of an answer's one line is English as the answer is, where it stayed
+  Korean. Measured with the panel in English, the line asking for the point of an answer (0.4.0) keeps the same answers
+  right and leaves no line that only names the question's topic (3 of 42 before it).
+
 ## [0.4.1] - 2026-11-08
 
 ### Fixed
