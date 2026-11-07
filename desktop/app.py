@@ -584,6 +584,17 @@ def only_one(data: Path):
 
 
 STAYS_UP = 5   # seconds a copy's server answers, with no capture program connected, before that copy is taken to run
+PANEL_WAIT = 8   # seconds a copy that was starting has to bring its own panel up, before this start opens one
+
+
+def panel_comes(port: int) -> bool:
+    """A panel connects to the server on this port within PANEL_WAIT seconds."""
+    end = time.monotonic() + PANEL_WAIT
+    while time.monotonic() < end:
+        if ((health(port) or {}).get("panel_clients") or 0) > 0:
+            return True
+        time.sleep(0.25)
+    return False
 
 
 def other_copy(data: Path, port: int, url: str, no_browser: bool, log: CappedLog):
@@ -595,9 +606,14 @@ def other_copy(data: Path, port: int, url: str, no_browser: bool, log: CappedLog
       start in its place: waiting for a server alone, it once did nothing at all after a quit. A server that answers
       for STAYS_UP seconds belongs to a copy that runs (with no capture program, or one restarting).
 
+    A copy whose server does not answer yet at the first look is starting, and opens its own panel once it is up: one
+    from here as well put two panels up when the app was started twice within its first seconds. So after such a
+    copy's start the panel is opened here only when none connects (that copy started with --no-browser).
+
     Returns (the lock, or None when this copy is not to start; whether the panel was opened)."""
     say("Sidenote is already running, starting or closing down; waiting for it", log)
     opened, up_since, end = False, None, time.monotonic() + 300
+    starting = health(port) is None
     while True:
         lock = only_one(data)
         if lock is not None:
@@ -605,8 +621,9 @@ def other_copy(data: Path, port: int, url: str, no_browser: bool, log: CappedLog
         answer = health(port)
         if answer is not None:
             if not opened and not no_browser:
-                webbrowser.open(url)
-                opened = True
+                if not (starting and panel_comes(port)):
+                    webbrowser.open(url)
+                opened = True     # a panel is up either way, and it connects to whichever copy serves the port
             up_since = up_since or time.monotonic()
             if (answer.get("capture") or {}).get("clients") or time.monotonic() - up_since >= STAYS_UP:
                 return None, opened
