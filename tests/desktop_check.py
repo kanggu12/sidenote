@@ -399,11 +399,13 @@ else:
     except OSError:
         check("the port is free again", True)
 
-def stand_in_server(port: int, clients: int):
-    """A Sidenote /health on the port, as another copy's server answers it, with this many capture programs."""
+def stand_in_server(port: int, clients: int, panels: int = 0):
+    """A Sidenote /health on the port, as another copy's server answers it, with this many capture programs and
+    panels."""
     class Health(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            body = json.dumps({"ok": True, "analyzer": "stand-in", "capture": {"clients": clients}}).encode()
+            body = json.dumps({"ok": True, "analyzer": "stand-in", "capture": {"clients": clients},
+                               "panel_clients": panels}).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.end_headers()
@@ -459,6 +461,40 @@ with tempfile.TemporaryDirectory() as d:
     check("beside a copy that runs with no capture program, a start ends once its server has stayed up", got is None)
     srv.shutdown()
     srv.server_close()
+    # The panel, from a start that is let open it (no_browser False): a copy that runs gets it at once; a copy that was
+    # starting brings its own up, and only one that brings none (started with --no-browser) gets one from here. The
+    # starting copy's server comes up after the first look is over, however long a closed port takes to answer it
+    # (health waits up to 1.5 s).
+    opens = []
+    was = app.PANEL_WAIT
+    with mock.patch.object(app.webbrowser, "open", side_effect=opens.append):
+        app.PANEL_WAIT = 1.5
+        try:
+            srv = stand_in_server(port, clients=1, panels=1)
+            app.other_copy(data, port, url, False, log)
+            ran = list(opens)
+            srv.shutdown()
+            srv.server_close()
+            del opens[:]
+            box = {}
+            later(2.0, lambda: box.update(srv=stand_in_server(port, clients=1, panels=1)))
+            app.other_copy(data, port, url, False, log)
+            own = list(opens)
+            box["srv"].shutdown()
+            box["srv"].server_close()
+            del opens[:]
+            later(2.0, lambda: box.update(srv=stand_in_server(port, clients=1, panels=0)))
+            t0 = time.monotonic()
+            app.other_copy(data, port, url, False, log)
+            none, waited = list(opens), time.monotonic() - t0
+            box["srv"].shutdown()
+            box["srv"].server_close()
+        finally:
+            app.PANEL_WAIT = was
+    check("a start beside a copy that runs opens the panel", ran == [url], f"{ran}")
+    check("a start while a copy is starting opens no second panel once that copy's own connects", own == [], f"{own}")
+    check("...and opens one when that copy brings none up (--no-browser)", none == [url] and waited >= 1.5,
+          f"{none} after {waited:.1f} s")
     held.close()
     log.close()
 
