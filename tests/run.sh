@@ -39,7 +39,7 @@ SERVER=(integ agent_first server_review worker_order voice_trigger speech_hints 
         report_period capture_update capture_panel capture_skip scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch launch_window
         codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check history_star ci_gate update_check
         version_check changelog_check launcher_args)
-PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout
+PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout panel_reading
        panel_update)
 # What the suites import or start: not suites themselves
 HELPERS=(support panel_harness fake_claude fake_codex)

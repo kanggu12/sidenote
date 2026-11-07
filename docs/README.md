@@ -450,7 +450,11 @@ marks the current one, whose screen the right column shows.
   under the same answer. The first pass stays short on purpose: most screens hold nothing to solve, and depth is
   worth paying for only when it is asked for.
 - The three most recent solutions stay expanded; older ones keep only their answer line. **Show the solution**
-  expands one again, and **Fold** folds it back.
+  expands one again, and **Fold** folds it back. A folded answer to a spoken problem with no question line of its own
+  also keeps the end of what was heard, where the question usually is.
+- A spoken problem's **Heard** row holds what was said, three sentences a paragraph; a long one shows its first lines,
+  and **Show it all** the rest. A summary of several sentences marks its first, the point, and gives the rest a line
+  each.
 - While you scroll up to read (even by one wheel step), a new answer does not pull the view down; a **New answer**
   button (with a down arrow) appears instead, and jumps to the latest answer. The solution you are reading is not
   folded when new answers arrive. Any scroll by hand, up or down, starts an 8-second count again; after 8 seconds the
@@ -524,11 +528,12 @@ It stays at the window's foot wherever the page is scrolled, and rests at the pa
 ### The right column
 
 The cards stand in one column beside the notebook, and below it on a window 1000 pixels wide or less. On a very wide
-window, 2400 pixels or more (2560 x 1440), they stand in two columns: the controls (capture, the local model, the agent) on
-the left, and the screen, the heard speech and the contents on the right. Every card shows all it holds at every window
-size; nothing folds to fit. The column never scrolls inside itself. While it fits under the top bar, it follows you down
-the thread. When it is taller than the window, it moves with the page going down until its foot is in the window and stays
-there, and going up it moves back until its head is under the top bar.
+window, 2400 pixels or more (2560 x 1440), they stand in two columns: the controls (capture, the local model, the agent)
+on the left, and the screen, the heard speech and the contents on the right. Every card shows all it holds at every
+window size; nothing folds to fit, though the **Local model** and **Agent** cards fold to their top line on a press of
+their name, and stay so in this browser. The column never scrolls inside itself. While it fits under the top bar, it
+follows you down the thread. When it is taller than the window, it moves with the page going down until its foot is in
+the window and stays there, and going up it moves back until its head is under the top bar.
 
 - **The capture card**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
   arrived, which sound device). The **Screen capture** line reads **Watching quietly** while the watching has slowed

@@ -13,6 +13,11 @@ that only fixes raises the patch number. Each release's section here is its rele
   the tray menu is, in its colours and language: the start's steps as pills over a groove that fills as the start goes
   and is full at its end, and a failed start, or a second click while one is going, in that same window, with the
   launcher's last lines to select and copy. Windows' own message box is left for a Python with no tkinter.
+- An answer reads at a glance. A spoken problem's **Heard** row is what was said, three sentences a paragraph, its first
+  lines when it is long and the whole on **Show it all**; folded, an answer with no question line keeps the end of what
+  was heard, where it showed its summary alone. A summary of several sentences marks its first, the point, and gives the
+  rest a line each, where all of it was one marked block. The **Local model** and **Agent** cards fold to their top line
+  on a press of their name, and stay so in the browser.
 
 ## [0.2.2] - 2026-11-07
 

@@ -1375,7 +1375,13 @@ def group_audit(br, s):
         ("cut", "a value cut with no tooltip", ".rail .fact dd { width: 30px !important; display: block !important; overflow: hidden !important; white-space: nowrap !important; } .rail .fact { display: block !important; }"),
         ("spill", "words out of a pill", ".rail .src-top .pill { width: 24px !important; overflow: visible !important; padding: 0 !important; white-space: nowrap !important; }"),
         ("overlap", "a label running into the tile beside it", ".rail .usage-top { overflow: visible !important; } .rail .usage .stat { overflow: visible !important; } .rail .usage .stat .k { white-space: nowrap !important; }", "() => { document.querySelector('#card-local .stat .k').textContent = '24시간 답 그리고 더 길게 쓴 이름입니다'; }"),
-        ("covered", "words a box lies on", ".rail .card:first-child::after { content: ''; } #pill-screen { position: relative; } .rail .src-top .switch { position: absolute !important; right: 180px !important; width: 90px !important; z-index: 5; }"),
+        # Each switch laid on the pill beside it, measured once the switches are out of the row: a place set in pixels from
+        # the card's edge lands beside the pill as soon as the name before it grows
+        ("covered", "words a box lies on", ".rail .card:first-child::after { content: ''; } #pill-screen { position: relative; } .rail .src-top .switch { position: absolute !important; z-index: 5; }",
+         "() => { const keys = [...document.querySelectorAll('.rail .src-top .switch')]; document.body.offsetWidth; "
+         "for (const k of keys) { const box = k.offsetParent.getBoundingClientRect(), pill = k.parentElement.querySelector('.pill').getBoundingClientRect(); "
+         "k.style.setProperty('left', `${pill.left - box.left}px`, 'important'); k.style.setProperty('top', `${pill.top - box.top}px`, 'important'); "
+         "k.style.setProperty('width', `${pill.width}px`, 'important'); } }"),
         ("rows", "a value a little lower than its label", ".rail.tight .fact dd, .rail .fact dd { position: relative; top: 2px; }"),
         ("columns", "one card's left edge two pixels off", ".rail .card:nth-child(2) { margin-left: 2px !important; }"),
         ("columns", "the second half a little off the tiles'", ".rail .fact:nth-child(even) dt { margin-left: 3px !important; }"),
