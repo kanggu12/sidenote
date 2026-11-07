@@ -202,6 +202,7 @@ Server and capture (`PY`):
 | `audio_path.py` | the sound device is read on time while a send is stuck, and not at all without a server |
 | `audio_gaps.py` | the line about dropped sound says whether this program fell behind |
 | `tray_switch.py` | the tray's screen and sound switches go through the server, as the panel's do; on macOS the icon runs on the main thread, a quit that comes before its loop runs is kept, and the app opened again opens the panel |
+| `launch_window.py` | the desktop shortcut's windows (`client/launch.pyw`) wear the tray menu's colours and fonts and speak both languages; a failure and a note show in the same window, its end in view, closed by Esc or its key; drawn on a virtual display where Tk and Xvfb are at hand |
 | `codex_agent.py` | Codex through its CLI, the agent chosen by the environment, the newest model of a family |
 | `repeats_check.py` | a problem seen again (scrolled, moved, come back to) is not solved again, and an agent at its usage limit rests until it comes back |
 | `limits_check.py` | why analyses stopped and what the agent was paid for, from the log; the local model, switched off, standing in for the agent at its limit; the thinking pass's last sentence; code run on made-up inputs when a problem shows none; Codex's reset times and missing prices, the API agent's stop reasons, a status code inside a request id; the chart's runner token rendered without a cluster ([note 89](../docs/DECISIONS.md#note-89)) |

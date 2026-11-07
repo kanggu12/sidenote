@@ -4,16 +4,16 @@ The shortcut that `./sidenote shortcut` makes runs this file with pyw.exe, the P
 and this file runs `./sidenote capture --up` in WSL through wsl.exe, which gets no console window either. That
 starts the server when it is down and then the capture program, so its tray icon is the one thing that appears.
 The shortcut used to run wsl.exe itself: wsl.exe opens a console window for the launcher, which came up on every
-start, and that window was the only place a failure was shown. A failure is shown here instead, in a small Windows
-message box with the last lines the launcher printed.
+start, and that window was the only place a failure was shown. A failure is shown here instead, with the last lines the
+launcher printed, in a window made as the tray icon's menu is (Windows' own message box where tkinter is missing).
 
     pyw -3 launch.pyw --distro Ubuntu-22.04 --repo /home/you/sidenote [-- capture options]
-    py -3 launch.pyw --dry-run ...    (does everything, but prints the box instead of showing it: for tests)
+    py -3 launch.pyw --dry-run ...    (does everything, but prints what it would show instead: for tests)
 
 While it waits, a small window beside the notification area says what the start is at (a start that shows nothing
 gives no way to tell whether it is starting): the server, then the capture program, then that the tray icon is there.
 It closes by itself, takes no focus, and has no taskbar button. Without tkinter the start goes on as it did, with
-nothing shown.
+nothing shown. Both windows speak the language of the boxes.
 
 Nothing here stays running: it waits for the launcher, which returns once the capture program is up, and ends.
 It writes no file of its own and adds nothing to Windows (the temporary file for the output deletes itself).
@@ -48,7 +48,7 @@ CREATE_NO_WINDOW = 0x08000000
 SCRIPT = 'cd -- "$1" || exit; shift; exec ./sidenote capture --up "$@"'
 NAME = "sidenote-shortcut"   # $0 of that shell: what bash puts in front of its own error messages
 
-# The words of the message boxes, in English unless SIDENOTE_LANG says en or ko, or else the user's display language is
+# The words of the windows and the message boxes, in English unless SIDENOTE_LANG says en or ko, or else the user's display language is
 # Korean (the locale off Windows: the first of LC_ALL, LC_MESSAGES and LANG that is set). KO holds the Korean for each
 # English text, character for character.
 def ui_lang() -> str:
@@ -70,14 +70,14 @@ def ui_lang() -> str:
 
 LANG = ui_lang()
 KO = {
-    "Could not start the Sidenote capture": "Sidenote 캡처를 시작하지 못했습니다",
-    "The Sidenote capture is starting": "Sidenote 캡처를 시작하는 중입니다",
-    "The capture started from the shortcut is still getting ready. The first start, and the first after an update, can "
-    "take a few minutes to build the server image. The tray icon appears in the notification area when it is done.\n\n"
-    "If it takes too long, check with ./sidenote status in the server's terminal.":
-        "바로가기로 시작한 캡처가 아직 준비 중입니다. 서버를 처음 켜거나 업데이트한 뒤에는 서버 이미지를 "
-        "만드느라 몇 분 걸릴 수 있습니다. 끝나면 알림 영역에 트레이 아이콘이 나타납니다.\n\n"
-        "너무 오래 걸리면 서버 터미널에서 ./sidenote status 로 확인하세요.",
+    "Capture did not start": "캡처를 시작하지 못함",
+    "Capture still starting": "캡처 시작 중",
+    "The start from the shortcut is still getting ready · the first start, and the first after an update, builds the "
+    "server image for a few minutes · the tray icon comes when it is done\n\n"
+    "Taking too long: ./sidenote status in the server's terminal":
+        "바로가기로 시작한 캡처가 아직 준비 중 · 처음과 업데이트 뒤에는 서버 이미지를 만드느라 몇 분 걸림 · "
+        "끝나면 트레이 아이콘이 나타남\n\n"
+        "너무 오래 걸리면: 서버 터미널에서 ./sidenote status",
     "It ended without printing anything (exit code {rc}).": "아무것도 출력하지 않고 끝났습니다 (종료 코드 {rc}).",
     "The whole output shows with this command in the server's terminal:": "전체 출력은 서버 터미널에서 이 명령으로 볼 수 있습니다:",
     "Could not read the shortcut's arguments: {error}": "바로가기의 인자를 읽지 못했습니다: {error}",
@@ -85,6 +85,15 @@ KO = {
     "Could not run wsl.exe ({path}): {error}": "wsl.exe를 실행하지 못했습니다 ({path}): {error}",
     "Check that WSL is installed.": "WSL이 설치돼 있는지 확인하세요.",
     "The shortcut's starter failed: {error}": "바로가기 실행기에서 오류가 났습니다: {error}",
+    "Server": "서버",
+    "Capture": "캡처",
+    "Ready": "완료",
+    "Checking the server": "서버 확인 중",
+    "Starting the server · the first time takes a few minutes": "서버 시작 중 · 처음엔 몇 분 걸림",
+    "Starting the capture program": "캡처 프로그램 시작 중",
+    "Running · quit it from the tray icon": "실행 중 · 끝내기는 트레이 아이콘에서",
+    "{n}s": "{n}초",
+    "Close": "닫기",
 }
 
 
@@ -96,12 +105,13 @@ def t(text: str, **values) -> str:
     return re.sub(r"\{(\w+)\}", lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), out)
 
 
-# The two message boxes this can show, and what they say at the top.
-FAILED = t("Could not start the Sidenote capture")
-BUSY = t("The Sidenote capture is starting")
-BUSY_TEXT = t("The capture started from the shortcut is still getting ready. The first start, and the first after an update, can "
-              "take a few minutes to build the server image. The tray icon appears in the notification area when it is done.\n\n"
-              "If it takes too long, check with ./sidenote status in the server's terminal.")
+# What the two notes this can show say at the top, as the panel says it: a short phrase. The window's own name stands
+# above it, so the name is not said again.
+FAILED = t("Capture did not start")
+BUSY = t("Capture still starting")
+BUSY_TEXT = t("The start from the shortcut is still getting ready · the first start, and the first after an update, builds the "
+              "server image for a few minutes · the tray icon comes when it is done\n\n"
+              "Taking too long: ./sidenote status in the server's terminal")
 
 # MessageBoxW flags: one OK button, the icon, and in front of other windows. The box may come minutes after the
 # double click (the first start builds the server image), when another window has the focus and Windows would
@@ -125,14 +135,17 @@ ESCAPES = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b\n]*(?:\x07|\x1b\\
 CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-# What the small window says, always in English. The three steps stand in a row; the line under them says what is going on now.
-STEPS = ("Server", "Capture", "Ready")
-SAY_WSL = "Checking the server"
-SAY_SERVER = "Starting the server. The first time takes a few minutes"
-SAY_CAPTURE = "Starting the capture program"
-SAY_DONE = "Running. Quit it from the tray icon"
+# What the small window says, in the language of the boxes. The three steps stand in a row; the line under them says
+# what is going on now, as the panel says it: a short phrase, with " · " before what it adds.
+STEPS = (t("Server"), t("Capture"), t("Ready"))
+SAY_WSL = t("Checking the server")
+SAY_SERVER = t("Starting the server · the first time takes a few minutes")
+SAY_CAPTURE = t("Starting the capture program")
+SAY_DONE = t("Running · quit it from the tray icon")
 SERVER_SLOW = 4.0     # seconds with no answer from the server before it is taken to be starting, not just being asked
 DONE_HOLD = 2600      # milliseconds the last word stays, long enough to read
+NOTE_HOLD = 12000     # milliseconds a note (a start already going) stays unless closed: a failure stays until closed
+NOTICE_LINES = 16     # the lines a failure shows at once; the rest is a scroll away, with the end in view
 HEALTH_URL = "http://127.0.0.1:{port}/health"   # the panel's own address: Windows reaches it through WSL's forwarding
 
 
@@ -155,37 +168,51 @@ def server_answers(port: int) -> bool:
         return False
 
 
-class Starting:
-    """The small window, for as long as the start takes. On the main thread, where tkinter has to run; the launcher
-    waits on another. Made like the panel's right column: a little see-through, a lit top edge, and the name
-    over a stroke of the yellow highlighter."""
+def mix(a: str, b: str, t: float) -> str:
+    """Colour a laid over colour b at strength t, as the tray menu mixes its own."""
+    a, b = [int(a[k:k + 2], 16) for k in (1, 3, 5)], [int(b[k:k + 2], 16) for k in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(round(u * t + v * (1 - t)) for u, v in zip(a, b))
 
-    BG, EDGE, INK, MUTED, TRACK, PEN, MARK, RED = ("#2b2c31", "#6a6c73", "#f1f1f2", "#c4c5c9", "#44464d", "#f1f1f2", "#f2c744", "#d92b2b")
 
-    def __init__(self, tk):
+class Glass:
+    """A small window beside the notification area, made as the tray icon's menu is (TRAY_MENU in capture.py): the
+    panel's dark Classic glass with a lit top edge, and the name over a stroke of the yellow highlighter. On the main
+    thread, where tkinter has to run."""
+
+    # The menu's own colours: the glass, its edge and lit top, the words and the quieter words, the line under the
+    # steps, the highlighter, the red of a failure and a row under the pointer; its green for what is done, and the
+    # dark of what is sunk into the glass (the groove, the launcher's lines)
+    BG, EDGE, TOP, INK, INK2, MUTED, TRACK, MARK, BAD, HOVER = ("#26272b", "#4a4c53", "#8a8c93", "#e3e4e5", "#cbccce", "#b0b1b4",
+                                                                "#3c3d43", "#f2c744", "#ff6b6b", "#36373d")
+    OK, LIT, SUNK = "#2eb67d", "#4cc08e", "#1c1d21"
+    SANS, HANGUL, MONO = "Segoe UI", "Malgun Gothic", "Consolas"   # Segoe UI has no Korean, and left to itself Windows picks a fallback of its own
+
+    def __init__(self, tk, focus: bool):
         self.tk = tk
+        self.focus = focus                                      # a note to read and close takes the focus; the start's window does not
         self.root = tk.Tk()
         self.root.withdraw()                                    # nothing on screen until it is placed
         self.scale = self.root.winfo_fpixels("1i") / 96.0       # 1.0 at 100%, 2.0 at 200%: this PC runs 4K screens
-        self.width, self.height = self.px(392), self.px(118)
-        self.root.overrideredirect(True)                        # no title bar, so no focus taken from the window in use
+        self.words = self.HANGUL if LANG == "ko" else self.SANS  # the font of what it says, for the language it says it in
+        self.root.overrideredirect(True)                        # no title bar
         self.root.attributes("-topmost", True)                  # over the other windows, as a notification is
         self.root.configure(bg=self.BG)
-        work = self.work_area()                                 # the screen less the taskbar
-        self.root.geometry(f"{self.width}x{self.height}+{work[2] - self.width - self.px(16)}+{work[3] - self.height - self.px(16)}")
-        self.c = tk.Canvas(self.root, width=self.width, height=self.height, bg=self.BG, highlightthickness=1, highlightbackground=self.EDGE, bd=0)
-        self.c.pack()
-        self.c.bind("<Button-1>", lambda _e: self.root.withdraw())   # in the way: a click hides it, the start goes on
-        self.font = "Segoe UI"                                  # this window is in English; on every Windows
-        self.step, self.say, self.finished, self.started = 0, SAY_WSL, False, time.monotonic()
-        self.phase = 0.0                                        # where the moving part of the bar is, 0 to 1
-        self.root.update_idletasks()
-        self.dress()
-        self.root.deiconify()
-        self.draw()
+        self.c = tk.Canvas(self.root, bg=self.BG, highlightthickness=0, bd=0)
+        self.photos = []                                        # Tk forgets a picture nothing holds on to
 
     def px(self, n: float) -> int:
         return round(n * self.scale)
+
+    def place(self, width: int, height: int) -> None:
+        """Its size, at the bottom right of the screen over the taskbar, and then on screen."""
+        self.width, self.height = width, height
+        self.c.configure(width=width, height=height)
+        self.c.pack()
+        work = self.work_area()                                 # the screen less the taskbar
+        self.root.geometry(f"{width}x{height}+{work[2] - width - self.px(16)}+{work[3] - height - self.px(16)}")
+        self.root.update_idletasks()
+        self.dress()
+        self.root.deiconify()
 
     def work_area(self) -> tuple[int, int, int, int]:
         """Left, top, right and bottom of the main screen less its taskbar; the whole screen where that cannot be read."""
@@ -200,55 +227,325 @@ class Starting:
         return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()
 
     def dress(self) -> None:
-        """Windows only, each an extra: no taskbar button and no focus on a click, and Windows 11's rounded corners."""
+        """Windows only, each an extra: no taskbar button, no focus on a click unless it is to be read and closed, and
+        Windows 11's rounded corners."""
         try:
             import ctypes
             user32 = ctypes.windll.user32
             hwnd = user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
             GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = -20, 0x80, 0x08000000
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, user32.GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW | (0 if self.focus else WS_EX_NOACTIVATE)
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
             corner = ctypes.c_int(3)                             # DWMWCP_ROUNDSMALL: this design is nearly square
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))   # DWMWA_WINDOW_CORNER_PREFERENCE
             # No acrylic: it paints over what Tk draws, which carries no alpha, and the window showed its tint with no words on it.
-            # Plainly a little see-through instead.
+            # The glass is drawn instead (art), and the window is a little see-through
             self.root.attributes("-alpha", 0.97)
         except Exception:
             pass
 
+    def art(self, shapes):
+        """The glass and the shapes on it as one picture, drawn three times over and brought down as the tray menu draws its
+        own (Tk draws shapes unsmoothed on Windows): a little lighter at the top with a soft light at its top left, its edge
+        and lit top. shapes(draw, S) draws on it, S the times over. None without Pillow: the window keeps to plain shapes
+        then (it comes with the capture packages, in the same Windows Python the shortcut runs)."""
+        try:
+            from PIL import Image, ImageDraw, ImageFilter, ImageTk
+        except Exception:
+            return None
+        try:
+            return self._art(shapes, Image, ImageDraw, ImageFilter, ImageTk)
+        except Exception:                                       # any slip in the drawing: plain shapes, and the window goes on
+            return None
+
+    def _art(self, shapes, Image, ImageDraw, ImageFilter, ImageTk):
+        S, w, h = 3, self.width, self.height
+        img = Image.new("RGBA", (w * S, h * S))
+        d = ImageDraw.Draw(img)
+        top, bottom = mix("#ffffff", self.BG, 0.035), mix("#000000", self.BG, 0.09)
+        for y in range(h * S):
+            d.line([(0, y), (w * S, y)], fill=mix(bottom, top, y / (h * S)))
+        pool = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(pool).ellipse([-w * S * 0.25, -h * S * 1.1, w * S * 0.65, h * S * 0.55], fill=(255, 255, 255, 13))
+        img.alpha_composite(pool.filter(ImageFilter.GaussianBlur(h * S * 0.22)))
+        d = ImageDraw.Draw(img)
+        shapes(d, S)
+        d.rectangle([0, 0, w * S - 1, h * S - 1], outline=self.EDGE, width=S)
+        d.line([(S, S // 2), (w * S - S, S // 2)], fill=self.TOP, width=S)
+        photo = ImageTk.PhotoImage(img.resize((w, h), Image.LANCZOS), master=self.root)
+        self.photos = self.photos[-3:] + [photo]
+        return photo
+
+    def name(self, left: int, baseline: int) -> tuple:
+        """The name and "capture" beside it, on one baseline (set by their middles, the smaller one sat high); returns the
+        name's box, for the stroke under it."""
+        import tkinter.font
+        c, p = self.c, self.px
+        big = tkinter.font.Font(root=self.root, family=self.SANS, size=12, weight="bold")
+        small = tkinter.font.Font(root=self.root, family=self.SANS, size=9)
+        self.fonts = [big, small]                               # a font nothing holds on to goes, and its words with it
+        title = c.create_text(left, baseline - big.metrics("ascent"), anchor="nw", text="sidenote", fill=self.INK, font=big)
+        box = c.bbox(title)
+        c.create_text(box[2] + p(9), baseline - small.metrics("ascent"), anchor="nw", text="capture", fill=self.MUTED, font=small)
+        return box
+
+    def stroke(self, d, S, box) -> None:
+        """The highlighter's stroke under the name, as on the panel's bar."""
+        x0, _, x1, y1 = box
+        p = self.px
+        d.polygon([(S * (x0 - p(1)), S * (y1 - p(4))), (S * (x1 + p(3)), S * (y1 - p(5))), (S * (x1 + p(1)), S * (y1 - p(1))),
+                   (S * (x0 - p(3)), S * y1)], fill=self.MARK)
+
+    def backdrop(self, shapes, box):
+        """The picture under the words, at the back of the canvas; the plain edge and stroke where Pillow is missing."""
+        c, p = self.c, self.px
+        art = self.art(lambda d, S: (self.stroke(d, S, box), shapes(d, S)))
+        if art is not None:
+            c.create_image(0, 0, anchor="nw", image=art, tags="art")
+        else:
+            x0, _, x1, y1 = box
+            c.create_rectangle(0, 0, self.width - 1, self.height - 1, outline=self.EDGE, tags="art")
+            c.create_line(0, 1, self.width, 1, fill=self.TOP, tags="art")
+            c.create_polygon(x0 - p(1), y1 - p(4), x1 + p(3), y1 - p(5), x1 + p(1), y1 - p(1), x0 - p(3), y1, fill=self.MARK,
+                             outline="", tags="art")
+        c.tag_lower("art")
+        return art
+
+
+class Starting(Glass):
+    """The window for as long as the start takes: the three steps as pills (done, under way, still to come), a groove
+    that rises through each step and is full once the start is done, and what is going on now. It takes no focus, and a
+    click hides it while the start goes on."""
+
+    W, H, PAD = 400, 156, 22                                    # its size and its margins, at 100%
+
+    def __init__(self, tk):
+        super().__init__(tk, focus=False)
+        self.c.bind("<Button-1>", lambda _e: self.root.withdraw())   # in the way: a click hides it, the start goes on
+        self.step, self.say, self.finished, self.started = 0, SAY_WSL, False, time.monotonic()
+        self.since = time.monotonic()                           # when the step under way began
+        self.phase = 0.0                                        # where the moving light is along the filled part, 0 to 1
+        self.fill = 0.0                                         # how far the groove is filled, 0 to 1, as drawn
+        self.tick = None                                        # the next frame, asked of Tk: called off when the window goes
+        self.drawn = None                                       # the step, words and end the picture shows
+        self.place(self.px(self.W), self.px(self.H))
+        self.draw()
+
     def show(self, step: int, say: str, finished: bool) -> None:
+        if step != self.step:
+            self.since = time.monotonic()
         self.step, self.say, self.finished = step, say, finished
 
-    def draw(self) -> None:
-        """One frame: the wordmark and seconds, the three steps, the bar, the line of what is going on."""
+    def goal(self) -> float:
+        """How far the groove should be: the steps done, and the one under way filling quickly at first and then ever
+        more slowly, never past most of its part; all of it once the start is done."""
+        if self.finished:
+            return 1.0
+        waited = time.monotonic() - self.since
+        return (self.step + 0.85 * (1 - 1 / (1 + waited / 6))) / 3
+
+    def frame(self) -> None:
+        """What changes with the step: the glass, the pills and the words, drawn once for each."""
         c, p = self.c, self.px
         c.delete("all")
-        left, right = p(18), self.width - p(18)
-        c.create_line(0, 1, self.width, 1, fill="#8a8c93")       # the lit top edge of the glass
-        title = c.create_text(left, p(21), anchor="w", text="sidenote", fill=self.INK, font=(self.font, 12, "bold"))
-        x0, _, x1, y1 = c.bbox(title)
-        c.create_polygon(x0 - p(1), y1 - p(4), x1 + p(3), y1 - p(5), x1 + p(1), y1 - p(1), x0 - p(3), y1, fill=self.MARK, outline="")   # the stroke, under the name
-        c.tag_raise(title)
-        c.create_text(x1 + p(10), p(22), anchor="w", text="capture", fill=self.MUTED, font=(self.font, 9))
-        if not self.finished:                                   # the seconds move even when nothing else does: it is alive
-            c.create_text(right, p(22), anchor="e", text=f"{int(time.monotonic() - self.started)}s", fill=self.MUTED, font=(self.font, 9))
-        # the bar: three equal parts, done ones filled, the current one with a light moving along it
-        gap, top, height = p(6), p(42), p(4)
+        left, right = p(self.PAD), self.width - p(self.PAD)
+        box = self.name(left, p(30))
+        gap, top, bottom = p(10), p(52), p(80)
         part = (right - left - 2 * gap) / 3
-        for i in range(3):
+        state = ["done" if i < self.step or self.finished else "now" if i == self.step else "later" for i in range(3)]
+        groove = (p(96), p(102))
+        self.groove = (left, right, groove)
+
+        def shapes(d, S):
+            for i, st in enumerate(state):
+                x0 = left + i * (part + gap)
+                fill = {"done": mix(self.OK, self.BG, 0.16), "now": mix(self.MARK, self.BG, 0.12), "later": self.SUNK}[st]
+                line = {"done": mix(self.OK, self.BG, 0.45), "now": mix(self.MARK, self.BG, 0.7), "later": None}[st]
+                d.rounded_rectangle([S * x0, S * top, S * (x0 + part), S * bottom], radius=S * (bottom - top) / 2, fill=fill,
+                                    outline=line, width=S)
+                if st == "later":                                # sunk: its top edge in shadow
+                    d.arc([S * x0, S * top, S * (x0 + part), S * (bottom + p(1))], 200, 340, fill="#141518", width=S)
+                mid, cx = (top + bottom) / 2, x0 + p(15)
+                if st == "done":                                  # a check
+                    d.line([(S * (cx - p(4)), S * mid), (S * (cx - p(1)), S * (mid + p(3))), (S * (cx + p(4.5)), S * (mid - p(3.5)))],
+                           fill=self.LIT, width=round(S * p(1.8)), joint="curve")
+                else:
+                    r = p(3.5)
+                    d.ellipse([S * (cx - r), S * (mid - r), S * (cx + r), S * (mid + r)],
+                              fill=self.MARK if st == "now" else None, outline=None if st == "now" else self.MUTED, width=S)
+            d.rounded_rectangle([S * left, S * groove[0], S * right, S * groove[1]], radius=S * 3, fill=self.SUNK)
+            if not self.finished:                                # the seconds' pill, level with the name
+                d.rounded_rectangle([S * (right - p(48)), S * p(14), S * right, S * p(36)], radius=S * p(11),
+                                    fill=mix("#ffffff", self.BG, 0.06))
+
+        if self.backdrop(shapes, box) is None:                  # plain: the same pills and groove, square
+            for i, st in enumerate(state):
+                x0 = left + i * (part + gap)
+                c.create_rectangle(x0, top, x0 + part, bottom, outline={"done": self.OK, "now": self.MARK, "later": self.EDGE}[st],
+                                   fill={"done": mix(self.OK, self.BG, 0.16), "now": mix(self.MARK, self.BG, 0.12), "later": self.SUNK}[st])
+            c.create_rectangle(left, groove[0], right, groove[1], outline="", fill=self.SUNK)
+        for i, st in enumerate(state):
             x0 = left + i * (part + gap)
-            done = i < self.step or self.finished
-            c.create_rectangle(x0, top, x0 + part, top + height, fill=self.MARK if done else self.TRACK, outline="")
-            if i == self.step and not self.finished:
-                width = part * 0.4
-                x = x0 + (part + width) * self.phase - width
-                c.create_rectangle(max(x0, x), top, min(x0 + part, x + width), top + height, fill=self.PEN, outline="")
-            c.create_text(x0, top + p(16), anchor="w", text=STEPS[i], fill=self.INK if i <= self.step else self.MUTED, font=(self.font, 8))
-        c.create_text(left, p(94), anchor="w", text=self.say, width=right - left, fill=self.INK, font=(self.font, 9))
-        self.phase = (self.phase + 0.012) % 1.0
-        self.root.after(33, self.draw)                          # 30 frames a second, for a few seconds or minutes
+            c.create_text(x0 + p(26), (top + bottom) / 2, anchor="w", text=STEPS[i],
+                          fill={"done": self.LIT, "now": self.INK, "later": self.MUTED}[st],
+                          font=(self.words, 9, "bold") if st == "now" else (self.words, 9))
+        c.create_text(left, p(126), anchor="w", text=self.say, width=right - left, fill=self.INK2, font=(self.words, 9))
+        self.seconds = None if self.finished else c.create_text(right - p(24), p(25), text="", fill=self.MUTED, font=(self.words, 8))
+        # the groove's fill, and the light that runs along it while the start is under way, drawn on the picture
+        self.bar = c.create_line(0, 0, 0, 0, fill=self.MARK, width=groove[1] - groove[0], capstyle="round")
+        self.light = None if self.finished else c.create_line(0, 0, 0, 0, fill=self.INK, width=groove[1] - groove[0], capstyle="round")
+        self.drawn = (self.step, self.say, self.finished)
+
+    def draw(self) -> None:
+        """One frame: the picture again only when the step has changed; the seconds, the fill and the light each time.
+        The next frame is asked for whatever happens in this one: a slip that ended it left the window still."""
+        try:
+            if self.drawn != (self.step, self.say, self.finished):
+                self.frame()
+            c = self.c
+            if self.seconds is not None:                        # the seconds move even when nothing else does: it is alive
+                c.itemconfigure(self.seconds, text=t("{n}s", n=int(time.monotonic() - self.started)))
+            left, right, (y0, y1) = self.groove
+            self.fill += (self.goal() - self.fill) * (0.3 if self.finished else 0.08)   # it rises to where it should be
+            mid, end = (y0 + y1) / 2, left + (right - left) * self.fill
+            r = (y1 - y0) / 2
+            if end - left > 2 * r:
+                c.coords(self.bar, left + r, mid, end - r, mid)
+            if self.light is not None:                          # a short light running along what is filled
+                span = max(0.0, end - left - 2 * r)
+                x = left + r + span * self.phase
+                c.coords(self.light, max(left + r, x - p_len(span)), mid, x, mid) if span > 0 else None
+            self.phase = (self.phase + 0.02) % 1.0
+        finally:
+            if self.tick is not None:                           # one frame asked for at a time, however draw() was called
+                self.root.after_cancel(self.tick)
+            self.tick = self.root.after(33, self.draw)          # 30 frames a second, for a few seconds or minutes
+
+    def close(self) -> None:
+        """Gone, with its next frame called off: left asked for, it ran on into the note made after it, in a Tcl whose
+        window was gone, and Tcl could end the program there."""
+        if self.tick is not None:
+            self.root.after_cancel(self.tick)
+            self.tick = None
+        self.root.destroy()
 
     def close_after(self, ms: int) -> None:
-        self.root.after(ms, self.root.destroy)
+        self.root.after(ms, self.close)
+
+
+def p_len(span: float) -> float:
+    """The moving light's length: a fifth of what is filled, kept between 12 and 60 pixels."""
+    return max(12.0, min(60.0, span / 5))
+
+
+class Notice(Glass):
+    """What a box would say, in the start's window: a pill with a red dot and what went wrong, or a quiet one before a
+    note, as the tray menu's state pill is; the end of what the launcher printed, sunk into the glass in its own columns,
+    to select and copy; and a raised Close key. Esc, Enter or Close takes it away; a note goes by itself after NOTE_HOLD,
+    and a failure stays until it is closed."""
+
+    def __init__(self, tk, title: str, text: str, failed: bool):
+        super().__init__(tk, focus=True)
+        import tkinter.font
+        p = self.px
+        self.tone = self.BAD if failed else self.MUTED          # the panel's red for what went wrong, its grey for a note
+        width = p(560 if failed else 400)
+        left, right, pad = p(22), width - p(22), p(12)
+        font = (self.MONO, 9) if failed else (self.words, 9)    # the launcher's own lines keep their columns
+        measure = tkinter.font.Font(root=self.root, font=font)
+        lines = max(1, min(NOTICE_LINES, wrapped(text, measure.measure, right - left - 2 * pad)))
+        text_height = lines * measure.metrics("linespace")
+        top = p(90)                                             # under the pill
+        well = (top, top + text_height + 2 * pad)               # the sunk part that holds the lines
+        height = well[1] + p(70)
+        self.place(width, height)
+        c = self.c
+        box = self.name(left, p(30))
+        bold = tkinter.font.Font(root=self.root, font=(self.words, 10, "bold"))
+        pill_right = min(right, left + p(40) + bold.measure(title))
+        key = (right - p(84), height - p(52), right, height - p(20))
+
+        def shapes(d, S, lit=False):
+            d.rounded_rectangle([S * left, S * p(48), S * pill_right, S * p(74)], radius=S * p(13), fill=mix(self.tone, self.BG, 0.15))
+            r, cx, cy = p(3.5), left + p(15), p(61)
+            d.ellipse([S * (cx - r), S * (cy - r), S * (cx + r), S * (cy + r)], fill=self.tone)
+            d.rounded_rectangle([S * left, S * well[0], S * right, S * well[1]], radius=S * p(8), fill=self.SUNK)
+            d.arc([S * left, S * well[0], S * right, S * (well[0] + p(16))], 200, 340, fill="#131417", width=S)   # its top in shadow
+            x0, y0, x1, y1 = key                                 # the key stands up: lit above, shadow below
+            d.rounded_rectangle([S * x0, S * (y0 + 1), S * x1, S * (y1 + 1)], radius=S * p(7), fill="#18191c")
+            d.rounded_rectangle([S * x0, S * y0, S * x1, S * y1], radius=S * p(7), fill=mix("#ffffff", self.BG, 0.12 if lit else 0.07),
+                                outline=mix("#ffffff", self.BG, 0.16), width=S)
+
+        art = self.backdrop(shapes, box)
+        lit = self.art(lambda d, S: (self.stroke(d, S, box), shapes(d, S, True))) if art is not None else None
+        if art is None:                                         # plain: the pill and the sunk part, square
+            c.create_rectangle(left, p(48), pill_right, p(74), outline="", fill=mix(self.tone, self.BG, 0.15))
+            c.create_oval(left + p(11.5), p(57.5), left + p(18.5), p(64.5), outline="", fill=self.tone)
+            c.create_rectangle(left, well[0], right, well[1], outline="", fill=self.SUNK)
+        c.create_text(left + p(27), p(61), anchor="w", text=title, fill=self.INK, font=(self.words, 10, "bold"))
+        body = tk.Text(self.root, wrap="word", bd=0, highlightthickness=0, padx=0, pady=0, bg=self.SUNK, fg=self.INK2,
+                       selectbackground=self.HOVER, selectforeground=self.INK, insertwidth=0, cursor="arrow", font=font)
+        body.insert("1.0", text)
+        body.configure(state="disabled")                        # read and copied, not typed into
+        c.create_window(left + pad, well[0] + pad, anchor="nw", window=body, width=right - left - 2 * pad, height=text_height)
+        body.see("end")                                         # the reason is at the end
+        x0, y0, x1, y1 = key
+        # The key's place, drawn plainly when there is no picture; told apart by where the pointer is either way, as the
+        # picture's key is no canvas item that a click could land on
+        c.create_rectangle(x0, y0, x1, y1, outline=self.EDGE if art is None else "", fill=self.BG if art is None else "",
+                           tags="close-box")
+        if art is not None:
+            c.tag_lower("close-box", "art")
+        c.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=t("Close"), fill=self.INK, font=(self.words, 9))
+        # Gone once the click or the key has been dealt with: taken away inside the canvas's own handling of the click, the
+        # canvas went with it while Tk was still at work on it, and Tcl ended the program (measured on a virtual display)
+        close = lambda _e=None: self.root.after_idle(self.root.destroy)
+        on_key = lambda e: x0 <= e.x <= x1 and y0 <= e.y <= y1
+        under = [False]
+
+        def hover(e) -> None:                                   # the key under the pointer, a little lighter
+            now = bool(e) and on_key(e)
+            if now != under[0]:
+                under[0] = now
+                if art is None:
+                    c.itemconfigure("close-box", fill=self.HOVER if now else self.BG)
+                else:
+                    c.itemconfigure("art", image=lit if now else art)
+                c.configure(cursor="hand2" if now else "")
+
+        c.bind("<Button-1>", lambda e: close() if on_key(e) else None)
+        c.bind("<Motion>", hover)
+        c.bind("<Leave>", lambda _e: hover(None))
+        for k in ("<Escape>", "<Return>"):
+            self.root.bind(k, close)
+        if not failed:
+            self.root.after(NOTE_HOLD, close)
+        self.root.focus_force()
+
+
+def wrapped(text: str, measure, width: int) -> int:
+    """How many lines `text` takes at `width` pixels when wrapped at words as a Text widget wraps it (a word wider than
+    the line is broken where it runs out), with `measure` giving a string's width."""
+    count = 0
+    for paragraph in text.split("\n"):
+        count += 1
+        line = ""
+        for word in paragraph.split(" "):
+            trial = f"{line} {word}" if line else word
+            if measure(trial) <= width:
+                line = trial
+                continue
+            if line:                                            # the word goes to the next line
+                count += 1
+            line = word
+            while measure(line) > width and len(line) > 1:      # wider than a whole line: broken where it runs out
+                low, high = 1, len(line) - 1                    # the longest start of it that fits, found by halves
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    low, high = (mid, high) if measure(line[:mid]) <= width else (low, mid - 1)
+                count += 1
+                line = line[low:]
+    return count
 
 
 def with_window(work, port: int):
@@ -292,8 +589,8 @@ def with_window(work, port: int):
         elif "error" not in box and box["value"][0] == 0:        # started: the last word, then it goes
             window.show(*stage(True, 0, True), True)
             window.close_after(DONE_HOLD)
-        else:                                                    # failed: the box says why, straight away
-            window.root.destroy()
+        else:                                                    # failed: the note in its place says why, straight away
+            window.close()
 
     watch()
     window.root.mainloop()
@@ -362,8 +659,8 @@ def failure_text(output: bytes, rc: int, repo: str) -> str:
 
 
 def show(title: str, text: str, icon: int, dry_run: bool) -> None:
-    """A native message box (MessageBoxW, through ctypes: no package needed), or with --dry-run the same box written
-    out on stdout for a test to read."""
+    """The note in the start's window (Notice), or where tkinter cannot make one a native message box (MessageBoxW,
+    through ctypes: no package needed); with --dry-run the same words written out on stdout for a test to read."""
     if dry_run or sys.platform != "win32":
         kind = "warning" if icon == MB_ICONWARNING else "information"
         print(f"[dry-run] box: {kind}")
@@ -381,6 +678,12 @@ def show(title: str, text: str, icon: int, dry_run: bool) -> None:
         user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
     except Exception:
         pass   # an older Windows without it: the box is blurred, and still says the same thing
+    try:
+        import tkinter
+        Notice(tkinter, title, text, failed=icon == MB_ICONWARNING).root.mainloop()
+        return
+    except Exception:
+        pass   # no tkinter in this Python, or no window to be had: Windows' own box says the same
     user32.MessageBoxW(None, text, title, MB_OK | icon | MB_SETFOREGROUND | MB_TOPMOST)
 
 

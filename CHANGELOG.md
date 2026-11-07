@@ -6,6 +6,14 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- Notices look the part. The toast at the top of the panel and the question box at its foot are glass the page shows
+  through, where they stood opaque; the toast's kind is in its mark alone. The desktop shortcut's windows are drawn as
+  the tray menu is, in its colours and language: the start's steps as pills over a groove that fills as the start goes
+  and is full at its end, and a failed start, or a second click while one is going, in that same window, with the
+  launcher's last lines to select and copy. Windows' own message box is left for a Python with no tkinter.
+
 ## [0.2.2] - 2026-11-07
 
 ### Changed

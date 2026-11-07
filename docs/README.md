@@ -299,10 +299,12 @@ the capture program, in one click and with no window. Windows Python's windowles
 `client/launch.pyw`, which runs `./sidenote capture --up` through wsl.exe without a console, so the tray icon is all
 that appears.
 
-- The first start after an update builds the server image for a few minutes with nothing on screen. A second click
-  meanwhile says that a start is still going.
-- When a start fails (Docker off, the port taken, the capture program already running), a message box shows the
-  launcher's last lines. `./sidenote capture --up` in a WSL terminal prints all of it.
+- A small window beside the notification area shows the start's steps (the server, the capture program, ready). The
+  first start after an update builds the server image for a few minutes, and a second click meanwhile says that a
+  start is still going.
+- When a start fails (Docker off, the port taken, the capture program already running), the same window shows the
+  launcher's last lines, to select and copy (Windows' own message box where Python has no tkinter).
+  `./sidenote capture --up` in a WSL terminal prints all of it.
 - `./sidenote shortcut --remove` takes the shortcut away, with the icon it keeps in `%LOCALAPPDATA%\Sidenote`.
 
 ### Lending the GPU to other work
@@ -1444,6 +1446,7 @@ Some of them:
 | `stall_guard.py` | The stall watchdog (including a stall that holds the GIL) and the fork guard |
 | `scroll_auto.py`, `audio_path.py` | Reading a scroll, and the sound path |
 | `launcher_args.sh` | What `./sidenote` hands to Windows (each capture option as typed, a value with spaces whole), how it reads `SIDENOTE_ANALYZER`, works without Claude Code and finds the capture program; every outside program is stood in for |
+| `launch_window.py` | The desktop shortcut's windows (`client/launch.pyw`): the start's steps, and a failure or a note in the same window, in the tray menu's colours and in both languages, drawn on a virtual display where Xvfb is at hand |
 | `panel_*.py` | The panel in headless Chromium: the scroller and the rail, the run box, the follow-up buttons, the settings sheet, charts and diagrams, redraws while the page is read |
 
 A few checks need a real GPU, a Windows desktop or a signed-in agent; they are not part of CI.
