@@ -179,6 +179,9 @@ case "$1" in
           echo "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" >&2; exit 1
         fi ;;
   version) [ -f "$FAKE/state/docker-off" ] || [ -f "$FAKE/state/docker-denied" ] || echo "29.0.0" ;;
+  ps) [ -f "$FAKE/state/server-running" ] && echo sidenote ;;   # the server's container, with state/server-running
+  # the token the server's container was made with, from state/served-token (none: printenv fails)
+  exec) [[ " $* " == *" printenv CLAUDE_CODE_OAUTH_TOKEN "* ]] && { cat "$FAKE/state/served-token" 2>/dev/null || exit 1; } ;;
   inspect) echo true ;;
   compose) if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
              echo 'Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu]]' >&2; exit 1
@@ -918,6 +921,131 @@ if ! grep -qF "X11" <<<"$mac_capture$mac_doctor" && grep -qF "The server is off"
   ok "on a Mac capture needs no X11 display, doctor asks for none, and open uses macOS's open"
 else bad "on a Mac capture needs no X11 display, doctor asks for none, and open uses macOS's open" \
          "mac capture: $(tail -1 <<<"$mac_capture"); linux: $(tail -1 <<<"$linux_capture"); X11 in doctor: $(grep -c X11 <<<"$mac_doctor"); open calls: $opened"; fi
+
+# 46. Claude Code on a Mac keeps its login in the Keychain, which the server in Docker cannot read, so there the login that
+#     counts is a token in .env. With the Mac's own Claude Code signed in and no token, doctor says the agent is not signed
+#     in (it used to say "the server uses this login"). login makes a token with `claude setup-token` and reads it pasted
+#     at the terminal, showing nothing: a token copied as two lines (wider than the window), the whole block the command
+#     printed and the line it suggests all give the token; a line with no token in it is refused. The token takes the
+#     place of an old one in .env, keeps the rest of the file, and leaves the file this user's alone. A server made before
+#     the token is started again with it, and one that rejected the token gets a new one. Without Claude Code on the Mac a
+#     token still counts. On Linux the same Claude Code login is the server's.
+mkdir -p "$work/macclaude"
+cat > "$work/macclaude/claude" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  --version) echo "2.1.307 (Claude Code)" ;;
+  auth) echo '{"loggedIn": true, "authMethod": "claude.ai"}' ;;   # this PC's own login, which on a Mac is in the Keychain
+  setup-token) touch "$FAKE/state/token-made"; printf 'Your OAuth token (valid for 1 year):\n\nsk-ant-oat01-PRINTED\n' ;;
+esac
+STUB
+chmod +x "$work/macclaude/claude"
+# run, with a terminal as the launcher's input: $1 is typed into it as it is ("\n" is Enter, EOF is Ctrl+D) once the
+# launcher has printed $2. What the terminal itself shows of it (its echo) is kept in $work/tty. The launcher runs in a
+# session of its own, and is ended with all it started if it outlasts the minute.
+run_tty() {
+  local typed="$1" asked="$2"; shift 2
+  rm -rf "$work/calls"/* && mkdir -p "$work/calls"
+  env -i PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-Ubuntu}" \
+      SIDENOTE_LOG_PATH="$work/logs" SIDENOTE_LANG=ko ${EXTRA_ENV:-} \
+      python3 -c '
+import os, select, subprocess, sys, time
+typed, asked, out, tty, cmd = sys.argv[1], sys.argv[2].encode(), sys.argv[3], sys.argv[4], sys.argv[5:]
+master, slave = os.openpty()
+with open(out, "wb") as f:
+    p = subprocess.Popen(cmd, stdin=slave, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+os.close(slave)
+shown, end = b"", time.time() + 70
+while p.poll() is None and time.time() < end:
+    if asked and asked in open(out, "rb").read():
+        os.write(master, b"\x04" if typed == "EOF" else typed.encode())
+        asked = b""
+    if select.select([master], [], [], 0.05)[0]:
+        try:
+            shown += os.read(master, 4096)
+        except OSError:
+            pass
+if p.poll() is None:
+    os.killpg(p.pid, 9)
+open(tty, "wb").write(shown)
+sys.exit(p.wait())
+' "$typed" "$asked" "$work/out" "$work/tty" timeout 60 bash "$work/repo/sidenote" "$@"
+  echo $? > "$work/rc"
+}
+mac_claude="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/macbin:$work/macclaude:$work/venvbin:$work/bin:/usr/bin:/bin"
+env_now() { cat "$work/repo/.env" 2>/dev/null; }
+made() { [ -f "$work/state/token-made" ] && echo 1 || echo 0; }
+# .env as each paste below finds it: an empty token, as a first edit of .env might leave, in a file others may read
+fresh_env() { printf 'KEEP_ME=1\nexport CLAUDE_CODE_OAUTH_TOKEN=\n' > "$work/repo/.env"; chmod 644 "$work/repo/.env"; }
+fresh_env; start_env="$(env_now)"
+state; EXTRA_ENV="$mac_claude" run doctor; mac_none="$(cat "$work/out")"
+state; EXTRA_ENV="$mac_claude" run login; nottl_rc="$(cat "$work/rc")"; nottl="$(cat "$work/out")"; nottl_env="$(env_now)"
+state; EXTRA_ENV="$mac_claude" run_tty EOF "Paste the token" login; eof_rc="$(cat "$work/rc")"; eof="$(cat "$work/out")"; eof_env="$(env_now)"
+state; EXTRA_ENV="$mac_claude" run_tty $'export CLAUDE_CODE_OAUTH_TOKEN=<token>\n' "Paste the token" login
+hint_rc="$(cat "$work/rc")"; hint="$(cat "$work/out")"; hint_env="$(env_now)"
+fresh_env; state; EXTRA_ENV="$mac_claude" run_tty $'sk-ant-oat01-FIRSTHALF0123456789\nSECONDHALF-abc_xyz' "Paste the token" login
+two_rc="$(cat "$work/rc")"; two="$(cat "$work/out")"; two_tty="$(cat "$work/tty")"; two_env="$(env_now)"; two_made="$(made)"
+two_mode="$(stat -c %a "$work/repo/.env" 2>/dev/null || stat -f %Lp "$work/repo/.env")"
+fresh_env; state; EXTRA_ENV="$mac_claude" run_tty $'Your OAuth token (valid for 1 year):\n\n  sk-ant-oat01-WHOLEBLOCK0123456789abc\n\nStore this token securely.\n' "Paste the token" login
+block_env="$(env_now)"
+fresh_env; state; EXTRA_ENV="$mac_claude" run_tty $'export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-EXPORTED0123456789abc\n' "Paste the token" login
+export_env="$(env_now)"
+state; EXTRA_ENV="$mac_claude" run doctor; mac_token="$(cat "$work/out")"
+state; EXTRA_ENV="$mac_claude" run login; again="$(cat "$work/out")"; made_again="$(made)"
+state; EXTRA_ENV="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/macbin:$work/venvbin:$work/bin:/usr/bin:/bin" run doctor; no_cli="$(cat "$work/out")"
+# a server made before the token: it holds none
+state server-running; health_with '{"present": false}'
+EXTRA_ENV="$mac_claude" run doctor; stale_doctor="$(cat "$work/out")"
+EXTRA_ENV="$mac_claude" run login; stale="$(cat "$work/out")"; last_call docker up; stale_up=${#CALL[@]}; stale_made="$(made)"
+# a server that holds the token and has had it rejected
+state server-running; health_with '{"present": false}'
+python3 -c 'import json, sys; p = sys.argv[1]; d = json.load(open(p)); d["auth"] = {"rejected": True}; json.dump(d, open(p, "w"))' "$work/state/health.json"
+printf 'sk-ant-oat01-EXPORTED0123456789abc' > "$work/state/served-token"
+EXTRA_ENV="$mac_claude" run_tty $'sk-ant-oat01-RENEWED0123456789abcd\n' "Paste the token" login; renewed="$(cat "$work/out")"
+last_call docker up; renew_up=${#CALL[@]}; renewed_env="$(env_now)"
+state; EXTRA_ENV="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/macclaude:$work/venvbin:$work/bin:/usr/bin:/bin" run doctor; linux_claude="$(cat "$work/out")"
+rm -f "$work/repo/.env"
+if grep -qF "Claude Code not signed in (./sidenote login)" <<<"$mac_none" && ! grep -qF "the server uses this login" <<<"$mac_none"; then
+  ok "on a Mac, Claude Code's own login is not the server's: doctor says it is not signed in"
+else bad "on a Mac, Claude Code's own login is not the server's: doctor says it is not signed in" "$(grep -F "Claude Code" <<<"$mac_none")"; fi
+if [ "$nottl_rc" != 0 ] && grep -qF "Run the login in a terminal" <<<"$nottl" && [ "$nottl_env" = "$start_env" ]; then
+  ok "...login with no terminal says where to run it and leaves .env alone"
+else bad "...login with no terminal says where to run it and leaves .env alone" "exit $nottl_rc: $(tail -1 <<<"$nottl"); .env: $nottl_env"; fi
+if [ "$eof_rc" != 0 ] && grep -qF "No token was pasted" <<<"$eof" && [ "$eof_env" = "$start_env" ]; then
+  ok "...Ctrl+D at the prompt says no token was pasted, and leaves .env alone"
+else bad "...Ctrl+D at the prompt says no token was pasted, and leaves .env alone" "exit $eof_rc: $(tail -1 <<<"$eof"); .env: $eof_env"; fi
+if [ "$hint_rc" != 0 ] && grep -qF "That is not the token claude setup-token printed" <<<"$hint" && [ "$hint_env" = "$start_env" ]; then
+  ok "...a line with no token in it is refused, and .env is left alone"
+else bad "...a line with no token in it is refused, and .env is left alone" "exit $hint_rc: $(tail -1 <<<"$hint"); .env: $hint_env"; fi
+if [ "$two_rc" = 0 ] && [ "$two_made" = 1 ] && [ "$two_env" = "$(printf 'KEEP_ME=1\nCLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-FIRSTHALF0123456789SECONDHALF-abc_xyz')" ] \
+   && grep -qF "Token saved in .env" <<<"$two" && grep -qF "Next: ./sidenote up" <<<"$two"; then
+  ok "...a token pasted as two lines is saved whole, in place of the old line, with the rest of .env kept"
+else bad "...a token pasted as two lines is saved whole, in place of the old line, with the rest of .env kept" \
+         "exit $two_rc, made $two_made, .env: $(tr '\n' '|' <<<"$two_env"); $(tail -2 <<<"$two" | tr '\n' '|')"; fi
+if ! grep -qF "FIRSTHALF" <<<"$two_tty$two" && [ "$two_mode" = 600 ]; then ok "...nothing of it is shown or printed, and .env is this user's alone"
+else bad "...nothing of it is shown or printed, and .env is this user's alone" "mode $two_mode; shown: $(tr -cd '[:print:]' <<<"$two_tty" | cut -c1-80)"; fi
+if [ "$block_env" = "$(printf 'KEEP_ME=1\nCLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-WHOLEBLOCK0123456789abc')" ] \
+   && [ "$export_env" = "$(printf 'KEEP_ME=1\nCLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-EXPORTED0123456789abc')" ]; then
+  ok "...the whole block the command printed, or the export line, gives the token alone"
+else bad "...the whole block the command printed, or the export line, gives the token alone" "$(tr '\n' '|' <<<"$block_env") / $(tr '\n' '|' <<<"$export_env")"; fi
+if grep -qF "signed in (token in .env), and the server uses this login" <<<"$mac_token" \
+   && grep -qF "The server signs in with the token in .env" <<<"$again" && [ "$made_again" = 0 ] \
+   && grep -qF "signed in (token in .env), and the server uses this login" <<<"$no_cli"; then
+  ok "...with a token, doctor and login say so (doctor without Claude Code on the Mac too), and login makes no other"
+else bad "...with a token, doctor and login say so (doctor without Claude Code on the Mac too), and login makes no other" \
+         "$(grep -F "Claude Code" <<<"$mac_token"); $(tail -1 <<<"$again"); made again: $made_again; no CLI: $(grep -F "Claude Code" <<<"$no_cli")"; fi
+if grep -qF "the server started before the token in .env (./sidenote login)" <<<"$stale_doctor" && grep -qF "The server started before this token" <<<"$stale" \
+   && [ "$stale_up" -gt 0 ] && [ "$stale_made" = 0 ]; then
+  ok "...a server made before the token: doctor says so, and login starts it again with it and makes none"
+else bad "...a server made before the token: doctor says so, and login starts it again with it and makes none" \
+         "$(grep -F "Claude Code" <<<"$stale_doctor"); compose up calls $stale_up, made $stale_made; $(tail -1 <<<"$stale")"; fi
+if grep -qF "rejected the token in .env" <<<"$renewed" && [ "$renewed_env" = "$(printf 'KEEP_ME=1\nCLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-RENEWED0123456789abcd')" ] \
+   && [ "$renew_up" -gt 0 ]; then
+  ok "...a token the server rejected is made again, and the server is started again with it"
+else bad "...a token the server rejected is made again, and the server is started again with it" \
+         "compose up calls $renew_up, .env: $(tr '\n' '|' <<<"$renewed_env"); $(tail -2 <<<"$renewed" | tr '\n' '|')"; fi
+if grep -qF "signed in (claude.ai), and the server uses this login" <<<"$linux_claude"; then ok "...and on Linux the PC's own Claude Code login is the server's, as before"
+else bad "...and on Linux the PC's own Claude Code login is the server's, as before" "$(grep -F "Claude Code" <<<"$linux_claude")"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

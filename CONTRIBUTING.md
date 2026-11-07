@@ -14,10 +14,11 @@ from a fresh clone to a pull request.
 
 ## Ways to help
 
-- **Run it on your hardware.** Sidenote's numbers come from one PC: Windows 11 with an NVIDIA RTX 4090 (24 GB). A
-  report from an AMD GPU, a smaller NVIDIA card, a Linux desktop or a machine with no GPU is the most useful thing you
-  can send: open a [hardware report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml)
-  with the output of `./sidenote doctor`, or of `python3 -m server.hardware` in a checkout.
+- **Run it on your hardware.** Sidenote's numbers come from one PC: Windows 11 with an NVIDIA RTX 4090 (24 GB). A report
+  from a Mac with Apple silicon, an AMD GPU, a smaller NVIDIA card, a Linux desktop or a machine with no GPU is the most
+  useful thing you can send: open a
+  [hardware report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml) with the output of
+  `./sidenote doctor`, or of `python3 -m server.hardware` in a checkout.
 - **Model profiles.** A vision model that reads screens well in 8 to 16 GB of GPU memory, measured on real problems
   ([add a model](#add-a-local-model)).
 - **Translations.** English and Korean today ([add a language](#add-a-language)).

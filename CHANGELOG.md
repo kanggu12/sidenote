@@ -6,6 +6,47 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The README's quick start is one block of commands for each system, to paste as it is; the user guide's first steps
+  follow it, with the browser's download as the other way. The guides say what the app does on macOS where they named
+  Windows and Linux only, and what `SIDENOTE_EFFORT` and `SIDENOTE_LANG` do as they do it.
+
+### Fixed
+
+- With Docker on a Mac, `./sidenote login` and `doctor` said the server used the Mac's Claude Code login, which the Mac
+  keeps in the Keychain, out of the container's reach: the server was not signed in. There `./sidenote login` makes a
+  token with `claude setup-token`, keeps it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN` and starts a running server again
+  with it.
+- The app's server, ended with SIGTERM (as when the app dies, or when asking it to close down does not work), skipped
+  its clean-up: the agent's CLI writing an answer went on, and that answer's screens stayed in the temporary folder.
+- Started again within its first seconds, the app put two panels up: the copy starting opened its own, and the second
+  start one more. The second start opens one only when the first brings none up (started with `--no-browser`).
+- The app ran the code check on every coding answer although it has no code runner: this PC's model read the problem's
+  examples, and then each answer was marked as failed. With no runner there is no check.
+- An answer to a problem asked aloud, or to **Reanalyze**, was kept under the time of the last screen, minutes earlier:
+  out of order in the history, and out of **Practice**'s reach. It is kept under the time it was asked.
+- **Clear history** in one panel left the other open panels showing the answers, and a star pressed there was refused.
+  Every open panel now clears.
+- A panel opened or reloaded while an answer was being written showed nothing of it until it was done. It shows the
+  answer as written so far.
+- Opened with answers kept, the panel stood short of its end, the newest answer's follow-up keys half under the question
+  box.
+- Term cards stood two to a row on a narrow window, and in the thread beside the column on a window of about 1,000 to
+  1,150 px, at 150 to 290 px each, their code broken inside an option. Each takes its row there.
+- The agent's usage-limit band was green, the colour of a connected engine, and with the local model off a red "every
+  engine is off" band stood beside it. It is orange like the agent's card, or red when nothing answers meanwhile, and
+  alone.
+- A command's caption named its first word ("Command 1. sudo", "Command 2. #"); it names the program it runs.
+- The local model's card in trouble said what was wrong a second time under its own label; it says what to do.
+- The heard sheet's times were the panel's only 24-hour ones. Outside the code blocks' own bars the small keys came in
+  three heights (24, 26 and 28 px) and the search field stood 2 px taller than the filters beside it; the settings
+  sheet's rows changed height with their control, two of the column's card titles sat 3.5 px high, and on a narrow
+  window a band's words were squeezed beside its key.
+- Korean: the agent's name took the wrong particle ("Claude Code이"), three lines read as sentences where the panel
+  speaks in short phrases, and a loading step wrapped.
+- Markdown export: an answer's own headings stood level with the answers'; they go two levels under each answer.
+
 ## [0.2.1] - 2026-11-07
 
 ### Fixed

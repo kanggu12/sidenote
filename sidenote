@@ -198,8 +198,13 @@ ps_quote() { printf '%s' "${1//\'/\'\'}"; }
 curl() { command curl --noproxy '*' "$@"; }
 health() { curl -fsS --max-time 3 "$URL/health" 2>/dev/null; }
 # The cloud agent signs in with this PC's own login: Claude Code's (~/.claude) or Codex's (~/.codex), each mounted
-# into the container.
-claude_login() { claude auth status --json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('authMethod') or 'yes' if d.get('loggedIn') else '')" 2>/dev/null || true; }
+# into the container. Claude Code on a Mac keeps its login in the Keychain, which the container cannot read: there the
+# server signs in with a token in .env (CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token`), so that token is the login.
+claude_login() {
+  # .env alone: compose hands the server that file, not this shell's environment
+  if [ "$ON_MAC" = 1 ]; then [ -z "$(dotenv CLAUDE_CODE_OAUTH_TOKEN)" ] || L "token in .env" ".env의 토큰"; return 0; fi
+  claude auth status --json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('authMethod') or 'yes' if d.get('loggedIn') else '')" 2>/dev/null || true
+}
 # This PC's Claude Code version, or nothing when it has none. Claude Code is optional (next to the local model
 # it only adds the agent), and this always succeeds: under `set -e` and pipefail a missing `claude`
 # (status 127 through the pipe) made `local cv; cv="$(claude_version)"` end `up`, `install` and `capture --up`
@@ -675,7 +680,7 @@ cmd_login() {   # the cloud agent uses this PC's own login; this signs it in whe
   local which="${1:-$AGENT}"   # ./sidenote login codex, or the agent the server is set to use
   case "$which" in
     codex) login_codex ;;
-    claude|claude-code|"") login_claude ;;
+    claude|claude-code|"") if [ "$ON_MAC" = 1 ]; then login_claude_token; return 0; fi; login_claude ;;
     anthropic-api) die "$(L "The Anthropic API uses ANTHROPIC_API_KEY in .env, not a login." "Anthropic API는 로그인 대신 .env의 ANTHROPIC_API_KEY를 씁니다.")" ;;
     *) die "$(L "Unknown agent: $which (claude-code or codex)" "알 수 없는 에이전트입니다: $which (claude-code 또는 codex)")" ;;
   esac
@@ -701,6 +706,95 @@ login_claude() {   # this only signs Claude Code in when it is not
     how="$(claude_login)"; [ -n "$how" ] || die "$(L "Not signed in yet. Try ./sidenote login again" "아직 로그인되지 않았습니다. ./sidenote login을 다시 실행하세요")"
     ok "$(L "Signed in ($how)." "로그인했습니다 ($how).")"
   fi
+}
+
+# On a Mac the server in Docker cannot read Claude Code's login from the Keychain, so it signs in with a long-lived token:
+# `claude setup-token` makes one in the browser, and it is kept in .env, which compose.yaml hands to the server.
+login_claude_token() {
+  if [ -n "$(dotenv CLAUDE_CODE_OAUTH_TOKEN)" ]; then
+    if ! running; then
+      ok "$(L "The server signs in with the token in .env when it starts." "서버가 시작할 때 .env의 토큰으로 로그인합니다.")"
+      echo "  $(L "Next: ./sidenote up" "다음: ./sidenote up")"
+      return 0
+    fi
+    if ! token_served; then   # a server made before this token came into .env runs without it, or with an old one
+      echo "  $(L "The server started before this token: starting it again" "서버가 이 토큰보다 먼저 시작돼 다시 시작합니다")"
+      UP_NOW=1 cmd_up
+      return 0
+    fi
+    if [ "$(health | json 'd["auth"].get("rejected", False)' 2>/dev/null || true)" != True ]; then
+      ok "$(L "The server signs in with the token in .env (CLAUDE_CODE_OAUTH_TOKEN)." "서버가 .env의 토큰(CLAUDE_CODE_OAUTH_TOKEN)으로 로그인합니다.")"
+      return 0
+    fi
+    warn "$(L "The server rejected the token in .env (expired). Making a new one." "서버에서 .env의 토큰이 거부됐습니다(만료). 새로 만듭니다.")"
+  fi
+  command -v claude >/dev/null || die "$(L "Claude Code (claude) is not installed on this PC. Install Claude Code first." "이 PC에 Claude Code(claude)가 설치되어 있지 않습니다. 먼저 Claude Code를 설치하세요.")"
+  [ -t 0 ] || die "$(L "Run the login in a terminal: ./sidenote login (one step signs in in a browser)" \
+                       "로그인은 터미널에서 직접 실행하세요: ./sidenote login (브라우저에서 로그인하는 단계가 있습니다)")"
+  echo "${B}$(L "Claude Code token" "Claude Code 토큰")${N} ${D}($(L "the Mac keeps Claude Code's login in the Keychain, where Docker cannot read it" "맥은 Claude Code 로그인을 Docker가 못 읽는 키체인에 둡니다"))${N}"
+  claude setup-token || die "$(L "Could not make a token. Try ./sidenote login again" "토큰을 만들지 못했습니다. ./sidenote login을 다시 실행하세요")"
+  local token; token="$(read_pasted "$(L "Paste the token it printed: " "출력된 토큰을 붙여 넣으세요: ")")"
+  [ -n "$token" ] || die "$(L "No token was pasted. Try ./sidenote login again" "붙여 넣은 토큰이 없습니다. ./sidenote login을 다시 실행하세요")"
+  local shape='^sk-ant-[A-Za-z0-9_-]{20,}$'   # in a variable: bash 3.2 reads a quoted pattern as plain text
+  [[ $token =~ $shape ]] || die "$(L "That is not the token claude setup-token printed (it starts with sk-ant-). Try ./sidenote login again" \
+                                      "claude setup-token이 출력한 토큰이 아닙니다(sk-ant-로 시작). ./sidenote login을 다시 실행하세요")"
+  # The new token replaces an old one in .env, and the rest of the file stays as it was
+  local rest=""; [ -f .env ] && rest="$(grep -vE '^[[:space:]]*(export[[:space:]]+)?CLAUDE_CODE_OAUTH_TOKEN[[:space:]]*=' .env || true)"
+  [ -f .env ] || (umask 077; : > .env)
+  { [ -n "$rest" ] && printf '%s\n' "$rest"; printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token"; } > .env
+  chmod 600 .env   # a token good for a year: this user's alone (compose reads the file as this user)
+  ok "$(L "Token saved in .env." "토큰을 .env에 저장했습니다.")"
+  # compose makes the server again when .env has changed, and the new one starts with the token. At once: without the
+  # token the agent answers nothing, and an answer the restart cuts is solved again
+  if running; then UP_NOW=1 cmd_up; else echo "  $(L "Next: ./sidenote up" "다음: ./sidenote up")"; fi
+}
+
+# The running server holds the token in .env: one made before it came into .env holds none, or the one it replaced.
+token_served() { [ "$(docker exec sidenote printenv CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true)" = "$(dotenv CLAUDE_CODE_OAUTH_TOKEN)" ]; }
+
+# A token pasted at the terminal, with nothing shown. Read as every byte comes (no line at a time): a token wider than the
+# window is copied as two lines or more, and read a line at a time its rest stayed for the shell once this ended, which
+# ran it as a command. Done once a line has ended and nothing more has come for half a second, or at Ctrl+D. Printed: the
+# token from the line that holds sk-ant-, with the lines after it that hold nothing else (a wrapped token's rest), or
+# else all of it without spaces, for the check that follows to refuse.
+read_pasted() {
+  python3 -c '
+import os, re, select, sys, termios
+got, ended = b"", False
+old = termios.tcgetattr(0)
+raw = termios.tcgetattr(0)
+raw[3] &= ~(termios.ICANON | termios.ECHO)
+raw[6][termios.VMIN], raw[6][termios.VTIME] = 1, 0
+try:
+    termios.tcsetattr(0, termios.TCSANOW, raw)
+    sys.stderr.write(sys.argv[1])
+    sys.stderr.flush()
+    while select.select([0], [], [], 0.5 if ended else None)[0]:
+        chunk = os.read(0, 4096)
+        got += chunk.split(b"\x04")[0]
+        if not chunk or b"\x04" in chunk:
+            break
+        ended = ended or b"\n" in chunk or b"\r" in chunk
+except KeyboardInterrupt:
+    sys.exit(130)
+finally:
+    termios.tcsetattr(0, termios.TCSANOW, old)
+    sys.stderr.write("\n")
+lines = [line.strip() for line in re.split(r"\r\n|\r|\n", got.decode("utf-8", "replace"))]
+for i, line in enumerate(lines):
+    at = line.find("sk-ant-")
+    if at >= 0:
+        token = re.match(r"[A-Za-z0-9_-]*", line[at:]).group(0)
+        if len(token) == len(line) - at:
+            for rest in lines[i + 1:]:
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", rest):
+                    break
+                token += rest
+        print(token)
+        break
+else:
+    print("".join("".join(lines).split()))
+' "$1"
 }
 
 # Codex signs in on this PC when it has the codex CLI; without one, the server's own copy does it with a device code
@@ -1434,7 +1528,10 @@ PY
       else "$nologin" "$(L "Codex not signed in (./sidenote login codex)" "Codex 로그인 안 됨 (./sidenote login codex)")"; fi ;;
     claude-code)
       how="$(claude_login)"
-      if ! command -v claude >/dev/null; then "$nologin" "$(L "Claude Code (claude) not installed on this PC (install it first)" "Claude Code(claude) 설치 안 됨 (먼저 설치)")"
+      if [ "$ON_MAC" = 1 ] && [ -n "$how" ]; then   # the token in .env: the server needs no Claude Code of the Mac's own
+        if running && ! token_served; then "$nologin" "$(L "Claude Code: the server started before the token in .env (./sidenote login)" "Claude Code: 서버가 .env의 토큰보다 먼저 시작됨 (./sidenote login)")"
+        else ok "Claude Code$(v="$(claude_version)"; [ -z "$v" ] || printf ' %s' "$v"): $(L "signed in ($how), and the server uses this login" "로그인됨 ($how), 서버도 이 로그인 사용")"; fi
+      elif ! command -v claude >/dev/null; then "$nologin" "$(L "Claude Code (claude) not installed on this PC (install it first)" "Claude Code(claude) 설치 안 됨 (먼저 설치)")"
       elif [ -n "$how" ]; then ok "Claude Code $(claude_version): $(L "signed in ($how), and the server uses this login" "로그인됨 ($how), 서버도 이 로그인 사용")"
       else "$nologin" "$(L "Claude Code not signed in (./sidenote login)" "Claude Code 로그인 안 됨 (./sidenote login)")"; fi ;;
     anthropic-api)
@@ -1484,7 +1581,7 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote version        Versions of the installed parts
     ./sidenote up             Start the server (builds the image the first time). In use, it waits until idle, then restarts
     ./sidenote up --now       Restart at once, without waiting
-    ./sidenote capture        Start the screen and sound capture: in Windows Python on WSL, on this desktop on Linux.
+    ./sidenote capture        Start the screen and sound capture: in Windows Python on WSL, on this desktop on Linux or a Mac.
                               It runs with a tray icon, and this command returns at once.
                               To end it: Quit in the tray icon, or ./sidenote capture-stop
                               Options: --up (starts the server first)   --monitor 2   --list-monitors
@@ -1499,8 +1596,8 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote restart        Restart the server (enough after changing .env or the code)
 
   ${B}First time${N}
-    ./sidenote login [codex]  Check the agent's login (Claude Code, or Codex with codex. Uses this PC's own login)
-    ./sidenote setup-capture  Install the capture packages: into Windows Python on WSL, into .venv-capture on Linux
+    ./sidenote login [codex]  Check the agent's login (Claude Code, or Codex with codex. Uses this PC's own login; on a Mac, a token in .env)
+    ./sidenote setup-capture  Install the capture packages: into Windows Python on WSL, into .venv-capture on Linux or a Mac
                               (setup-windows is the same command)
     ./sidenote shortcut       On WSL, make a Windows desktop shortcut that starts the capture (--remove removes it)
     ./sidenote llm pull       Download the model that fits this PC's GPU, or the ones named (a few GB to tens of GB)
@@ -1554,7 +1651,7 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote restart        서버 다시 시작 (.env나 코드를 바꾼 뒤에도 이것으로 충분)
 
   ${B}처음 한 번${N}
-    ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 사용)
+    ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 사용, 맥은 .env의 토큰)
     ./sidenote setup-capture  캡처 패키지 설치: WSL에서는 Windows Python에, Linux에서는 .venv-capture에
                               (setup-windows도 같은 명령)
     ./sidenote shortcut       WSL에서 캡처를 시작하는 Windows 바탕화면 바로가기 만들기 (--remove로 삭제)
