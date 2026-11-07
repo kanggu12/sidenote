@@ -274,16 +274,64 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
 # macOS: AppKit's loop runs on the main thread only, so the icon is handed to main() to run there, not started
 ran_on = []
 Icon.run = lambda self: ran_on.append(threading.current_thread() is threading.main_thread())
+
+
+class NSObject:
+    """PyObjC's NSObject as far as the delegate needs it."""
+    @classmethod
+    def alloc(cls):
+        return cls()
+
+    def init(self):
+        return self
+
+
+class NSApp:
+    delegate = None
+
+    def setDelegate_(self, delegate):
+        NSApp.delegate = delegate
+
+
+ns_app = NSApp()
+signatures = []
+stand_ins = {"AppKit": types.SimpleNamespace(NSApplication=types.SimpleNamespace(sharedApplication=lambda: ns_app)),
+             "Foundation": types.SimpleNamespace(NSObject=NSObject),
+             "objc": types.SimpleNamespace(typedSelector=lambda sig: (signatures.append(sig), lambda f: f)[1])}
+sys.modules.update(stand_ins)
+# Another port than the server's own: the reopen below opens the panel, and the look at its server is stood in for too
+args_mac = types.SimpleNamespace(server="ws://127.0.0.1:18778/ingest", no_audio=False)
 was, sys.platform = sys.platform, "darwin"
 try:
     stop_mac = threading.Event()
-    mac = cap.start_tray(Sender(), stop_mac, args)
+    mac = cap.start_tray(Sender(), stop_mac, args_mac)
 finally:
     sys.platform = was
 check("on macOS the tray is not started on a thread of its own", mac is not None and not ran_on
       and getattr(mac, "sidenote_thread", None) is None, str(ran_on))
 mac.sidenote_main()
 check("...and is run by whoever calls it, main() on the main thread", ran_on == [True], str(ran_on))
+
+# macOS: the app opened again while it runs reaches this program as AppKit's reopen (tests/mac_app_open.py on a Mac)
+import webbrowser  # noqa: E402
+opened, server_up, browser_open = [], cap.server_up, webbrowser.open
+cap.server_up = lambda url, timeout=1.5: True
+webbrowser.open = opened.append
+try:
+    delegate = NSApp.delegate
+    check("on macOS the tray answers the app being opened again: its delegate is AppKit's, and kept by the icon",
+          delegate is not None and getattr(mac, "sidenote_reopen", None) is delegate)
+    check("...with the method's types spelled out (BOOL, the app, BOOL)", signatures == [b"Z@:@Z"], str(signatures))
+    handled = delegate.applicationShouldHandleReopen_hasVisibleWindows_(ns_app, False)
+    deadline = time.time() + 3
+    while not opened and time.time() < deadline:
+        time.sleep(0.02)
+    check("...by opening the panel, as the menu's Open the panel does", opened == ["http://127.0.0.1:18778/"]
+          and handled is False, f"{opened}, returned {handled!r}")
+finally:
+    cap.server_up, webbrowser.open = server_up, browser_open
+    for name in stand_ins:
+        del sys.modules[name]
 stop_mac.set()
 
 # macOS: the end of the icon's loop goes through AppKit's queue (PyObjCTools.AppHelper.callAfter), which the loop runs

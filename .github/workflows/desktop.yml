@@ -1,6 +1,8 @@
 # The desktop app (desktop/): Sidenote as one folder with its own Python, built with PyInstaller on Windows, macOS
 # (Apple silicon) and Linux. Each build is started with --check, which runs its server with stand-in models and fails
-# when the build left something out; the Mac build also runs its capture program against its server. The zips are kept with the run; a version tag attaches them to the GitHub release (release.yml).
+# when the build left something out; the Mac build also runs its capture program against its server, and is then
+# opened as the Finder opens it, opened again and quit as macOS quits it (tests/mac_app_open.py). The zips are kept
+# with the run; a version tag attaches them to the GitHub release (release.yml).
 name: desktop
 
 on:
@@ -15,6 +17,7 @@ on:
       - "docker/fetch_vendor.py"
       - "docker/constraints.txt"
       - "tests/desktop_check.py"
+      - "tests/mac_app_open.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -26,6 +29,7 @@ on:
       - "docker/fetch_vendor.py"
       - "docker/constraints.txt"
       - "tests/desktop_check.py"
+      - "tests/mac_app_open.py"
       - ".github/workflows/desktop.yml"
   workflow_call:       # release.yml builds the zips it attaches with this
   workflow_dispatch:
@@ -76,6 +80,10 @@ jobs:
           python -m server.hardware --json | python -c "import json,sys; g=json.load(sys.stdin)['best']; assert g and g['vendor'] == 'apple' and g['memory_gb'] > 0, g"
       - name: Build, then start the build with --check
         run: python desktop/build.py
+      - name: The Mac app opened as the Finder opens it, opened again while it runs, and quit as macOS quits it
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        run: python tests/mac_app_open.py dist/Sidenote.app
       - uses: actions/upload-artifact@v7
         with:
           name: Sidenote-${{ runner.os }}

@@ -6,6 +6,19 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- On macOS, opening Sidenote again while it runs opens the panel, as starting it again does on Windows and Linux. macOS
+  tells the copy that runs instead of starting another, and nothing answered it. CI now opens the built app there as
+  the Finder does, opens it again and quits it as macOS does at log out.
+- Starting the app while it was still closing down did nothing: it waited for that copy's server, which was not coming
+  back. It now waits for that copy to end and starts in its place.
+- A quit during the first start's download of the speech model waited for the rest of that download, and after 10 s
+  the app ended its server the hard way. The app's server now ends as soon as its own close-down is done (0.4 s, from
+  11.1 s), and the next start downloads the model again.
+- The capture program's lines reached `capture.log` in blocks of 8 KB, and on macOS a quit sent by the system lost the
+  ones not yet written. Each line is written as it is printed.
+
 ## [0.2.0] - 2026-11-07
 
 ### Added

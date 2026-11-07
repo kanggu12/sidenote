@@ -92,8 +92,9 @@ For the speaker sound, the capture program listens to a loopback input: install
 [BlackHole](https://github.com/ExistentialAudio/BlackHole) (`brew install blackhole-2ch`), make a **Multi-Output
 Device** of your speakers and BlackHole in **Audio MIDI Setup**, and choose it as the output. Sidenote hears BlackHole as
 an input, so macOS asks once for the microphone too. The logs are in `~/Library/Application Support/Sidenote/logs`. CI
-builds the app on macOS 15 and starts it there: its server, and its capture program with the menu bar icon, which sends a
-screen and reads the windows. Outside CI it has not been used on a Mac yet.
+builds the app on macOS 15 and runs it there: its server, and its capture program with the menu bar icon, which sends a
+screen and reads the windows. CI also opens it there as the Finder does, opens it again, which opens the panel, and
+quits it as macOS does at log out. Outside CI it has not been used on a Mac yet.
 
 ### Linux: the app
 
@@ -199,7 +200,7 @@ has the Secret for each agent, an AMD GPU and a full values file. The capture pr
 | To | The app | Docker |
 |:---|:---|:---|
 | Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
-| Open the panel | the tray icon, or **Open the panel** in the menu bar icon's menu on macOS | `./sidenote open` |
+| Open the panel | the tray icon (on macOS, **Open the panel** in its menu), or open the app again | `./sidenote open` |
 | See what runs | the panel's cards | `./sidenote status` |
 | Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
 | Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |

@@ -81,6 +81,7 @@ KO = {
     "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up 을 실행하세요.",
     "Quit from the tray.": "트레이에서 종료했습니다.",
     "Restarting from the tray.": "트레이에서 다시 시작합니다.",
+    "Sidenote was opened again: opening the panel": "Sidenote를 다시 열어 패널을 엽니다",
     "Could not show the tray icon ({error})": "트레이 아이콘을 띄우지 못했습니다 ({error})",
     "Could not make the tray icon ({error}); going on without it": "트레이 아이콘을 만들지 못했습니다 ({error}); 그대로 계속합니다",
     "To end it: Quit in the tray icon, or ./sidenote capture-stop on the server.": "끝내려면 트레이 아이콘의 끝내기, 또는 서버에서 ./sidenote capture-stop.",
@@ -2611,6 +2612,39 @@ def dark_menus() -> None:
         pass
 
 
+# macOS: the class that answers Sidenote.app being opened again (answer_reopen), and what it calls. The class is made
+# once, as AppKit refuses a second class of the same name; one tray per process sets what it calls.
+_REOPEN = {"class": None, "answer": None}
+
+
+def answer_reopen(answer):
+    """macOS: Sidenote.app opened again while it runs starts no second copy. The system asks the copy that runs to
+    reopen instead, and it asks this program, the one with the AppKit loop and the menu bar icon: the app's first
+    process runs no AppKit loop, so to the system this one is the app, for a quit as well (measured on macOS 15). The
+    answer is `answer()`, the panel, as a second start gives on Windows and Linux. Returns the delegate for the
+    caller to keep, as AppKit holds it weakly; None where there is no AppKit."""
+    try:
+        import AppKit
+        import Foundation
+        import objc
+    except Exception:
+        return None
+    _REOPEN["answer"] = answer
+    if _REOPEN["class"] is None:
+        class SidenoteReopen(Foundation.NSObject):
+            # BOOL (NSApplication *, BOOL), spelled out: a BOOL taken for an object would be read as an address
+            @objc.typedSelector(b"Z@:@Z")
+            def applicationShouldHandleReopen_hasVisibleWindows_(self, _app, _visible):
+                print("[tray] " + t("Sidenote was opened again: opening the panel"))
+                # off AppKit's thread: the look at the server waits on it, and the menu would wait with it
+                threading.Thread(target=_REOPEN["answer"], name="reopen", daemon=True).start()
+                return False   # nothing left for AppKit to do: it has no window of its own to bring back
+        _REOPEN["class"] = SidenoteReopen
+    delegate = _REOPEN["class"].alloc().init()
+    AppKit.NSApplication.sharedApplication().setDelegate_(delegate)
+    return delegate
+
+
 def start_tray(sender, stop: threading.Event, args):
     """The notification area icon, or None where it cannot run (no pystray, no desktop session)."""
     try:
@@ -2732,6 +2766,8 @@ def start_tray(sender, stop: threading.Event, args):
     if sys.platform == "darwin":
         # AppKit runs its loop on the main thread only: main() hands that thread to the icon and waits beside it
         icon.sidenote_main = run_icon
+        # the app opened again while it runs, by a double-click in the Finder say: the panel, as from the menu
+        icon.sidenote_reopen = answer_reopen(lambda: open_panel(icon))
     else:
         thread = threading.Thread(target=run_icon, daemon=True)
         thread.start()
@@ -2826,6 +2862,14 @@ def main() -> None:
                     help="append what it prints to this file (it runs with no console window)")
     args = ap.parse_args()
 
+    # Each line out as it is printed. Under the desktop app this goes down a pipe into capture.log, which got it in
+    # blocks of 8 KB; and a quit the system sends on macOS (at log out) ends this program inside AppKit, with what was
+    # held back never written. No stream at all (pythonw) has nothing to set.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except Exception:
+            pass
     # Before anything prints: pythonw gives this program no stdout at all, and a console can go
     # away while it runs (see _Quiet).
     sys.stdout, sys.stderr = _Quiet(sys.stdout), _Quiet(sys.stderr)

@@ -140,6 +140,19 @@ K3D=/path/to/k3d HELM=/path/to/helm tests/k3d_check.sh sidenote:e2e sidenote-run
 
 The chart-e2e workflow runs it on a push that changes the chart, the images or the code inside them, and by hand.
 
+## The Mac app as the Finder opens it
+
+`tests/mac_app_open.py` opens a built `Sidenote.app` through LaunchServices, as a double-click in the Finder does,
+with a data folder and a port of its own and a stand-in browser that writes down each address it is given. It checks
+what only macOS itself can show: the server, the capture program and its menu bar icon come up and the panel is
+opened; opening the app again while it runs starts no second copy and opens the panel again; and a quit sent as the
+system sends one at log out ends the app and all it started, with the server's own close-down run. It needs a Mac
+with no Sidenote running; the desktop workflow's macOS job runs it on the app it has just built.
+
+```bash
+python tests/mac_app_open.py dist/Sidenote.app
+```
+
 ## The measurement data
 
 It stays out of the repository for its size and for what it holds: screenshots of other people's sites, the answers
@@ -174,7 +187,7 @@ Server and capture (`PY`):
 | `ci_gate.py` | the CI check before a deploy (`SIDENOTE_CI_GATE=1`): a failed commit is refused, `--when-green` waits, what CI has not seen goes up and says so (the launcher's `ci_state` and `ci_gate`, with a stand-in `gh`) |
 | `server_scenarios.py` | what real use has done to the server and the capture program: a restart in the middle of a problem, a reading mistaken for a busy GPU, a plan's limit outliving a new sign-in, a late probe of the agent's CLI, the averages, example headings, a tray menu whose program has gone |
 | `models_check.py` | which local model fits which GPU: the GPU readers on NVIDIA, AMD (amd-smi, rocm-smi, sysfs) and DXGI output, the model profiles and the choice among pulled models, "auto" in the server, and a local server that is not Ollama |
-| `desktop_check.py` | Sidenote on one PC without Docker (`desktop/`): the server's environment on the host, the data folder on each system, the capped logs, the port check, the watch that starts a stopped child again, the capture program's restart code, `python -c` in the built app, and a whole start and stop with stand-in models |
+| `desktop_check.py` | Sidenote on one PC without Docker (`desktop/`): the server's environment on the host, the data folder on each system, the capped logs, the port check, the watch that starts a stopped child again, the capture program's restart code, `python -c` in the built app, a whole start and stop with stand-in models, a start while another copy closes down, and a server that ends at once with its speech model still downloading |
 | `i18n_check.py` | the server's words in English or Korean: English with no language set, the panel's language on `ui_lang` and back, the settings, a notice and the agent's card in that language, a level on every notice, a Korean entry for every word the code asks for, `./sidenote report` in the terminal's language, and the line asking the models for an English answer only in English |
 | `history_star.py` | starred answers in `history.sqlite`: a file from 0.1.0 gaining the column with its rows kept, a star set and taken off over the panel's socket and heard by a second panel, a refused id, the starred answers alone from `/history`, the pruning that keeps them past the age limit and outside the size cap, and **Clear history** |
 | `report_period.py` | `./sidenote report`: the period's numbers by engine, the agent's cost split, the GPU and the example checks |
@@ -186,7 +199,7 @@ Server and capture (`PY`):
 | `crop_grow.py` | the crop grows a box only where it is meant to: blocks of writing, halves of a screen, a drawn region, lines across a window |
 | `audio_path.py` | the sound device is read on time while a send is stuck, and not at all without a server |
 | `audio_gaps.py` | the line about dropped sound says whether this program fell behind |
-| `tray_switch.py` | the tray's screen and sound switches go through the server, as the panel's do |
+| `tray_switch.py` | the tray's screen and sound switches go through the server, as the panel's do; on macOS the icon runs on the main thread, a quit that comes before its loop runs is kept, and the app opened again opens the panel |
 | `codex_agent.py` | Codex through its CLI, the agent chosen by the environment, the newest model of a family |
 | `repeats_check.py` | a problem seen again (scrolled, moved, come back to) is not solved again, and an agent at its usage limit rests until it comes back |
 | `limits_check.py` | why analyses stopped and what the agent was paid for, from the log; the local model, switched off, standing in for the agent at its limit; the thinking pass's last sentence; code run on made-up inputs when a problem shows none; Codex's reset times and missing prices, the API agent's stop reasons, a status code inside a request id; the chart's runner token rendered without a cluster ([note 89](../docs/DECISIONS.md#note-89)) |

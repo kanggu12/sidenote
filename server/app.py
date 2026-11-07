@@ -38,6 +38,7 @@ except ImportError:
 import signal
 import socket
 import struct
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -2574,13 +2575,44 @@ def ready_speech(tr) -> None:
         tr.language = SETTINGS.get("speech_lang")
 
 
+async def own_thread(fn, *args):
+    """fn(*args) on a thread of its own, for the speech model: its first load downloads it (about 460 MB for `small`),
+    and nothing cuts that short. asyncio.to_thread's threads are waited for before the server's loop closes, so a
+    close-down asked for during that download waited for all of it. This thread is a daemon, which nothing waits for
+    (the desktop app's server role then ends without waiting for the download's own threads: desktop/app.py serve).
+    Awaiting it is cancelled as anything else is."""
+    loop = asyncio.get_running_loop()
+    done = loop.create_future()
+
+    def settle(result, error) -> None:
+        if done.done():                  # cancelled while it ran: the server is closing down, or the choice changed
+            return
+        if error is not None:
+            done.set_exception(error)
+        else:
+            done.set_result(result)
+
+    def work() -> None:
+        try:
+            result, error = fn(*args), None
+        except BaseException as exc:     # handed to the one awaiting it, as asyncio.to_thread hands it
+            result, error = None, exc
+        try:
+            loop.call_soon_threadsafe(settle, result, error)
+        except RuntimeError:             # the loop is closed: the server ended while this ran
+            pass
+
+    threading.Thread(target=work, name=getattr(fn, "__name__", "work"), daemon=True).start()
+    return await done
+
+
 async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
     """The speech model chosen in the panel. It loads beside the one in use, which goes on hearing until it is ready. A
     model not downloaded yet is fetched here, as the first start fetches `small`, and one that cannot be had leaves the
     old one in use and the choice back on it: kept, it would leave the next start of the server with no speech at all."""
     await notice(t("Loading the speech model {model}: the first time it is downloaded", model=model))
     try:
-        tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+        tr = await own_thread(make_transcriber, CONFIG, model)
         failed = "" if getattr(tr, "available", False) else "unavailable"
     except asyncio.CancelledError:
         raise
@@ -2611,7 +2643,7 @@ async def load_speech(app: FastAPI) -> None:
     model = SETTINGS.get("whisper_model")
     try:
         try:
-            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+            tr = await own_thread(make_transcriber, CONFIG, model)
         except Exception:   # the environment's own model failing is the case below; a panel's choice has that one to fall back on
             if model == CONFIG.whisper_model:
                 raise
@@ -2621,7 +2653,7 @@ async def load_speech(app: FastAPI) -> None:
             SETTINGS.set("whisper_model", CONFIG.whisper_model)
             await broadcast({"type": "settings", "values": {"whisper_model": CONFIG.whisper_model}})
             model = CONFIG.whisper_model
-            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+            tr = await own_thread(make_transcriber, CONFIG, model)
     except asyncio.CancelledError:
         raise
     except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
