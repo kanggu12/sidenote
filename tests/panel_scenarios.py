@@ -498,6 +498,22 @@ def group_review_fixes(br, s):
           before[0] and not after[0] and abs((before[1] - after[1]) - after[2]) <= 2, [before, after])
     no_errors(p, "band scroll")
     p.close()
+    # ...and where they do not fit in the bar (three at 1100 px), they take their room at the top and keep it scrolled:
+    # over no answer, and the thread moves only by the scroll
+    p = Page(br, s, [row(950 + i, "essay", f"문제 {i}", "답", "풀이입니다 " * 40, ago=300 - i) for i in range(4)], w=1100, h=900)
+    p.js("""() => { window.scrollTo(0, 0); paused = true; settingsValues.roi_box = [0.1, 0.1, 0.6, 0.7]; capture.clients = 0;
+        capture.screen_on = true; renderAlerts(); placeBands(); }""")
+    p.wait(300)
+    top = p.js("""() => { const b = document.getElementById('alerts').getBoundingClientRect(), e = document.querySelector('.entry:not([hidden])').getBoundingClientRect();
+        return [document.documentElement.classList.contains('bands-in-bar'), document.documentElement.classList.contains('bands-room'), Math.round(b.bottom), Math.round(e.top)]; }""")
+    p.page.mouse.move(500, 600)
+    p.page.mouse.wheel(0, 10)
+    p.wait(400)
+    moved = p.js("() => [Math.round(document.querySelector('.entry:not([hidden])').getBoundingClientRect().top), Math.round(window.scrollY)]")
+    check("at 1100 px three bands out of the bar lie over no answer, and a small scroll moves the thread only by itself",
+          not top[0] and top[1] and top[2] <= top[3] and abs((top[3] - moved[0]) - moved[1]) <= 2, [top, moved])
+    no_errors(p, "bands out of the bar")
+    p.close()
     # ...and on a phone four bands, longer than a third of the window, scroll inside themselves, over no answer
     p = Page(br, s, [row(908 + i, "essay", f"문제 {i}", "답", "풀이입니다", ago=300 - i) for i in range(3)], w=390, h=844)
     p.js("""() => { window.scrollTo(0, 0); paused = true; settingsValues.roi_box = [0.1, 0.1, 0.6, 0.7]; capture.clients = 0;

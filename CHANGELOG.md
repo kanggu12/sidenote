@@ -6,6 +6,12 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- The panel: on a wide window bands too many for the bar floated over the first answer. They take their room above
+  the thread when the page is at its top and keep it while it scrolls, so the thread moves only by the scroll.
+- Korean: a chip with a command in it takes no particle after the command.
+
 ### Removed
 
 - The winget package's manifests and the release job that tried them: Sidenote is installed from the zip on its
@@ -81,11 +87,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 ### Changed
 
 - Every notice in the panel has one form. A toast is drawn as a band is: a mark for its kind (to know, done, not done,
-  failed), the fact in bold, then what follows or what to do, and a command as a chip. Its colours are the bands' own, and
+  failed), the fact in bold, then what follows or what to do, and a command as a chip. Its colors are the bands' own, and
   it stays longer when it says more. The server says which of the four kinds each of its notices is.
-- Settings help is shorter, nine lines of it by a sentence or more.
+- The help for nine settings is a sentence or more shorter.
 - The Anthropic API agent marks its instructions for the API's prompt cache: while problems come within five minutes of
-  each other, the about 1,300 tokens of them are read from the cache at a tenth of the price.
+  each other, those 1,300 or so tokens are read from the cache at a tenth of the price.
 - The same web search or page within ten minutes is answered from memory, without asking the search engines again.
 - The README puts the quick start before the reasons for Sidenote.
 - The README's badges are files in the repository (`.github/badges.sh`), so none waits on another site, and its picture

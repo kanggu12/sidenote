@@ -1655,6 +1655,15 @@ the patterns found. Sound under 0.8 s is not written down at all, and the VAD me
 "그렇군요." of 0.87 s alone was cut as shorter on the way, while the live words showed it. When nothing is being said after
 it, the card's last sentence, if short and not already a sentence that ended, then says it was too short.
 
+**Other voices under a sentence, and what is not changed.** Under three other voices at 3 dB a sentence that ended
+sometimes takes Whisper round its retries: over 14 sentences and 3 mixes each, the median stays at 1.7 s but one in ten
+takes 5.4 s or more, up to 9.9 s (small, CPU). White noise at 8 dB does not do it (p90 1.9 s). Blocking repeated
+4-grams or a repetition penalty of 1.1 brings that tenth down to 2.5 s, and both cost clean speech: the penalty split
+"재시작" and changed "when you would" to "when would", and the 4-gram block wrote "정렐" for the fourth "정렬" of a
+question that lists four sorts, where a repeat is the point. Fewer retry temperatures were faster and much worse
+(character error 0.61 against 0.84 to 0.93). A token cap changed nothing. So the defaults stay: a few seconds late on a
+sentence said over a crowd beats wrong words on one said in a quiet room.
+
 ## Security and isolation
 
 Also on this topic:
