@@ -1,8 +1,8 @@
 """One version, in every place that says it: server/version.py as the source, the Helm chart agreeing with it, the
 release step's script (.github/check_version.py) passing a tag that matches and refusing one that does not, release.yml
 running that script before it builds or publishes anything, and `./sidenote version` printing the number from the file.
-With them, what the release files and the documents say of a release: what a pre-release tag publishes, where the winget
-token goes, and the versions, paths and prerequisites people copy from the documents.
+With them, what the release files and the documents say of a release: what a pre-release tag publishes, and the
+versions, paths and prerequisites people copy from the documents.
 
     .venv/bin/python tests/version_check.py
 
@@ -95,7 +95,7 @@ step = first.find('python3 .github/check_version.py "$GITHUB_REF_NAME"')
 check("the workflow's first job runs the script on the tag", step > 0, step)
 check("...right after the checkout", step > 0 and first.rfind("actions/checkout", 0, step) > 0
       and first.count("- name:", first.rfind("actions/checkout", 0, step), step) == 1, first[:400])
-release = wf[wf.find("\n  release:"):wf.find("\n  winget:")]
+release = wf[wf.find("\n  release:"):]
 check("...and the release job, which builds, pushes and publishes, waits for it", "needs: [notes," in release, release[:120])
 check("the first job builds and pushes nothing", not any(x in first for x in ("docker/build-push-action", "helm push",
                                                                                "softprops/action-gh-release")), first[:200])
@@ -106,20 +106,6 @@ check("the release job reads a pre-release from the tag's -", '*-*) echo "pre=tr
 check("...publishes it as one", "prerelease: ${{ steps.v.outputs.pre == 'true' }}" in release)
 check("...and moves neither image's latest", not re.search(r"^\s+ghcr\.io/\S+:latest\s*$", release, re.M)
       and release.count("steps.v.outputs.pre == 'false' && format(") == 2, re.findall(r".*:latest.*", release))
-winget_job = wf[wf.find("\n  winget:"):]
-check("...and makes no winget package", "if: ${{ !contains(github.ref_name, '-') }}" in winget_job, winget_job[:200])
-
-print("\n[the winget token]")
-winget = (ROOT / ".github" / "workflows" / "winget.yml").read_text(encoding="utf-8")
-steps = winget[winget.find("    steps:"):]
-head = winget[:winget.find("    steps:")]
-check("the job holds whether the token is set, not the token", "secrets.WINGET_TOKEN }}" not in head and "HAS_WINGET_TOKEN" in head, head[-300:])
-check("...the token goes to one step", steps.count("secrets.WINGET_TOKEN") == 1
-      and steps.find("secrets.WINGET_TOKEN") > steps.find("- name: Send them to microsoft/winget-pkgs"))
-check("...not on a command line", "--token" not in steps)
-check("wingetcreate is one release, checked against its checksum", "aka.ms" not in steps
-      and re.search(r"releases/download/v[0-9.]+/wingetcreate\.exe", steps) and re.search(r"Get-FileHash[^\n]*\"[0-9A-F]{64}\"", steps), steps[-500:])
-check("no token is said, in a notice", "::notice::" in steps)
 
 print("\n[what the documents name]")
 chart_readme = (ROOT / "deploy" / "helm" / "sidenote" / "README.md").read_text(encoding="utf-8")

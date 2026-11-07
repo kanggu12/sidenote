@@ -6,6 +6,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Removed
+
+- The winget package's manifests and the release job that tried them: Sidenote is installed from the zip on its
+  releases, as the README says.
+
 ## [0.1.8] - 2026-11-07
 
 ### Fixed
