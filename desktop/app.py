@@ -583,6 +583,41 @@ def only_one(data: Path):
     return f
 
 
+STAYS_UP = 5   # seconds a copy's server answers, with no capture program connected, before that copy is taken to run
+
+
+def other_copy(data: Path, port: int, url: str, no_browser: bool, log: CappedLog):
+    """Another copy of the app holds the lock. Its panel is opened once its server answers, and then:
+
+    - with a capture program connected, that copy runs, and this start was only for the panel;
+    - with none, it may be starting, or closing down (the app opened again right after a quit, its server still
+      answering for a second or so). One closing down lets go of the lock once it has ended, and this copy takes it, to
+      start in its place: waiting for a server alone, it once did nothing at all after a quit. A server that answers
+      for STAYS_UP seconds belongs to a copy that runs (with no capture program, or one restarting).
+
+    Returns (the lock, or None when this copy is not to start; whether the panel was opened)."""
+    say("Sidenote is already running, starting or closing down; waiting for it", log)
+    opened, up_since, end = False, None, time.monotonic() + 300
+    while True:
+        lock = only_one(data)
+        if lock is not None:
+            return lock, opened
+        answer = health(port)
+        if answer is not None:
+            if not opened and not no_browser:
+                webbrowser.open(url)
+                opened = True
+            up_since = up_since or time.monotonic()
+            if (answer.get("capture") or {}).get("clients") or time.monotonic() - up_since >= STAYS_UP:
+                return None, opened
+        else:
+            up_since = None
+        if time.monotonic() > end:
+            say("the other copy neither came up nor ended within 5 minutes; not starting", log)
+            return None, opened
+        time.sleep(0.25)
+
+
 def _stop_on_signals() -> None:
     """SIGTERM and SIGHUP (a closed terminal, a service manager) end this program the way Ctrl+C does: through the
     cleanup in run(), which stops the children. Their default would end it at once and leave them running."""
@@ -606,35 +641,24 @@ def run(args) -> int:
     log = CappedLog(logs / "app.log")
     port = args.port
     url = f"http://127.0.0.1:{port}"
-    if health(port):                     # already running (a second start): open the panel and leave it at that
+    lock = only_one(data)
+    if lock is None:                     # another copy of the app: running, starting or closing down
+        try:
+            lock, opened = other_copy(data, port, url, args.no_browser, log)
+        except KeyboardInterrupt:        # stopped while it waited (SIGTERM, Ctrl+C): nothing of its own to stop yet
+            log.close()
+            return 0
+        if lock is None:
+            log.close()
+            return 0
+        say("the other copy has ended; starting in its place", log)
+        if opened:
+            args.no_browser = True       # the panel opened on that copy connects to this one's server by itself
+    elif health(port):                   # a Sidenote server that no copy of the app started (Docker's): its panel
         if not args.no_browser:
             webbrowser.open(url)
         log.close()
         return 0
-    lock = only_one(data)
-    if lock is None:
-        # Another copy holds it: one starting, whose panel opens here once its server is up, or one closing down
-        # (opened again right after a quit), which lets go once it has ended, and this one then starts in its place.
-        # Waiting for a server alone, this one did nothing at all after a quit.
-        say("Sidenote is already starting or closing down; waiting for it", log)
-        end = time.monotonic() + 300
-        try:
-            while lock is None:
-                if health(port) is not None:
-                    if not args.no_browser:
-                        webbrowser.open(url)
-                    log.close()
-                    return 0
-                if time.monotonic() > end:
-                    say("the other copy neither came up nor ended within 5 minutes; not starting", log)
-                    log.close()
-                    return 1
-                time.sleep(0.5)
-                lock = only_one(data)
-        except KeyboardInterrupt:        # stopped while it waited (SIGTERM, Ctrl+C): nothing of its own to stop yet
-            log.close()
-            return 0
-        say("the other copy has ended; starting", log)
     if not port_free(port):
         tell(t("Another program is using the port Sidenote needs ({port}). Close that program, then start Sidenote again.",
                port=port), log)
@@ -762,9 +786,10 @@ def serve(port: int) -> int:
     the agent's CLI being asked what it runs on (up to 20 s), a screen being read, speech being decoded, the speech
     model being downloaded (minutes on a slow line). Python then waits again, for the download's own threads. None of
     that is kept once the server closes down, and this program gives its server 10 s before it ends it the hard way:
-    a quit took 10.7 s on CI's Mac, and one during the first download 11.1 s here. So the loop is run here, and once
-    the close-down has run and the answers' writer is done, nothing else is waited for. A download cut off this way is
-    made again at the next start."""
+    a quit took 10.7 s on CI's Mac, and one during the first download 11.1 s here. So the loop is run here. Once the
+    close-down has run, what it left running is cancelled as asyncio.run cancels it, so that its own clean-up runs (an
+    answer being written ends its agent's CLI and deletes the screens it was given); then, once the answers' writer is
+    done, nothing else is waited for. A download cut off this way is made again at the next start."""
     import asyncio
 
     import uvicorn
@@ -783,6 +808,13 @@ def serve(port: int) -> int:
         loop.run_until_complete(uvicorn.Server(config).serve())
     except KeyboardInterrupt:                    # uvicorn raises again the Ctrl+C its close-down was asked with
         pass
+    # Left running, an answer's task would leave its agent's CLI writing on, and spending, for an answer nobody sees.
+    # Up to 3 s for those clean-ups.
+    left = [task for task in asyncio.all_tasks(loop) if not task.done()]
+    for task in left:
+        task.cancel()
+    if left:
+        loop.run_until_complete(asyncio.wait(left, timeout=3))
     server.HISTORY_WRITES.shutdown(wait=True)
     sys.stdout.flush()
     sys.stderr.flush()

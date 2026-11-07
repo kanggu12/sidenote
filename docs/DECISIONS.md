@@ -1822,10 +1822,12 @@ does, opens it again and quits it as macOS does at log out.
 uvicorn.run closes its loop with asyncio.run, which first waits for every job still running on the loop's threads, and
 Python waits again before a process ends, for threads a library started. Jobs there do not stop when the server closes
 down: the agent's CLI being asked which model it runs on (up to 20 s), a screen being read, speech being decoded, and on
-a first start the speech model's download (about 460 MB for `small`). The app gives its server 10 s and then ends it
-the hard way, so a quit could take that long: 10.7 s on CI's Mac, whose stand-in CLI never answers that question, and
-11.1 s here during the first download. The app's server role therefore runs its loop itself (desktop/app.py `serve`)
-and ends once its close-down has run and the answers' writer is done, without waiting for either: 0.4 s during the
-download, and 0.4 to 0.5 s with screens and sound coming in and the CLI still being asked. A download cut off this way
-left an empty partial file, and the next start downloaded the model again and loaded it. The image's server is left as
-it was: there `docker stop` ends it after 10 s.
+a first start the speech model's download (about 460 MB for `small`). The app gives its server 10 s and then ends it the
+hard way, so a quit could take that long: 10.7 s on CI's Mac, whose stand-in CLI never answers that question, and 11.1 s
+here during the first download. The app's server role therefore runs its loop itself (desktop/app.py `serve`). Once the
+close-down has run, what it left running is cancelled, as asyncio.run cancels it, so that an answer being written ends
+its agent's CLI and deletes the screens it was given (skipped, the CLI wrote on after the server had ended). Then, once
+the answers' writer is done, it ends without waiting for either: 0.4 s during the download, and 0.4 to 0.5 s with
+screens and sound coming in and the CLI still being asked. A download cut off this way left an empty partial file, and
+the next start downloaded the model again and loaded it. The image's server is left as it was: there `docker stop` ends
+it after 10 s.
