@@ -2668,14 +2668,18 @@ def start_tray(sender, stop: threading.Event, args):
     except Exception as exc:
         print("[tray] " + t("Could not make the tray icon ({error}); going on without it", error=f"{type(exc).__name__}: {exc}"))
         return None
-    thread = threading.Thread(target=run_icon, daemon=True)
-    thread.start()
-    # Creating the window fails at once when it fails at all, so a short look is enough to know
-    # whether to tell the user about an icon that is there.
-    failed.wait(0.6)
-    if failed.is_set():
-        return None
-    icon.sidenote_thread = thread   # main() waits for it, so the icon is gone before the process is
+    if sys.platform == "darwin":
+        # AppKit runs its loop on the main thread only: main() hands that thread to the icon and waits beside it
+        icon.sidenote_main = run_icon
+    else:
+        thread = threading.Thread(target=run_icon, daemon=True)
+        thread.start()
+        # Creating the window fails at once when it fails at all, so a short look is enough to know
+        # whether to tell the user about an icon that is there.
+        failed.wait(0.6)
+        if failed.is_set():
+            return None
+        icon.sidenote_thread = thread   # main() waits for it, so the icon is gone before the process is
 
     def keep_menu_current() -> None:
         """Windows shows the menu pystray built last, and pystray builds it again only at start, after a click on
@@ -2688,7 +2692,11 @@ def start_tray(sender, stop: threading.Event, args):
             if now != shown:
                 shown = now
                 try:
-                    icon.update_menu()
+                    if sys.platform == "darwin":   # AppKit's menu is changed on its own thread only
+                        from PyObjCTools import AppHelper
+                        AppHelper.callAfter(icon.update_menu)
+                    else:
+                        icon.update_menu()
                 except Exception:   # the icon going away as this runs: nothing left to keep current
                     pass
             stop.wait(1.0)
@@ -2779,7 +2787,8 @@ def main() -> None:
                                   t("To end it: Quit in the tray icon, or ./sidenote capture-stop on the server."))
           + ("" if tray is None else " " + t("The tray icon opens the panel and switches the screen and the sound on and off.")))
     updater = None if (args.once or args.no_auto_update) else Updater(os.path.abspath(__file__), args.server)
-    try:
+
+    def wait_until_done() -> None:
         while not stop.is_set():   # a loop that is done (--once) ends this too
             if sender.quit_asked:
                 break
@@ -2787,6 +2796,26 @@ def main() -> None:
                 sender.restart_asked = True
                 break
             time.sleep(0.25)
+
+    main_icon = getattr(tray, "sidenote_main", None)
+    try:
+        if main_icon is None:
+            wait_until_done()
+        else:
+            # macOS: the icon's loop holds this thread, and the waiting runs beside it and ends that loop when done
+            def wait_then_end(icon=tray) -> None:
+                wait_until_done()
+                stop.set()
+                try:
+                    icon.stop()
+                except Exception:   # a loop that never ran has nothing to end
+                    pass
+            waiter = threading.Thread(target=wait_then_end, daemon=True)
+            waiter.start()
+            main_icon()            # returns when tray.stop() ends the loop, or at once if it could not run
+            tray = None            # its loop is over, and the icon is gone with it
+            while waiter.is_alive():   # an icon that could not run leaves the capture going without it
+                waiter.join(0.25)
     except KeyboardInterrupt:
         print("\n[main] stopping...")
     stop.set()

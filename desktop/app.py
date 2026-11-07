@@ -83,6 +83,12 @@ def data_dir() -> Path:
 def server_env(base: dict, data: Path, port: int) -> dict:
     """The server's environment on the host: `base` with the defaults below added where it has none."""
     env = dict(base)
+    if sys.platform == "darwin":
+        # An app opened from the Finder gets /usr/bin:/bin:/usr/sbin:/sbin alone, without where Homebrew, npm and
+        # the agents' own installers put their commands (claude, codex, node, ollama)
+        have = (env.get("PATH") or "/usr/bin:/bin:/usr/sbin:/sbin").split(os.pathsep)
+        more = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local" / "bin")]
+        env["PATH"] = os.pathsep.join(have + [d for d in more if d not in have])
     defaults = {
         "SIDENOTE_HOST": "127.0.0.1",
         "SIDENOTE_PORT": str(port),
@@ -219,6 +225,13 @@ def tell(text: str, log: CappedLog | None = None) -> None:
         import ctypes
         MB_ICONWARNING, MB_TOPMOST = 0x30, 0x40000
         ctypes.windll.user32.MessageBoxW(None, text, "Sidenote", MB_ICONWARNING | MB_TOPMOST)
+    elif sys.platform == "darwin" and FROZEN:
+        # the Mac app has no console either: the system's own alert, the text passed as an argument, not as script
+        script = 'on run argv\ndisplay alert "Sidenote" message (item 1 of argv) as warning\nend run'
+        try:
+            subprocess.run(["osascript", "-e", script, text], timeout=600, capture_output=True)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def _windows_job():
@@ -405,15 +418,22 @@ def tail(path: Path, lines: int = 12) -> str:
 
 def capture_supported() -> tuple[bool, str]:
     """Whether the capture program runs here, and a line to say about it ("" for nothing). It grabs the screen with
-    mss, which reads Windows' and X11's screens, and the speaker sound with soundcard (WASAPI, PulseAudio)."""
+    mss, which reads Windows', macOS' and X11's screens, and the speaker sound with soundcard (WASAPI, Core Audio,
+    PulseAudio)."""
     if sys.platform == "win32":
         return True, ""
+    if sys.platform == "darwin":
+        # macOS asks for Screen Recording at the first capture, and plays the speakers to no program: a loopback
+        # input such as BlackHole is what the capture program listens to (client/capture.py, mac_loopback)
+        return True, ("macOS asks once for Screen Recording for Sidenote: allow it in System Settings, then quit "
+                      "Sidenote from its menu bar icon and open it again. For the speaker sound, install a loopback "
+                      "input such as BlackHole and send the sound to it.")
     if sys.platform.startswith("linux") and os.environ.get("DISPLAY"):
         if os.environ.get("WAYLAND_DISPLAY"):
             return True, ("This is a Wayland session: the screen is read through X11 (XWayland), which may show only "
                           "X11 windows. Log in to an X11 session if the panel shows a blank screen.")
         return True, ""
-    return False, ("No screen to capture here (the capture program reads Windows' and X11's screens): the server and "
+    return False, ("No screen to capture here (the capture program reads Windows', macOS' and X11's screens): the server and "
                    "the panel start, and another PC can send screens to them (docs/capture-client.md).")
 
 
@@ -423,6 +443,10 @@ def ollama_binary() -> str | None:
         return found
     if sys.platform == "win32":          # where Ollama's installer puts it, when its folder is not on PATH
         guess = Path(os.environ.get("LOCALAPPDATA") or "") / "Programs" / "Ollama" / "ollama.exe"
+        if guess.is_file():
+            return str(guess)
+    if sys.platform == "darwin":         # Ollama for Mac is an app; its command is inside it until it links one
+        guess = Path("/Applications/Ollama.app/Contents/Resources/ollama")
         if guess.is_file():
             return str(guess)
     return None

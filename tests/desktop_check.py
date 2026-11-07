@@ -163,12 +163,22 @@ check("the capture program asks for a restart with the exit code this program wa
       capture.SUPERVISED_RESTART == app.CAPTURE_RESTART, (capture.SUPERVISED_RESTART, app.CAPTURE_RESTART))
 for platform, environ, runs in (("win32", {}, True), ("linux", {"DISPLAY": ":0"}, True),
                                 ("linux", {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0"}, True),
-                                ("linux", {}, False), ("darwin", {}, False)):
+                                ("linux", {}, False), ("darwin", {}, True)):
     with mock.patch.object(sys, "platform", platform), mock.patch.dict(os.environ, environ, clear=True):
         ok_here, note = app.capture_supported()
     check(f"capture on {platform} with {sorted(environ)}: {'started' if runs else 'not started, and why'}",
           ok_here == runs and (runs or bool(note)) and (("WAYLAND_DISPLAY" in environ) == ("Wayland" in note)),
           (ok_here, note))
+
+with mock.patch.object(sys, "platform", "darwin"):
+    check("on macOS the app says where Screen Recording is allowed and what plays the speaker sound to it",
+          all(w in app.capture_supported()[1] for w in ("Screen Recording", "BlackHole")), app.capture_supported())
+    mac_path = app.server_env({"PATH": "/usr/bin:/bin"}, Path("/d"), 1)["PATH"].split(os.pathsep)
+    check("...and an app opened from the Finder finds Homebrew's and the agents' commands",
+          mac_path[:2] == ["/usr/bin", "/bin"] and "/opt/homebrew/bin" in mac_path
+          and str(Path.home() / ".local" / "bin") in mac_path, mac_path)
+    again = app.server_env({"PATH": os.pathsep.join(mac_path)}, Path("/d"), 1)["PATH"].split(os.pathsep)
+    check("...without adding them twice", again == mac_path, again)
 
 print("[python -c, as the Windows app runs it for the tray menu]")
 out = io.StringIO()

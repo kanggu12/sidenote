@@ -271,5 +271,20 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             ws.send_text(json.dumps({"type": "capture_set", "audio": True}))   # leave it as it was found
             ws.receive_text()
 
+# macOS: AppKit's loop runs on the main thread only, so the icon is handed to main() to run there, not started
+ran_on = []
+Icon.run = lambda self: ran_on.append(threading.current_thread() is threading.main_thread())
+was, sys.platform = sys.platform, "darwin"
+try:
+    stop_mac = threading.Event()
+    mac = cap.start_tray(Sender(), stop_mac, args)
+finally:
+    sys.platform = was
+check("on macOS the tray is not started on a thread of its own", mac is not None and not ran_on
+      and getattr(mac, "sidenote_thread", None) is None, str(ran_on))
+mac.sidenote_main()
+check("...and is run by whoever calls it, main() on the main thread", ran_on == [True], str(ran_on))
+stop_mac.set()
+
 print(f"\n==== {len(OK)} passed, {len(BAD)} failed ====")
 sys.exit(1 if BAD else 0)

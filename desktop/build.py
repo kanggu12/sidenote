@@ -1,6 +1,6 @@
 """Builds Sidenote as one folder with its own Python, for people who do not install Python or Docker: Sidenote.exe on
-Windows (Sidenote on Linux) with the server, the panel and the capture program inside. Run it on the system it is
-for, from the repository's root, after the packages:
+Windows, Sidenote.app on macOS (Sidenote on Linux) with the server, the panel and the capture program inside. Run it
+on the system it is for, from the repository's root, after the packages:
 
     python -m pip install -r server/requirements.txt -r server/requirements-audio.txt -c docker/constraints.txt
     python -m pip install -r client/requirements.txt          (the capture program's, on Linux too)
@@ -8,8 +8,9 @@ for, from the repository's root, after the packages:
     python docker/fetch_vendor.py docker/vendor.json panel/vendor
     python desktop/build.py
 
-It writes dist/Sidenote/ and dist/Sidenote-<system>-x64.zip, then runs the result with --check, which starts its
-server with stand-in models and fails the build when something it needs was left out.
+It writes dist/Sidenote/ (dist/Sidenote.app on macOS) and dist/Sidenote-<system>-<machine>.zip, then runs the result
+with --check, which starts its server with stand-in models and fails the build when something it needs was left out.
+On macOS it also runs the built capture program against the built server, with its menu bar icon, and quits it.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 WORK = ROOT / "build"
 WINDOWS = sys.platform == "win32"
+MAC = sys.platform == "darwin"
 SEP = os.pathsep                 # PyInstaller's --add-data takes "source<sep>destination", with the system's own sep
 
 # Files the program reads at run time, beside its code: where each goes inside the folder.
@@ -46,9 +48,22 @@ EXCLUDE = ["--exclude-module", "rapidocr_onnxruntime", "--exclude-module", "cv2"
 # modules each package picks for the system at run time. On Windows tkinter draws its tray menu, in a script it
 # hands to `python -c`.
 CAPTURE_IMPORTS = ["mss", "soundcard", "pystray", "websocket", "numpy", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont"]
-CAPTURE_IMPORTS += (["mss.windows", "soundcard.mediafoundation", "pystray._win32", "tkinter", "ctypes.wintypes"]
-                    if WINDOWS else ["mss.linux", "soundcard.pulseaudio", "pystray._xorg", "pystray._appindicator",
-                                     "pystray._gtk"])
+if WINDOWS:
+    CAPTURE_IMPORTS += ["mss.windows", "soundcard.mediafoundation", "pystray._win32", "tkinter", "ctypes.wintypes"]
+elif MAC:
+    # pystray's menu bar icon is AppKit through PyObjC, and the capture program changes its menu on AppKit's thread
+    CAPTURE_IMPORTS += ["mss.darwin", "soundcard.coreaudio", "pystray._darwin", "AppKit", "Foundation", "Quartz",
+                        "objc", "PyObjCTools.AppHelper", "PyObjCTools.MachSignals"]
+else:
+    CAPTURE_IMPORTS += ["mss.linux", "soundcard.pulseaudio", "pystray._xorg", "pystray._appindicator", "pystray._gtk"]
+# What the Mac app tells macOS about itself, written into its Info.plist after PyInstaller: the menu bar icon is its
+# face, so no Dock icon, and the line macOS shows when the capture program first opens a loopback input.
+MAC_PLIST = {
+    "LSUIElement": True,
+    "NSMicrophoneUsageDescription": "Sidenote listens to the speaker sound through a loopback input such as "
+                                    "BlackHole, to write down what is said.",
+    "NSHighResolutionCapable": True,
+}
 
 
 # Installed for building, or for the switches EXCLUDE leaves out: not part of the app, so their licenses are not in it.
@@ -103,11 +118,99 @@ def icon(path: Path) -> Path:
     return path
 
 
+def version() -> str:
+    """The version line of server/version.py, read as text as the launcher reads it."""
+    return re.search(r'^VERSION = "([^"]+)"', (ROOT / "server" / "version.py").read_text(encoding="utf-8"), re.M)[1]
+
+
+def mac_bundle(app: Path) -> None:
+    """Info.plist as MAC_PLIST and the version say, then the app signed again (ad hoc, as PyInstaller signed it):
+    a changed Info.plist breaks the signature, and macOS on Apple silicon refuses to start unsigned code."""
+    import plistlib
+    plist = app / "Contents" / "Info.plist"
+    info = plistlib.loads(plist.read_bytes())
+    info.update(MAC_PLIST, CFBundleShortVersionString=version(), CFBundleVersion=version())
+    plist.write_bytes(plistlib.dumps(info))
+    print(f"Info.plist: macOS {info.get('LSMinimumSystemVersion', '(no minimum named)')} or newer, version {version()}")
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+
+
+def mac_capture_check(exe: Path) -> None:
+    """The built capture program against the built server, both from the app, with its menu bar icon on: it has to
+    connect and send a screen, and end itself when the server asks it to, as its Quit does. This runs AppKit's loop
+    on the main thread and the capture beside it, which no other check reaches."""
+    import json
+    import socket
+    import time
+    import urllib.request
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {**os.environ, "SIDENOTE_ANALYZER": "mock", "SIDENOTE_TRANSCRIBER": "null",
+           "SIDENOTE_DATA_DIR": str(WORK / "mac-check"), "SIDENOTE_LOG_DIR": str(WORK / "mac-check" / "logs")}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def health() -> dict:
+        try:
+            with opener.open(f"http://127.0.0.1:{port}/health", timeout=2) as r:
+                return json.loads(r.read())
+        except OSError:
+            return {}
+
+    server = subprocess.Popen([str(exe), "--serve", "--port", str(port)], env=env)
+    capture = None
+    try:
+        for _ in range(240):
+            if health():
+                break
+            time.sleep(0.5)
+        else:
+            raise SystemExit("the built server did not answer /health")
+        capture = subprocess.Popen([str(exe), "--capture", "--server", f"ws://127.0.0.1:{port}/ingest", "--no-audio",
+                                    "--no-auto-update"], env=env)
+        seen = {}
+        for _ in range(120):
+            seen = health().get("capture", {})
+            if seen.get("clients") and seen.get("last_frame"):
+                break
+            if capture.poll() is not None:
+                raise SystemExit(f"the built capture program ended with exit {capture.returncode}")
+            time.sleep(0.5)
+        else:
+            raise SystemExit(f"the built capture program sent no screen: {seen}")
+        print(f"the built capture program connected and sent a screen ({seen.get('info')})")
+        opener.open(urllib.request.Request(f"http://127.0.0.1:{port}/capture/quit", data=b"", method="POST"), timeout=5)
+        code = capture.wait(timeout=20)
+        if code != 0:
+            raise SystemExit(f"the built capture program ended with exit {code} when asked to quit")
+        print("...and ended itself when asked to, with its menu bar icon")
+    finally:
+        for proc in (capture, server):
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+
+def mac_icon(path: Path) -> Path:
+    """The same drawing at 1024 px as a PNG, which PyInstaller turns into the .icns a Mac app carries."""
+    from PIL import Image, ImageDraw
+    src = (ROOT / "client" / "capture.py").read_text(encoding="utf-8")
+    scope = {"Image": Image, "ImageDraw": ImageDraw}
+    exec(src[src.index("# ---- the icon:"):src.index("# ---- end of the icon ----")], scope)
+    scope["tray_image"](1024).save(path)
+    return path
+
+
 def main() -> int:
     if not (ROOT / "panel" / "vendor").is_dir():
         print("panel/vendor is missing: python docker/fetch_vendor.py docker/vendor.json panel/vendor")
         return 1
     shutil.rmtree(DIST / "Sidenote", ignore_errors=True)
+    shutil.rmtree(DIST / "Sidenote.app", ignore_errors=True)
     WORK.mkdir(exist_ok=True)
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--name", "Sidenote",
             "--distpath", str(DIST), "--workpath", str(WORK / "pyinstaller"), "--specpath", str(WORK),
@@ -122,12 +225,22 @@ def main() -> int:
     if WINDOWS:
         # no console window: the tray icon and the panel are the program's face, and a problem shows in a message box
         args += ["--windowed", "--icon", str(icon(WORK / "sidenote.ico"))]
+    elif MAC:
+        # an app bundle, opened from the Finder; its menu bar icon and the panel are its face. PyInstaller makes the
+        # .icns from the PNG, and the speaker sound's cffi headers are package data
+        args += ["--windowed", "--icon", str(mac_icon(WORK / "sidenote.png")),
+                 "--osx-bundle-identifier", "io.github.kanggu12.sidenote", "--collect-data", "soundcard"]
     args.append(str(ROOT / "desktop" / "__main__.py"))
     print(" ".join(args))
     subprocess.run(args, check=True, cwd=str(ROOT))
 
-    print(f"licenses of {licenses(DIST / 'Sidenote' / 'licenses')} packages in {DIST / 'Sidenote' / 'licenses'}")
-    exe = DIST / "Sidenote" / ("Sidenote.exe" if WINDOWS else "Sidenote")
+    # the app's own folder: beside Sidenote.exe, or the bundle's Resources on macOS
+    home = DIST / "Sidenote.app" / "Contents" / "Resources" if MAC else DIST / "Sidenote"
+    print(f"licenses of {licenses(home / 'licenses')} packages in {home / 'licenses'}")
+    if MAC:
+        mac_bundle(DIST / "Sidenote.app")
+    exe = (DIST / "Sidenote.app" / "Contents" / "MacOS" / "Sidenote" if MAC
+           else DIST / "Sidenote" / ("Sidenote.exe" if WINDOWS else "Sidenote"))
     print(f"checking {exe}")
     log = WORK / "check.log"
     log.unlink(missing_ok=True)
@@ -135,12 +248,21 @@ def main() -> int:
     print(log.read_text(encoding="utf-8") if log.is_file() else "(the check wrote no report)")
     if done.returncode:
         raise SystemExit(f"{exe} --check failed with exit {done.returncode}")
+    if MAC:
+        mac_capture_check(exe)
 
     system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
     machine = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower(),
                                                                                        platform.machine().lower())
-    archive = shutil.make_archive(str(DIST / f"Sidenote-{system}-{machine}"), "zip", DIST, "Sidenote")
-    print(f"wrote {archive}")
+    name = DIST / f"Sidenote-{system}-{machine}.zip"
+    if MAC:
+        # ditto, as the Finder's own Compress does: it keeps the bundle's links and signature, which a plain zip breaks
+        name.unlink(missing_ok=True)
+        subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(DIST / "Sidenote.app"), str(name)],
+                       check=True)
+    else:
+        shutil.make_archive(str(name.with_suffix("")), "zip", DIST, "Sidenote")
+    print(f"wrote {name}")
     return 0
 
 
