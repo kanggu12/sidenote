@@ -175,7 +175,8 @@ SIDENOTE_AGENT=off SIDENOTE_UPDATE_CHECK=0 SIDENOTE_LOCAL_PULL=0 HF_HUB_OFFLINE=
 An Ollama that runs as a service keeps its own settings, and its models in `/usr/share/ollama/.ollama`. Stop it with
 `sudo systemctl disable --now ollama` so that Sidenote starts its own.
 
-On macOS, with Ollama for Mac installed and Sidenote in Applications, start it from Terminal so the settings reach it:
+On macOS, with Ollama for Mac installed and Sidenote in Applications, quit Sidenote from its menu bar icon if it is
+running, then start it from Terminal so these settings reach it:
 
 ```bash
 mkdir -p ~/.ollama "$HOME/Library/Application Support/Sidenote/hf"

@@ -81,12 +81,12 @@ For macOS 14 or newer on a Mac with Apple silicon (M1 or later). No Docker and n
    `codex login`.
 3. Download
    [Sidenote-macos-arm64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip),
-   open it, drag **Sidenote** to **Applications** and open it there. The app is not signed by a publisher yet, so macOS
-   stops it the first time: open **System Settings**, then **Privacy & Security**, and choose **Open Anyway** at the
-   bottom.
+   double-click the zip to unpack it, drag **Sidenote** into **Applications**, and open it from there. The app is not
+   signed by a publisher yet, so macOS stops it the first time: open **System Settings**, then **Privacy & Security**,
+   and choose **Open Anyway** at the bottom.
 4. The panel opens in your browser, and an icon appears in the menu bar. macOS asks once for **Screen Recording** for
-   Sidenote: allow it, then choose **Quit Sidenote** in the menu bar icon and open Sidenote again. In the panel, choose
-   **Download** for the model that fits your Mac's memory.
+   Sidenote: choose **Open System Settings**, turn Sidenote on, then choose **Quit Sidenote** from the menu bar icon's
+   menu and open Sidenote again. In the panel, choose **Download** for the model that fits your Mac's memory.
 
 For the speaker sound, the capture program listens to a loopback input: install
 [BlackHole](https://github.com/ExistentialAudio/BlackHole) (`brew install blackhole-2ch`), make a **Multi-Output
@@ -199,7 +199,7 @@ has the Secret for each agent, an AMD GPU and a full values file. The capture pr
 | To | The app | Docker |
 |:---|:---|:---|
 | Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
-| Open the panel | the tray icon, or **Open the panel** in the menu bar icon on macOS | `./sidenote open` |
+| Open the panel | the tray icon, or **Open the panel** in the menu bar icon's menu on macOS | `./sidenote open` |
 | See what runs | the panel's cards | `./sidenote status` |
 | Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
 | Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
@@ -242,7 +242,7 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
 |:---|:---|:---|:---|
 | GPU | none: the agent answers | 10 GB or more, NVIDIA or AMD | 24 GB, such as an RTX 3090 or 4090 |
 | Memory | 8 GB | 16 GB | 32 GB |
-| A Mac's memory, shared with its GPU | any | 16 or 24 GB | 32 GB or more |
+| A Mac's memory, shared with its GPU | any | 16 to 24 GB | 32 GB or more |
 | Disk, beside the app or the images | none | 6.6 GB | 18 GB |
 
 It runs on Windows 10 or 11, macOS 14 or newer on Apple silicon, Linux with X11 (Ubuntu 22.04 or newer), Docker on Linux
@@ -252,9 +252,9 @@ figure is room for the system and the browser. The speech model runs on the CPU:
 takes about 8 s of CPU time. The app downloads as 111 MB on Windows, 76 MB on macOS and 217 MB on Linux; with Docker, the
 images take about 8.5 GB, Ollama's 5.6 GB of it.
 
-A Mac's GPU works in the Mac's own memory, of which macOS lets it keep two thirds up to 36 GB and three quarters above,
-so Sidenote offers the e4b from 16 GB and the 26b from 32 GB. How fast the models are on a Mac, and how well they answer
-there, has not been measured yet.
+A Mac's GPU works in the Mac's own memory: macOS lets it use two thirds of it on a Mac with up to 36 GB, and three
+quarters on a larger one, so Sidenote offers the e4b from 16 GB and the 26b from 32 GB. How fast the models are on a
+Mac, and how well they answer there, has not been measured yet.
 
 | GPU memory | Local model | Right, of 56 | Code passing, of 7 | Spoken, of 8 | Empty screen |
 |:---:|:---:|---:|---:|---:|---:|
@@ -339,7 +339,7 @@ setting offers `opus`, `sonnet` and `haiku`, each its newest release.
 - The problems that need reasoning go to the agent you signed in to (Anthropic for Claude Code and the API, OpenAI for
   Codex), by default as only the problem's part of the screen. **Solver settings** can send the problem's text or the
   whole screen instead, or nothing at all.
-- While a window you named in **Skip windows** shows, nothing of the screen is taken: a password manager and private
+- While a window you named in **Skip windows** shows, no screen is captured: the common password managers and private
   browser windows are on that list from the start.
 - Each answer lists what left your PC for it, and only this PC can open the panel: the server is reached on 127.0.0.1
   (on Kubernetes, through `kubectl port-forward`).

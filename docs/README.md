@@ -75,9 +75,10 @@ README's [What it runs on](../README.md#what-it-runs-on).
   measured on a Mac: how fast the models are there and how well they answer.
 - **The local model**: an NVIDIA or AMD GPU, or a Mac's Apple silicon. Sidenote reads its memory and picks the largest
   measured model that fits: `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. A Mac's GPU works
-  in the Mac's own memory and gets as much of it as macOS lets it keep (two thirds up to 36 GB, three quarters above, or
-  `iogpu.wired_limit_mb` when raised): the e4b from 16 GB, the 26b from 32 GB. With less, or no GPU, the cloud agent
-  solves everything (a model can still be pulled to run on the CPU, slowly). `SIDENOTE_LOCAL_MODEL` names one by hand.
+  in the Mac's own memory and gets as much of it as macOS lets it use (two thirds on a Mac with up to 36 GB, three
+  quarters on a larger one, or `iogpu.wired_limit_mb` when raised): the e4b from 16 GB, the 26b from 32 GB. With less,
+  or no GPU, the cloud agent solves everything (a model can still be pulled to run on the CPU, slowly).
+  `SIDENOTE_LOCAL_MODEL` names one by hand.
 - **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
   account that can use it, or an Anthropic API key. With Docker the server runs its own copy of the CLI with the login from
   WSL (`~/.claude`, `~/.codex`); `./sidenote login codex` signs Codex in even without `codex` in WSL. The server uses the
@@ -96,9 +97,10 @@ Install Sidenote, start it once, and sign the cloud agent in.
    - **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
      `Sidenote.exe`: it does not start from inside the zip. The first time, Windows may warn about an unknown
      publisher: **More info**, then **Run anyway**.
-   - **macOS**: open the zip, drag **Sidenote** to **Applications** and open it there. The app is not signed by a
-     publisher yet, so macOS stops it the first time: in **System Settings**, **Privacy & Security**, choose **Open
-     Anyway** at the bottom. (On macOS 14, right-click the app, choose **Open**, then **Open** again.)
+   - **macOS**: double-click the zip to unpack it, drag **Sidenote** into **Applications**, and open it from there. The
+     app is not signed by a publisher yet, so macOS stops it the first time: in **System Settings**, **Privacy &
+     Security**, choose **Open Anyway** at the bottom. (On macOS 14, right-click the app, choose **Open**, then **Open**
+     again.)
    - **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
 3. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the notification
    area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS. When the model for
@@ -108,16 +110,18 @@ Install Sidenote, start it once, and sign the cloud agent in.
    app uses the CLI it finds when it starts, Claude Code first: after installing one while the app runs, quit Sidenote
    and start it again. Opened from the Finder or a desktop's menu, the app asks your login shell for its `PATH`, so it
    finds a CLI the shell finds.
-5. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Allow it, then quit Sidenote from
-   its menu bar icon and open it again: until then the screen holds only the desktop picture. For the speaker sound,
+5. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Choose **Open System Settings**
+   and turn Sidenote on, then quit Sidenote from its menu bar icon's menu and open it again: until then the screen holds
+   only the desktop picture. For the speaker sound,
    install BlackHole (`brew install blackhole-2ch`), make a **Multi-Output Device** of your speakers and BlackHole in
    **Audio MIDI Setup**, and choose it as the output; macOS then asks once for the microphone, as Sidenote hears
    BlackHole as an input.
 
 While it runs, the app starts Ollama when it is installed but not running, and starts again any part that stops.
-**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the app again while it runs
-opens the panel. `SIDENOTE_*` settings (section 12) are read from the environment the app starts with. Options go after
-`Sidenote.exe`, after `Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
+**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. On Windows and Linux, starting the
+app again while it runs opens the panel; on macOS, choose **Open the panel** in its menu bar icon's menu. `SIDENOTE_*`
+settings (section 12) are read from the environment the app starts with. Options go after `Sidenote.exe`, after
+`Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
 
 | Option | Meaning |
 |:---|:---|
@@ -243,9 +247,10 @@ area. What it prints goes to `capture.log`, kept under 4 MB (a trim keeps the ne
 the terminal instead, where Ctrl+C ends it; that is the way to see what stops it from starting.
 
 Clicking the icon opens the panel. Right-clicking it opens a menu with **Open the panel**, the **Screen capture** and
-**Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole
-app). The menu uses the panel's look: the same icons, the same status pill (green while it captures, red with no
-server, amber with **Skipped window** while a window named in **Skip windows** is on screen) and the same switches.
+**Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole app);
+on macOS a click on the icon in the menu bar opens that menu. On Windows the menu uses the panel's look: the same icons,
+the same status pill (green while it captures, red with no server, amber with **Skipped window** while a window named in
+**Skip windows** is on screen) and the same switches.
 
 The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it the program still runs, with no icon, and
 says so once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
