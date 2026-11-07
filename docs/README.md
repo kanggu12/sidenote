@@ -224,6 +224,28 @@ no tools but a web search, for a question about the present; Codex runs in a rea
 approval. Claude Code's token refresh goes through its own lock, so it does not collide with other Claude Code
 sessions on this PC.
 
+### The setup guide
+
+The first time the panel opens on a server that has kept no answer, it opens the **Setup guide**, and the gear menu
+opens it again at any time. It has four steps, and each is ticked in the row of steps once what it is about works:
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/setup-guide-dark.png">
+    <img alt="The Setup guide on its first step, Solving: the steps Solving, Screen, Sound and Try it in a row, the first three ticked; the Local model on the GPU and Claude Code connected, each as its card says it; and the settings Local model, Model and Problems the agent solves" src="assets/setup-guide-light.png" width="560">
+  </picture>
+</p>
+
+1. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with **Model** and
+   **Problems the agent solves**. One of the two is enough.
+2. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
+   **Monitor** and **Skip windows**. On a Mac the capture program needs **Screen Recording**.
+3. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
+4. **Try it**: **Open the sample problem** opens a question in a new tab. With that tab on the screen, the step
+   follows the answer it gets and offers **See the answer**.
+
+Its settings are the rows of **Solver settings**, and change the same values.
+
 ## 4. Everyday use
 
 Start Sidenote, stop it, and lend the GPU to other work. With the app, start it (`Sidenote.exe`, **Sidenote** in
@@ -368,6 +390,7 @@ notebook carry the same readings.
   - **Practice**: **Off** or **On**. With it on, a new answer shows its question first, and its hints and its answer
     when you ask ([Practice](#practice)). This browser keeps it.
   - **Solver settings** (section 12).
+  - **Setup guide**: the four steps of a first start, again ([The setup guide](#the-setup-guide)).
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest.

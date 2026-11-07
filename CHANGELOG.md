@@ -6,6 +6,13 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- A **Setup guide** in the panel, in four steps: what solves (the local model and the agent as their cards say them),
+  the screen (the one the server receives, the monitor, **Skip windows**), the sound, and a sample problem to try,
+  followed to its answer. Each step is ticked once what it is about works, and holds the rows of **Solver settings** it
+  is about. It opens by itself the first time a panel meets a server that has kept no answer, and from the gear menu.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

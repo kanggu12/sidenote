@@ -2632,6 +2632,7 @@ function renderSignals() {
   // Known to be off, not just not known yet: at rest, in grey, like the pill beside it
   $("sw-screen").dataset.dead = $("sw-audio").dataset.dead = String(capture.clients === 0);
   renderUsage();
+  renderSetup();   // the guide says each state as its card does
 }
 // The numbers of the sitting, as a line of type rather than a table of labels: what was answered and
 // how fast first, what it cost underneath.
@@ -5100,6 +5101,7 @@ function handle(m) {
       if (m.update !== undefined) status.update = m.update;   // a newer release, or null: one line in the band (updateBand)
       if (m.update_check !== undefined) status.updateCheck = m.update_check !== false;   // false: the environment turned the check off
       renderAll();
+      if (m.fresh) setupFirst();   // nothing answered yet on this server: the setup guide, once in this browser
       break;
     case "capture": {
       const wasOn = capture.screen_on;
@@ -5133,12 +5135,12 @@ function handle(m) {
     // and its Korean words tell it instead
     case "notice": toast(m.text || "", m.of != null && items.has(m.of) ? () => goTo(m.of) : null,
       m.level || (/못했|못합니다|실패|수 없습니다|못 |안 보냄|없음|불가/.test(m.text || "") ? "warn" : "info")); break;
-    case "transcript": renderHear(m.text, m.lang, { waiting: !!m.waiting, pending: !!m.pending }); break;
+    case "transcript": renderHear(m.text, m.lang, { waiting: !!m.waiting, pending: !!m.pending }); setupHeardNow(m.text); break;
     case "utterance": noteHeard(m.text, m.why); break;   // a sentence that ended: with a `why` when it was not taken
     // An answer being written when this page opened comes with its words so far (the server's LIVE)
-    case "analysis_start": onStart(m); if (m.text) onDelta({ type: "delta", id: m.id, text: m.text }); break;
+    case "analysis_start": onStart(m); if (m.text) onDelta({ type: "delta", id: m.id, text: m.text }); setupSaw(m, false); break;
     case "delta": onDelta(m); break;
-    case "analysis_done": liveDone.add(idOf(m.id)); onDone(m); sweepKey(entryEl(m.id)); break;
+    case "analysis_done": liveDone.add(idOf(m.id)); onDone(m); sweepKey(entryEl(m.id)); setupSaw(m, true); break;
     case "analysis_cancelled": onCancelled(m); break;
     case "error": onError(m); break;
     case "run_started": onRunStarted(m); break;
@@ -5216,6 +5218,7 @@ function handle(m) {
       if (confirms.delete(m.cid)) renderTail();
       break;
     case "thumb":
+      if (setupShotAsked) { setupShotFrom(m); break; }
       if (m.url) {
         // ts stays in the server's seconds: renderShot reads its age against serverNow()
         drawing = { url: m.url, ts: typeof m.ts === "number" ? m.ts : serverNow(), live: m.live !== false, start: null, box: null };
@@ -5373,6 +5376,7 @@ function settingRow(item) {
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
 // sections become tabs down the side, so every setting is one click from any other.
 function renderSettings() {
+  renderSetup();   // the setup guide holds settings and states too, and is drawn with them
   const body = $("settings-body");
   if (!body || $("settings-overlay").hidden) return;
   if (sheetBusy()) { sheetDue = true; return; }   // drawn once the press or the typing is over (sheetSettle)
@@ -5447,21 +5451,23 @@ function setSetting(key, value) {
   renderSettings(); renderShot();
   return true;
 }
+// The panes that hold rows of settings: Solver settings and the setup guide, each row pressed and typed into the same way
+const onSheets = (type, fn) => { for (const id of ["settings-body", "setup-body"]) $(id).addEventListener(type, fn); };
 // ---------- a box of words in the sheet (Skip windows) ----------
 // The sheet is drawn again on every message from the server, and two moments wait for that: a press in it (the control
 // under the pointer replaced between the press and the release takes no click), and the keyboard in a box of words (a
 // redraw puts the caret back at the start and cuts a Korean syllable being put together)
 let sheetPress = false, sheetDue = false;
-function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.("#settings-body textarea.words"); }
+function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.(":is(#settings-body, #setup-body) textarea.words"); }
 // The redraw that waited, once neither holds: after the focus has moved on (a Tab out of the box) or the click has landed
 function sheetSettle() { setTimeout(() => { if (sheetDue && !sheetBusy()) { sheetDue = false; renderSettings(); } }, 0); }
-$("settings-overlay").addEventListener("pointerdown", () => { sheetPress = true; }, true);
+for (const o of ["settings-overlay", "setup-overlay"]) $(o).addEventListener("pointerdown", () => { sheetPress = true; }, true);
 for (const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, () => { if (sheetPress) { sheetPress = false; sheetSettle(); } }, true);
 // The words in a box: split at commas (and at line ends, for a list pasted one to a line), trimmed, none of them empty
 const wordsOf = (text) => text.split(/[,\n]/).map((w) => w.trim()).filter(Boolean);
 // Each box as tall as its lines, up to the stylesheet's limit (index.html, .set textarea.words)
 function fitWords(root = document) {
-  for (const box of root.querySelectorAll("#settings-body textarea.words")) {
+  for (const box of root.querySelectorAll(":is(#settings-body, #setup-body) textarea.words")) {
     box.style.height = "auto";                                                         // its own height first, so fewer lines shrink it
     box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;   // then its lines, with its edges
   }
@@ -5472,8 +5478,8 @@ function wordsCommit(box) {
   if (JSON.stringify(list) === JSON.stringify(settingsValues[key] || [])) return;
   if (send({ type: "setting", key, value: list })) settingsValues[key] = list;
 }
-$("settings-body").addEventListener("input", (e) => { if (e.target.matches?.("textarea.words")) fitWords(); });
-$("settings-body").addEventListener("keydown", (e) => {
+onSheets("input", (e) => { if (e.target.matches?.("textarea.words")) fitWords(); });
+onSheets("keydown", (e) => {
   const box = e.target.closest?.("textarea.words");
   if (!box) return;
   // Enter sends them, tidied as they are kept; not while a Korean syllable is being put together (that Enter is the IME's)
@@ -5487,7 +5493,7 @@ $("settings-body").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") box.value = (settingsValues[box.dataset.set] || []).join(", ");
 });
 // Leaving the box sends what was typed, and the redraw that waited comes once the focus has moved on
-$("settings-body").addEventListener("focusout", (e) => {
+onSheets("focusout", (e) => {
   if (!e.target.matches?.("textarea.words")) return;
   wordsCommit(e.target);
   sheetDue = true;
@@ -5586,7 +5592,7 @@ document.addEventListener("click", (e) => {
     if (li) comboPick(li); else comboClose(false);           // a click anywhere else closes it
   }
 });
-$("settings-body").addEventListener("click", (e) => {
+onSheets("click", (e) => {
   const tab = e.target.closest("[data-sec]");
   if (tab) { showSection(tab.dataset.sec); return; }
   const t = e.target.closest("[data-set]");
@@ -5726,7 +5732,7 @@ function comboPick(li) {
   if (item && li) setSetting(item.key, JSON.parse(li.dataset.val));
 }
 
-$("settings-body").addEventListener("click", (e) => {
+onSheets("click", (e) => {
   const btn = e.target.closest(".combo-btn");
   if (btn && !btn.disabled) { e.preventDefault(); comboToggle(btn); return; }
 });
@@ -5740,7 +5746,7 @@ addEventListener("click", (e) => {
 addEventListener("keydown", (e) => {
   if (e.key === "Escape" && comboOpen) { e.preventDefault(); e.stopPropagation(); comboClose(); }
 }, true);
-$("settings-body").addEventListener("keydown", (e) => {
+onSheets("keydown", (e) => {
   const btn = e.target.closest(".combo-btn");
   if (!btn || btn.disabled) return;
   const open = comboOpen && comboOpen.btn === btn;
@@ -6267,10 +6273,222 @@ $("heard").addEventListener("keydown", (e) => {   // the keyboard stays inside t
 // Closed by a press on the veil only when the press and the release are both on it (the settings sheet's rule)
 $("heard-overlay").addEventListener("mousedown", (e) => { heardPress = e.target === $("heard-overlay"); });
 $("heard-overlay").addEventListener("click", (e) => { if (heardPress && e.target === $("heard-overlay")) closeHeard(); heardPress = false; });
+// ---------- The setup guide ----------
+// Four steps in the settings sheet's look: what solves, the screen, the sound, and a sample problem to try. Each says how things
+// stand as the cards say it (the same states, words and notes: localState and the others), what to do where something is
+// missing, and holds the settings that step is about, drawn and pressed as in Solver settings (settingRow, onSheets). From the
+// menu, and once by itself on a new install: the server says fresh while it has kept no answer, and this browser remembers it.
+const SETUP_SEEN = "sidenote.setupSeen";
+const SETUP_STEPS = [["solve", () => t("Solving")], ["screen", () => t("Screen")], ["sound", () => t("Sound")], ["try", () => t("Try it")]];
+let setupStep = 0, setupOpener = null, setupPress = false, setupDrawn = "";
+let setupShot = null, setupShotAsked = false;   // the screen the screen step asked for: shown there, and no drawing starts on the screen card
+let setupHeard = "";                            // the last words heard, on the sound step
+let setupTry = null;                            // the sample problem: { state: "open" | "solving" | "done", at, id, answer, missed }
+// How a step stands: ok when what it is about works, warn when something comes first, idle while not known or left as optional
+function setupState(id) {
+  const L = eng()?.local, C = eng()?.agent;
+  if (wsState !== "up" || !eng()) return "idle";
+  if (id === "solve") return (L?.present && L.on && L.ok) || (C?.present && C.ok && C.mode !== "off") ? "ok" : "warn";
+  if (id === "screen") return screenState().s === "ok" ? "ok" : "warn";
+  if (id === "sound") return audioState().s === "ok" ? "ok" : "idle";   // the sound is optional: off is no fault
+  return setupTry?.state === "done" ? "ok" : "idle";
+}
+// One thing as its card says it: the name and the pill in its colour, then the card's facts and note (the agent's meters stay on
+// its card)
+const setupCard = (name, st) => `<div class="setup-state" data-state="${st.s}"><div class="setup-top"><b>${escapeHtml(name)}</b>`
+  + `<span class="pill" data-state="${st.s}">${escapeHtml(st.pill)}</span></div>${cardHtml({ ...st, viz: "" })}</div>`;
+// The rows of the settings named, as Solver settings draws them: those the server has
+const setupRows = (...keys) => keys.map(settingItem).filter(Boolean).map(settingRow).join("");
+const onMac = () => /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+function setupPane(id) {
+  const L = eng()?.local, C = eng()?.agent, up = wsState === "up";
+  if (id === "solve") {
+    const cards = (L?.present ? setupCard(t("Local model"), localState()) : "") + (C?.present ? setupCard(AG(), agentState()) : "");
+    const none = up && eng() && setupState("solve") === "warn"
+      ? `<p class="setup-note warn">${t("Nothing can solve yet · get the local model, or sign in to the agent", { agent: AG() })}</p>` : "";
+    return `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both. One of them is enough", { agent: AG() })}</p>`
+      + cards + none + setupRows("local_llm", "local_model", "agent_mode");
+  }
+  if (id === "screen") {
+    const shot = setupShot?.url
+      ? `<figure class="setup-shot"><img src="${escapeHtml(setupShot.url)}" alt="${escapeHtml(t("The screen Sidenote receives"))}">`
+        + `<figcaption>${setupShot.live ? t("Screen now") : t("Last screen {when}", { when: fmtAgo(serverNow() - setupShot.ts) })}</figcaption></figure>`
+      : setupShot?.text ? `<p class="setup-note warn">${escapeHtml(setupShot.text)}</p>` : "";
+    return `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends. A problem on another monitor is not read")}</p>`
+      + setupCard(t("Screen capture"), screenState())
+      + `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`
+      + shot + (onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : "")
+      + setupRows("monitor", "skip_windows");
+  }
+  if (id === "sound") {
+    return `<p class="setup-lede">${t("The sound is optional: with it, a problem asked aloud is solved too")}</p>`
+      + setupCard(t("Sound capture"), audioState())
+      + `<p class="setup-heard" id="setup-heard">${escapeHtml(setupHeard || t("Nothing heard yet · play a video or say something"))}</p>`
+      + (onMac() ? `<p class="setup-note">${t("On a Mac, the sound of other apps comes in through a loopback input such as BlackHole (the user guide)")}</p>` : "")
+      + setupRows("voice_auto", "speech_lang");
+  }
+  // The sample problem: opened in a tab of its own, then how far it has come
+  const tr = setupTry, ready = setupState("solve") === "ok" && setupState("screen") === "ok";
+  const says = !tr ? ""
+    : tr.state === "done" ? `<p class="setup-try done">${TICK_MARK}<span>${t("Answered: {answer}", { answer: `<b>${escapeHtml(tr.answer || "")}</b>` })}</span>`
+      + `<button type="button" class="btn sm" data-setup="see">${t("See the answer")}</button></p>`
+    : `<p class="setup-try"><span class="spin"></span><span>${tr.state === "solving" ? t("Solving the sample problem")
+      : tr.missed ? t("No problem found on that screen · bring the sample tab to the front") : t("Waiting for it on the screen · keep the sample tab in view")}</span></p>`;
+  return `<p class="setup-lede">${t("Opens a sample problem in a new tab. With it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`
+    + (ready || !up ? "" : `<p class="setup-note warn">${t("A solving engine and the screen come first")}</p>`)
+    + `<div class="setup-act"><button type="button" class="btn sm" data-setup="sample"${up ? "" : " disabled"}>${t("Open the sample problem")}</button></div>` + says;
+}
+function renderSetup() {
+  const body = $("setup-body");
+  if (!body || $("setup-overlay").hidden) return;
+  if (sheetBusy()) { sheetDue = true; return; }   // drawn once the press or the typing is over (sheetSettle), as Solver settings is
+  // The steps over the pane: a number, or the tick once the step works, in the colour of how it stands
+  const nav = SETUP_STEPS.map(([id, name], i) => {
+    const st = setupState(id);
+    return `<button type="button" role="tab" class="setup-step" data-step="${i}" data-state="${st}" aria-selected="${i === setupStep}"`
+      + ` tabindex="${i === setupStep ? 0 : -1}"><span class="n">${st === "ok" ? TICK_MARK : i + 1}</span><span class="name">${escapeHtml(name())}</span></button>`;
+  }).join("");
+  const steps = $("setup-steps");
+  if (steps.dataset.html !== nav) {
+    const at = steps.contains(document.activeElement) ? document.activeElement.dataset.step : null;
+    steps.dataset.html = nav;
+    steps.innerHTML = nav;
+    if (at != null) steps.querySelector(`[data-step="${at}"]`)?.focus({ preventScroll: true });
+  }
+  // The pane, drawn again only when something in it changed: it comes with every status message, and a redraw takes the keyboard
+  // off a row (put back here by the same keys renderSettings uses) and shuts an open list (opened again on the same choice)
+  const html = setupPane(SETUP_STEPS[setupStep][0]);
+  if (html !== setupDrawn) {
+    const was = body.contains(document.activeElement) ? document.activeElement.dataset : null;
+    const reopen = comboOpen && body.contains(comboOpen.btn) ? { key: comboOpen.btn.dataset.set, at: comboAt() } : null;
+    if (reopen) comboClose(false);
+    const moved = body.dataset.step !== String(setupStep);
+    setupDrawn = html;
+    body.innerHTML = html;
+    body.dataset.step = String(setupStep);
+    if (moved) { body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
+    fitWords(body);
+    const sel = was?.set ? `[data-set="${CSS.escape(was.set)}"]` + (was.val !== undefined ? `[data-val="${CSS.escape(was.val)}"]`
+      : was.multi !== undefined ? `[data-multi="${CSS.escape(was.multi)}"]` : "") : was?.setup ? `[data-setup="${CSS.escape(was.setup)}"]` : "";
+    if (sel) (body.querySelector(sel) || (was.set ? body.querySelector(`[data-set="${CSS.escape(was.set)}"]`) : null))?.focus({ preventScroll: true });
+    if (reopen) {
+      const btn = body.querySelector(`.combo-btn[data-set="${CSS.escape(reopen.key)}"]:not([disabled])`);
+      if (btn) { comboToggle(btn); if (reopen.at >= 0) comboMove(reopen.at); }
+    }
+  }
+  $("setup-back").hidden = setupStep === 0;
+  $("setup-next").textContent = setupStep === SETUP_STEPS.length - 1 ? t("Finish") : t("Next");
+}
+function openSetup(step) {
+  toggleMenu(false); exportMenu(false); comboClose(false);
+  // One sheet at a time: the guide holds some of the same settings, and two dialogs would each keep the keyboard
+  if (!$("settings-overlay").hidden) closeSettings();
+  closeKeys(); closeHeard();
+  setupOpener = document.activeElement;
+  if (typeof step === "number") setupStep = step;
+  try { localStorage.setItem(SETUP_SEEN, "1"); } catch (_) {}
+  $("setup-overlay").hidden = false;
+  setupDrawn = "";
+  $("setup-steps").dataset.html = "";
+  renderSetup();
+  $("setup-close").focus({ preventScroll: true });
+}
+function closeSetup() {
+  if ($("setup-overlay").hidden) return;
+  $("setup-overlay").hidden = true;
+  comboClose(false);          // a list stands on the page's body, and would stay behind
+  setupShotAsked = false;     // a screen still on its way goes to nobody
+  const was = setupOpener;
+  setupOpener = null;
+  focusBack(was);
+}
+// Once by itself, for a new install: not over a sheet already open, and not again in this browser. With nothing to remember it by
+// (storage refused) it is not opened unasked, or it would come back with every page
+function setupFirst() {
+  let seen = true;
+  try { seen = !!localStorage.getItem(SETUP_SEEN); } catch (_) {}
+  if (seen || ["setup-overlay", "settings-overlay", "keys-overlay", "heard-overlay"].some((o) => !$(o).hidden)) return;
+  openSetup(0);
+}
+function setupGo(i) {
+  if (i < 0 || i >= SETUP_STEPS.length || i === setupStep) return;
+  comboClose(false);
+  setupStep = i;
+  renderSetup();
+}
+$("open-setup").onclick = () => openSetup();
+$("setup-close").onclick = closeSetup;
+$("setup-back").onclick = () => setupGo(setupStep - 1);
+$("setup-next").onclick = () => (setupStep === SETUP_STEPS.length - 1 ? closeSetup() : setupGo(setupStep + 1));
+$("setup-steps").addEventListener("click", (e) => { const s = e.target.closest("[data-step]"); if (s) setupGo(+s.dataset.step); });
+// The steps are tabs: the arrows walk them, Home and End go to the first and the last
+$("setup-steps").addEventListener("keydown", (e) => {
+  const s = e.target.closest("[data-step]");
+  if (!s || !["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
+  e.preventDefault(); e.stopPropagation();
+  const n = SETUP_STEPS.length, i = +s.dataset.step;
+  setupGo(e.key === "Home" ? 0 : e.key === "End" ? n - 1 : (i + (e.key === "ArrowRight" ? 1 : n - 1)) % n);
+  $("setup-steps").querySelector(`[data-step="${setupStep}"]`)?.focus();
+});
+// The guide's own keys in its pane: the screen it receives, the sample problem, and the way to its answer
+$("setup-body").addEventListener("click", (e) => {
+  const k = e.target.closest("[data-setup]");
+  if (!k || k.disabled) return;
+  if (k.dataset.setup === "shot") { if (send({ type: "thumb" })) setupShotAsked = true; }
+  else if (k.dataset.setup === "sample") {
+    window.open(`sample.html?lang=${encodeURIComponent(LANG)}`, "_blank", "noopener");
+    setupTry = { state: "open", at: serverNow(), id: null, answer: "", missed: false };
+    renderSetup();
+  } else if (k.dataset.setup === "see") {
+    const id = setupTry?.id;
+    closeSetup();
+    if (id != null && items.has(id)) goTo(id);
+  }
+});
+// The screen asked for, as the server sends it back: shown on the step with its age, or why there is none
+function setupShotFrom(m) {
+  setupShotAsked = false;
+  setupShot = m.url ? { url: m.url, ts: typeof m.ts === "number" ? m.ts : serverNow(), live: m.live !== false } : { text: m.text || t("No screen received") };
+  renderSetup();
+}
+// What is heard, on the sound step as it comes: its line alone, so the pane is not drawn again for every word
+function setupHeardNow(text) {
+  if (!text) return;
+  setupHeard = String(text).trim().slice(-280);
+  const el = $("setup-overlay").hidden ? null : document.getElementById("setup-heard");
+  if (el) el.textContent = setupHeard;
+}
+// The sample problem on its way: the first answer to a screen started after it was opened, then that answer's line once done. A
+// screen with no problem on it says so, and the step waits on
+function setupSaw(m, done) {
+  const tr = setupTry;
+  if (!tr || tr.state === "done") return;
+  if (!done) {
+    if (tr.state !== "open" || ["ask", "retry", "continue", "voice"].includes(m.trigger)) return;
+    if (typeof m.ts === "number" && m.ts < tr.at - 2) return;
+    setupTry = { ...tr, state: "solving", id: idOf(m.id) };
+  } else {
+    if (tr.id !== idOf(m.id)) return;
+    const head = items.get(idOf(m.id))?.head || splitHead(m.text || "", true);
+    setupTry = !head.type || head.type === "none" ? { ...tr, state: "open", id: null, missed: true } : { ...tr, state: "done", answer: head.answer || "" };
+  }
+  renderSetup();
+}
+// Closed by a press on the veil only when the press and the release are both on it, and the keyboard stays inside while it is open
+$("setup-overlay").addEventListener("mousedown", (e) => { setupPress = e.target === $("setup-overlay"); });
+$("setup-overlay").addEventListener("click", (e) => { if (setupPress && e.target === $("setup-overlay")) closeSetup(); setupPress = false; });
+$("setup").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...$("setup").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
+  if (!f.length) return;
+  const edge = e.shiftKey ? f[0] : f[f.length - 1];
+  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!$("keys-overlay").hidden) { closeKeys(); return; }
     if (!$("heard-overlay").hidden) { closeHeard(); return; }
+    if (!$("setup-overlay").hidden) { closeSetup(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
     if (!$("export-menu").hidden) { exportMenu(false, true); return; }
     if (drawing) { stopDrawing(); return; }
@@ -6291,6 +6509,7 @@ document.addEventListener("keydown", (e) => {
   // The keys' sheet is one too: its own key closes it, and nothing else acts behind it
   if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
   if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
+  if (!$("setup-overlay").hidden) return;   // and the setup guide
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
   // Drawing a region is its own mode, ended by Escape: nothing starts behind it
   if (SHORTCUTS[key] && !drawing && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {

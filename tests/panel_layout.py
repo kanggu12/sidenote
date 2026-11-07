@@ -625,6 +625,7 @@ STUDY_OPEN = [
     ("keys_sheet", "() => openKeys()"),
     ("export_menu", "() => { const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }"),
     ("heard_sheet", "() => openHeard()"),
+    ("setup_guide", "() => openSetup(0)"),
 ]
 # What the sheet of what was heard reads: the stand-in server's /heard while the audit opens it
 HEARD_KEPT = {"days": [{"day": "2026-11-04", "n": 40, "first": 1793800000, "last": 1793803000}, {"day": "2026-11-03", "n": 2, "first": 1793700000, "last": 1793700100}], "day": "2026-11-04",
@@ -638,6 +639,7 @@ STUDY_PLANTS = [
     # its words are in its tooltips, so the cut is one the audit says is told
     ("cut-told", "#export-menu { width: 64px !important; min-width: 0 !important; } #export-menu .item { overflow: hidden !important; white-space: nowrap !important; }"),
     ("cut", "#heard .heard-line { grid-template-columns: 8px minmax(0, 1fr) !important; } #heard .heard-line time { overflow: hidden !important; }"),
+    ("cut", "#setup .setup-step .name { max-width: 8px !important; }"),
 ]
 
 
@@ -770,6 +772,19 @@ def group_overlays(br, s):
         found += audit(p, "settings_speech", f"{w}x{hh}")
         if p.errors:
             check(f"settings_words {w}x{hh}: the page threw nothing", False, p.errors[:2])
+        p.close()
+    # The setup guide as the server fills it, each of its four steps, from the widest window to the narrowest (app.js, renderSetup)
+    for (w, hh) in ((2560, 1440), (1920, 1080), (1366, 768), (768, 1024), (390, 844), (360, 740)):
+        p = Page(br, s, many(), w=w, h=hh, settle=300)
+        p.send(words)
+        p.js("() => openSetup(0)")
+        p.wait(300)
+        for i, step in enumerate(("solve", "screen", "sound", "try")):
+            p.js(f"() => setupGo({i})")
+            p.wait(250)
+            found += audit(p, f"setup_{step}", f"{w}x{hh}")
+        if p.errors:
+            check(f"setup {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()
     s.heard = {"days": [], "day": "", "lines": []}
     # An empty panel, and the first screen

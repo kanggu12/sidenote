@@ -216,6 +216,14 @@ class History:
                 self._heard_bytes = self._heard_sum()
         return gone
 
+    def fresh(self) -> bool:
+        """Whether no answer has been kept yet: a new install, as far as this store can tell. False with no store (no data
+        folder), where there is nothing to tell it by."""
+        if self._db is None:
+            return False
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM answers LIMIT 1").fetchone() is None
+
     def heard_any(self) -> bool:
         """Whether anything heard is kept."""
         if self._db is None:

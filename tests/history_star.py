@@ -1,6 +1,7 @@
 """Starred answers in the server's history (server/history.py): a history.sqlite from 0.1.0 gaining its star with its rows
 kept, a star set and taken off over the panel's socket and seen by a second panel, a refused id, the starred answers
-alone from /history, the pruning that keeps them past the age limit and outside the size cap, and Clear history.
+alone from /history, the pruning that keeps them past the age limit and outside the size cap, Clear history, and a new
+install told as one (no answer kept yet), for the panel's setup guide.
 
     .venv/bin/python tests/history_star.py
 """
@@ -125,6 +126,14 @@ check("a row written again keeps its star", ids(h.query(starred=True)) == [11] a
 check("an answer is unstarred", h.star(11, False) is True and h.query(starred=True) == [] and h.starred_count() == 0)
 check("no file, no star", History(None).star(1, True) is False and History(None).starred_count() == 0)
 
+print("\n[a new install]")
+g = Path(tempfile.mkdtemp(prefix="sidenote-star-fresh-")) / "history.sqlite"
+fresh = History(g)
+check("a store that has kept no answer is fresh: the panel then opens its setup guide", fresh.fresh() is True)
+fresh.add(1, now, "essay", answer(1))
+check("...and one that has kept an answer is not", fresh.fresh() is False)
+check("no store is not fresh: there is nothing to tell it by", History(None).fresh() is False)
+
 print("\n[pruning past the age limit]")
 f = Path(tempfile.mkdtemp(prefix="sidenote-star-age-")) / "history.sqlite"
 h = History(f, days=0, max_mb=0)   # no age limit while the rows are written: each add prunes, and they are old already
@@ -240,6 +249,9 @@ def star_msg(i, on):
 SEQ = int(time.time() * 1000)
 with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
     check("the server's history is the one in its log folder", A.HISTORY._db is not None)
+    with client.websocket_connect("ws://127.0.0.1:8777/panel", headers=ORIGIN) as ws0:
+        first = Panel(ws0).wait(lambda m: m.get("type") == "status")
+        check("a panel that connects before any answer is kept is told the install is fresh", first is not None and first.get("fresh") is True, first)
     for k in range(3):   # three answers, kept as the worker keeps them
         A.HISTORY.add(SEQ + k, now - 60 + k, "essay", answer(k))
     with client.websocket_connect("ws://127.0.0.1:8777/panel", headers=ORIGIN) as ws1, \
@@ -247,6 +259,8 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         p1, p2 = Panel(ws1), Panel(ws2)
         p1.wait(lambda m: m.get("type") == "usage")
         p2.wait(lambda m: m.get("type") == "usage")
+        st = p1.wait(lambda m: m.get("type") == "status")
+        check("...and once one is kept, not", st is not None and st.get("fresh") is False, st)
         n1, n2 = len(p1.msgs), len(p2.msgs)
         ws1.send_text(json.dumps({"type": "star", "id": SEQ + 1, "starred": True}))
         a, b = p1.wait(star_msg(SEQ + 1, True), after=n1), p2.wait(star_msg(SEQ + 1, True), after=n2)

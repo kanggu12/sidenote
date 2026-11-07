@@ -13,7 +13,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113) |
@@ -1446,6 +1446,28 @@ has **Language** (**Auto**, **English**, **한국어**), each language named in 
 (`sidenote-lang`), the page opens again in it, and the server's messages follow, as the panel tells the server its
 language when it connects (`ui_lang`). `?lang=` still picks one for a single page, and a pick drops it from the address.
 Checks: tests/panel_lang.py, `group_menu`.
+
+### <a id="note-114"></a>114. The setup guide is drawn from the cards and the settings sheet
+
+A new install met an empty notebook with a list of states and commands beside it, and the settings to look at first were
+spread over three sections of **Solver settings**. The setup guide puts them in four steps and has nothing of its own to say
+about how things stand: each step draws the states its cards draw (`localState`, `agentState`, `screenState`,
+`audioState`), and its settings are the rows of **Solver settings** (`settingRow`), pressed and typed into through the
+same listeners. A state the cards learn to say is said in the guide with it, and a setting changed in one shows in the
+other.
+
+- It opens by itself once, on a new install: the server says `fresh` in its first status while its history holds no
+  answer, and the browser keeps that it opened (`sidenote.setupSeen`). A server with **Keep answers** off says `fresh`
+  every time, which the browser's memory holds to once; a browser that refuses its storage is not shown the guide
+  unasked, which would be at every page.
+- The sample problem is a page of the panel (`panel/sample.html`) opened in a tab of its own, so the step tries the
+  whole way: a problem on the screen, the capture, the model, and the answer in the notebook. Typed into the question
+  box it would have tried the model alone, and the question box is for follow-ups, refused while nothing has been
+  answered. The page's title never starts with the panel's own, which the capture paints over.
+- The screen the guide shows is the one the server holds (`thumb`), which drawing a region asks for too; while the guide
+  waits for it, the reply goes to the guide and no drawing starts on the screen card.
+
+Checks: tests/panel_setup.py, and the four steps in the layout audit at six window sizes (tests/panel_layout.py).
 
 ## Speech
 

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sample problem</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  /* The setup guide's sample problem (app.js, setupPane): one exam question on paper, large and plain, for the capture to see and
+     the model to read. Both languages are here, and sample.js shows the one the panel asked for. The title never starts with the
+     panel's own ("Sidenote Panel"), which the capture paints over */
+  :root { color-scheme: light; --ink: #1d1e21; --ink-2: #3f4148; --rule: #d6d8dd; --paper: #fbfbf9; --mark: #2f6fd6; --quiet: #73757c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 40px 16px; background: #eceef1;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; color: var(--ink); }
+  main { width: min(720px, 100%); padding: 36px 40px 28px; background: var(--paper); border: 1px solid var(--rule); border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 18px 40px -24px rgba(0, 0, 0, .35); }
+  .no { margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .04em; color: var(--mark); }
+  h1 { margin: 0 0 22px; font-size: 24px; line-height: 1.45; font-weight: 700; word-break: keep-all; }
+  ol { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  li { display: flex; gap: 12px; align-items: baseline; padding: 12px 16px; border: 1px solid var(--rule); border-radius: 10px;
+    font-size: 18px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
+  li b { flex: none; min-width: 1.4em; color: var(--ink); }
+  footer { margin-top: 22px; padding-top: 14px; border-top: 1px dashed var(--rule); font-size: 13px; line-height: 1.5; color: var(--quiet);
+    word-break: keep-all; }
+  main[data-lang] { display: none; }
+  html[lang="ko"] main[data-lang="ko"], html[lang="en"] main[data-lang="en"] { display: block; }
+  @media (max-width: 560px) { main { padding: 26px 20px 22px; } h1 { font-size: 20px; } li { font-size: 16px; } }
+</style>
+<script src="sample.js"></script>
+</head>
+<body>
+<main data-lang="ko" lang="ko">
+  <p class="no">문제 1</p>
+  <h1>다음 중 TCP에 대한 설명으로 옳지 않은 것은?</h1>
+  <ol>
+    <li><b>①</b>데이터를 보내기 전에 연결을 맺는다.</li>
+    <li><b>②</b>보낸 순서대로 받도록 보장한다.</li>
+    <li><b>③</b>잃어버린 데이터는 다시 보낸다.</li>
+    <li><b>④</b>한 번에 여러 수신자에게 브로드캐스트로 보낸다.</li>
+  </ol>
+  <footer>설정 마법사의 예제 문제입니다. 이 탭이 화면에 보이면 몇 초 뒤 패널에 답이 적힙니다. 확인했으면 이 탭을 닫으세요.</footer>
+</main>
+<main data-lang="en" lang="en">
+  <p class="no">Question 1</p>
+  <h1>Which of the following is NOT true of TCP?</h1>
+  <ol>
+    <li><b>A.</b>It sets up a connection before it sends data.</li>
+    <li><b>B.</b>It delivers the data in the order it was sent.</li>
+    <li><b>C.</b>It sends again the data that was lost.</li>
+    <li><b>D.</b>It broadcasts to many receivers at once.</li>
+  </ol>
+  <footer>The setup guide's sample problem. With this tab on the screen, its answer is written in the panel in a few seconds. Close the tab once you have seen it.</footer>
+</main>
+</body>
+</html>
