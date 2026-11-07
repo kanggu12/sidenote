@@ -399,6 +399,69 @@ else:
     except OSError:
         check("the port is free again", True)
 
+def stand_in_server(port: int, clients: int):
+    """A Sidenote /health on the port, as another copy's server answers it, with this many capture programs."""
+    class Health(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"ok": True, "analyzer": "stand-in", "capture": {"clients": clients}}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Health)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def later(seconds: float, *steps) -> None:
+    """Each step run in turn, `seconds` apart, beside what the check does meanwhile."""
+    def go():
+        for step in steps:
+            time.sleep(seconds)
+            step()
+    threading.Thread(target=go, daemon=True).start()
+
+
+print("[another copy holding the lock, as every system reads it (other_copy)]")
+with tempfile.TemporaryDirectory() as d:
+    data, log = Path(d), app.CappedLog(Path(d) / "app.log")
+    port = app.free_port()
+    url = f"http://127.0.0.1:{port}"
+    held = app.only_one(data)
+    check("a second hold of the lock is refused while the first is held", held is not None and app.only_one(data) is None)
+    # a copy that runs, its capture program connected: the panel is all a start is for
+    srv = stand_in_server(port, clients=1)
+    t0 = time.monotonic()
+    got, _ = app.other_copy(data, port, url, True, log)
+    check("beside a copy that runs with its capture program, a start ends at once", got is None
+          and time.monotonic() - t0 < 2, f"{got} after {time.monotonic() - t0:.1f} s")
+    srv.shutdown()
+    srv.server_close()
+    # a copy closing down, its server still answering with no capture program, then gone, then the copy ended
+    srv = stand_in_server(port, clients=0)
+    later(1.0, lambda: (srv.shutdown(), srv.server_close()), held.close)
+    got, _ = app.other_copy(data, port, url, True, log)
+    check("beside a copy closing down whose server still answers, a start takes the lock once that copy ends",
+          got is not None)
+    if got is not None:
+        got.close()
+    # a copy that runs with no capture program at all: its server answering for STAYS_UP seconds says so
+    held = app.only_one(data)
+    srv = stand_in_server(port, clients=0)
+    was, app.STAYS_UP = app.STAYS_UP, 1
+    try:
+        got, _ = app.other_copy(data, port, url, True, log)
+    finally:
+        app.STAYS_UP = was
+    check("beside a copy that runs with no capture program, a start ends once its server has stayed up", got is None)
+    srv.shutdown()
+    srv.server_close()
+    held.close()
+    log.close()
+
 print("[a start while another copy is closing down: the app opened again right after a quit]")
 if sys.platform == "win32":
     print("  skipped: it runs on Linux and macOS here, as the whole start and stop above does")
@@ -437,22 +500,6 @@ else:
         except subprocess.TimeoutExpired:
             proc.kill()
         check("...and stops as any start does", proc.returncode == 0, f"exit {proc.returncode}")
-
-    def stand_in_server(port: int, clients: int):
-        """A Sidenote /health on the port, as the other copy's server answers it, with this many capture programs."""
-        class Health(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                body = json.dumps({"ok": True, "analyzer": "stand-in", "capture": {"clients": clients}}).encode()
-                self.send_response(200)
-                self.send_header("content-type", "application/json")
-                self.end_headers()
-                self.wfile.write(body)
-
-            def log_message(self, *_):
-                pass
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Health)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        return srv
 
     def started(port: int, d: str):
         return subprocess.Popen([sys.executable, "-m", "desktop", "--port", str(port), "--no-browser", "--no-capture"],
