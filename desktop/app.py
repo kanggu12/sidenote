@@ -756,17 +756,33 @@ def ask_capture_to_quit(port: int) -> None:
 
 
 def serve(port: int) -> int:
-    """The server itself, as docker/entrypoint.sh starts it in the image."""
+    """The server itself, as docker/entrypoint.sh starts it in the image, ended as soon as its own close-down is done.
+
+    uvicorn.run would close its loop with asyncio.run, which first waits for every job still on the loop's threads:
+    the agent's CLI being asked what it runs on (up to 20 s), a screen being read, speech being decoded, the speech
+    model being downloaded (minutes on a slow line). Python then waits again, for the download's own threads. None of
+    that is kept once the server closes down, and this program gives its server 10 s before it ends it the hard way:
+    a quit took 10.7 s on CI's Mac, and one during the first download 11.1 s here. So the loop is run here, and once
+    the close-down has run and the answers' writer is done, nothing else is waited for. A download cut off this way is
+    made again at the next start."""
+    import asyncio
+
     import uvicorn
 
     from server import app as server
     # 64 MiB per message: a 4K frame of a photo-like screen is over uvicorn's default 16 MiB (docker/entrypoint.sh)
-    uvicorn.run(server.app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port, access_log=False,
-                ws_max_size=64 * 1024 * 1024)
-    # Closed down: what its close-down keeps is written once the answers' writer is done. A speech model still
-    # downloading would hold this process for the rest of that download, as Python waits for the download's own
-    # threads before it ends: minutes on a slow line, while this program gives its server 10 s and then ends it the
-    # hard way. So nothing else is waited for; the next start downloads the model again.
+    config = uvicorn.Config(server.app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port,
+                            access_log=False, ws_max_size=64 * 1024 * 1024)
+    if hasattr(config, "get_loop_factory"):      # the loop uvicorn.run would use (uvloop where it is there)
+        loop = (config.get_loop_factory() or asyncio.new_event_loop)()
+    else:                                        # an older uvicorn names it through the event loop policy
+        config.setup_event_loop()
+        loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(uvicorn.Server(config).serve())
+    except KeyboardInterrupt:                    # uvicorn raises again the Ctrl+C its close-down was asked with
+        pass
     server.HISTORY_WRITES.shutdown(wait=True)
     sys.stdout.flush()
     sys.stderr.flush()

@@ -435,14 +435,14 @@ else:
             proc.kill()
         check("...and stops as any start does", proc.returncode == 0, f"exit {proc.returncode}")
 
-print("[the server role ends at once after its close-down, a speech model still downloading or not]")
+print("[the server role ends at once after its close-down, with jobs still running on its threads]")
 if sys.platform == "win32":
     print("  skipped: it runs on Linux and macOS here")
 else:
     port = app.free_port()
     with tempfile.TemporaryDirectory() as d:
-        # A download that nothing cuts short, as the speech model's first one is: on threads of an executor of its own,
-        # which Python waits for before it ends. Started by the server's own speech load, through a stand-in model.
+        # A job on the loop's threads that nothing cuts short, as the speech model's first download is, itself waiting
+        # on threads of its own, which Python waits for before it ends. Started by the server's own speech load.
         stand_in = Path(d) / "slow_speech.py"
         stand_in.write_text(
             "import concurrent.futures, time\n"
@@ -468,7 +468,7 @@ else:
             proc.kill()
             proc.wait()
         took = time.monotonic() - asked
-        check("...within a few seconds, not waiting for the load", proc.returncode == 0 and took < 5,
+        check("...within a few seconds, waiting for neither", proc.returncode == 0 and took < 5,
               f"exit {proc.returncode} after {took:.1f} s")
 
 print("[the icon the Windows shortcut wears]")
