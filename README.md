@@ -90,7 +90,8 @@ The app's icon is by the clock, or in the menu bar on a Mac; quit Sidenote from 
 inside WSL 2: the capture program runs in Python for Windows ([python.org](https://www.python.org/downloads/windows/)).
 On a Mac the speaker's sound comes through a loopback input such as BlackHole ([how](docs/README.md#the-app)), and with
 Docker the first capture asks for **Screen Recording** for your terminal: allow it, then run `./sidenote capture --up`
-again.
+again. The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): what solves, the screen, the
+sound, and a sample problem to try.
 
 ### The local model (optional)
 

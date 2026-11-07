@@ -3593,6 +3593,7 @@ def create_app() -> FastAPI:
                     "version": VERSION,          # shown in the gear menu
                     "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
                     "update": update_status(),   # a newer release found before this panel opened, or None
+                    "fresh": HISTORY.fresh(),    # nothing answered yet: the panel opens its setup guide, once in a browser
                 }
             )
         )

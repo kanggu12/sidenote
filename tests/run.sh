@@ -40,7 +40,7 @@ SERVER=(integ agent_first server_review worker_order voice_trigger speech_hints 
         codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check history_star ci_gate update_check
         version_check changelog_check launcher_args)
 PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout panel_reading
-       panel_update)
+       panel_setup panel_update)
 # What the suites import or start: not suites themselves
 HELPERS=(support panel_harness fake_claude fake_codex)
 

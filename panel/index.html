@@ -2927,6 +2927,46 @@
   .heard-line + .heard-line { border-top: 1px dashed var(--rule); }
   .heard-line time { font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; white-space: nowrap; }
   :root[data-skin="classic"] #open-heard { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3'/%3E%3C/svg%3E"); }
+  /* The setup guide: the settings sheet again, its four steps in a row over the pane, each numbered or ticked in the colour of
+     how it stands; a step's states are drawn as the cards draw them, its settings as Solver settings draws them (app.js, renderSetup) */
+  #setup { width: min(720px, 100%); }
+  @media (min-width: 721px) { #setup.settings { height: min(680px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
+  .setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; padding: 3px 3px 10px;
+    border-bottom: 1px solid var(--rule); }
+  .setup-step { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; border: 0; border-radius: 8px;
+    background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--graphite); cursor: pointer; text-align: left;
+    transition: background-color .15s var(--ease), color .15s var(--ease); }
+  .setup-step:hover { background: var(--sheet-2); color: var(--ink-2); }
+  .setup-step[aria-selected="true"] { background: var(--pen-soft); color: var(--pen); box-shadow: var(--sunken); }
+  .setup-step .n { display: inline-grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%;
+    border: 1.5px solid currentColor; font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .setup-step .n svg { width: 13px; height: 13px; }
+  .setup-step[data-state="ok"] .n { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 60%, transparent);
+    background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .setup-step[data-state="warn"] .n { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
+  .setup-step .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #setup-body { flex: 1 1 auto; min-height: 0; }
+  .setup-lede { margin: 0 0 12px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+  .setup-state { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--sheet-2); box-shadow: var(--sunken); }
+  .setup-top { display: flex; align-items: center; gap: 10px; }
+  .setup-top b { flex: 1; min-width: 0; font-size: 14px; color: var(--ink); }
+  .setup-state .facts { margin-top: 8px; }
+  .setup-note { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.5; color: var(--graphite); word-break: keep-all; }
+  .setup-note.warn { color: var(--warn); }
+  .setup-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 12px; }
+  .setup-shot { margin: 0 0 12px; }
+  .setup-shot img { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; border: 1px solid var(--rule-2); }
+  .setup-shot figcaption { margin-top: 5px; font-size: 12px; color: var(--graphite); }
+  .setup-heard { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--rule-2); font-size: 13.5px; line-height: 1.55;
+    color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
+  .setup-try { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 13.5px; color: var(--ink-2); }
+  .setup-try.done { color: var(--ok); font-weight: 600; }
+  .setup-try > svg { width: 16px; height: 16px; flex: none; }
+  .setup-try b { color: var(--ink); font-size: 17px; font-weight: 700; line-height: 1; }   /* a circled ④ at the line's size read as a dot */
+  .setup-foot { justify-content: flex-start; }
+  .setup-foot #setup-next { margin-left: auto; }
+  @media (max-width: 560px) { .setup-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  :root[data-skin="classic"] #open-setup { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l1.6 1.6L8.5 5M4 12.5l1.6 1.6 2.9-3.1M4 18.5l1.6 1.6 2.9-3.1M11.5 6.5H20M11.5 12.5H20M11.5 18.5H20'/%3E%3C/svg%3E"); }
   /* Export's menu: the gear menu's look, held to the window under the Export key (app.js, exportMenu) */
   #export-menu { position: fixed; top: 0; right: auto; min-width: 176px; transform-origin: top right; }
   #export-menu.up { transform-origin: bottom right; }
@@ -3009,6 +3049,7 @@
         </div>
         <hr />
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>
+        <button class="item" id="open-setup" type="button" data-t>Setup guide</button>
         <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
         <button class="item" id="open-heard" type="button" data-t hidden>What was heard</button>
         <button class="item" id="clear" type="button" data-t>Clear history</button>
@@ -3150,6 +3191,18 @@
     </div>
     <ol class="heard-lines" id="heard-lines" tabindex="0" aria-labelledby="heard-title"></ol>
     <p class="lede" id="heard-none" hidden></p>
+  </section>
+</div>
+<!-- The setup guide (app.js, renderSetup): the settings sheet's look, four steps over one pane, each with how things stand as the cards
+     say it, what to do, and the settings that step is about. From the menu, and once by itself on a new install (the server's fresh) -->
+<div class="overlay" id="setup-overlay" hidden>
+  <section class="card settings" id="setup" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <header><h2 id="setup-title" data-t>Setup guide</h2>
+      <button class="btn icon" id="setup-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" data-t>Four steps, each checked as you go · opened again from the menu</p>
+    <nav class="setup-steps" id="setup-steps" role="tablist" aria-label="Steps" data-t-aria></nav>
+    <div class="set-pane" id="setup-body" role="tabpanel" aria-labelledby="setup-title"></div>
+    <footer class="set-foot setup-foot"><button class="btn sm ghost" id="setup-back" type="button" data-t>Previous</button><button class="btn sm" id="setup-next" type="button" data-t>Next</button></footer>
   </section>
 </div>
 <!-- Export's two files, in the gear menu's look, opened under the Export key (app.js, exportMenu) -->
