@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-07
+
 ### Changed
 
 - The README's quick start is one block of commands for each system, to paste as it is; the user guide's first steps
@@ -347,7 +349,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/kanggu12/sidenote/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kanggu12/sidenote/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kanggu12/sidenote/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/kanggu12/sidenote/compare/v0.1.7...v0.1.8
