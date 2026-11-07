@@ -6,6 +6,12 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-08
+
+### Added
+
+- The **Local model** and **Agent** cards fold to their top line on a press of their name, and stay so in the browser.
+
 ### Changed
 
 - Notices look the part. The toast at the top of the panel and the question box at its foot are glass the page shows
@@ -16,8 +22,7 @@ that only fixes raises the patch number. Each release's section here is its rele
 - An answer reads at a glance. A spoken problem's **Heard** row is what was said, three sentences a paragraph, its first
   lines when it is long and the whole on **Show it all**; folded, an answer with no question line keeps the end of what
   was heard, where it showed its summary alone. A summary of several sentences marks its first, the point, and gives the
-  rest a line each, where all of it was one marked block. The **Local model** and **Agent** cards fold to their top line
-  on a press of their name, and stay so in the browser.
+  rest a line each, where all of it was one marked block.
 - The README's quick start installs Sidenote on its own, a few lines for each system: the local model and the cloud
   agent each have an optional part (either one solves, and one is needed), and the Kubernetes install moves to the
   user guide.
@@ -367,7 +372,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kanggu12/sidenote/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/kanggu12/sidenote/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kanggu12/sidenote/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kanggu12/sidenote/compare/v0.1.8...v0.2.0
