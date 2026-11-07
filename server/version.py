@@ -7,4 +7,4 @@ Before tagging a release, set it here and in deploy/helm/sidenote/Chart.yaml.
 """
 
 # MAJOR.MINOR.PATCH, as semver.org writes it; the line is read as text, so it stays one line in this form
-VERSION = "0.2.1"
+VERSION = "0.2.2"
