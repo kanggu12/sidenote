@@ -481,7 +481,7 @@ else bad "launch.pyw starts the capture program and shows nothing" "rc $(cat "$w
 state server-down docker-off; run_launch
 text="$(box_text)"
 if [ "$(cat "$work/rc")" != 0 ] && grep -qx '\[dry-run\] box: warning' "$work/out" \
-   && grep -qx '\[dry-run\] title: Sidenote 캡처를 시작하지 못했습니다' "$work/out" \
+   && grep -qx '\[dry-run\] title: 캡처를 시작하지 못함' "$work/out" \
    && grep -qF "Docker에 연결할 수 없습니다" <<<"$text" && ! said "Enter를 누르면"; then
   ok "launch.pyw shows why the server could not start"
 else bad "launch.pyw shows why the server could not start" "rc $(cat "$work/rc"), $(tr '\n' ' ' < "$work/out" | head -c 200)"; fi
@@ -567,7 +567,7 @@ state server-down docker-off; EXTRA_ENV="SIDENOTE_LANG=en" run_launch; failed="$
 state; EXTRA_ENV="SIDENOTE_LANG=en" run_launch --bogus; refused="$(cat "$work/out")"
 state; EXTRA_ENV="SIDENOTE_LANG=en" WSL_BIN="$work/nowhere/wsl.exe" run_launch; nowsl="$(cat "$work/out")"
 printf '%s\n%s\n%s\n' "$failed" "$refused" "$nowsl" > "$work/boxes"
-if ! hangul "$work/boxes" && grep -qx '\[dry-run\] title: Could not start the Sidenote capture' <<<"$failed" \
+if ! hangul "$work/boxes" && grep -qx '\[dry-run\] title: Capture did not start' <<<"$failed" \
    && grep -qF "Cannot connect to Docker" <<<"$failed" && grep -qF "./sidenote shortcut" <<<"$refused" && grep -qF "wsl.exe" <<<"$nowsl"; then
   ok "launch.pyw speaks English with SIDENOTE_LANG=en"
 else bad "launch.pyw speaks English with SIDENOTE_LANG=en" "$(grep -F 'title:' "$work/boxes" | tr '\n' ' ') $(grep -m2 -P '[\x{AC00}-\x{D7A3}]' "$work/boxes" | tr '\n' ' ')"; fi
@@ -576,7 +576,7 @@ else bad "launch.pyw speaks English with SIDENOTE_LANG=en" "$(grep -F 'title:' "
 #     with nothing set follows the locale (on Windows, the display language).
 state; EXTRA_ENV="SIDENOTE_LANG=en" run_launch; wait_started; crossed="$(cat "$work/state/wsl-wslenv" 2>/dev/null)"
 state server-down docker-off; EXTRA_ENV="SIDENOTE_LANG= LANG=ko_KR.UTF-8" run_launch
-if [[ ":$crossed:" == *:SIDENOTE_LANG:* ]] && grep -qx '\[dry-run\] title: Sidenote 캡처를 시작하지 못했습니다' "$work/out"; then
+if [[ ":$crossed:" == *:SIDENOTE_LANG:* ]] && grep -qx '\[dry-run\] title: 캡처를 시작하지 못함' "$work/out"; then
   ok "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it"
 else bad "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it" "WSLENV: ${crossed:-none}, $(grep -F 'title:' "$work/out")"; fi
 

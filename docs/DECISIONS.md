@@ -348,6 +348,16 @@ three times over in Pillow and brought down, under Tk's own words. It is checked
 hand, with Windows' calls stubbed and every row under the pointer in turn (tests/tray_switch.py), since a slip there
 would otherwise show only as the tray falling back to Windows' plain menu.
 
+The desktop shortcut's windows (`client/launch.pyw`) are made the same way: the menu's colours and fonts (Malgun Gothic
+for Korean) and its language, where the start's window had kept older colours and spoke English only. A failed start,
+or a second click while one is going, says so in that window: a red or a grey mark before a short title, the launcher's
+last lines to select and copy with the end in view, and a **Close** key. Windows' own message box is left for a Python
+with no tkinter. The shortcut runs the Windows Python the capture packages go into, Pillow among them, so the windows
+are drawn as the menu is: the glass, the steps' pills, the groove and the key three times over and brought down, under
+Tk's words; plain Tk shapes are left for a Python without Pillow. The window goes once the click on **Close** has been
+dealt with: taken away inside the canvas's own handling of that click, Tcl ended the program on a virtual display.
+Checked in `tests/launch_window.py`, with the colours read out of the menu so the two cannot drift apart again.
+
 ## Choosing who answers (routing, handoff, spend) and what is sent
 
 The routing as a whole, with its picture and the conditions that send a problem to the agent, is in
