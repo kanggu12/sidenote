@@ -71,7 +71,7 @@ README's [What it runs on](../README.md#what-it-runs-on).
   installs the capture program's packages into it.
 - **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
   local model on Apple silicon's GPU (Docker on a Mac has none): the README's
-  [Docker on a Mac](../README.md#docker-on-a-mac). For the sound, a loopback input such as BlackHole. Not yet
+  [local model](../README.md#the-local-model-optional) part. For the sound, a loopback input such as BlackHole. Not yet
   measured on a Mac: how fast the models are there and how well they answer.
 - **The local model**: an NVIDIA or AMD GPU, or a Mac's Apple silicon. Sidenote reads its memory and picks the largest
   measured model that fits: `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. A Mac's GPU works
@@ -87,7 +87,7 @@ README's [What it runs on](../README.md#what-it-runs-on).
 
 ## 3. First time
 
-Install Sidenote, start it once, and sign the cloud agent in.
+Install Sidenote, start it once, and add what solves: the local model, the cloud agent, or both.
 
 ### The app
 
@@ -95,13 +95,14 @@ Install Sidenote, start it once, and sign the cloud agent in.
    `codex login`). The app uses the CLI it finds when it starts, Claude Code first: after installing one while the app
    runs, quit Sidenote and start it again. Opened from the Finder or a desktop's menu, the app asks your login shell for
    its `PATH`, so it finds a CLI the shell finds.
-2. Install Ollama and Sidenote with the commands in the README's [quick start](../README.md#quick-start), one block for
-   each system. Without Ollama, the agent solves everything; turn **Local model** off in **Solver settings** so the
-   panel stops asking for it.
-3. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the notification
-   area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS. When the model for
-   this GPU is not there yet, the **Local model** card offers it with **Download**, shows how far the download has got,
-   and says when the model is ready.
+2. Install Sidenote with the commands in the README's [quick start](../README.md#quick-start), one block for each
+   system. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the
+   notification area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS.
+3. Optional, on your GPU: install Ollama with the line for your system in the quick start's
+   [local model](../README.md#the-local-model-optional) part, then quit Sidenote and start it again: the app starts
+   Ollama when it starts. The **Local model** card then offers the model for this GPU with **Download**, shows how far
+   the download has got, and says when the model is ready. Without Ollama, the agent solves everything; turn **Local
+   model** off in **Solver settings** so the panel stops asking for it.
 4. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Choose **Open System Settings**
    and turn Sidenote on, then quit Sidenote from its menu bar icon's menu and open it again: until then the screen holds
    only the desktop picture. For the speaker sound, install BlackHole (`brew install blackhole-2ch`), make a
@@ -158,7 +159,7 @@ in at a limit** off.
 
 ```bash
 ./sidenote install         # the server, the capture packages, the desktop shortcut on Windows, a check, what is left to do
-./sidenote llm pull        # the local model for this GPU and its smaller one, once (a few GB to tens of GB)
+./sidenote llm pull        # optional: the local model for this GPU and its smaller one (a few GB to tens of GB)
 ```
 
 `install` runs the steps in the order they need and skips the ones already done, so it is safe to run again after a
@@ -296,8 +297,12 @@ without it: any part of a device's name finds it.
 
 `./sidenote shortcut` puts a shortcut on the Windows desktop that starts the server, when it is not running, and then
 the capture program, in one click and with no window. Windows Python's windowless launcher (`pyw.exe`) runs
-`client/launch.pyw`, which runs `./sidenote capture --up` through wsl.exe without a console, so the tray icon is all
-that appears.
+`client/launch.pyw`, which runs `./sidenote capture --up` through wsl.exe without a console: no console window comes
+up, a small window by the clock shows the start, and the tray icon is what stays.
+
+<p align="center">
+  <img alt="The shortcut's window by the clock: sidenote capture, the three steps Server, Capture and Ready with the bar at the second, and Starting the capture program. Beside it a failed start in the same window: Capture did not start, Cannot connect to Docker. Check that Docker is running, and a Close key" src="assets/shortcut-windows.png" width="760">
+</p>
 
 - A small window beside the notification area shows the start's steps (the server, the capture program, ready). The
   first start after an update builds the server image for a few minutes, and a second click meanwhile says that a
@@ -870,6 +875,19 @@ When the agent cannot be asked:
 
 How a question read out loud becomes a problem. Sound is used as input only; Sidenote makes no sound.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-voice-flow-dark.svg">
+  <img alt="One spoken question, across the capture program, the server, the transcriber, the local model, the agent
+    and the panel. The capture program sends the speaker sound. Every 2 s the server asks the transcriber whether
+    anyone is speaking in the last 20 s and gets the speech spans; 1.5 s of quiet ends an utterance, which the
+    transcriber writes down with technical terms as hints, and the panel shows; with Keep what is heard on, the line
+    is kept on this PC. Speech that asks the listener nothing, a story, a tag such as right? or under 6 characters,
+    gets a muted note under its line saying why. A question is solved at once with a question word, otherwise after
+    6 s, and waits behind an answer being written: the local model runs the fast pass on the words; answered at once,
+    the answer comes back; when it needs reasoning and the agent takes it, the agent gets the question part written
+    out and streams the answer. The panel gets the answer, then analysis_done" src="assets/diagram-voice-flow-light.svg" width="100%">
+</picture>
+
 - When speech ends and 1.5 seconds of quiet follow, the whole utterance is written down and analyzed, even if the
   screen did not change. The screen, if there is one, is used as context.
 - A problem may be read in several sentences: pauses shorter than 6 seconds join the sentences into one problem.
@@ -1179,8 +1197,14 @@ change thresholds, the local model's context size and so on) are in `server/conf
 
 ## 13. Troubleshooting
 
-Find the symptom in the table for your setup. The messages are given here in English; section 18 has the Korean that
-the panel, the tray menu and `./sidenote` show for each.
+Find the symptom in the table for your setup; when no answer comes at all, the figure says which row to read. The
+messages are given here in English; section 18 has the Korean that the panel, the tray menu and `./sidenote` show for
+each.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-trouble-dark.svg">
+  <img alt="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program off, or Program off. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers" src="assets/diagram-trouble-light.svg" width="100%">
+</picture>
 
 ### The app
 
@@ -1463,8 +1487,21 @@ NetworkPolicy with no egress, and the server as its only client), the local mode
 the agent's login comes from a Secret you create. The chart has no Ingress: the server answers only requests addressed
 to `127.0.0.1` or `localhost`, so the panel is reached through a port-forward that you keep on 127.0.0.1.
 
-Write `my-values.yaml` as the README's [Kubernetes](../README.md#kubernetes) section shows, create the namespace and the
-agent's Secret, then install:
+Write `my-values.yaml` with your GPU's memory, the Secret made below and the model download:
+
+```yaml
+server:
+  env:
+    SIDENOTE_LOCAL_VRAM_GB: "24"      # your GPU's memory in GB: it picks the model
+agent:
+  auth:
+    existingSecret: sidenote-agent    # the Secret made below
+llm:
+  pull:
+    enabled: true                     # download the model during the install (what --timeout 2h is for)
+```
+
+Then create the namespace and the agent's Secret, and install:
 
 ```bash
 kubectl create namespace sidenote

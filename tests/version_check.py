@@ -130,9 +130,9 @@ check("README's badges are files in the repository, none from another site but C
 check("...and the release badge and its alt text name this release",
       release_svg.is_file() and f"release: v{VERSION}" in release_svg.read_text(encoding="utf-8")
       and f'alt="Release v{VERSION}"' in readme)
-# the quick start's table says what each way needs: the Docker setup's launcher runs on python3
-docker_rows = [line for line in doc("README.md").split("## Quick start")[1].split("###")[0].splitlines() if "with Docker" in line]
-check("README's Docker setup names python3", len(docker_rows) == 2 and all("`python3`" in line for line in docker_rows), docker_rows)
+# the quick start says what each way needs: the Docker setup's launcher runs on python3
+docker_rows = [line for line in doc("README.md").split("## Quick start")[1].split("###")[0].splitlines() if line.startswith("**Docker**")]
+check("README's Docker setup names python3", len(docker_rows) == 1 and all("`python3`" in line for line in docker_rows), docker_rows)
 check("the guide's requirements name python3", "`python3`" in doc("docs", "README.md").split("## 2. Requirements")[1].split("## 3.")[0])
 check("the guide names the TZ setting", "| `TZ` |" in doc("docs", "README.md"))
 check("the architecture's list of notes counts nothing that goes stale", not re.search(r"\b\d+ numbered notes", doc("docs", "ARCHITECTURE.md"))

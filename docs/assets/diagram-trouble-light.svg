@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 442" width="906" height="442" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program off, or Program off. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers">
+<rect x="0" y="0" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="14" y="23.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">No answer appears</text>
+<text x="14" y="42.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">after a screen with a problem on it</text>
+<path d="M40,56 L40,69" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M40,76 L35.5,67.0 L44.5,67.0 Z" fill="#818b98" data-tip="40,76"/>
+<rect x="0" y="76" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="14" y="99.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">The panel opens?</text>
+<text x="14" y="118.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">in the browser, with its cards</text>
+<path d="M372,104 L485,104" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M492,104 L483.0,108.5 L483.0,99.5 Z" fill="#818b98" data-tip="492,104"/>
+<text x="432" y="96" font-size="12" fill="#59636e" text-anchor="middle" data-box="382,482">no</text>
+<rect x="492" y="76" width="408" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="506" y="99.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">Nothing appears after starting it</text>
+<text x="506" y="118.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">or Server disconnected, with Docker</text>
+<path d="M40,132 L40,145" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M40,152 L35.5,143.0 L44.5,143.0 Z" fill="#818b98" data-tip="40,152"/>
+<text x="50" y="146" font-size="12" fill="#59636e" text-anchor="start" data-box="50,120">yes</text>
+<rect x="0" y="152" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="14" y="175.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">Screen capture is green?</text>
+<text x="14" y="194.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">on the capture card</text>
+<path d="M372,180 L485,180" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M492,180 L483.0,184.5 L483.0,175.5 Z" fill="#818b98" data-tip="492,180"/>
+<text x="432" y="172" font-size="12" fill="#59636e" text-anchor="middle" data-box="382,482">no</text>
+<rect x="492" y="152" width="408" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="506" y="175.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">Capture program off</text>
+<text x="506" y="194.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">or Program off, on the capture card</text>
+<path d="M40,208 L40,221" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M40,228 L35.5,219.0 L44.5,219.0 Z" fill="#818b98" data-tip="40,228"/>
+<text x="50" y="222" font-size="12" fill="#59636e" text-anchor="start" data-box="50,120">yes</text>
+<rect x="0" y="228" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="14" y="251.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">The local model or the agent ready?</text>
+<text x="14" y="270.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">their cards in the right column</text>
+<path d="M372,256 L485,256" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M492,256 L483.0,260.5 L483.0,251.5 Z" fill="#818b98" data-tip="492,256"/>
+<text x="432" y="248" font-size="12" fill="#59636e" text-anchor="middle" data-box="382,482">no</text>
+<rect x="492" y="228" width="408" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="506" y="251.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">Ollama does not answer</text>
+<text x="506" y="270.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">No local model yet, or Agent sign-in needed</text>
+<path d="M40,284 L40,297" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M40,304 L35.5,295.0 L44.5,295.0 Z" fill="#818b98" data-tip="40,304"/>
+<text x="50" y="298" font-size="12" fill="#59636e" text-anchor="start" data-box="50,120">yes</text>
+<rect x="0" y="304" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="14" y="327.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">The screen changed inside the problem?</text>
+<text x="14" y="346.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">the part the answer points at</text>
+<path d="M372,332 L485,332" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M492,332 L483.0,336.5 L483.0,327.5 Z" fill="#818b98" data-tip="492,332"/>
+<text x="432" y="324" font-size="12" fill="#59636e" text-anchor="middle" data-box="382,482">no</text>
+<rect x="492" y="304" width="408" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="506" y="327.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">It did not solve again</text>
+<text x="506" y="346.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">Reanalyze solves it at once</text>
+<path d="M40,360 L40,373" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M40,380 L35.5,371.0 L44.5,371.0 Z" fill="#818b98" data-tip="40,380"/>
+<text x="50" y="374" font-size="12" fill="#59636e" text-anchor="start" data-box="50,120">yes</text>
+<rect x="0" y="380" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#1a7f37" stroke-width="2"/>
+<text x="14" y="403.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">Sidenote answers</text>
+<text x="14" y="422.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">the local model first, the agent for the hard ones</text>
+</svg>
