@@ -53,6 +53,11 @@ from server.config import CONFIG  # noqa: E402
 from server.heads import head_of  # noqa: E402
 from server.pipeline import Hooks, Pipeline  # noqa: E402
 from server.settings import SETTINGS  # noqa: E402
+import server.app as _app  # noqa: E402
+
+# A code runner stands in: the checks' runs are this suite's own (run_cases and runner_exec patched where they run), and
+# with no runner set up the server starts no check at all (server/app.py runner_here)
+_app.runner_here = lambda: True
 
 PASS, FAIL = [], []
 ORIGIN = {"origin": "http://127.0.0.1:8777"}

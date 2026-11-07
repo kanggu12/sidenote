@@ -3015,27 +3015,36 @@ async def test_continuation_check():
         pages = FakeFrame()
         pages.extra_b64 = [png_b64()]
         code_cont = ("TYPE: followup\nANSWER: 새 예 #5 때문에 바뀜\n\n```python\ndef solution(s):\n    return len(s)\n```\n")
+        import dataclasses
         for name, said, result, autocheck in (
                 ("no code of its own: the answer's code", "TYPE: followup\nANSWER: 답은 그대로입니다\n\n보강할 것 없음: 새 예도 맞음",
                  {"passed": 5, "total": 5, "lang": "python"}, True),
                 ("code of its own, failing a new example", code_cont,
                  {"passed": 4, "total": 5, "lang": "python",
                   "fails": [{"input": ["xababcdcdababcdcd"], "expected": 17, "got": 16}]}, True),
-                ("the check switched off", "TYPE: followup\nANSWER: 그대로\n\n보강할 것 없음: 같음", {}, False)):
+                ("the check switched off", "TYPE: followup\nANSWER: 그대로\n\n보강할 것 없음: 같음", {}, False),
+                # no runner set up, as in the desktop app: the examples were read, and the answer marked failed
+                ("no code runner", code_cont, {}, "no runner")):
             panel.msgs.clear()
             calls.clear()
             verdict.clear()
             verdict.update(result)
             written["text"] = said
-            SETTINGS.values["autocheck"] = autocheck
+            SETTINGS.values["autocheck"] = bool(autocheck)
+            with_runner = app_mod.CONFIG
+            if autocheck == "no runner":
+                app_mod.CONFIG = dataclasses.replace(with_runner, runner_url="")
             st.retry_task = None
             st.last_result = {"text": MOCK_ALGO, "frame": FakeFrame(), "id": 300, "engine": "local",
                               "crop_box": (0.1, 0.1, 0.6, 0.6), "local_view": None}
-            await app_mod.run_followup(None, app_mod.CONTINUE_QUESTION,
-                                       cont={"label": app_mod.CONTINUE_LABEL, "frame": pages})
+            try:
+                await app_mod.run_followup(None, app_mod.CONTINUE_QUESTION,
+                                           cont={"label": app_mod.CONTINUE_LABEL, "frame": pages})
+            finally:
+                app_mod.CONFIG = with_runner
             cid = next((m["id"] for m in panel.msgs if m.get("type") == "analysis_start"), None)
             checks = [m for m in panel.msgs if m.get("type") == "check"]
-            if not autocheck:
+            if autocheck is not True:
                 check(f"{name}: nothing is run and nothing said", not calls and not checks, f"{calls} {checks}")
                 continue
             want_text = said if "```" in said else MOCK_ALGO
