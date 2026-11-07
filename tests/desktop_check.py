@@ -173,16 +173,60 @@ for platform, environ, runs in (("win32", {}, True), ("linux", {"DISPLAY": ":0"}
 with mock.patch.object(sys, "platform", "darwin"):
     check("on macOS the app says where Screen Recording is allowed and what plays the speaker sound to it",
           all(w in app.capture_supported()[1] for w in ("Screen Recording", "BlackHole")), app.capture_supported())
-    finder = os.pathsep.join(["/usr/bin", "/bin"])
-    with mock.patch.object(app, "FROZEN", True):
-        mac_path = app.server_env({"PATH": finder}, Path("/d"), 1)["PATH"].split(os.pathsep)
-        again = app.server_env({"PATH": os.pathsep.join(mac_path)}, Path("/d"), 1)["PATH"].split(os.pathsep)
-    check("...the app opened from the Finder finds Homebrew's and the agents' commands",
-          mac_path[:2] == ["/usr/bin", "/bin"] and "/opt/homebrew/bin" in mac_path
-          and str(Path.home() / ".local" / "bin") in mac_path, mac_path)
-    check("...without adding them twice", again == mac_path, again)
-    check("...and run from a checkout, in a terminal, it keeps the terminal's PATH as it is",
-          app.server_env({"PATH": finder}, Path("/d"), 1)["PATH"] == finder)
+
+print("[the PATH of an app opened from the Finder or a desktop's menu]")
+with tempfile.TemporaryDirectory() as d:
+    home, shell_dir = Path(d) / "home", Path(d) / "from-the-shell"
+    (home / ".local" / "bin").mkdir(parents=True)
+    shell_dir.mkdir()
+    short = os.pathsep.join(["/usr/bin", "/bin"])
+    not_a_tty = io.StringIO()
+    with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(app, "FROZEN", True), \
+            mock.patch.object(sys, "stdin", not_a_tty), mock.patch.object(app, "login_path", return_value=str(shell_dir)):
+        got = app.server_env({"PATH": short, "HOME": str(home)}, Path("/d"), 1)["PATH"].split(os.pathsep)
+        again = app.widen_path({"PATH": os.pathsep.join(got), "HOME": str(home)}).split(os.pathsep)
+    check("the login shell's folders and the agents' installers' come after the short PATH, those that exist",
+          got[:2] == ["/usr/bin", "/bin"] and str(shell_dir) in got and str(home / ".local" / "bin") in got
+          and str(home / ".npm-global" / "bin") not in got, got)
+    check("...without adding a folder twice", again == got, again)
+    tty = mock.Mock()
+    tty.isatty.return_value = True
+    with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(sys, "stdin", tty), \
+            mock.patch.object(app, "login_path", side_effect=AssertionError("asked")):
+        app.widen_path({"PATH": short, "HOME": str(home)})
+    check("...and in a terminal the shell is not asked: the PATH is its already", True)
+    with mock.patch.object(sys, "platform", "win32"):
+        check("...and on Windows a double-click has the whole PATH, left as it is",
+              app.widen_path({"PATH": short, "HOME": str(home)}) == short)
+    check("run from a checkout, the server's PATH is the one given",
+          app.server_env({"PATH": short, "HOME": str(home)}, Path("/d"), 1)["PATH"] == short)
+    if os.name != "nt":
+        talky = Path(d) / "talky-shell"
+        talky.write_text('#!/bin/sh\necho "welcome back"\nPATH=/from/rc:$PATH\neval "$2"\n')
+        talky.chmod(0o755)
+        check("the login shell's PATH is read past what its start-up files print",
+              app.login_path({"SHELL": str(talky), "PATH": "/usr/bin:/bin", "HOME": str(home)}) == "/from/rc:/usr/bin:/bin",
+              app.login_path({"SHELL": str(talky), "PATH": "/usr/bin:/bin", "HOME": str(home)}))
+        slow = Path(d) / "slow-shell"
+        slow.write_text("#!/bin/sh\nsleep 30\n")
+        slow.chmod(0o755)
+        t0 = time.time()
+        check("...and a shell that never answers costs 5 s at most, and gives nothing",
+              app.login_path({"SHELL": str(slow), "PATH": "/usr/bin:/bin", "HOME": str(home)}) == ""
+              and time.time() - t0 < 8, round(time.time() - t0, 1))
+
+print("[the Mac app's language]")
+app.mac_language.cache_clear()
+listed = mock.Mock(stdout='(\n    "ko-KR",\n    "en-US"\n)\n')
+with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {}, clear=True), \
+        mock.patch.object(app.subprocess, "run", return_value=listed):
+    check("opened from the Finder, with no locale, it speaks the first of macOS's languages", app.ui_lang() == "ko",
+          app.ui_lang())
+app.mac_language.cache_clear()
+with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {}, clear=True), \
+        mock.patch.object(app.subprocess, "run", side_effect=OSError("no defaults")):
+    check("...and English when they cannot be read", app.ui_lang() == "en")
+app.mac_language.cache_clear()
 
 print("[python -c, as the Windows app runs it for the tray menu]")
 out = io.StringIO()

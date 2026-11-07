@@ -28,6 +28,7 @@ What differs from the Docker setup (compose.yaml), as server_env() sets it; a SI
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import importlib.util
 import json
@@ -83,12 +84,8 @@ def data_dir() -> Path:
 def server_env(base: dict, data: Path, port: int) -> dict:
     """The server's environment on the host: `base` with the defaults below added where it has none."""
     env = dict(base)
-    if sys.platform == "darwin" and FROZEN:
-        # The app opened from the Finder gets /usr/bin:/bin:/usr/sbin:/sbin alone, without where Homebrew, npm and
-        # the agents' own installers put their commands (claude, codex, node, ollama); a terminal has them already
-        have = (env.get("PATH") or "/usr/bin:/bin:/usr/sbin:/sbin").split(os.pathsep)
-        more = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local" / "bin")]
-        env["PATH"] = os.pathsep.join(have + [d for d in more if d not in have])
+    if FROZEN:
+        widen_path(env)                 # before the agent is looked for on it, below
     defaults = {
         "SIDENOTE_HOST": "127.0.0.1",
         "SIDENOTE_PORT": str(port),
@@ -125,6 +122,52 @@ def server_env(base: dict, data: Path, port: int) -> dict:
 
 
 AGENT_CLIS = {"claude-code": "claude", "codex": "codex"}   # each CLI agent's command
+
+# Where the agents' installers and the usual version managers put their commands, for a login shell that gives no answer
+AGENT_FOLDERS = (".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin", ".nix-profile/bin")
+
+
+def login_path(env: dict) -> str:
+    """The PATH of the person's own login shell, or "". The Finder and a desktop's menu start a program with a short PATH
+    that lacks the folders the person's shell adds, so Claude Code, Codex and the node an npm install of them runs on
+    would look absent. Asked once, with a time limit, in a session of its own, so an interactive shell cannot take a
+    terminal or stop this program, and into a file, so a job its start-up files leave running cannot hold the answer."""
+    shell = env.get("SHELL") or ("/bin/zsh" if sys.platform == "darwin" else "/bin/bash")
+    mark = "__sidenote_path__"          # what a shell's own greeting cannot be taken for
+    try:
+        with tempfile.TemporaryFile() as out:
+            proc = subprocess.Popen([shell, "-ilc", f'printf "%s%s" "{mark}" "$PATH"'], env=dict(env),
+                                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:   # a start-up file that never ends: the shell and what it started go
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                return ""
+            out.seek(0)
+            got = out.read().decode("utf-8", "replace")
+    except (OSError, ValueError):           # no such shell
+        return ""
+    return got.rpartition(mark)[2].strip() if mark in got else ""
+
+
+def widen_path(env: dict) -> str:
+    """Add to env's PATH, after what it holds, the login shell's folders and the usual folders of the agents' installers,
+    Homebrew's among them, that exist. Windows gives a double-click the whole PATH, and a terminal has the shell's
+    already, so the shell is not asked there. Returns the new PATH."""
+    if sys.platform == "win32":
+        return env.get("PATH", "")
+    home = Path(env.get("HOME") or Path.home())
+    have = [p for p in (env.get("PATH") or "").split(os.pathsep) if p]
+    in_terminal = bool(sys.stdin and sys.stdin.isatty())
+    more = (([] if in_terminal else login_path(env).split(os.pathsep)) + [str(home / f) for f in AGENT_FOLDERS]
+            + ["/opt/homebrew/bin", "/usr/local/bin"])
+    for p in more:
+        if p and p not in have and os.path.isdir(p):
+            have.append(p)
+    env["PATH"] = os.pathsep.join(have)
+    return env["PATH"]
 
 
 def agent_found(path: str | None) -> str:
@@ -186,7 +229,21 @@ def ui_lang() -> str:
         except (AttributeError, OSError):
             return "en"
     locale = next((os.environ[k] for k in ("LC_ALL", "LC_MESSAGES", "LANG") if os.environ.get(k)), "")
+    if not locale and sys.platform == "darwin":   # an app opened from the Finder has no locale variables
+        locale = mac_language()
     return "ko" if locale.lower().startswith("ko") else "en"
+
+
+@functools.lru_cache(maxsize=1)
+def mac_language() -> str:
+    """The first of macOS's preferred languages ("ko-KR"), or "" when it cannot be read."""
+    try:
+        out = subprocess.run(["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True,
+                             timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    # printed as a list: (\n    "ko-KR",\n    "en-US"\n)
+    return next((w for w in (line.strip().strip('",') for line in out.splitlines()) if w and w not in "()"), "")
 
 
 # The message boxes in Korean, keyed by their English (the logs stay English)
@@ -559,7 +616,10 @@ def run(args) -> int:
         if supported and not args.no_capture:
             capture = Child("capture", role_cmd("--capture", "--server", f"ws://127.0.0.1:{port}/ingest",
                                                 "--no-auto-update"),
-                            {**env, "SIDENOTE_SUPERVISED": "1"}, CappedLog(logs / "capture.log"))
+                            # its tray speaks the language this program's messages do: on macOS from the Finder
+                            # there is no locale for it to read
+                            {**env, "SIDENOTE_SUPERVISED": "1", "SIDENOTE_LANG": env.get("SIDENOTE_LANG") or ui_lang()},
+                            CappedLog(logs / "capture.log"))
             capture.start()
         if why and not args.no_capture:
             say(why, log)

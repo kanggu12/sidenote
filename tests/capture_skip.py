@@ -698,6 +698,76 @@ for k, v in saved.items():
         os.environ[k] = v
 
 
+# ---------------------------------------------------------------- macOS, stood in for
+print("\n[macOS, stood in for]")
+
+
+class FakeQuartz:
+    """The window server's list as Quartz hands it over, front first, keyed by the constants' own names."""
+    kCGWindowListOptionOnScreenOnly, kCGWindowListExcludeDesktopElements, kCGNullWindowID = 1, 16, 0
+    kCGWindowLayer, kCGWindowAlpha, kCGWindowBounds = "kCGWindowLayer", "kCGWindowAlpha", "kCGWindowBounds"
+    kCGWindowName, kCGWindowOwnerName = "kCGWindowName", "kCGWindowOwnerName"
+
+    def __init__(self, windows):
+        self.windows, self.asked = windows, []
+
+    def CGWindowListCopyWindowInfo(self, options, relative):
+        self.asked.append((options, relative))
+        return self.windows
+
+
+def mac_window(owner, title, x, y, w, h, layer=0, alpha=1.0):
+    return {"kCGWindowOwnerName": owner, "kCGWindowName": title, "kCGWindowLayer": layer, "kCGWindowAlpha": alpha,
+            "kCGWindowBounds": {"X": x, "Y": y, "Width": w, "Height": h}}
+
+
+class _Mac:                                     # sys as FrontWindow sees it on macOS
+    platform = "darwin"
+
+    def __getattr__(self, name):
+        return getattr(sys, name)
+
+
+MAC_SCREEN = {"left": 0, "top": 0, "width": 1512, "height": 982}
+quartz = FakeQuartz([
+    mac_window("Window Server", "Menubar", 0, 0, 1512, 33, layer=24),
+    mac_window("Google Chrome", "Problem 1 - Google Chrome", 0, 33, 900, 900),
+    mac_window("Bitwarden", "", 700, 100, 600, 700),          # no title until Screen Recording is allowed
+    mac_window("Dock", "Dock", 0, 900, 1512, 82, layer=20),
+    mac_window("Notes", "", 10, 10, 1, 1),                     # a helper's point on the screen
+    mac_window("Overlay", "Clear", 0, 0, 1512, 982, alpha=0.0),
+])
+sys.modules["Quartz"] = quartz
+real_sys, cap.sys = cap.sys, _Mac()
+try:
+    default = words(*cap.SKIP_WINDOWS)
+    got = cap._windows_mac()
+    check("on macOS the windows of the normal layer, front first: the menu bar, the Dock, a point and a see-through one "
+          "left out", [(w[0], w[1]) for w in got] == [("Problem 1 - Google Chrome", "Google Chrome"), ("", "Bitwarden")], got)
+    check("...each in the points the monitors are given in", got[1][2] == (700.0, 100.0, 1300.0, 800.0) == got[1][3], got)
+    check("...from the list of the windows on screen, without the desktop's own", quartz.asked[-1] == (17, 0), quartz.asked)
+    front = cap.FrontWindow()
+    check("the window in front is the first of them", front.read() == ("Problem 1 - Google Chrome", "Google Chrome"))
+    check("...and the password manager showing beside it stops the screen, by its app's name alone",
+          cap.skip_now(front, default, MAC_SCREEN) and not front.limit and not front.why, (front.limit, front.why))
+    quartz.windows = [w for w in quartz.windows if w["kCGWindowOwnerName"] != "Bitwarden"]
+    check("...and once it is closed the screen goes out again", not cap.skip_now(front, default, MAC_SCREEN))
+    quartz.windows.insert(1, mac_window("Google Chrome", "Sidenote panel - Google Chrome", 900, 33, 612, 900))
+    rects = cap.window_rects(MAC_SCREEN)
+    check("the panel's own window is found by its title, as on Windows, as a part of the screen",
+          rects is not None and rects[1] == [0] and rects[0][0] == [round(900 / 1512, 4), round(33 / 982, 4), 1.0,
+                                                                    round(933 / 982, 4)], rects)
+    quartz.windows = None
+    broken = cap.FrontWindow()
+    check("a list that cannot be read skips nothing, and says so",
+          not cap.skip_now(broken, default, MAC_SCREEN) and broken.limit == "none" and "no list of windows" in broken.why,
+          (broken.limit, broken.why))
+    check("...and the panel's window is then not looked for", cap.window_rects(MAC_SCREEN) is None)
+finally:
+    cap.sys = real_sys
+    del sys.modules["Quartz"]
+
+
 # ---------------------------------------------------------------- the screen loop
 print("\n[the screen loop]")
 from PIL import Image, ImageDraw  # noqa: E402

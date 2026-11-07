@@ -123,15 +123,42 @@ def version() -> str:
     return re.search(r'^VERSION = "([^"]+)"', (ROOT / "server" / "version.py").read_text(encoding="utf-8"), re.M)[1]
 
 
+# The first bytes of a Mach-O file: 32- and 64-bit, and a universal one holding several
+MACH_O = (b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+
+
+def mac_minimum(app: Path) -> str:
+    """The newest macOS any program or library in the bundle was built for, from each Mach-O file's own load commands
+    (LC_BUILD_VERSION's minos, or the older LC_VERSION_MIN_MACOSX): the app starts on that macOS and newer only, and
+    a wheel built for a newer one than the rest (numpy's for Accelerate) raises it for the whole app."""
+    newest = (0,)
+    for f in app.rglob("*"):
+        if f.is_symlink() or not f.is_file():
+            continue
+        with f.open("rb") as fh:
+            if fh.read(4) not in MACH_O:
+                continue
+        listed = subprocess.run(["otool", "-l", str(f)], capture_output=True, text=True).stdout
+        found = re.findall(r"cmd LC_BUILD_VERSION\n.*\n\s*platform 1\n\s*minos ([\d.]+)", listed)
+        found += re.findall(r"cmd LC_VERSION_MIN_MACOSX\n.*\n\s*version ([\d.]+)", listed)
+        for v in found:
+            newest = max(newest, tuple(int(n) for n in v.split(".")))
+    return ".".join(map(str, newest + (0,) * (2 - len(newest)))) if newest != (0,) else ""
+
+
 def mac_bundle(app: Path) -> None:
-    """Info.plist as MAC_PLIST and the version say, then the app signed again (ad hoc, as PyInstaller signed it):
-    a changed Info.plist breaks the signature, and macOS on Apple silicon refuses to start unsigned code."""
+    """Info.plist as MAC_PLIST, the version and the oldest macOS it starts on say, then the app signed again (ad hoc,
+    as PyInstaller signed it): a changed Info.plist breaks the signature, and macOS on Apple silicon refuses to start
+    unsigned code. Finder then says which macOS the app needs, where it would otherwise fail to start."""
     import plistlib
     plist = app / "Contents" / "Info.plist"
     info = plistlib.loads(plist.read_bytes())
     info.update(MAC_PLIST, CFBundleShortVersionString=version(), CFBundleVersion=version())
+    oldest = mac_minimum(app)
+    if oldest:
+        info["LSMinimumSystemVersion"] = oldest
     plist.write_bytes(plistlib.dumps(info))
-    print(f"Info.plist: macOS {info.get('LSMinimumSystemVersion', '(no minimum named)')} or newer, version {version()}")
+    print(f"Info.plist: macOS {oldest or '(no minimum found)'} or newer, version {version()}")
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
 
@@ -180,6 +207,12 @@ def mac_capture_check(exe: Path) -> None:
         else:
             raise SystemExit(f"the built capture program sent no screen: {seen}")
         print(f"the built capture program connected and sent a screen ({seen.get('info')})")
+        # Skip windows reads the window server's list (client/capture.py, _windows_mac); a list it could not read is in
+        # caps as skip_limit, which stays out of them while every window can be read
+        limit = (seen.get("caps") or {}).get("skip_limit", "")
+        if limit:
+            raise SystemExit(f"the built capture program cannot read the windows (skip_limit {limit!r})")
+        print("...it reads the windows, for Skip windows and the panel's own window")
         opener.open(urllib.request.Request(f"http://127.0.0.1:{port}/capture/quit", data=b"", method="POST"), timeout=5)
         code = capture.wait(timeout=20)
         if code != 0:

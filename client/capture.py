@@ -335,7 +335,9 @@ def window_rects(mon: dict, limit: int = 40) -> tuple[list, list] | None:
     """(visible top-level windows over the captured area, front to back, as fractions of it
     ([x0, y0, x1, y1]); which of them are this tool's own panel, as indexes into that list). The server clips a
     problem crop to the window that holds it, so a neighbouring window never comes along. Only the rectangles
-    leave this program (no titles). None off Windows or when the list cannot be read."""
+    leave this program (no titles). None off Windows and macOS, or when the list cannot be read."""
+    if sys.platform == "darwin":
+        return _rects_mac(mon, limit)
     if sys.platform != "win32":
         return None
     import ctypes
@@ -376,6 +378,26 @@ def window_rects(mon: dict, limit: int = 40) -> tuple[list, list] | None:
         user32.EnumWindows(visit, 0)   # top of the z-order first
     except Exception:
         return None
+    return out, mine
+
+
+def _rects_mac(mon: dict, limit: int = 40) -> tuple[list, list] | None:
+    """window_rects on macOS, from the same list Skip windows reads (_windows_mac)."""
+    try:
+        shown = _windows_mac(limit=128)
+    except Exception:
+        return None
+    left, top, width, height = mon["left"], mon["top"], mon["width"], mon["height"]
+    out, mine = [], []
+    for title, _program, (wx0, wy0, wx1, wy1), _covers in shown:
+        if len(out) >= limit:
+            break
+        x0, y0 = max(0.0, (wx0 - left) / width), max(0.0, (wy0 - top) / height)
+        x1, y1 = min(1.0, (wx1 - left) / width), min(1.0, (wy1 - top) / height)
+        if x1 > x0 and y1 > y0 and (x1 - x0) * (y1 - y0) >= 0.01:   # on this screen, and not a sliver
+            if OWN_TITLE.match(title.strip()):
+                mine.append(len(out))
+            out.append([round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)])
     return out, mine
 
 
@@ -584,6 +606,41 @@ def _stack_win32(limit: int = 128) -> list:
     return out
 
 
+def _windows_mac(limit: int = 128) -> list:
+    """The windows on the screen on macOS, front to back, as skip_visible takes them: (title, program, (x0, y0, x1, y1),
+    the same rectangle), from the window server's own list, in the points mss gives the monitors in. Only those of the
+    normal layer: the menu bar, the Dock, menus and the status items sit above it and hold no window to skip, and a
+    minimized window or one on another Space is not on the list at all. The program is the app's name ("Bitwarden"); the
+    title is there once Screen Recording is allowed, as it has to be for the screen itself. Raises when the list cannot
+    be read."""
+    import Quartz
+
+    listed = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID)
+    if listed is None:
+        raise RuntimeError("no list of windows")
+    out = []
+    for w in listed:
+        if len(out) >= limit:
+            break
+        if w.get(Quartz.kCGWindowLayer, 0) != 0 or not w.get(Quartz.kCGWindowAlpha, 1):
+            continue                                       # above the normal windows, or drawn wholly see-through
+        b = w.get(Quartz.kCGWindowBounds) or {}
+        x, y, width, height = (float(b.get(k, 0)) for k in ("X", "Y", "Width", "Height"))
+        if width < 2 or height < 2:
+            continue                                       # a program's hidden helper, a point on the screen
+        box = (x, y, x + width, y + height)
+        out.append((str(w.get(Quartz.kCGWindowName) or ""), str(w.get(Quartz.kCGWindowOwnerName) or ""), box, box))
+    return out
+
+
+def _front_mac() -> tuple | None:
+    """The window in front on macOS, (title, program): the first of the normal windows, which the app in front keeps
+    over the others; None when there is none (the desktop alone)."""
+    shown = _windows_mac(limit=1)
+    return (shown[0][0], shown[0][1]) if shown else None
+
+
 class _X11Front:
     """The windows on an X11 desktop, read through libX11 with ctypes on a connection of its own (mss reaches X11 for the
     screen the same way): the root window's _NET_ACTIVE_WINDOW, which the window manager keeps, and each window's _NET_WM_NAME
@@ -770,7 +827,7 @@ class FrontWindow:
     def __init__(self):
         self.x11, self.opened, self.fixed = None, 0.0, ""   # fixed: what no later look can change (a Wayland session)
         self.broke, self.unlisted = "", ""        # why the last read failed, and why the last list did
-        if sys.platform == "win32":
+        if sys.platform in ("win32", "darwin"):
             return                                # read afresh on each look, with no connection to keep
         if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
             self.fixed = "Wayland"                # a Wayland session tells other programs nothing of its windows
@@ -799,6 +856,8 @@ class FrontWindow:
         try:
             if sys.platform == "win32":
                 got = _front_win32()
+            elif sys.platform == "darwin":
+                got = _front_mac()
             else:
                 got = self.x11.read() if self._open() else None
                 if self.x11 is None:
@@ -815,6 +874,8 @@ class FrontWindow:
         try:
             if sys.platform == "win32":
                 got = _stack_win32()
+            elif sys.platform == "darwin":
+                got = _windows_mac()
             else:
                 got = self.x11.stack() if self.x11 is not None else None
             self.unlisted = "" if got is not None else "no list of windows"
@@ -825,7 +886,7 @@ class FrontWindow:
 
     @property
     def limit(self) -> str:
-        if self.fixed or (self.unlisted and (self.broke or self.x11 is None and sys.platform != "win32")):
+        if self.fixed or (self.unlisted and (self.broke or self.x11 is None and sys.platform not in ("win32", "darwin"))):
             return "none"
         if self.unlisted and self.x11 is not None and not self.x11.says_front:
             return "none"                         # no list, and no word of which is in front either: a window manager with neither
