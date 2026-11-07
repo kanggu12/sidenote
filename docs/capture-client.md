@@ -24,7 +24,7 @@ on another machine whose port is forwarded to this PC:
    screen (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's
    PulseAudio service. On macOS, run the same in Terminal: macOS asks once for **Screen Recording** for Terminal, and
    the speaker sound comes through a loopback input such as BlackHole
-   ([the README's quick start](https://github.com/kanggu12/sidenote/blob/main/README.md#quick-start)).
+   ([how](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#the-app)).
 
 For a server in a cluster, forward its port to this PC first and keep the forward on 127.0.0.1:
 `kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777`. The server answers only requests addressed

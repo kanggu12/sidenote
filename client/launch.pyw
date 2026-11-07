@@ -123,7 +123,8 @@ MB_SETFOREGROUND = 0x10000
 MB_TOPMOST = 0x40000
 
 LINES = 15            # the last lines a box shows: the reason is at the end, and a box taller than the screen hides it
-WIDTH = 160           # characters per line before it is cut short: a long line widens the whole box
+WIDTH = 160           # characters per line in Windows' own box before it is cut short: a long line widens the whole box
+LONGEST = 2000        # the start's window wraps its lines, so there only a run of junk is cut: the reason is at a line's end
 TAIL_BYTES = 65536    # how much of the end of the output is read: far more than LINES lines, at any build's length
 ERROR_ALREADY_EXISTS = 183   # what GetLastError says after CreateMutexW opened a mutex someone else had made
 
@@ -203,13 +204,14 @@ class Glass:
     def px(self, n: float) -> int:
         return round(n * self.scale)
 
-    def place(self, width: int, height: int) -> None:
-        """Its size, at the bottom right of the screen over the taskbar, and then on screen."""
+    def place(self, width: int, height: int, above: int = 0) -> None:
+        """Its size, at the bottom right of the screen over the taskbar (and `above` pixels higher, over another window
+        there), and then on screen."""
         self.width, self.height = width, height
         self.c.configure(width=width, height=height)
         self.c.pack()
         work = self.work_area()                                 # the screen less the taskbar
-        self.root.geometry(f"{width}x{height}+{work[2] - width - self.px(16)}+{work[3] - height - self.px(16)}")
+        self.root.geometry(f"{width}x{height}+{work[2] - width - self.px(16)}+{work[3] - height - self.px(16) - above}")
         self.root.update_idletasks()
         self.dress()
         self.root.deiconify()
@@ -363,8 +365,11 @@ class Starting(Glass):
                 line = {"done": mix(self.OK, self.BG, 0.45), "now": mix(self.MARK, self.BG, 0.7), "later": None}[st]
                 d.rounded_rectangle([S * x0, S * top, S * (x0 + part), S * bottom], radius=S * (bottom - top) / 2, fill=fill,
                                     outline=line, width=S)
-                if st == "later":                                # sunk: its top edge in shadow
-                    d.arc([S * x0, S * top, S * (x0 + part), S * (bottom + p(1))], 200, 340, fill="#141518", width=S)
+                if st == "later":                                # sunk: its top edge in shadow, round ends and flat alike
+                    r = (bottom - top) / 2
+                    d.arc([S * x0, S * top, S * (x0 + 2 * r), S * bottom], 205, 270, fill="#141518", width=S)
+                    d.line([(S * (x0 + r), S * top + S / 2), (S * (x0 + part - r), S * top + S / 2)], fill="#141518", width=S)
+                    d.arc([S * (x0 + part - 2 * r), S * top, S * (x0 + part), S * bottom], 270, 335, fill="#141518", width=S)
                 mid, cx = (top + bottom) / 2, x0 + p(15)
                 if st == "done":                                  # a check
                     d.line([(S * (cx - p(4)), S * mid), (S * (cx - p(1)), S * (mid + p(3))), (S * (cx + p(4.5)), S * (mid - p(3.5)))],
@@ -384,6 +389,15 @@ class Starting(Glass):
                 c.create_rectangle(x0, top, x0 + part, bottom, outline={"done": self.OK, "now": self.MARK, "later": self.EDGE}[st],
                                    fill={"done": mix(self.OK, self.BG, 0.16), "now": mix(self.MARK, self.BG, 0.12), "later": self.SUNK}[st])
             c.create_rectangle(left, groove[0], right, groove[1], outline="", fill=self.SUNK)
+            for i, st in enumerate(state):                       # the check and the dot, as the picture has them
+                mid, cx = (top + bottom) / 2, left + i * (part + gap) + p(15)
+                if st == "done":
+                    c.create_line(cx - p(4), mid, cx - p(1), mid + p(3), cx + p(4.5), mid - p(3.5), fill=self.LIT, width=p(1.8),
+                                  capstyle="round", joinstyle="round")
+                else:
+                    r = p(3.5)
+                    c.create_oval(cx - r, mid - r, cx + r, mid + r, fill=self.MARK if st == "now" else "",
+                                  outline="" if st == "now" else self.MUTED)
         for i, st in enumerate(state):
             x0 = left + i * (part + gap)
             c.create_text(x0 + p(26), (top + bottom) / 2, anchor="w", text=STEPS[i],
@@ -392,8 +406,9 @@ class Starting(Glass):
         c.create_text(left, p(126), anchor="w", text=self.say, width=right - left, fill=self.INK2, font=(self.words, 9))
         self.seconds = None if self.finished else c.create_text(right - p(24), p(25), text="", fill=self.MUTED, font=(self.words, 8))
         # the groove's fill, and the light that runs along it while the start is under way, drawn on the picture
-        self.bar = c.create_line(0, 0, 0, 0, fill=self.MARK, width=groove[1] - groove[0], capstyle="round")
-        self.light = None if self.finished else c.create_line(0, 0, 0, 0, fill=self.INK, width=groove[1] - groove[0], capstyle="round")
+        self.bar = c.create_line(0, 0, 0, 0, fill=self.MARK, width=groove[1] - groove[0], capstyle="round", state="hidden")
+        self.light = None if self.finished else c.create_line(0, 0, 0, 0, fill=self.INK, width=groove[1] - groove[0], capstyle="round",
+                                                             state="hidden")
         self.drawn = (self.step, self.say, self.finished)
 
     def draw(self) -> None:
@@ -409,12 +424,15 @@ class Starting(Glass):
             self.fill += (self.goal() - self.fill) * (0.3 if self.finished else 0.08)   # it rises to where it should be
             mid, end = (y0 + y1) / 2, left + (right - left) * self.fill
             r = (y1 - y0) / 2
-            if end - left > 2 * r:
+            if end - left > 2 * r:                              # shown once it is longer than its round ends
                 c.coords(self.bar, left + r, mid, end - r, mid)
+                c.itemconfigure(self.bar, state="normal")
             if self.light is not None:                          # a short light running along what is filled
                 span = max(0.0, end - left - 2 * r)
                 x = left + r + span * self.phase
-                c.coords(self.light, max(left + r, x - p_len(span)), mid, x, mid) if span > 0 else None
+                if span > 0:
+                    c.coords(self.light, max(left + r, x - p_len(span)), mid, x, mid)
+                    c.itemconfigure(self.light, state="normal")
             self.phase = (self.phase + 0.02) % 1.0
         finally:
             if self.tick is not None:                           # one frame asked for at a time, however draw() was called
@@ -458,7 +476,9 @@ class Notice(Glass):
         top = p(90)                                             # under the pill
         well = (top, top + text_height + 2 * pad)               # the sunk part that holds the lines
         height = well[1] + p(70)
-        self.place(width, height)
+        # A failure takes the start window's own place, as that window has gone; a note comes from a second click while a start
+        # is under way, whose window stands in that place, so the note stands above it
+        self.place(width, height, above=0 if failed else p(Starting.H + 12))
         c = self.c
         box = self.name(left, p(30))
         bold = tkinter.font.Font(root=self.root, font=(self.words, 10, "bold"))
@@ -635,17 +655,22 @@ def decode(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\x00", "")   # a cut letter: one replacement mark
 
 
-def last_lines(text: str) -> tuple[list[str], bool]:
-    """The lines a terminal would end up showing, as plain text: the last LINES that are not empty, and whether
-    there were more than that."""
+def last_lines(text: str, width: int = LONGEST) -> tuple[list[str], bool]:
+    """The lines a terminal would end up showing, as plain text: the last LINES that are not empty, each cut at `width`
+    characters, and whether there were more than that."""
     lines = []
     for raw in text.replace("\r\n", "\n").split("\n"):          # wsl.exe ends its lines with \r\n, Linux with \n
         line = raw.rstrip("\r").rsplit("\r", 1)[-1]            # a line redrawn with \r (a count) as it last read
         line = CONTROLS.sub("", ESCAPES.sub("", line))           # colour codes and titles out, then stray controls
         line = line.expandtabs(4).strip()                       # a box lays text out itself: no indent to keep
         if line:                                                 # blank lines only make the box taller
-            lines.append(line if len(line) <= WIDTH else line[:WIDTH - 1] + "…")
+            lines.append(cut(line, width))
     return lines[-LINES:], len(lines) > LINES
+
+
+def cut(line: str, width: int) -> str:
+    """A line at most `width` characters long, its end marked where it was cut."""
+    return line if len(line) <= width else line[:width - 1] + "…"
 
 
 def failure_text(output: bytes, rc: int, repo: str) -> str:
@@ -684,6 +709,7 @@ def show(title: str, text: str, icon: int, dry_run: bool) -> None:
         return
     except Exception:
         pass   # no tkinter in this Python, or no window to be had: Windows' own box says the same
+    text = "\n".join(cut(line, WIDTH) for line in text.split("\n"))   # Windows' box widens for its longest line
     user32.MessageBoxW(None, text, title, MB_OK | icon | MB_SETFOREGROUND | MB_TOPMOST)
 
 

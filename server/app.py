@@ -3572,6 +3572,8 @@ def create_app() -> FastAPI:
             return
         await ws.accept()
         STATE.panel_clients.add(ws)
+        # Off the loop: it waits for the history's lock, which a write or a search can hold, and the loop serves everyone
+        fresh = await asyncio.to_thread(HISTORY.fresh)
         await ws.send_text(
             json.dumps(
                 {
@@ -3593,7 +3595,7 @@ def create_app() -> FastAPI:
                     "version": VERSION,          # shown in the gear menu
                     "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
                     "update": update_status(),   # a newer release found before this panel opened, or None
-                    "fresh": HISTORY.fresh(),    # nothing answered yet: the panel opens its setup guide, once in a browser
+                    "fresh": fresh,              # nothing answered yet: the panel opens its setup guide, once in a browser
                 }
             )
         )

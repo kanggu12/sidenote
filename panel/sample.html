@@ -21,6 +21,10 @@
   li { display: flex; gap: 12px; align-items: baseline; padding: 12px 16px; border: 1px solid var(--rule); border-radius: 10px;
     font-size: 18px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
   li b { flex: none; min-width: 1.4em; color: var(--ink); }
+  /* The Korean choices as an exam writes them, ① to ④, drawn as rings round full-size digits: the font's own circled digits
+     stand a third of the text's height, small for a model reading a capture brought down from a large screen */
+  li b.ring { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; min-width: 0; border: 1.5px solid currentColor;
+    border-radius: 50%; font-size: .9em; line-height: 1; }
   footer { margin-top: 22px; padding-top: 14px; border-top: 1px dashed var(--rule); font-size: 13px; line-height: 1.5; color: var(--quiet);
     word-break: keep-all; }
   main[data-lang] { display: none; }
@@ -34,10 +38,10 @@
   <p class="no">문제 1</p>
   <h1>다음 중 TCP에 대한 설명으로 옳지 않은 것은?</h1>
   <ol>
-    <li><b>①</b>데이터를 보내기 전에 연결을 맺는다.</li>
-    <li><b>②</b>보낸 순서대로 받도록 보장한다.</li>
-    <li><b>③</b>잃어버린 데이터는 다시 보낸다.</li>
-    <li><b>④</b>한 번에 여러 수신자에게 브로드캐스트로 보낸다.</li>
+    <li><b class="ring">1</b>데이터를 보내기 전에 연결을 맺는다.</li>
+    <li><b class="ring">2</b>보낸 순서대로 받도록 보장한다.</li>
+    <li><b class="ring">3</b>잃어버린 데이터는 다시 보낸다.</li>
+    <li><b class="ring">4</b>한 번에 여러 수신자에게 브로드캐스트로 보낸다.</li>
   </ol>
   <footer>설정 마법사의 예제 문제입니다. 이 탭이 화면에 보이면 몇 초 뒤 패널에 답이 적힙니다. 확인했으면 이 탭을 닫으세요.</footer>
 </main>

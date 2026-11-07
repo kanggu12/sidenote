@@ -711,12 +711,12 @@ server, which holds a screen as the PNG that arrived, it turned nothing.
 ### <a id="note-115"></a>115. The one-line answer of an explanation is its answer
 
 The prompt said what the ANSWER line holds for every type but other, and for a question of that kind the local model
-filled it with the question's topic: a spoken question asking which of two tools had been used came back as the two
-tools' difference and use, and run again as a question about which one was used, which a folded answer showed alone, as
-if the answer had been cut off. The line now asks essay, work and other for the point of the answer in one sentence, and
-not the question restated as a title, with an example on a subject none of the measured questions is about. Measured on
-the local model with the panel in Korean, on 21 spoken questions twice each (the 13 of the known-answer set, and 8 that
-ask for a difference or about the speaker's own setup): the same answers are right, 40 of 42, the two left being a
+filled it with the question's topic. A spoken question asking which of two tools had been used came back as the two
+tools' difference and use, and run again as a question about which one was used; a folded answer showed that line alone,
+as if the answer had been cut off. The line now asks essay, work and other for the point of the answer in one sentence,
+and not the question restated as a title, with an example on a subject none of the measured questions is about. Measured
+on the local model with the panel in Korean, on 21 spoken questions twice each (the 13 of the known-answer set, and 8
+that ask for a difference or about the speaker's own setup): the same answers are right, 40 of 42, the two left being a
 question about the speaker's own setup, which both prompts leave as `TYPE: none`; the lines that name a topic go from 2
 to none; the median case goes from 10.4 s to 10.1. The question about two tools now goes through the thinking pass, 61 s
 where its title took 3. The language of the answer is the server's (`in_answer_language`): run with none set, the same

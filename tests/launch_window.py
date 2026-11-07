@@ -82,6 +82,12 @@ check("a line that fits is one line", en.wrapped("aaaa bbbb", width_of, 10) == 1
 check("words go to the next line whole", en.wrapped("aaaa bbbb cccc", width_of, 10) == 2)
 check("a word wider than a line is broken where it runs out", en.wrapped("x" * 25, width_of, 10) == 3)
 check("each line of the text starts a line, an empty one too", en.wrapped("a\n\nb", width_of, 10) == 3)
+# The note wraps its lines itself, so a long line keeps its end, where the reason is; Windows' own box still cuts it
+long_line = "error: " + "x" * 300 + " forbidden by its access permissions"
+check("a failure keeps a long line of the launcher's whole: its end is the reason",
+      en.last_lines(long_line)[0] == [long_line], str(en.last_lines(long_line)[0])[:120])
+check("...and only Windows' own box cuts it, at its width", hasattr(en, "cut") and len(en.cut(long_line, en.WIDTH)) == en.WIDTH
+      and en.cut(long_line, en.WIDTH).endswith("…"))
 
 # Drawn, where Tk and a virtual display are at hand (not on CI)
 DRAW = r"""
@@ -91,6 +97,9 @@ spec = importlib.util.spec_from_loader("launch", loader)
 m = importlib.util.module_from_spec(spec); loader.exec_module(m)
 out = {}
 w = m.Starting(tkinter)
+w.show(0, m.SAY_WSL, False); w.draw(); w.root.update()
+out["first_frame"] = [w.c.itemcget(w.bar, "state"), w.c.itemcget(w.light, "state")]   # nothing filled yet: nothing drawn
+out["start_place"] = [w.root.winfo_y(), w.root.winfo_height()]
 for step, say, finished in ((0, m.SAY_WSL, False), (0, m.SAY_SERVER, False), (1, m.SAY_CAPTURE, False), (2, m.SAY_DONE, True)):
     w.show(step, say, finished); w.draw(); w.root.update()
     texts = [w.c.itemcget(i, "text") for i in w.c.find_all() if w.c.type(i) == "text"]
@@ -122,9 +131,18 @@ del n; gc.collect()
 m.NOTE_HOLD = 300
 n = m.Notice(tkinter, m.BUSY, m.BUSY_TEXT, failed=False)
 out["busy_dot"] = [n.tone]
+n.root.update()
+out["busy_place"] = [n.root.winfo_y(), n.root.winfo_height()]
 n.root.after(1500, lambda: (out.__setitem__("note_stayed", True), n.root.destroy()))
 n.root.mainloop()
 out.setdefault("note_stayed", False)
+# With no picture (Pillow missing) the steps keep their check and dot: colour alone told done from later
+m.Glass.art = lambda self, shapes: None
+w = m.Starting(tkinter)
+w.show(1, m.SAY_CAPTURE, False); w.draw(); w.root.update()
+out["plain_marks"] = {"lines": sum(1 for i in w.c.find_all() if w.c.type(i) == "line" and i not in (w.bar, w.light)),
+                      "ovals": sum(1 for i in w.c.find_all() if w.c.type(i) == "oval")}
+w.close()
 print(json.dumps(out, ensure_ascii=False))
 """
 
@@ -172,6 +190,13 @@ else:
         check(f"...and Esc or its Close key takes it away, in {lang}", f["closed_by_esc"] and out["closed_by_key"], json.dumps(out, ensure_ascii=False)[:300])
         check(f"a note wears the grey mark and goes by itself, in {lang}", out["busy_dot"] == [G.MUTED] and not out["note_stayed"],
               json.dumps({k: out[k] for k in ("busy_dot", "note_stayed")}))
+        (sy, sh), (ny, nh) = out["start_place"], out["busy_place"]
+        check(f"...and stands above the start's window it is about, which it covered, in {lang}", ny + nh <= sy,
+              json.dumps({"start": out["start_place"], "note": out["busy_place"]}))
+        check(f"the groove's fill and light are not drawn before there is any, where a dot sat on the corner, in {lang}",
+              out["first_frame"] == ["hidden", "hidden"], json.dumps(out["first_frame"]))
+        check(f"with no picture the steps keep the check and the dots, in {lang}", out["plain_marks"]["lines"] >= 1 and out["plain_marks"]["ovals"] >= 2,
+              json.dumps(out["plain_marks"]))
 
 print(f"==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)   # tests/run.sh counts a suite by its exit status

@@ -226,18 +226,19 @@ sessions on this PC.
 
 ### The setup guide
 
-The first time the panel opens on a server that has kept no answer, it opens the **Setup guide**, and the gear menu
-opens it again at any time. It has four steps, and each is ticked in the row of steps once what it is about works:
+The first time a browser opens the panel of a server that has kept no answer, the panel opens the **Setup guide**, once
+in that browser; the gear menu opens it again at any time. It has four steps, and each is ticked in the row of steps once
+what it is about works:
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/setup-guide-dark.png">
-    <img alt="The Setup guide on its first step, Solving: the steps Solving, Screen, Sound and Try it in a row, the first three ticked; the Local model on the GPU and Claude Code connected, each as its card says it; and the settings Local model, Model and Problems the agent solves" src="assets/setup-guide-light.png" width="560">
+    <img alt="The Setup guide on its first step, Solving: the steps Solving, Screen, Sound and Try it in a row, the first three ticked; the Local model on the GPU and the Agent connected, each as its card says it; and the settings Local model, Model and Problems the agent solves" src="assets/setup-guide-light.png" width="560">
   </picture>
 </p>
 
-1. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with **Model** and
-   **Problems the agent solves**. One of the two is enough.
+1. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with the **Local model**
+   switch, **Model** and **Problems the agent solves**. One of the two is enough.
 2. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
    **Monitor** and **Skip windows**. On a Mac the capture program needs **Screen Recording**.
 3. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
@@ -570,7 +571,7 @@ the window and stays there, and going up it moves back until its head is under t
   says which window. It reads **Windows not skipped** or **Front window only**, in amber, where the capture program
   cannot read all the windows and screens still go out (section 12).
 - **Local model**: which model, whether it is on the GPU (**On GPU**, or **Idle** once the GPU was given back, with
-  **Free the GPU** and **Load onto the GPU**), the GPU's load and memory, and what it has done today.
+  **Free GPU** and **Load to GPU**), the GPU's load and memory, and what it has done today.
 - **Agent**, with a switch of its own (off keeps the mode it had, so on brings it back): the account it is signed in
   as, with the product and its plan, in a box.
   - With Claude Code, two meters show the plan's usage of its five-hour session and of its week (**Session**,
@@ -1281,7 +1282,7 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | A run says "No result in time" | The runner is up but stuck (`./sidenote status` says the code runner is not responding). `./sidenote restart` recreates it; `up` leaves a running container as it is |
 | A run says "Another code run is going" | Press it again when the previous run ends; runs go one at a time |
 | A run shows **Compile timed out** or **Timed out** | Check for an endless loop or an input that is too large. The limits are in section 5 |
-| Answers are slow | Put `SIDENOTE_FAST=1` in `.env` and run `./sidenote up`.  |
+| Answers are slow | Put `SIDENOTE_FAST=1` in `.env` and run `./sidenote up`. |
 | Analysis errors keep coming | `./sidenote events --errors` shows the cause |
 | The browser does not open `localhost` | Open `127.0.0.1` instead. In some WSL network setups `localhost` resolves to IPv6 |
 
@@ -1682,8 +1683,8 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 선택 | Optional | the agent's card, when no Claude Code or Codex is found |
 | 올라감 | On GPU | **Local model** |
 | 대기 중 | Idle | **Local model** |
-| GPU 비우기 | Free the GPU | **Local model**, the **GPU** section |
-| GPU에 올리기 | Load onto the GPU | **Local model**, the **GPU** section |
+| GPU 비우기 | Free GPU | **Local model**, the **GPU** section |
+| GPU에 올리기 | Load to GPU | **Local model**, the **GPU** section |
 | 조용히 보는 중 | Watching quietly | **Screen capture** |
 | 창 건너뜀 | Skipped window | **Screen capture**; the tray menu's state line |
 | 창 못 건너뜀 | Windows not skipped | **Screen capture** |

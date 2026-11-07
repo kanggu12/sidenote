@@ -185,8 +185,9 @@ def group_try(br, s) -> None:
     p.wait(150)
     p.done(42, "TYPE: mcq\nANSWER: ④\n\n풀이")
     p.wait(300)
-    got = p.js("() => ({ answer: document.querySelector('#setup-body .setup-try.done b')?.textContent, see: !!document.querySelector('[data-setup=\"see\"]'), step: document.querySelector('#setup-steps [data-step=\"3\"]')?.dataset.state })")
-    check("...the next answer to a screen: its answer line, a way to it, and the step ticked", got == {"answer": "④", "see": True, "step": "ok"}, str(got))
+    got = p.js("() => ({ answer: document.querySelector('#setup-body .setup-try.done mark.key')?.textContent, see: !!document.querySelector('[data-setup=\"see\"]'), step: document.querySelector('#setup-steps [data-step=\"3\"]')?.dataset.state, hl: getComputedStyle(document.querySelector('#setup-body .setup-try.done mark.key') || document.body).backgroundImage })")
+    check("...the next answer to a screen: its answer line, a way to it, and the step ticked", {k: got[k] for k in ("answer", "see", "step")} == {"answer": "④", "see": True, "step": "ok"}, str(got))
+    check("...the answer in the notebook's highlighter, as its answer line is", "gradient" in (got["hl"] or ""), str(got)[:200])
     p.js("() => document.querySelector('[data-setup=\"see\"]')?.click()")
     p.wait(400)
     check("...See the answer closes the guide on that answer", not p.js(SHOWN) and p.js("() => !!document.querySelector('.entry[data-id=\"42\"]')"))
@@ -202,6 +203,125 @@ def group_try(br, s) -> None:
         check(f"the sample problem in {lang}: that language alone, and a title the capture does not take for the panel's",
               got["lang"] == lang and got["shown"] == [lang] and word in got["h1"] and not got["title"].lower().startswith("sidenote"), str(got))
         ctx.close()
+
+
+def group_try_ends(br, s) -> None:
+    """Every way the sample's analysis can end. Each of these left "Solving the sample problem" until the page was loaded again,
+    showed the answer Practice keeps back, or said no problem was found under an answer the notebook showed."""
+    if not T.group("how the sample can end"):
+        return
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send(support.settings_message())
+    p.wait(200)
+    p.answer(70, "mcq", key="④")   # an answer from before, which a repeat points at
+    p.wait(200)
+    opened(p)
+    go(p, 3)
+    line = "() => document.querySelector('#setup-body .setup-try')?.textContent.trim() || ''"
+
+    def sample():
+        if p.js("() => !!document.querySelector('[data-setup=\"sample\"]')"):
+            with p.page.expect_popup() as tab:
+                p.js("() => document.querySelector('[data-setup=\"sample\"]')?.click()")
+            tab.value.close()
+        p.wait(150)
+
+    def start(i):
+        p.send({"type": "analysis_start", "id": i, "ts": p.js("() => Date.now() / 1000") + 1, "thumb": None, "transcript": "",
+                "pages": 0, "trigger": "screen", "roi": None})
+        p.wait(150)
+        return p.js(line)
+
+    sample()
+    solving = start(61)
+    p.send({"type": "error", "id": 61, "text": "the model stopped"})
+    p.wait(200)
+    after_error = p.js(line)
+    start(62)
+    p.send({"type": "analysis_cancelled", "id": 62, "reason": "not_sent"})
+    p.wait(200)
+    after_cancel = p.js(line)
+    check("an error or a call-off ends the sample's Solving, and the step says to open it again",
+          solving and after_error and after_error != solving and after_cancel == after_error, str((solving, after_error, after_cancel)))
+    start(63)
+    p.send({"type": "analysis_cancelled", "id": 63, "reason": "repeat", "of": 70})
+    p.wait(250)
+    got = p.js("() => document.querySelector('#setup-body .setup-try.done mark.key')?.textContent")
+    check("...a call-off as a problem solved before (the sample opened again) has that answer", got == "④", str(got))
+    sample()
+    start(64)
+    p.drop()
+    p.wait(300)
+    check("...and a dropped connection ends it too", p.js(line) not in ("", solving), p.js(line))
+    p.close()
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send(support.settings_message())
+    p.wait(200)
+    p.js("() => setPractice(true)")
+    opened(p)
+    go(p, 3)
+    sample()
+    start(65)
+    p.done(65, "TYPE: mcq\nANSWER: ④\n\n풀이")
+    p.wait(300)
+    got = p.js("() => ({ shows: (document.querySelector('#setup-body .setup-try.done')?.textContent || '').includes('④'), done: !!document.querySelector('#setup-body .setup-try.done'), held: document.querySelector('.entry[data-id=\"65\"]')?.classList.contains('held') })")
+    check("with Practice on, the step says the answer came and keeps it back, as the notebook does", got == {"shows": False, "done": True, "held": True}, str(got))
+    p.js("() => setPractice(false)")
+    sample()
+    start(66)
+    p.done(66, "Some words with no head line at all, which the notebook keeps")
+    p.wait(300)
+    got = p.js("() => ({ done: !!document.querySelector('#setup-body .setup-try.done'), shown: !!document.querySelector('.entry[data-id=\"66\"]') })")
+    check("an answer the notebook keeps with no head line counts as answered, not as no problem found", got == {"done": True, "shown": True}, str(got))
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+
+
+def group_redraws(br, s) -> None:
+    """What the guide keeps while the server talks: the screen step's ages change every second, and the whole pane drawn
+    again closed an open list and made the picture again; a screen asked for and the guide closed before it came started a
+    drawing on the screen card. Escape in its box of words does as in Solver settings: the words put back, nothing sent, closed."""
+    if not T.group("what the guide keeps"):
+        return
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send(support.settings_message())
+    p.wait(200)
+    opened(p)
+    go(p, 1)
+    png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    p.js("() => document.querySelector('[data-setup=\"shot\"]')?.click()")
+    p.send({"type": "thumb", "url": png, "ts": p.js("() => Date.now() / 1000"), "live": False})
+    p.wait(200)
+    p.js("() => { const i = document.querySelector('#setup-body .setup-shot img'); if (i) i.dataset.same = '1'; }")
+    p.js("() => document.querySelector('#setup-body .combo-btn[data-set=\"monitor\"]')?.click()")
+    p.wait(150)
+    p.js("() => { const l = document.querySelector('.combo-list:not([hidden])'); if (l) l.dataset.same = '1'; }")
+    for k in range(3):   # the ages move on, as every second does
+        now = p.js("() => Date.now() / 1000")
+        p.send({**h.CAPTURE, "now": now, "last_frame": now - 3 - k * 7, "last_audio": now - 2})
+        p.wait(300)
+    got = p.js("() => ({ img: document.querySelector('#setup-body .setup-shot img')?.dataset.same, list: document.querySelector('.combo-list:not([hidden])')?.dataset.same })")
+    check("the screen step's ages move on with no redraw of the picture or the open list", got == {"img": "1", "list": "1"}, str(got))
+    p.page.keyboard.press("Escape")   # the list
+    p.wait(150)
+    box = "#setup-body textarea.words"
+    p.js(f"() => {{ window.__sent.length = 0; const b = document.querySelector('{box}'); if (b) {{ b.focus(); b.value = b.value + ', Steam'; }} }}")
+    p.page.keyboard.press("Escape")
+    p.wait(150)
+    first = p.js(f"() => ({{ open: document.getElementById('setup-overlay')?.hidden === false, words: document.querySelector('{box}')?.value.endsWith('Steam'), sent: window.__sent.filter((m) => m.type === 'setting').length }})")
+    check("Escape in its box of words puts the words back, sends nothing and closes the guide, as Solver settings does",
+          first == {"open": False, "words": False, "sent": 0}, str(first))
+    opened(p)
+    go(p, 1)
+    p.js("() => document.querySelector('[data-setup=\"shot\"]')?.click()")
+    p.page.keyboard.press("Escape")
+    p.wait(150)
+    p.send({"type": "thumb", "url": png, "ts": p.js("() => Date.now() / 1000"), "live": True})
+    p.wait(250)
+    check("a screen asked for and the guide closed before it came starts no drawing on the screen card",
+          not p.js("() => document.getElementById('shot').classList.contains('drawing')"))
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
 
 
 def group_narrow(br, s) -> None:
@@ -231,6 +351,8 @@ def main():
         group_fresh(br, s)
         group_steps(br, s)
         group_try(br, s)
+        group_try_ends(br, s)
+        group_redraws(br, s)
         group_narrow(br, s)
         br.close()
     return T.end()

@@ -30,7 +30,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens-dark.png">
-    <img alt="Four of Sidenote's views. Answer: the panel with a practice problem's worked answer, its key point, the approach, the code and its complexity, beside the capture, local model and agent cards. Heard: the sheet of what was said out loud, each line with its time. Solver settings: the local model, thinking before answering, the model, web search and the other choices of which problems go where. Capture: the tray menu with Open the panel, the capture's state and the screen and sound switches, beside the desktop shortcut's window at its second step" src="docs/assets/screens-light.png" width="920">
+    <img alt="Four of Sidenote's views. Answer: the panel with a practice problem's worked answer, its key point, the approach, the code and its complexity, beside the capture, local model and agent cards. Heard: the sheet of what was said out loud, each line with its time. Solver settings on its Agent section: which problems go to the agent, what is sent to it, and the types it solves. Capture: the tray menu with Open the panel, the capture's state and the screen and sound switches, beside the desktop shortcut's window at its second step" src="docs/assets/screens-light.png" width="920">
   </picture>
 </p>
 
@@ -40,9 +40,9 @@ panel beside your work. It runs on your own PC, and the cloud agent sees only th
 
 ## Quick start
 
-Install Sidenote, then add what solves: the [local model](#the-local-model-optional) on your GPU, a
-[cloud agent](#the-cloud-agent-optional) you already use, or both. Not sure which install? The app, one of the first
-three; Docker adds web search and a sandbox that runs code answers on the problem's examples.
+Install Sidenote, then add what solves, one or both: the [local model](#the-local-model-optional) on your GPU, or a
+[cloud agent](#the-cloud-agent-optional) you already use. Not sure which to install? Take the app (one of the first
+three blocks); Docker adds web search and a sandbox that runs code answers on the problem's examples.
 
 **Windows 10 or 11** (PowerShell)
 
@@ -53,7 +53,7 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 ```
 
 **macOS 14 or newer** on Apple silicon (Terminal). It asks once for **Screen Recording**: the second block opens that
-setting, then starts Sidenote again once it is on.
+setting, and once Sidenote is on there, the third starts it again.
 
 ```bash
 curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip
@@ -63,6 +63,9 @@ open /Applications/Sidenote.app
 
 ```bash
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+```
+
+```bash
 osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 3; open /Applications/Sidenote.app
 ```
 
