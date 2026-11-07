@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-07
+
 ### Fixed
 
 - On macOS, opening Sidenote again while it runs opens the panel, as starting it again does on Windows and Linux. macOS
@@ -13,10 +15,10 @@ that only fixes raises the patch number. Each release's section here is its rele
   the Finder does, opens it again and quits it as macOS does at log out.
 - Starting the app while it was still closing down did nothing: it waited for that copy's server, which was not coming
   back. It now waits for that copy to end and starts in its place.
-- A quit could take 10 s, after which the app ended its server the hard way: the server waited for jobs still running
-  on its threads, such as the first start's download of the speech model or the question to the agent's CLI of which
-  model it runs on. The app's server now ends as soon as its own close-down is done (0.4 s, from 11.1 s during the
-  download), and a download cut off this way is made again at the next start.
+- A quit could take up to 10 s, after which the app ended its server the hard way: the server waited for jobs still
+  running on its threads, such as the first start's download of the speech model or the question to the agent's CLI of
+  which model it runs on. The app's server now ends as soon as its own close-down is done (0.4 s, from 11.1 s during
+  the download), and a download cut off this way is made again at the next start.
 - The capture program's lines reached `capture.log` in blocks of 8 KB, and on macOS a quit sent by the system lost the
   ones not yet written. Each line is written as it is printed.
 
@@ -304,7 +306,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/kanggu12/sidenote/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/kanggu12/sidenote/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/kanggu12/sidenote/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/kanggu12/sidenote/compare/v0.1.6...v0.1.7
