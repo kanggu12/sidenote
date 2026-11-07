@@ -2026,11 +2026,25 @@ function captionFigures(el) {
         const command = node.classList.contains("shell");   // lineCode's verdict: what the copy holds has lost its prompts
         const kind = command ? "command" : "code";
         const lang = command || [t("Code"), t("Command"), t("Text")].includes(label.dataset.base) ? "" : `${label.dataset.base}: `;
-        const program = command ? (codeText(node).split("\n").find((l) => l.trim()) || "").replace(/^\s*\$\s*/, "").trim().split(/\s+/)[0] || "" : codeTopic(codeText(node));
+        const program = command ? commandName(codeText(node)) : codeTopic(codeText(node));
         capText(label, command ? t("Command {n}", { n: ++n[kind] }) : t("Code {n}", { n: ++n[kind] }), `${lang}${about(node) || program}`.replace(/:\s*$/, "").trim());
       }
     });
   });
+}
+// The program a command block runs, for its caption: the first word of its first line that is not a comment, past what only
+// wraps a command (sudo, env, time, nohup and the like, a VAR=value, and a wrapper's own options). "sudo lsof | grep deleted"
+// is lsof, and a block opened by "# what this does" goes by its command: they said "명령어 1. sudo" and "명령어 2. #".
+const WRAPPERS = new Set(["sudo", "doas", "env", "time", "nohup", "exec", "command", "nice"]);
+function commandName(text) {
+  const line = text.split("\n").map((l) => l.replace(/^\s*\$\s*/, "").trim()).find((l) => l && !/^(#|\/\/)/.test(l)) || "";
+  const words = line.split(/\s+/);
+  let i = 0, wrapped = false;
+  while (i < words.length - 1 && (WRAPPERS.has(words[i]) || /^[A-Za-z_]\w*=/.test(words[i]) || (wrapped && words[i].startsWith("-")))) {
+    wrapped = wrapped || WRAPPERS.has(words[i]);
+    i++;
+  }
+  return words[i] || "";
 }
 // "TYPE: x", then optional "ANSWER: y" and "REGION: ..." head lines (REGION is for the server:
 // where the problem is on screen). While streaming, a head line still arriving is held back so
@@ -2374,9 +2388,11 @@ function localState() {
     if (missing && L.pull) return card("bad", t("No model"), [[t("Model"), model]], pullOffer(L));
     if (!missing && status.desktop) return card("bad", t("No response"), [[t("Model"), model]],
       t("Ollama does not answer · install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }));
-    const cmd = missing ? "./sidenote llm pull" : "./sidenote doctor";
+    // What to do, as the band says it: the pill and the model's row already say what is wrong, and the note said it again
+    const cmd = `<code class="cmd">${missing ? "./sidenote llm pull" : "./sidenote doctor"}</code>`;
     return card("bad", missing ? t("No model") : t("No response"), [[t("Model"), model]],
-      `${localTrouble(L)}. <code class="cmd">${cmd}</code>`);
+      missing ? t("Get the model with {cmd} in the server's terminal, then {up}", { cmd, up: `<code class="cmd">./sidenote up</code>` })
+        : t("Run {cmd} in the server's terminal", { cmd }));
   }
   const g = L.loaded;
   // Whether the model sits on the GPU now, ready to answer, or the GPU was given back and the model goes on again
@@ -2828,7 +2844,8 @@ function renderAlerts() {
         `<button class="btn sm" data-copy="${LOGIN()}">${COPY_MARK}<span>${t("Copy command")}</span></button>`));
     }
     // The agent resting on its plan's limit, at the top, with until when: the card says it only when opened
-    if (C.present && C.mode !== "off" && C.limit_until) {
+    const resting = C.present && C.mode !== "off" && C.limit_until;
+    if (resting) {
       // Which of this PC's model's states it is: on and answering, off and standing in, on but not answering (its own band above says what
       // to do; "켜면" said to turn on a model that was on), or off
       const sub = L.ok && (L.on || L.stand_in) ? (L.on ? t(" · the local model solves meanwhile") : t(" · the local model, though off, stands in meanwhile"))
@@ -2836,9 +2853,12 @@ function renderAlerts() {
         : t(" · no engine to solve meanwhile · turn on the local model and it solves");
       // until when only: the band is drawn on the server's messages, not every second, and a time left here went
       // stale beside the agent's card, which counts it down
-      out.push(alertHtml("info", `<b>${t("{agent} usage limit: resting until {when}", { agent: AG(), when: restAt(C.limit_until) })}</b>${sub}`));
+      // in the tone of the agent's card, which says it in orange; red when nothing answers meanwhile. It was green, the colour
+      // of a connected engine
+      out.push(alertHtml(kind, `<b>${t("{agent} usage limit: resting until {when}", { agent: AG(), when: restAt(C.limit_until) })}</b>${sub}`));
     }
-    if (!E.ready && !localBad && !agentBad) {
+    // An agent resting on its limit is on: the band above says what answers meanwhile, and this one said both were off
+    if (!E.ready && !localBad && !agentBad && !resting) {
       out.push(alertHtml("bad", t("{title} Turn on the local model or the agent in Solver settings", { title: `<b>${t("Every engine is off")}</b>`, agent: AG() }),
         `<button class="btn sm" data-act="settings">${t("Solver settings")}</button>`));
     }
@@ -4457,6 +4477,17 @@ function exportItems() {
   const words = histQuery.split(/\s+/).filter(Boolean);
   return thread.map((id) => items.get(id)).filter((it) => it && !it.live && inChoice(it) && words.every((w) => searchText(it).includes(w)));
 }
+// An answer's own headings two levels down, under the heading the file gives each answer (##): kept as they were, a body's
+// "## Approach" stood level with the answers themselves, and a follow-up's (###) under the body's last heading. Lines in
+// code blocks are left alone: "# a comment" there is code.
+function nestHeadings(md) {
+  let fence = "";
+  return md.split("\n").map((line) => {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = ""; return line; }
+    return fence ? line : line.replace(/^(#{1,4})(?=\s)/, (h) => "#".repeat(h.length + 2));
+  }).join("\n");
+}
 // The answers in view as one Markdown file, oldest first: each with its time, kind and who answered, what was heard when
 // it was a spoken problem, the answer without the engine's own TYPE, ANSWER and REGION lines, and its follow-ups.
 function exportMarkdown() {
@@ -4474,12 +4505,12 @@ function exportMarkdown() {
     if (it.error) out.push(t("Error: {text}", { text: it.error }), "");
     else {
       if (it.head.answer) out.push(`**${t("Answer: {text}", { text: it.head.answer })}**`, "");
-      out.push((it.head.body || "").trim() || it.stopped || "", "");
+      out.push(nestHeadings((it.head.body || "").trim()) || it.stopped || "", "");
     }
     for (const tid of it.turns) {
       const turn = turns.get(tid);
       if (!turn || turn.live) continue;
-      out.push(`### ${turn.retry ? t("Solved again") : t("Follow-up: {q}", { q: turn.q })}`, "", turn.error ? t("Error: {text}", { text: turn.error }) : readText(turn.raw).trim(), "");
+      out.push(`### ${turn.retry ? t("Solved again") : t("Follow-up: {q}", { q: turn.q })}`, "", turn.error ? t("Error: {text}", { text: turn.error }) : nestHeadings(readText(turn.raw).trim()), "");
     }
   }
   if (!written) { toast(t("No answers to export"), null, "warn"); return; }
@@ -4775,7 +4806,9 @@ function syncNextAsks() {
   const it = id != null ? items.get(id) : null, el = id != null ? entryEl(id) : null;
   if (!it || !el) return;
   const row = el.querySelector(":scope > .row.asks:not(.practice)");      // not Practice's keys, which wear its look
-  if (!!row !== (nextAsks(it).length > 0)) { renderEntry(it); return; }   // the row comes or goes
+  // The row comes or goes, and the end with it: followed, as an entry that grows is. On opening, the answers came before the
+  // server's word that questions can be asked, and the keys that came then stood half under the question box
+  if (!!row !== (nextAsks(it).length > 0)) { renderEntry(it); followEnd(); return; }
   // a button just pressed keeps its own two seconds (the click handler's busy time) either way
   if (row) row.querySelectorAll("[data-ask]").forEach((b) => { b.disabled = wsState !== "up" || Date.now() < (b._busyUntil || 0); });
 }
@@ -5059,6 +5092,7 @@ function handle(m) {
       break;
     }
     case "usage": usage = m; renderUsage(); break;
+    case "history_cleared": clearShown(); break;   // cleared from this panel or another one: what is shown goes too
     // a notice that points at an answer above (a problem seen again: m.of) takes the view there when pressed
     case "gpu": drawGpu(m); break;
     // the model download the local model's card started: its progress, then done or why it failed
@@ -5075,7 +5109,8 @@ function handle(m) {
       m.level || (/못했|못합니다|실패|수 없습니다|못 |안 보냄|없음|불가/.test(m.text || "") ? "warn" : "info")); break;
     case "transcript": renderHear(m.text, m.lang, { waiting: !!m.waiting, pending: !!m.pending }); break;
     case "utterance": noteHeard(m.text, m.why); break;   // a sentence that ended: with a `why` when it was not taken
-    case "analysis_start": onStart(m); break;
+    // An answer being written when this page opened comes with its words so far (the server's LIVE)
+    case "analysis_start": onStart(m); if (m.text) onDelta({ type: "delta", id: m.id, text: m.text }); break;
     case "delta": onDelta(m); break;
     case "analysis_done": liveDone.add(idOf(m.id)); onDone(m); sweepKey(entryEl(m.id)); break;
     case "analysis_cancelled": onCancelled(m); break;
@@ -5986,6 +6021,12 @@ $("clear").onclick = () => {
   clearArmed = 0; $("clear").textContent = t("Clear history"); $("clear").classList.remove("on");
   // Not while offline: it said done, deleted nothing on the server, and a reload brought it all back. The server says when it is done.
   if (!send({ type: "history_clear" })) { toggleMenu(false); $("more").focus({ preventScroll: true }); toast(t("No connection to the server, so the history cannot be cleared"), null, "bad"); return; }
+  clearShown();
+  toggleMenu(false); $("more").focus({ preventScroll: true });
+};
+// What this page shows of the history, gone with it: here when Clear history is pressed, and in every other open panel when the
+// server says it was cleared (history_cleared). The others kept every answer, and a star pressed on one was refused.
+function clearShown() {
   // answers still being written stay (with their labels); everything finished goes
   const keep = new Set([...items.values()].filter((it) => it.live || it.turns.some((t) => turns.get(t)?.live)).map((it) => it.id));
   for (const [id, it] of [...items]) if (!keep.has(id)) { it.turns.forEach((t) => turns.delete(t)); items.delete(id); unfolded.delete(id); }
@@ -5999,8 +6040,8 @@ $("clear").onclick = () => {
   historyDays = [];
   histStar = false; historyStarred = 0;   // the starred answers go with the rest (server/history.py, clear)
   heardAny = false; syncHeardKeys();      // and so does what was heard
-  toggleMenu(false); $("more").focus({ preventScroll: true }); renderThread(); renderAll();
-};
+  renderThread(); renderAll();
+}
 // ---------- the keyboard ----------
 // A letter for what is done most, each listed in the keys' sheet (Keyboard shortcuts in the menu, or ?). Every one of them also
 // has its button. Never while typing in a field or a list or inside the settings sheet, and never with Ctrl, Alt or Meta held:
@@ -6105,7 +6146,9 @@ function syncHeardKeys() {
   $("open-heard").hidden = !on;
 }
 // The time of a line, to the second: 15:04:09
-const heardClock = (ts) => { const d = new Date(ts * 1000), p = (n) => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+// A heard line's time, with its seconds, in the clock the rest of the panel uses (fmtClock): it was the only 24-hour one
+const heardClock = (ts) => { const d = new Date(ts * 1000), h = d.getHours(), p = (n) => String(n).padStart(2, "0");
+  return `${p(h % 12 || 12)}:${p(d.getMinutes())}:${p(d.getSeconds())} ${h < 12 ? "AM" : "PM"}`; };
 // One day, or with none named the newest the server holds; a failed request reads as nothing kept
 async function loadHeard(day = "") {
   let got = { days: [], day: "", lines: [] };
@@ -6115,7 +6158,7 @@ async function loadHeard(day = "") {
   const sel = $("heard-day");
   sel.innerHTML = (got.days || []).map((d) => {
     const name = fmtDay(new Date(`${d.day}T12:00:00`).getTime());
-    const span = d.first ? ` · ${heardClock(d.first).slice(0, 5)} ~ ${heardClock(d.last).slice(0, 5)}` : "";
+    const span = d.first ? ` · ${fmtClock(d.first * 1000)} ~ ${fmtClock(d.last * 1000)}` : "";
     return `<option value="${escapeHtml(d.day)}" data-short="${escapeHtml(name)}">${escapeHtml(name)} · ${d.n === 1 ? t("{n} sentence", { n: d.n }) : t("{n} sentences", { n: d.n })}${span}</option>`;
   }).join("");
   sel.value = heardDay;

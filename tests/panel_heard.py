@@ -9,6 +9,7 @@ The page is a copy of panel/ over the stand-in server of panel_harness.py. All s
 """
 from __future__ import annotations
 
+import re
 import sys
 import time
 from pathlib import Path
@@ -170,7 +171,7 @@ def group_sheet(br, s):
     lines = "() => [...document.querySelectorAll('#heard-lines .heard-line')].map((l) => [l.querySelector('time').textContent, l.querySelector('span').textContent])"
     got = p.js(lines)
     check("the card's key opens the sheet on the newest day, a row a sentence", [x[1] for x in got] == [l["text"] for l in LINES[:3]], got)
-    want = p.js("(ts) => { const d = new Date(ts * 1000), n = (x) => String(x).padStart(2, '0'); return `${n(d.getHours())}:${n(d.getMinutes())}:${n(d.getSeconds())}`; }", NOW)
+    want = p.js("(ts) => { const d = new Date(ts * 1000), h = d.getHours(), n = (x) => String(x).padStart(2, '0'); return `${n(h % 12 || 12)}:${n(d.getMinutes())}:${n(d.getSeconds())} ${h < 12 ? 'AM' : 'PM'}`; }", NOW)
     check("...each with its time, to the second", got[0][0] == want, [got[0][0], want])
     check("...what was heard written as words, never as markup", p.js("() => !document.querySelector('#heard-lines b, #heard-lines 다시')") and "<다시>" in got[1][1], got[1])
     check("...in the panel's sheet", p.js("() => document.getElementById('heard').classList.contains('settings') && document.getElementById('heard').getAttribute('aria-modal') === 'true'"))
@@ -193,6 +194,8 @@ def group_sheet(br, s):
     copied = p.js("() => navigator.clipboard.readText()")
     clocks = p.js("(all) => all.map((ts) => heardClock(ts))", [line["ts"] for line in LINES[:3]])
     check("Copy all copies every line with its time", copied == "\n".join(f"{c} {line['text']}" for c, line in zip(clocks, LINES)), copied)
+    # in the clock the rest of the panel uses, its seconds with it: the sheet was the only 24-hour one
+    check("...a time with its seconds in the panel's own clock", all(re.fullmatch(r"\d\d:\d\d:\d\d (AM|PM)", c) for c in clocks), clocks)
     # The .md file
     with p.page.expect_download(timeout=4000) as dl:
         p.page.locator("#heard-save").click()

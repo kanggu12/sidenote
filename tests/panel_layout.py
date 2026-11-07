@@ -811,6 +811,40 @@ def group_named(br, s):
         check(f"{n} cards fill every row they stand in", all(cards), cards)
     check("the page threw nothing", not p.errors, p.errors[:2])
     p.close()
+    # On a narrow window every card takes its row: two, four or five of them stood two to a row there, about 150 px each at
+    # 390, their code broken inside a path and their words a few to a line, as the rules that place them by count outranked
+    # the narrow window's. So in a thread narrowed by the column beside it (1001 and 1100 px), where two were 220 to 290 px
+    for (w, hh) in ((390, 844), (700, 900), (1001, 800), (1100, 800)):
+        p = Page(br, s, [], w=w, h=hh, settle=300)
+        for n in range(2, 8):
+            p.answer(830 + n, "work", "", "답", terms(n))
+            p.wait(120)
+            rows = p.js("""(id) => { const list = entryEl(id).querySelector('.v-terms'), w = list.getBoundingClientRect().width;
+                return [...list.children].map((c) => Math.round(c.getBoundingClientRect().width / w * 100)); }""", 830 + n)
+            check(f"{n} cards at {w} px, one to a row", all(x >= 99 for x in rows), rows)
+        p.close()
+    # ...and between that and the widest windows, two to a row with no card alone beside an empty half
+    p = Page(br, s, [], w=1200, h=800, settle=300)
+    for n in range(2, 8):
+        p.answer(850 + n, "work", "", "답", terms(n))
+        p.wait(120)
+        cards = p.js("""(id) => { const list = entryEl(id).querySelector('.v-terms'), w = list.getBoundingClientRect(), rows = {}; for (const c of list.children) { const r = c.getBoundingClientRect(); (rows[Math.round(r.top)] ??= []).push(r); }
+            return Object.values(rows).map((x) => Math.round(Math.max(...x.map((r) => r.right)) - w.left) >= Math.round(w.width) - 1 && Math.round(Math.min(...x.map((r) => r.left)) - w.left) === 0); }""", 850 + n)
+        check(f"{n} cards at 1200 px fill every row they stand in", all(cards), cards)
+    p.close()
+    # Opened with answers kept, the page stands at the end it follows (stageEnd), the newest answer's keys clear of the question
+    # box: the answers come before the server's word that questions can be asked, and the keys that came with that word stood
+    # half under the box
+    for (w, hh) in ((1920, 1080), (1366, 768)):
+        p = Page(br, s, many(), w=w, h=hh, status=False, settle=700)
+        p.open_messages()
+        p.wait(700)
+        at = p.js("""() => { const box = document.getElementById('askform').getBoundingClientRect(), keys = [...document.querySelectorAll('#thread .row.asks .btn')];
+            const k = keys.length ? keys[keys.length - 1].getBoundingClientRect() : null;
+            return { short: Math.round(stageEnd() - innerHeight - scrollY), keys: k && Math.round(k.bottom), box: Math.round(box.top) }; }""")
+        check(f"opened at {w}x{hh}: at the end, the last keys clear of the question box", at["keys"] is not None
+              and at["short"] <= 1 and at["keys"] <= at["box"], at)
+        p.close()
     # The column's foot level with the question box's while it follows the scroll, the list having more than it shows: on a window
     # it fits in (2560 x 1400); on a 1040 one it is taller than the window and drifts, its foot in the window at the thread's end
     p = Page(br, s, many(30), w=2560, h=1400, settle=500)
@@ -861,6 +895,11 @@ def group_found(br, s):
     p.wait(200)
     alone = p.js("() => entryEl(1722).querySelector('pre .lang').textContent.trim()")
     check("a command with nothing said of it is named by its number and its program", alone == "명령어 1. awk", alone)
+    # ...the program, not what wraps it or a comment over it: these said "명령어 1. sudo" and "명령어 2. #"
+    p.answer(1723, "work", "", "답", "```bash\nsudo lsof | grep deleted\n```\n\n```bash\n# 확인한 PID로 비우기\n$ sudo -E truncate -s 0 /proc/1/fd/3\n```\n\n```bash\nLANG=C env FOO=1 sort a.txt\n```\n")
+    p.wait(200)
+    named = p.js("() => [...entryEl(1723).querySelectorAll('pre .lang')].map((l) => l.textContent.trim())")
+    check("...past sudo, env, a VAR=value and a comment line", named == ["명령어 1. lsof", "명령어 2. truncate", "명령어 3. sort"], named)
     # A program's name (codeTopic): its wrapper's docstring, or the comment right under or over it; never a comment further in about a step,
     # nor an include or a shebang read as a comment (seven of these were once named wrong)
     topics = p.js("(cases) => cases.map(([text]) => codeTopic(text))", [["class Solution:\n    def twoSum(self, nums, target):\n        seen = {}\n        # edge case: empty input\n        return []", "twoSum 함수"], ["#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    int n; cin >> n;\n    // read the grid\n    return 0;\n}", ""], ["#include <iostream>\nint main() {\n    std::cout << 1;\n}", ""], ["#include <vector>\nusing namespace std;\n// 겹치는 회의 최대 개수\nint solution(vector<int> a) {\n    return 0;\n}", "겹치는 회의 최대 개수"], ["#!/usr/bin/env python3\nimport sys\ndef main():\n    data = sys.stdin.read()\nmain()", ""], ["class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        // brute force\n        return null;\n    }\n}", "twoSum 함수"], ["import sys\n\n\ndef solution(a):\n    \"\"\"배열의 최대 부분합\"\"\"\n    return 0", "배열의 최대 부분합"], ["def solution(times):\n    \"\"\"회의실 최대 동시 사용 수\"\"\"\n    def time_to_minutes(t):\n        return 1\n    return 0", "회의실 최대 동시 사용 수"], ["def solution(times):\n    # 겹치는 회의의 최대 수\n    def time_to_minutes(t):\n        return 1", "겹치는 회의의 최대 수"], ["# 회의실 배정\nn = int(input())\nprint(n)", "회의실 배정"]])
@@ -1419,6 +1458,27 @@ def group_controls(br, s):
     p.wait(250)
     lim = p.js("() => [...document.querySelectorAll('#alerts .alert')].map((a) => a.textContent).join(' | ')")
     check("a limit band does not ask to turn on a model that is on", "사용 한도" in lim and "켜면" not in lim, lim)
+    # Its tone is the agent card's (orange; red with nothing to answer meanwhile), and no band beside it says every engine is
+    # off: the limit band was green, and with the local model off a red "every engine is off" stood beside it
+    tones = "() => [...document.querySelectorAll('#alerts .alert')].map((a) => [a.className, a.textContent.trim().slice(0, 24)])"
+    status(p, eng(agent={"limit_until": now + 3 * 3600}))
+    p.wait(250)
+    ready = p.js(tones)
+    status(p, eng(local={"on": False, "ok": True}, agent={"limit_until": now + 3 * 3600}) | {"ready": False})
+    p.wait(250)
+    alone = p.js(tones)
+    # The local model's card in trouble says what to do: the pill and the model's row say what is wrong, and its note said it again
+    notes = []
+    for state in (st_local_missing, st_local_down):
+        state(p)
+        p.wait(200)
+        notes.append(p.js("() => document.getElementById('st-local').textContent.replace(/\\s+/g, ' ').trim()"))
+    check("the local model's card in trouble says what to do, not what is wrong a second time",
+          notes[0].endswith("서버 터미널에서 모델 받기 ./sidenote llm pull, 그다음 ./sidenote up") and notes[1].endswith("서버 터미널에서 ./sidenote doctor")
+          and "없음." not in notes[0] and "응답 없음." not in notes[1], notes)
+    check("a limit band in the agent card's tone, red when nothing answers meanwhile, and no 'every engine is off' beside it",
+          any("warn" in c and "사용 한도" in x for c, x in ready) and any("bad" in c and "사용 한도" in x for c, x in alone)
+          and not any("모두 꺼짐" in x for _, x in alone), [ready, alone])
     status(p, eng())
     # The capture program is started on the PC whose screen it reads: the capture PC is the server's client
     capture(p, clients=0)
