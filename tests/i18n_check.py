@@ -222,9 +222,13 @@ agent_text = json.loads(en_agent)["message"]["content"][-1]["text"]
 check("...and so is the agent, with no rule asking for Korean either",
       agent_text.startswith(analyzer.in_answer_language(analyzer.SYSTEM_PROMPT))
       and analyzer.ANSWER_IN_ENGLISH in agent_text and not [r for r in KOREAN_RULES if r in agent_text], agent_text[-200:])
+example = "`Explain the differences between HTTP/1.1 and HTTP/2` 대신 `HTTP/2 multiplexes requests"
+check("...and the example of an answer's point beside a title is English in both, where it stayed Korean",
+      example in en_system and example in agent_text and "HTTP/1.1과" not in en_system + agent_text
+      and "HTTP/1.1과" in ko_system, [s[s.find("HTTP/1.1"):][:60] for s in (en_system, agent_text)])
 check("every rule the English answer replaces is still in the prompts (an edit there must update ENGLISH_RULES)",
       all(analyzer.LOCAL_SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES)
-      and all(analyzer.SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES[:5]),
+      and all(analyzer.SYSTEM_PROMPT.count(old) == 1 for old, _ in analyzer.ENGLISH_RULES[:-1]),
       [old[:30] for old, _ in analyzer.ENGLISH_RULES if analyzer.LOCAL_SYSTEM_PROMPT.count(old) != 1])
 check("in Korean neither is: the measured prompts as they were", ko_system == analyzer.LOCAL_SYSTEM_PROMPT
       and analyzer.ANSWER_IN_ENGLISH not in ko_agent and "Answer language" not in ko_system)
