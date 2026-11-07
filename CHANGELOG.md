@@ -13,6 +13,11 @@ that only fixes raises the patch number. Each release's section here is its rele
   followed to its answer. Each step is ticked once what it is about works, and holds the rows of **Solver settings** it
   is about. It opens by itself the first time a panel meets a server that has kept no answer, and from the gear menu.
 
+### Fixed
+
+- The one-line answer to an explanation or a comparison is its answer. The local model could write the question's
+  topic there, and a folded answer then showed that alone, as if the answer had been cut off.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added
