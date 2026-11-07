@@ -2770,6 +2770,27 @@ def start_tray(sender, stop: threading.Event, args):
 SUPERVISED_RESTART = 75
 
 
+def hold_main_thread(icon, wait_until_done, stop: threading.Event) -> None:
+    """macOS: the tray icon's loop on this thread, the main one, as AppKit needs, and the waiting beside it; returns once
+    both are done. The end is handed to the loop through AppKit's own queue: pystray's stop() does nothing until the
+    loop has started, and a quit or a restart that came while this program was still starting would be lost, leaving
+    an icon over a capture that had ended. An icon that cannot run leaves the waiting to go on alone."""
+    def wait_then_end() -> None:
+        wait_until_done()
+        stop.set()
+        try:
+            from PyObjCTools import AppHelper
+            AppHelper.callAfter(icon.stop)   # run by the loop once it runs, whenever this comes
+        except Exception:                    # no loop to end
+            pass
+
+    waiter = threading.Thread(target=wait_then_end, name="tray-wait", daemon=True)
+    waiter.start()
+    icon.sidenote_main()   # returns when the loop is ended, or at once when it could not run
+    while waiter.is_alive():
+        waiter.join(0.25)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="sidenote capture client (Windows adds the window list, the display metrics and the notification icon)")
     ap.add_argument("--server", default="ws://127.0.0.1:8777/ingest",   # not localhost: it can resolve to ::1 and time out
@@ -2858,25 +2879,12 @@ def main() -> None:
                 break
             time.sleep(0.25)
 
-    main_icon = getattr(tray, "sidenote_main", None)
     try:
-        if main_icon is None:
+        if getattr(tray, "sidenote_main", None) is None:
             wait_until_done()
         else:
-            # macOS: the icon's loop holds this thread, and the waiting runs beside it and ends that loop when done
-            def wait_then_end(icon=tray) -> None:
-                wait_until_done()
-                stop.set()
-                try:
-                    icon.stop()
-                except Exception:   # a loop that never ran has nothing to end
-                    pass
-            waiter = threading.Thread(target=wait_then_end, daemon=True)
-            waiter.start()
-            main_icon()            # returns when tray.stop() ends the loop, or at once if it could not run
+            hold_main_thread(tray, wait_until_done, stop)
             tray = None            # its loop is over, and the icon is gone with it
-            while waiter.is_alive():   # an icon that could not run leaves the capture going without it
-                waiter.join(0.25)
     except KeyboardInterrupt:
         print("\n[main] stopping...")
     stop.set()
