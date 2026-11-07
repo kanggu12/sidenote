@@ -612,12 +612,29 @@ def run(args) -> int:
         log.close()
         return 0
     lock = only_one(data)
-    if lock is None:                     # another copy is starting: its panel opens when its server is up
-        say("Sidenote is already starting; waiting for it", log)
-        if wait_for(lambda: health(port) is not None, timeout=300) and not args.no_browser:
-            webbrowser.open(url)
-        log.close()
-        return 0
+    if lock is None:
+        # Another copy holds it: one starting, whose panel opens here once its server is up, or one closing down
+        # (opened again right after a quit), which lets go once it has ended, and this one then starts in its place.
+        # Waiting for a server alone, this one did nothing at all after a quit.
+        say("Sidenote is already starting or closing down; waiting for it", log)
+        end = time.monotonic() + 300
+        try:
+            while lock is None:
+                if health(port) is not None:
+                    if not args.no_browser:
+                        webbrowser.open(url)
+                    log.close()
+                    return 0
+                if time.monotonic() > end:
+                    say("the other copy neither came up nor ended within 5 minutes; not starting", log)
+                    log.close()
+                    return 1
+                time.sleep(0.5)
+                lock = only_one(data)
+        except KeyboardInterrupt:        # stopped while it waited (SIGTERM, Ctrl+C): nothing of its own to stop yet
+            log.close()
+            return 0
+        say("the other copy has ended; starting", log)
     if not port_free(port):
         tell(t("Another program is using the port Sidenote needs ({port}). Close that program, then start Sidenote again.",
                port=port), log)
@@ -742,11 +759,18 @@ def serve(port: int) -> int:
     """The server itself, as docker/entrypoint.sh starts it in the image."""
     import uvicorn
 
-    from server.app import app
+    from server import app as server
     # 64 MiB per message: a 4K frame of a photo-like screen is over uvicorn's default 16 MiB (docker/entrypoint.sh)
-    uvicorn.run(app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port, access_log=False,
+    uvicorn.run(server.app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port, access_log=False,
                 ws_max_size=64 * 1024 * 1024)
-    return 0
+    # Closed down: what its close-down keeps is written once the answers' writer is done. A speech model still
+    # downloading would hold this process for the rest of that download, as Python waits for the download's own
+    # threads before it ends: minutes on a slow line, while this program gives its server 10 s and then ends it the
+    # hard way. So nothing else is waited for; the next start downloads the model again.
+    server.HISTORY_WRITES.shutdown(wait=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 def capture(argv: list[str]) -> int:

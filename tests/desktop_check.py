@@ -396,6 +396,81 @@ else:
     except OSError:
         check("the port is free again", True)
 
+print("[a start while another copy is closing down: the app opened again right after a quit]")
+if sys.platform == "win32":
+    print("  skipped: it runs on Linux and macOS here, as the whole start and stop above does")
+else:
+    port = app.free_port()
+    with tempfile.TemporaryDirectory() as d:
+        # the copy closing down, as one quit a moment ago is: it still holds the lock, and its server is gone
+        held = app.only_one(Path(d))
+        env = dict(os.environ, SIDENOTE_ANALYZER="mock", SIDENOTE_TRANSCRIBER="null", SIDENOTE_DATA_DIR=d)
+        proc = subprocess.Popen([sys.executable, "-m", "desktop", "--port", str(port), "--no-browser", "--no-capture"],
+                                cwd=str(ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        app_log_file = Path(d) / "logs" / "app.log"
+        seen = lambda: app_log_file.read_text() if app_log_file.is_file() else ""   # noqa: E731
+        waits = app.wait_for(lambda: "waiting for it" in seen(), timeout=30)
+        time.sleep(1.5)
+        check("it waits for that copy, with no server of its own yet", waits and proc.poll() is None
+              and app.health(port) is None, seen())
+        # one more start, stopped while it waits: it ends as a stopped start does, with nothing of its own to stop
+        other = subprocess.Popen([sys.executable, "-m", "desktop", "--port", str(port), "--no-browser", "--no-capture"],
+                                 cwd=str(ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        app.wait_for(lambda: seen().count("waiting for it") >= 2, timeout=30)
+        other.send_signal(signal.SIGTERM)
+        try:
+            _, err = other.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            other.kill()
+            _, err = other.communicate()
+        check("...and one stopped while it waits ends with exit 0, not a traceback", other.returncode == 0 and not err,
+              f"exit {other.returncode}: {err.decode(errors='replace')[-300:]}")
+        held.close()                     # that copy has ended
+        check("...and starts in its place once that copy lets go",
+              app.wait_for(lambda: app.health(port) is not None, timeout=60), seen())
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        check("...and stops as any start does", proc.returncode == 0, f"exit {proc.returncode}")
+
+print("[the server role ends at once after its close-down, a speech model still downloading or not]")
+if sys.platform == "win32":
+    print("  skipped: it runs on Linux and macOS here")
+else:
+    port = app.free_port()
+    with tempfile.TemporaryDirectory() as d:
+        # A download that nothing cuts short, as the speech model's first one is: on threads of an executor of its own,
+        # which Python waits for before it ends. Started by the server's own speech load, through a stand-in model.
+        stand_in = Path(d) / "slow_speech.py"
+        stand_in.write_text(
+            "import concurrent.futures, time\n"
+            "from server import app as server\n"
+            "def slow(cfg, model=''):\n"
+            "    pool = concurrent.futures.ThreadPoolExecutor(2)\n"
+            "    pool.submit(time.sleep, 60).result()\n"
+            "server.make_transcriber = slow\n"
+            "from desktop.app import main\n"
+            "raise SystemExit(main())\n", encoding="utf-8")
+        token = "check-token"
+        env = dict(os.environ, SIDENOTE_ANALYZER="mock", SIDENOTE_DATA_DIR=d, SIDENOTE_STOP_TOKEN=token,
+                   SIDENOTE_LOG_DIR=str(Path(d) / "logs"), PYTHONPATH=str(ROOT))
+        proc = subprocess.Popen([sys.executable, str(stand_in), "--serve", "--port", str(port)], cwd=str(ROOT), env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        up = app.wait_for(lambda: app.health(port) is not None, timeout=60)
+        check("the server comes up with the speech model still loading", bool(up))
+        asked = time.monotonic()
+        check("...and closes down when the app asks", app.ask_server_to_stop(port, token))
+        try:
+            proc.wait(30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        took = time.monotonic() - asked
+        check("...within a few seconds, not waiting for the load", proc.returncode == 0 and took < 5,
+              f"exit {proc.returncode} after {took:.1f} s")
+
 print("[the icon the Windows shortcut wears]")
 from PIL import Image, ImageChops  # noqa: E402
 from desktop import build as desktop_build  # noqa: E402

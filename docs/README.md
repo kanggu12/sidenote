@@ -118,8 +118,8 @@ Install Sidenote, start it once, and sign the cloud agent in.
    BlackHole as an input.
 
 While it runs, the app starts Ollama when it is installed but not running, and starts again any part that stops.
-**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. On Windows and Linux, starting the
-app again while it runs opens the panel; on macOS, choose **Open the panel** in its menu bar icon's menu. `SIDENOTE_*`
+**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the app again while it
+runs opens the panel, and starting it while it is still closing down starts it once that is done. `SIDENOTE_*`
 settings (section 12) are read from the environment the app starts with. Options go after `Sidenote.exe`, after
 `Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
 

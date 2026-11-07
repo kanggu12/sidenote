@@ -16,7 +16,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -1798,3 +1798,31 @@ quiet (activity(): nothing running, nobody being listened to, no answer in the l
 does not compile. The deploy decides, not the file: watching the file would restart the program into a change still
 being made in the checkout. `./sidenote capture-restart` restarts it at once. A capture program that does not report its
 code (an older one) has to be restarted once by hand, and the deploy says so.
+
+### <a id="note-112"></a>112. On macOS the app is the process with the menu bar icon
+
+A Mac app opened again while it runs gets no second process: LaunchServices sends the copy that runs a reopen event, and
+a quit (at log out, or from AppleScript) comes the same way. Sidenote.app is several processes of one executable: the
+first, which starts the others and runs no AppKit loop, the server, and the capture program, whose menu bar icon runs
+AppKit's loop. Two small apps laid out the same way, measured on CI's macOS 15 runner, show which process macOS takes
+for the app:
+
+- With no AppKit loop in the first process, macOS counts one app, the process with the loop, and sends it the reopen
+  and the quit alike. Sidenote.app is laid out this way: the capture program answers the reopen by opening the panel,
+  as a second start does on Windows and Linux, and a quit ends it as **Quit Sidenote** does, after which the first
+  process stops the rest.
+- With an AppKit loop in the first process as well, macOS counts two copies: the reopen went to the first process and
+  the quit to the other, which ended while the first ran on.
+
+So the first process stays without AppKit. `tests/mac_app_open.py` opens the built app on the runner as the Finder
+does, opens it again and quits it as macOS does at log out.
+
+### <a id="note-113"></a>113. The app's server ends without waiting for a download
+
+A first start downloads the speech model, about 460 MB for `small`, and nothing cuts that short. The download's library
+fetches the files on threads of its own, which Python waits for before a process ends, so a server asked to close down
+during that download ran on until it was done: 11.1 s on a fast line, while the app gives its server 10 s and then
+ends it the hard way. The server role of the app therefore ends at once after its close-down, once the answers' writer
+is done (desktop/app.py `serve`), and loads the speech model on a thread of its own that nothing waits for: 0.4 s. A
+download cut off this way left an empty partial file, and the next start downloaded the model again and loaded it. The
+image's server is left as it was: `docker stop` ends it after 10 s in that one case.
