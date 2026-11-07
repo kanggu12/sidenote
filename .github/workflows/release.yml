@@ -1,7 +1,7 @@
 # A version tag (v1.2.3) publishes a release: both images to the GitHub Container Registry, the Helm chart as an OCI
 # artifact and a .tgz, the desktop app for Windows and Linux (desktop.yml), and the capture program on its own as a
-# .zip, all attached to the GitHub release. A tag with a pre-release part (v1.2.3-rc.1) publishes as a pre-release: no
-# `latest` images and no winget package.
+# .zip, all attached to the GitHub release. A tag with a pre-release part (v1.2.3-rc.1) publishes as a pre-release, with
+# no `latest` images.
 #
 # The published server image carries the Codex CLI (Apache-2.0) and not Claude Code, which is Anthropic's to
 # distribute: the chart fetches Claude Code into the pod when it starts (WITH_CLAUDE_CODE below).
@@ -167,14 +167,3 @@ jobs:
             dist/sidenote-capture-${{ steps.v.outputs.version }}.zip
             dist/app/Sidenote-*.zip
             dist/SHA256SUMS
-
-  # the winget package: its manifests checked and installed on Windows, then sent to winget-pkgs when WINGET_TOKEN is set
-  winget:
-    needs: [release]
-    if: ${{ !contains(github.ref_name, '-') }}   # make_manifests.py takes release numbers only: no package of a pre-release
-    uses: ./.github/workflows/winget.yml
-    with:
-      version: ${{ github.ref_name }}
-    secrets: inherit
-    permissions:
-      contents: read
