@@ -848,6 +848,32 @@
   .thread { padding-bottom: 18px; }
   .entry + .entry, .entry + #thread-tail:not(:empty) { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
   .entry.folded .fold-hide { display: none; }
+  /* What was heard: a quote under the label, three sentences a paragraph, the first lines of a long one and the whole on
+     a press; folded, its end on one line, and nothing of it where the card shows its question */
+  .heard-text { color: var(--ink-2); font-size: 14px; line-height: 1.65; border-left: 2px solid var(--rule-2); padding: 1px 0 1px 12px;
+    max-width: 84ch; overflow-wrap: anywhere; }
+  .heard-text p { margin: 0; }
+  .heard-text p + p { margin-top: 7px; }
+  .heard-text.clamp { max-height: calc(1.65em * 4 + 7px); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent); }
+  .heard-text.clamp.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
+  .heard-more { margin-top: 6px; }
+  .heard-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .heard-tail { display: none; color: var(--ink-2); font-size: 14px; max-width: 84ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry.folded .heard-tail { display: block; }
+  .entry.folded .heard-text, .entry.folded .heard-more, .entry.folded.has-asked .heard-row { display: none; }
+  /* A summary of several sentences: the point marked, the rest a line each under it; folded, the point alone */
+  .ans-more { display: block; margin-top: 8px; }
+  .ans-more > span { display: block; color: var(--ink); font-size: 15px; line-height: 1.6; font-weight: 440; }
+  .ans-more > span + span { margin-top: 5px; }
+  .entry.folded .ans-more { display: none; }
+  /* The engines' cards fold to their top line on their name, which wears a small mark for it */
+  [data-card-fold] { cursor: pointer; border-radius: 6px; }
+  [data-card-fold]:focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
+  .fold-mark { width: 13px; height: 13px; margin-left: 5px; flex: none; opacity: .6; transition: transform .15s ease, opacity .15s ease; }
+  [data-card-fold]:hover .fold-mark { opacity: 1; }
+  .card.shut .fold-mark { transform: rotate(180deg); }
+  .card.shut .src-state, .card.shut .gpu-viz, .card.shut .usage { display: none !important; }
   .entry.folded .hl { font-size: 17px; }
   .entry.folded .short .hl { font-size: 22px; }
   .entry.folded .row + .row { margin-top: 8px; }
@@ -3027,7 +3053,7 @@
     </section>
     <section class="card conn engine" id="card-local" aria-label="Local model" data-t-aria>
       <div class="src">
-        <div class="src-top"><span class="src-name" data-t><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M4.5 9h-2M4.5 15h-2M19.5 9h2M19.5 15h2M9 4.5v-2M15 4.5v-2M9 19.5v2M15 19.5v2" stroke-linecap="round"/></svg>Local model</span>
+        <div class="src-top"><span class="src-name" data-t data-card-fold role="button" tabindex="0" aria-expanded="true" title="Fold the card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M4.5 9h-2M4.5 15h-2M19.5 9h2M19.5 15h2M9 4.5v-2M15 4.5v-2M9 19.5v2M15 19.5v2" stroke-linecap="round"/></svg>Local model<svg class="fold-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span>
           <span class="pill" id="pill-local" data-state="idle" data-t>Checking</span>
           <button class="btn sm" id="gpu-release" type="button" hidden title="Unloads it from the GPU · loads again with the next problem" data-t data-t-title>Free the GPU</button>
           <button class="btn sm" id="gpu-load" type="button" hidden title="Loads it ahead so the first problem is solved at once" data-t data-t-title>Load onto the GPU</button></div>
@@ -3038,7 +3064,7 @@
     </section>
     <section class="card conn engine" id="card-agent" aria-label="Agent" data-t-aria>
       <div class="src">
-        <div class="src-top"><span class="src-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6L6 18"/></svg><span class="agent-name" data-t>Agent</span></span>
+        <div class="src-top"><span class="src-name" data-card-fold role="button" tabindex="0" aria-expanded="true" title="Fold the card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6L6 18"/></svg><span class="agent-name" data-t>Agent</span><svg class="fold-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span>
           <span class="pill" id="pill-agent" data-state="idle" data-t>Checking</span>
           <button class="switch" id="sw-agent" role="switch" aria-checked="false" aria-label="Use of the agent on or off" data-t-aria></button></div>
         <div class="src-state" id="st-agent"></div>

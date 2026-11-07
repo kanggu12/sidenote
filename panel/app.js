@@ -42,6 +42,22 @@ const HINT = {
 // Without it `data-val="${escapeHtml(JSON.stringify("auto"))}"` closed the attribute on its own quote,
 // so three settings (Think before answering, Problems the agent solves, What is sent to the agent) did nothing when clicked.
 // (The Korean particle after a word is the translation's own: "{name|이/가}" in panel/i18n/ko.js, panel/i18n.js particle.)
+// A text cut into its sentences: after . ! ? and their full-width forms where a space follows, and not after e.g., i.e.,
+// etc. or vs., whose dots end no sentence
+function sentences(text) {
+  const kept = String(text ?? "").replace(/\b(e\.g|i\.e|etc|vs|cf)\./gi, (m) => m.replace(/\./g, "\u2024"));
+  return kept.split(/(?<=[.!?\u3002\uFF01\uFF1F])\s+(?=\S)/).map((x) => x.replace(/\u2024/g, ".").trim()).filter(Boolean);
+}
+// What was heard, as it was said: three sentences a paragraph, its first lines when it is long and the whole on a press;
+// folded, the end alone, where the question usually is
+function heardHtml(text) {
+  const parts = sentences(text), paras = [];
+  for (let i = 0; i < parts.length; i += 3) paras.push(parts.slice(i, i + 3).join(" "));
+  const long = String(text).length > 280;
+  return `<div class="heard-text${long ? " clamp" : ""}">${paras.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}</div>`
+    + (long ? `<button type="button" class="btn sm ghost heard-more" data-heard-more aria-expanded="false">${OPEN_MARK}<span>${t("Show it all")}</span></button>` : "")
+    + `<div class="heard-tail">${escapeHtml(parts.slice(-2).join(" "))}</div>`;
+}
 const escapeHtml = (s) => {
   const d = document.createElement("div");
   d.textContent = s == null ? "" : String(s);
@@ -3634,7 +3650,7 @@ function entryHtml(it) {
   // written out (a question too). What the watching added under it by itself (a retry, the answer filled out) waits with
   // the rest, and the follow-ups asked about it show.
   return `${head}
-    ${it.trigger === "voice" && it.transcript ? row(t("Heard"), `<div class="asked">${escapeHtml(it.transcript)}</div>`, "fold-hide") : ""}
+    ${it.trigger === "voice" && it.transcript ? row(t("Heard"), heardHtml(it.transcript), "heard-row") : ""}
     ${row(t("Question"), `<div class="asked" data-asked></div>`, "", "data-askedrow hidden")}
     ${it.stopped ? row(t("Stopped"), `<p class="cap stopped">${escapeHtml(it.stopped)}${t(" · to solve it again: {redo}", { redo: REDO_KEY() })}</p>`) : ""}
     ${hold ? `${practiceRows(it)}${it.ptext ? row(t("Problem"), ptextHtml(it.ptext)) : ""}` : !it.error || wrote(it) ? `
@@ -3891,7 +3907,16 @@ function paintAnswer(root, type, answer, label) {
     holder.querySelectorAll("mark").forEach((m, i) => renderInto(m, many[i], true));
     return;
   }
-  if (holder && !holder.querySelector("[data-aval]")) holder.innerHTML = '<mark class="hl" data-aval></mark>';
+  // A summary of several sentences: the first, the point, marked; the rest under it a line each and unmarked. Marked
+  // whole, five lines of it read as one block
+  const parts = answer && String(answer).length > 90 ? sentences(answer) : [];
+  if (parts.length > 1 && holder) {
+    holder.innerHTML = `<mark class="hl" data-aval></mark><span class="ans-more">${parts.slice(1).map(() => "<span></span>").join("")}</span>`;
+    renderInto(holder.querySelector("[data-aval]"), parts[0], true);
+    holder.querySelectorAll(".ans-more > span").forEach((sp, i) => renderInto(sp, parts[i + 1], true));
+    return;
+  }
+  if (holder && (!holder.querySelector("[data-aval]") || holder.querySelector(".ans-more"))) holder.innerHTML = '<mark class="hl" data-aval></mark>';
   renderInto(box.querySelector("[data-aval]"), answer, true);
 }
 // An answer being written is drawn again on every frame, and past some thousands of characters drawing it took longer
@@ -3947,6 +3972,7 @@ function paintItem(it, final) {
   const askedRow = el.querySelector("[data-askedrow]"), askedEl = el.querySelector("[data-asked]");
   if (askedRow && askedEl) {
     askedRow.hidden = !asked;
+    el.classList.toggle("has-asked", !!asked);   // folded, a card with its question shows it, and not the end of what was heard
     // Inline markdown, sanitised like the answer line: as text, a file name in backticks was shown
     // with its backticks ("`count.py` when it runs ...").
     if (asked) renderInto(askedEl, asked, true);
@@ -5895,6 +5921,30 @@ function gpuPressed() {   // a press went out: both keys wait for the server's w
 $("gpu-release").onclick = () => { if (send({ type: "gpu_release" })) gpuPressed(); };
 const gpuLoad = () => { if (send({ type: "gpu_load" })) { gpuPressed(); toast(t("Loading onto the GPU · tens of seconds")); } };
 $("gpu-load").onclick = () => { if (eng()?.local?.loading) { if (send({ type: "gpu_load_cancel" })) gpuPressed(); } else gpuLoad(); };
+// The local model's and the agent's cards fold to their top line on a press of their name, and open again; each as it was
+// left, in this browser (open at first, and open where the browser keeps nothing)
+const CARD_FOLD_KEY = "sidenote.cardFold";
+function cardFold(id, shut, keep = true) {
+  const card = $(id), key = card?.querySelector("[data-card-fold]");
+  if (!card || !key) return;
+  card.classList.toggle("shut", shut);
+  key.setAttribute("aria-expanded", String(!shut));
+  key.title = shut ? t("Open the card") : t("Fold the card");
+  if (!keep) return;
+  try {
+    const kept = JSON.parse(localStorage.getItem(CARD_FOLD_KEY) || "{}");
+    kept[id] = shut;
+    localStorage.setItem(CARD_FOLD_KEY, JSON.stringify(kept));
+  } catch {}
+}
+for (const id of ["card-local", "card-agent"]) {
+  let kept = {};
+  try { kept = JSON.parse(localStorage.getItem(CARD_FOLD_KEY) || "{}"); } catch {}
+  cardFold(id, kept[id] === true, false);
+  const key = $(id)?.querySelector("[data-card-fold]");
+  key?.addEventListener("click", () => cardFold(id, !$(id).classList.contains("shut")));
+  key?.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); key.click(); } });
+}
 // the agent's switch: off keeps the mode it had, so turning it back on restores what had been chosen
 const AGENT_MODE_KEY = "sidenote.agentMode";
 $("sw-agent").onclick = () => {
@@ -5979,6 +6029,13 @@ document.addEventListener("click", (e) => {
   if (hb) goTo(idOf(hb.dataset.id));
   const fb = e.target.closest("[data-fold]");
   if (fb) { const id = idOf(fb.dataset.fold), it = items.get(id); if (it) { if (folded(it)) unfolded.add(id); else unfolded.delete(id); renderEntry(it); } }
+  const hm = e.target.closest("[data-heard-more]");
+  if (hm) {   // what was heard, whole or its first lines
+    const open = hm.getAttribute("aria-expanded") !== "true";
+    hm.previousElementSibling?.classList.toggle("open", open);
+    hm.setAttribute("aria-expanded", String(open));
+    hm.querySelector("span").textContent = open ? t("Fold") : t("Show it all");
+  }
   // (never of one Practice keeps back, whose keys these are not drawn on)
   const ca = e.target.closest("[data-copy-answer]");
   if (ca) { const it = items.get(idOf(ca.dataset.copyAnswer)); if (it?.head.answer && !held(it)) copyText(plainAnswer(it.head.answer), ca); }
