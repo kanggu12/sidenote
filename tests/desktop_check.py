@@ -215,6 +215,42 @@ with tempfile.TemporaryDirectory() as d:
               app.login_path({"SHELL": str(slow), "PATH": "/usr/bin:/bin", "HOME": str(home)}) == ""
               and time.time() - t0 < 8, round(time.time() - t0, 1))
 
+print("[a child of the app once the app is gone, where no PR_SET_PDEATHSIG ends it (macOS)]")
+
+
+def alive(pid: int) -> bool:
+    """Whether the process runs: one that ended and waits to be reaped (a zombie) does not."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return bool(state) and not state.startswith("Z")
+
+
+if os.name != "nt":
+    # the app (middle) starts a child that watches for it, says the child's pid, and ends two seconds later
+    child_code = ("import os, sys, time; sys.path.insert(0, os.environ['CHECKOUT']); from desktop import app; "
+                  "app._end_with_parent(0.2); time.sleep(30)")
+    middle_code = ("import os, subprocess, sys, time\n"
+                   "child = subprocess.Popen([sys.executable, '-c', os.environ['CHILD_CODE']],\n"
+                   "                         env={**os.environ, 'SIDENOTE_APP_PARENT': str(os.getpid())})\n"
+                   "print(child.pid, flush=True)\n"
+                   "time.sleep(2)\n")
+    middle = subprocess.Popen([sys.executable, "-c", middle_code], stdout=subprocess.PIPE, text=True,
+                              env={**os.environ, "CHECKOUT": str(ROOT), "CHILD_CODE": child_code})
+    pid = int(middle.stdout.readline())
+    time.sleep(1.0)
+    check("while the app runs its child goes on", alive(pid))
+    middle.wait(timeout=10)
+    t0 = time.time()
+    while alive(pid) and time.time() - t0 < 5:
+        time.sleep(0.1)
+    check("...and once the app is gone the child ends itself within a second or so", not alive(pid),
+          f"still running after {time.time() - t0:.1f} s")
+    if alive(pid):
+        os.kill(pid, signal.SIGKILL)
+
 print("[the Mac app's language]")
 app.mac_language.cache_clear()
 listed = mock.Mock(stdout='(\n    "ko-KR",\n    "en-US"\n)\n')
