@@ -40,131 +40,103 @@ panel beside your work. It runs on your own PC, and the cloud agent sees only th
 
 ## Quick start
 
-| Your PC | What to do | What you need |
+| Your PC | Paste into | Needs |
 |:---|:---|:---|
-| **Windows 10 or 11** | [Download the app and run it](#windows-the-app) | Ollama, for the local model |
-| **A Mac with Apple silicon** | [Download the app and open it](#macos-the-app) | Ollama for Mac |
-| **A Linux desktop** | [Download the app and run it](#linux-the-app) | Ollama |
-| **Linux or WSL 2, with Docker** | [`./sidenote install`](#with-docker-linux-or-windows-with-wsl-2) | Docker and `python3` |
-| **A Mac, with Docker** | [`./sidenote install`](#with-docker-on-a-mac) | Docker Desktop and Ollama for Mac |
-| **A Kubernetes cluster** | [`helm install`](#kubernetes) | Helm 3 |
+| **Windows 10 or 11** | [PowerShell](#windows) | nothing else |
+| **A Mac with Apple silicon**, macOS 14 or newer | [Terminal](#macos) | [Homebrew](https://brew.sh) |
+| **A Linux desktop**, X11, glibc 2.35 or newer | [a terminal](#linux) | `curl`, `unzip` |
+| **Linux or WSL 2, with Docker** | [a terminal](#docker-on-linux-or-wsl-2) | Docker, `git`, `python3` |
+| **A Mac, with Docker** | [Terminal](#docker-on-a-mac) | Docker Desktop, Homebrew, `git`, `python3` |
+| **A Kubernetes cluster** | [a terminal](#kubernetes) | Helm 3 |
 
-All of them run the same server and panel. Docker and Kubernetes add web search for the local model and a sandbox that
-checks code answers. Not sure? Use the app.
+The app and Docker end with the panel open in your browser, where a band offers the model that fits your GPU: choose
+**Download**. Not sure which? The app, one of the first three. Docker and Kubernetes add web search for the local model
+and a sandbox that runs code answers on the problem's examples.
 
-### Windows: the app
+The cloud agent is optional, and is installed first, since Sidenote looks for it when it starts: [Claude
+Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex), signed in once in a
+terminal with `claude` or `codex login`.
 
-No Docker and no Python needed.
+### Windows
 
-1. Install [Ollama](https://ollama.com/download) for the local model. Without it, the cloud agent answers everything;
-   turn **Local model** off in **Solver settings** (in the gear menu) so the panel stops asking for Ollama.
-2. Optional, for the hard problems: install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
-   [Codex](https://github.com/openai/codex), and sign in once in a terminal: `claude`, or `codex login`. Sidenote uses
-   the one it finds when it starts, Claude Code first.
-3. Download
-   [Sidenote-windows-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip),
-   right-click it, choose **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`. If Windows warns
-   about an unknown publisher, choose **More info**, then **Run anyway**.
-4. After a minute the panel opens in your browser, and an icon appears by the clock (on Windows 11 perhaps under the
-   **^**). A band at the top offers the model that fits your GPU: choose **Download**.
-
-Open a practice problem and the answer appears in the panel. To stop, right-click the icon and choose **Quit Sidenote**.
-If the panel does not open, see [Troubleshooting](docs/README.md#13-troubleshooting); the logs are in
-`%LOCALAPPDATA%\Sidenote\logs`.
-
-### macOS: the app
-
-For macOS 14 or newer on a Mac with Apple silicon (M1 or later). No Docker and no Python needed.
-
-1. Install [Ollama for Mac](https://ollama.com/download) for the local model, and open it once.
-2. Optional, for the hard problems: install Claude Code or Codex and sign in once in Terminal: `claude`, or
-   `codex login`.
-3. Download
-   [Sidenote-macos-arm64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip),
-   double-click the zip to unpack it, drag **Sidenote** into **Applications**, and open it from there. The app is not
-   signed by a publisher yet, so macOS stops it the first time: open **System Settings**, then **Privacy & Security**,
-   and choose **Open Anyway** at the bottom.
-4. The panel opens in your browser, and an icon appears in the menu bar. macOS asks once for **Screen Recording** for
-   Sidenote: choose **Open System Settings**, turn Sidenote on, then choose **Quit Sidenote** from the menu bar icon's
-   menu and open Sidenote again. In the panel, choose **Download** for the model that fits your Mac's memory.
-
-For the speaker sound, the capture program listens to a loopback input: install
-[BlackHole](https://github.com/ExistentialAudio/BlackHole) (`brew install blackhole-2ch`), make a **Multi-Output
-Device** of your speakers and BlackHole in **Audio MIDI Setup**, and choose it as the output. Sidenote hears BlackHole as
-an input, so macOS asks once for the microphone too. The logs are in `~/Library/Application Support/Sidenote/logs`. CI
-builds the app on macOS 15 and runs it there: its server, and its capture program with the menu bar icon, which sends a
-screen and reads the windows. CI also opens it there as the Finder does, opens it again, which opens the panel, and
-quits it as macOS does at log out. Outside CI it has not been used on a Mac yet.
-
-### Linux: the app
-
-For an X11 session with glibc 2.35 or newer: Ubuntu 22.04 or newer, Debian 12 or newer. Ubuntu usually starts a
-Wayland session: pick the Xorg one from the gear on the login screen.
-
-1. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`.
-2. Optional, for the hard problems: install Claude Code or Codex and sign in once: `claude`, or `codex login`.
-3. Download [Sidenote-linux-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-linux-x64.zip),
-   then run `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
-4. In the panel, choose **Download** for the model that fits your GPU.
-
-It reads the X11 screen, and the speaker sound through PulseAudio or PipeWire. To stop, choose **Quit Sidenote** from the
-tray icon. The logs are in `~/.local/share/sidenote/logs`.
-
-<details>
-<summary>Checking a download</summary>
-
-The app is not signed by a publisher yet. Each release lists the SHA-256 of its files in `SHA256SUMS`: run
-`sha256sum -c --ignore-missing SHA256SUMS` in the download folder; on macOS compare `shasum -a 256
-Sidenote-macos-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-windows-x64.zip`, with its line there. GitHub also
-records where each file was built (from 0.1.1 on): `gh attestation verify Sidenote-windows-x64.zip --repo
-kanggu12/sidenote`.
-</details>
-
-### With Docker: Linux, or Windows with WSL 2
-
-You need Docker with `docker compose` and `python3` (on Windows, both inside WSL 2), and for an NVIDIA GPU on Linux the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-On Windows the capture program runs in Python for Windows (the `py` command, from
-[python.org](https://www.python.org/downloads/windows/)).
-
-```bash
-git clone https://github.com/kanggu12/sidenote.git && cd sidenote
-./sidenote install        # build the server, set up the capture program, check everything
-./sidenote llm pull       # the model that fits your GPU
-./sidenote capture --up   # start the server and the capture
-./sidenote open           # open the panel in the browser
+```powershell
+winget install -e --id Ollama.Ollama --accept-source-agreements --accept-package-agreements
+curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip
+mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenote.zip" -C "$env:LOCALAPPDATA\Programs"
+& "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
 
-`./sidenote doctor` shows which GPU it found, `./sidenote status` what is running, and `./sidenote down` stops
-everything and frees the GPU.
+Its icon is by the clock (on Windows 11 perhaps under the **^**): right-click it to quit. The last line starts it again.
 
-### With Docker on a Mac
-
-Docker on a Mac has no GPU, so the local model runs in [Ollama for Mac](https://ollama.com/download), on Apple silicon's
-GPU, and the server in Docker asks it. You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and
-`python3` (macOS offers to install it the first time you type it).
+### macOS
 
 ```bash
-# the model, with the context and batch Sidenote sets (pick the size for your memory from "What it runs on")
-ollama pull gemma4:e4b
-printf 'FROM gemma4:e4b\nPARAMETER num_ctx 16384\nPARAMETER num_batch 1152\n' > Modelfile
-ollama create sidenote-gemma4:e4b -f Modelfile
+brew install ollama
+curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip
+ditto -x -k /tmp/Sidenote.zip /Applications
+open /Applications/Sidenote.app
+```
+
+macOS asks once for **Screen Recording**. The first line opens that setting: turn Sidenote on there, then run the
+second line to restart it.
+
+```bash
+open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 3; open /Applications/Sidenote.app
+```
+
+Its icon is in the menu bar. For the speaker's sound, Sidenote listens to a loopback input such as BlackHole
+(`brew install blackhole-2ch`): [the user guide](docs/README.md#the-app) says how to send the sound through it.
+
+### Linux
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+curl -fLO https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-linux-x64.zip
+unzip -oq Sidenote-linux-x64.zip
+./Sidenote/Sidenote
+```
+
+It reads an X11 session: on Ubuntu, pick the Xorg one from the gear on the login screen. Its icon is in the tray.
+
+### Docker on Linux or WSL 2
+
+```bash
+git clone https://github.com/kanggu12/sidenote.git && cd sidenote
+./sidenote install
+./sidenote llm pull
+./sidenote capture --up
+./sidenote open
+```
+
+`install` builds the server, sets up the capture program and checks everything; `llm pull` downloads the model that
+fits the GPU. An NVIDIA GPU on Linux also needs the [NVIDIA Container
+Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). On Windows, run
+it inside WSL 2; the capture program then runs in Python for Windows (the `py` command, from
+[python.org](https://www.python.org/downloads/windows/)). `./sidenote down` stops everything.
+
+### Docker on a Mac
+
+Docker on a Mac has no GPU, so the local model runs in Ollama on the Mac, on Apple silicon's GPU, and the server in
+Docker asks it.
+
+```bash
+M=e4b                       # 26b on a Mac of 32 GB or more
+brew install ollama && brew services start ollama
+ollama pull gemma4:$M
+printf "FROM gemma4:$M\nPARAMETER num_ctx 16384\nPARAMETER num_batch 1152\n" > Modelfile
+ollama create sidenote-gemma4:$M -f Modelfile
 
 git clone https://github.com/kanggu12/sidenote.git && cd sidenote
-printf 'SIDENOTE_LOCAL_URL=http://host.docker.internal:11434/v1\nSIDENOTE_LOCAL_MODEL=sidenote-gemma4:e4b\n' >> .env
+printf "SIDENOTE_LOCAL_URL=http://host.docker.internal:11434/v1\nSIDENOTE_LOCAL_MODEL=sidenote-gemma4:$M\n" >> .env
 ./sidenote install
 ./sidenote capture --up
+./sidenote open
 ```
 
-Another model server on the Mac that takes images, such as llama.cpp's server or LM Studio, can stand in for Ollama: name
-it in `SIDENOTE_LOCAL_URL` as `http://host.docker.internal:<its port>/v1`, with the settings in
-[With a model server you already run](docs/air-gapped.md#with-a-model-server-you-already-run). Only with Ollama can the
-panel download a model, switch to a smaller one while the GPU is busy, or free the GPU.
-
-The first capture makes macOS ask for **Screen Recording** for your terminal: allow it in **System Settings**, then run
-`./sidenote capture --up` again. For the sound, set up BlackHole as [the app's section](#macos-the-app) says. CI checks
-the control script, the capture program and the arm64 images on macOS; the models' speed and answers have not been
-measured on a Mac yet.
+The first capture makes macOS ask for **Screen Recording** for your terminal: allow it, then run
+`./sidenote capture --up` again. For the cloud agent, run `./sidenote login` once: the Mac keeps Claude Code's login in
+the Keychain, where Docker cannot read it, so this makes the server a token of its own.
 
 ### Kubernetes
 
@@ -193,6 +165,17 @@ kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777
 The install downloads the model, which is what `--timeout 2h` is for. The [chart's README](deploy/helm/sidenote/README.md)
 has the Secret for each agent, an AMD GPU and a full values file. The capture program then runs on your PC
 ([docs/capture-client.md](docs/capture-client.md)).
+
+<details>
+<summary>Checking a download</summary>
+
+The app is not signed by a publisher yet. Each release lists the SHA-256 of its files in `SHA256SUMS`: run
+`sha256sum -c --ignore-missing SHA256SUMS` in the download folder; on macOS compare `shasum -a 256
+Sidenote-macos-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-windows-x64.zip`, with its line there. GitHub also
+records where each file was built (from 0.1.1 on): `gh attestation verify Sidenote-windows-x64.zip --repo
+kanggu12/sidenote`. A zip opened from a browser's download asks once before the app runs: on Windows **More info**,
+then **Run anyway**; on macOS **Open Anyway** in **System Settings**, **Privacy & Security**.
+</details>
 
 <details>
 <summary>Everyday use: starting, stopping, updating</summary>
@@ -255,7 +238,10 @@ images take about 8.5 GB, Ollama's 5.6 GB of it.
 
 A Mac's GPU works in the Mac's own memory: macOS lets it use two thirds of it on a Mac with up to 36 GB, and three
 quarters on a larger one, so Sidenote offers the e4b from 16 GB and the 26b from 32 GB. How fast the models are on a
-Mac, and how well they answer there, has not been measured yet.
+Mac, and how well they answer there, has not been measured yet. CI builds the Mac app on macOS 15 and runs it there: its
+server and its capture program, opened as the Finder opens it, opened again and quit as macOS quits it at log out. CI
+also runs the Docker setup's control script and capture program on macOS. Outside CI the app has not been used on a Mac
+yet.
 
 | GPU memory | Local model | Right, of 56 | Code passing, of 7 | Spoken, of 8 | Empty screen |
 |:---:|:---:|---:|---:|---:|---:|

@@ -15,8 +15,8 @@ It runs in one of three ways:
 
 The panel, the server's messages and the commands speak English, or Korean when the browser (for the panel) or the
 system (for the commands and the capture program) is set to Korean. **Language** in the panel's gear menu picks one by
-hand, and `SIDENOTE_LANG=en` or `ko` picks one for the commands. This guide calls each control by its English label;
-section 18 gives the Korean label of each.
+hand, and `SIDENOTE_LANG=en` or `ko` fixes one for the server's messages and the commands. This guide calls each control
+by its English label; section 18 gives the Korean label of each.
 
 In this guide:
 
@@ -71,7 +71,7 @@ README's [What it runs on](../README.md#what-it-runs-on).
   installs the capture program's packages into it.
 - **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
   local model on Apple silicon's GPU (Docker on a Mac has none): the README's
-  [With Docker on a Mac](../README.md#with-docker-on-a-mac). For the sound, a loopback input such as BlackHole. Not yet
+  [Docker on a Mac](../README.md#docker-on-a-mac). For the sound, a loopback input such as BlackHole. Not yet
   measured on a Mac: how fast the models are there and how well they answer.
 - **The local model**: an NVIDIA or AMD GPU, or a Mac's Apple silicon. Sidenote reads its memory and picks the largest
   measured model that fits: `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. A Mac's GPU works
@@ -82,7 +82,8 @@ README's [What it runs on](../README.md#what-it-runs-on).
 - **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
   account that can use it, or an Anthropic API key. With Docker the server runs its own copy of the CLI with the login from
   WSL (`~/.claude`, `~/.codex`); `./sidenote login codex` signs Codex in even without `codex` in WSL. The server uses the
-  CLI's login as it is (section 3).
+  CLI's login as it is (section 3). Docker on a Mac cannot read Claude Code's login, which the Mac keeps in the
+  Keychain: there `./sidenote login` gives the server a token of its own.
 
 ## 3. First time
 
@@ -90,38 +91,40 @@ Install Sidenote, start it once, and sign the cloud agent in.
 
 ### The app
 
-1. Install [Ollama](https://ollama.com/download). Without it, the agent solves everything; turn **Local model** off
-   in **Solver settings** so the panel stops asking for it.
-2. Download `Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or `Sidenote-linux-x64.zip` from the
-   [releases](https://github.com/kanggu12/sidenote/releases/latest).
-   - **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
-     `Sidenote.exe`: it does not start from inside the zip. The first time, Windows may warn about an unknown
-     publisher: **More info**, then **Run anyway**.
-   - **macOS**: double-click the zip to unpack it, drag **Sidenote** into **Applications**, and open it from there. The
-     app is not signed by a publisher yet, so macOS stops it the first time: in **System Settings**, **Privacy &
-     Security**, choose **Open Anyway** at the bottom. (On macOS 14, right-click the app, choose **Open**, then **Open**
-     again.)
-   - **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
+1. Optional, for the hard problems: install Claude Code or Codex and sign in once in a terminal (`claude`, or
+   `codex login`). The app uses the CLI it finds when it starts, Claude Code first: after installing one while the app
+   runs, quit Sidenote and start it again. Opened from the Finder or a desktop's menu, the app asks your login shell for
+   its `PATH`, so it finds a CLI the shell finds.
+2. Install Ollama and Sidenote with the commands in the README's [quick start](../README.md#quick-start), one block for
+   each system. Without Ollama, the agent solves everything; turn **Local model** off in **Solver settings** so the
+   panel stops asking for it.
 3. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the notification
    area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS. When the model for
    this GPU is not there yet, the **Local model** card offers it with **Download**, shows how far the download has got,
    and says when the model is ready.
-4. For the cloud agent, install Claude Code or Codex and sign in once in a terminal (`claude`, or `codex login`). The
-   app uses the CLI it finds when it starts, Claude Code first: after installing one while the app runs, quit Sidenote
-   and start it again. Opened from the Finder or a desktop's menu, the app asks your login shell for its `PATH`, so it
-   finds a CLI the shell finds.
-5. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Choose **Open System Settings**
+4. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Choose **Open System Settings**
    and turn Sidenote on, then quit Sidenote from its menu bar icon's menu and open it again: until then the screen holds
-   only the desktop picture. For the speaker sound,
-   install BlackHole (`brew install blackhole-2ch`), make a **Multi-Output Device** of your speakers and BlackHole in
-   **Audio MIDI Setup**, and choose it as the output; macOS then asks once for the microphone, as Sidenote hears
-   BlackHole as an input.
+   only the desktop picture. For the speaker sound, install BlackHole (`brew install blackhole-2ch`), make a
+   **Multi-Output Device** of your speakers and BlackHole in **Audio MIDI Setup**, and choose it as the output; macOS
+   then asks once for the microphone, as Sidenote hears BlackHole as an input.
 
-While it runs, the app starts Ollama when it is installed but not running, and starts again any part that stops.
-**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the app again while it
-runs opens the panel, and starting it while it is still closing down starts it once that is done. `SIDENOTE_*`
-settings (section 12) are read from the environment the app starts with. Options go after `Sidenote.exe`, after
-`Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
+To install from a browser instead, download `Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or
+`Sidenote-linux-x64.zip` from the [releases](https://github.com/kanggu12/sidenote/releases/latest):
+
+- **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
+  `Sidenote.exe`: it does not start from inside the zip. The app is not signed by a publisher yet, so the first time
+  Windows may warn about an unknown publisher: **More info**, then **Run anyway**.
+- **macOS**: double-click the zip to unpack it, drag **Sidenote** into **Applications**, and open it from there. macOS
+  stops an app from a browser's download that no publisher signed: in **System Settings**, **Privacy & Security**,
+  choose **Open Anyway** at the bottom (on macOS 14, right-click the app, choose **Open**, then **Open** again). The
+  quick start's `curl` leaves the zip unmarked, so macOS does not ask there.
+- **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
+
+When it starts, the app starts Ollama if it is installed but not running, and while it runs it starts again any part it
+started that stops. **Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the
+app again while it runs opens the panel, and starting it while it is still closing down starts it once that is done.
+`SIDENOTE_*` settings (section 12) are read from the environment the app starts with. Options go after `Sidenote.exe`,
+after `Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
 
 | Option | Meaning |
 |:---|:---|
@@ -194,11 +197,14 @@ account it is signed in as.
 
 Signing in:
 
-- The CLI agents use this PC's own login as it is; there is no token to create or paste.
+- The CLI agents use this PC's own login as it is; there is no token to create or paste, except with Docker on a Mac.
 - `./sidenote login` signs in the agent the server is set to use, when it is not signed in.
 - `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
   own copy shows an address to open and a code to enter there (the server has to be running, and the login lands in the
   same `~/.codex`).
+- Docker on a Mac cannot read Claude Code's login, which the Mac keeps in the Keychain. There `./sidenote login` runs
+  `claude setup-token` (one sign-in in the browser), asks for the token it prints, keeps it in `.env` as
+  `CLAUDE_CODE_OAUTH_TOKEN` and starts a running server again with it.
 - The server notices a new login within 20 seconds, with no restart.
 - Without a login the local model solves everything, but the **Agent** card says **Sign-in needed** and an alert asks
   for the login. Setting **Problems the agent solves** to **Off** clears both.
@@ -226,7 +232,7 @@ is the Docker setup.
 ```bash
 ./sidenote up        # start the server; when it is running, rebuild only what changed and show the status
 ./sidenote capture   # start screen and sound capture (windowless, with a tray icon; the command returns at once)
-./sidenote open      # open the panel (or type http://127.0.0.1:8777 in a browser)
+./sidenote open      # open the panel in the browser
 ```
 
 When the server is in use, `./sidenote up` waits until it is idle before restarting it; `--now` restarts at once.
@@ -279,7 +285,7 @@ Capture options go after `./sidenote capture`:
 | `--up` | Start the server first if it is not running (what the desktop shortcut runs, with no terminal). In a terminal, a failure waits for Enter before the script ends |
 | `--no-auto-stitch` | Do not join a scrolled problem by itself |
 | `--no-auto-update` | Do not restart into new code when `./sidenote up` deploys it (by default it does, at a quiet moment) |
-| `--audio-device "part of the name"` | The device to take sound from (default: the default speaker) |
+| `--audio-device "part of the name"` | The device to take sound from (default: the default speaker; on a Mac, the first loopback input such as BlackHole) |
 
 Each option reaches the capture program as typed, so a device name with spaces goes in quotes as usual
 (`--audio-device "Realtek USB2.0 Audio"`). On Windows the options pass through cmd.exe, which would act on some
@@ -598,10 +604,10 @@ the one the contents' ribbon marks, whose screen the right column shows.
 The switches on the capture card turn screen capture and sound capture on and off, each on its own.
 
 - With the screen off, the capture program takes no screenshots, and the server drops incoming screens and the one it
-  was holding. Analyses and follow-up questions that include a screen stop. The panel deletes the screen
-  thumbnails it holds: they do not come back when you turn the screen on again, and later follow-up questions do not
-  send that screen. Problems given only by voice are still solved. Turning the screen back on sends the current screen
-  right away.
+  was holding. Analyses and follow-up questions that include a screen stop. The panel takes the screen thumbnails it
+  shows off the page, and turning the screen on again does not bring them back; the answers kept in the history keep
+  theirs (a reload shows them, and **Clear history** deletes them). Later follow-up questions do not send that screen.
+  Problems given only by voice are still solved. Turning the screen back on sends the current screen right away.
 - With the sound off, the capture program closes the sound device, and the server deletes the sound it heard and the
   text it wrote down so far. Solving a problem given by voice stops too. Sound from while it was off is never
   analyzed later.
@@ -764,7 +770,7 @@ language, and for a failure the input, the expected output and what came out (or
 - The problem's own words about the judging are read with the examples and shown on the card. **any order** when the
   statement says the answer may come in any order: the answer then counts however its elements are ordered, though
   not how each element is ordered inside (Permutations says the same, and there that order is the answer). **in
-  place** when it says not to return the answer but to write it into the argument. **tolerance 1e-09** when it allows
+  place** when it says to write the answer into the argument and return nothing. **tolerance 1e-09** when it allows
   an error, and then every number counts within it. Said or not, a failing example whose result holds the expected
   values in another order says "Some results hold the same values in another order".
 - When no code in the answer defines the function the examples name, the one function the answer defines that takes
@@ -1006,8 +1012,9 @@ The **Speech** section holds what shapes what is written down:
   and one for English, chosen by the language the sentence is written down in.
 - **Extra terms** is a box of your own words, with commas between them, such as a product's name. They go ahead of the
   built-in list, and also go when **Technical term hints** is off. The speech model keeps 223 tokens of hint and the
-  built-in lists take about 170, so past about 15 words of your own the end of the built-in list is cut, and past about
-  60 your own last words, and the log says so. The box holds up to 50 words of up to 60 characters each.
+  built-in lists take 173 (Korean) and 156 (English), so past about 15 words of your own the end of the built-in list is
+  cut, and past about 60 your own last words, and the log says so. The box holds up to 50 words of up to 60 characters
+  each.
 - **Speech model** picks **small** (the default) or **medium**, both on the CPU. On the test PC `medium` costs about
   16 s of CPU for each pass over the last 15 seconds of speech against about 8 s for `small`, and a sentence of 5 s
   reaches the panel about 2.5 s later. It writes technical terms better: 133 of 146 right against 124.
@@ -1033,10 +1040,11 @@ Incognito, Private Browsing, and in Korean 시크릿 and 사생활 보호).
   minimized, on another desktop, on another monitor or wholly covered by the windows above it does not, and the
   panel itself never does. So a password manager left open beside another window stops the screen until it is
   minimized or covered.
-- The capture program reads the windows on Windows, and on Linux with X11 from what the window manager says
-  (`_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST_STACKING`). With no list from the window manager only the window in front
-  counts, and the screen card says **Front window only**. In a Wayland session it cannot read them, so nothing is skipped
-  there, and the screen card says **Windows not skipped**. Emptying the list takes the caution away.
+- The capture program reads the windows on Windows, on macOS (their titles once Screen Recording is allowed), and on
+  Linux with X11 from what the window manager says (`_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST_STACKING`). With no list
+  from the window manager only the window in front counts, and the **Screen capture** line on the capture card says
+  **Front window only**. In a Wayland session it cannot read them, so nothing is skipped there, and that line says
+  **Windows not skipped**. With the list empty, neither line shows.
 - Sound capture goes on while a window is skipped.
 
 ### The .env file
@@ -1049,12 +1057,14 @@ SIDENOTE_FAST=1
 SIDENOTE_SPEECH_LANG=ko
 ```
 
-For the app, set the same variables in the environment it starts with. An empty value runs that setting with its
-default, and a value that is not a number also falls back to the default, with a warning in the server's startup
-output (`./sidenote logs`). The log caps cannot be turned off with 0: at least 64 KB per file and at least 1 old
-file. `.env` is read with the same rules as docker compose: an `export` prefix, quotes, and a ` # comment` after the
-value. Finer settings not in the table (the change thresholds, the local model's context size and so on) are in
-`server/config.py`, with explanations.
+For the app, set the same variables in the environment it starts with; those only compose and `./sidenote` read
+(`SIDENOTE_LOG_PATH`, `SIDENOTE_LOCAL_SLOTS`, `SIDENOTE_LOCAL_KEEP_ALIVE`, `SIDENOTE_CPUS`, `SIDENOTE_UID` and the like)
+do nothing there: the app keeps its logs in its data folder, and the Ollama it starts takes Ollama's own
+`OLLAMA_NUM_PARALLEL` and `OLLAMA_KEEP_ALIVE`. An empty value runs that setting with its default, and a value that is
+not a number also falls back to the default, with a warning in the server's startup output (`./sidenote logs`). The log
+caps cannot be turned off with 0: at least 64 KB per file and at least 1 old file. `.env` is read with the same rules as
+docker compose: an `export` prefix, quotes, and a ` # comment` after the value. Finer settings not in the table (the
+change thresholds, the local model's context size and so on) are in `server/config.py`, with explanations.
 
 | Setting | Default | Meaning |
 |:---|:---:|:---|
@@ -1078,10 +1088,11 @@ value. Finer settings not in the table (the change thresholds, the local model's
 | `SIDENOTE_AGENT_MODEL` | (the agent's own default) | The model the CLI agent starts with: for Claude Code a family (`opus`, `sonnet`, `haiku`: the newest release of each) or a version that pins it (`claude-opus-5-5`), for Codex a model name. **Agent model** in the panel starts from it. `SIDENOTE_CLAUDE_MODEL`, its earlier name, is read when this is not set |
 | `SIDENOTE_AGENT_EFFORT` | (the agent's own default) | How hard the CLI agent is told to think: `low`, `medium`, `high`, `xhigh` or `max` for Claude Code, `low` to `high` for Codex. Lower is faster. **Thinking effort** in the panel starts from it. `SIDENOTE_CLAUDE_EFFORT`, its earlier name, is read when this is not set |
 | `SIDENOTE_MODEL` | `opus` | The Anthropic API agent's model when the panel chooses none: a family (`opus`, `sonnet`, `haiku`) is the newest model of that family the API lists, by release date, and a full name (`claude-opus-5-5`) pins it |
-| `SIDENOTE_EFFORT` | `medium` | The Anthropic API agent's effort when the panel chooses none, `low` to `max`; empty sends none, which leaves the model's own default |
+| `SIDENOTE_EFFORT` | `medium` | The Anthropic API agent's effort when the panel chooses none, `low` to `max` |
 | `ANTHROPIC_API_KEY` | (none) | The key the Anthropic API agent uses |
+| `CLAUDE_CODE_OAUTH_TOKEN` | (none) | A long-lived Claude Code token, which the server signs in with when it is set. With Docker on a Mac `./sidenote login` writes it here: the server there cannot read the Mac's own login from the Keychain |
 | `SIDENOTE_SPEECH_LANG` | `auto` | Speech language `auto`, `ko` or `en`. Also **Speech language** in the panel |
-| `SIDENOTE_LANG` | (not set) | The language of the panel, the server's messages and the commands: `en` or `ko`. Not set, the panel follows the browser's first language and the server the last panel that connected, and the commands and the capture program follow the system's language. With English, the models are asked to write the whole answer in English |
+| `SIDENOTE_LANG` | (not set) | The language of the server's messages, the commands and the capture program: `en` or `ko`; the panel's own words still follow the browser or **Language**. Not set, the server follows the last panel that connected, and the commands and the capture program follow the system's language. With English, the models are asked to write the whole answer in English |
 | `SIDENOTE_AUDIO` | `1` | `0` makes the server ignore sound |
 | `SIDENOTE_VOICE_TRIGGER` | `1` | `0` stops solving problems given by voice automatically (live speech is still shown) |
 | `SIDENOTE_WHISPER_MODEL` | `small` | The speech model to start with. `base` is lighter but makes more than twice as many errors on Korean. Also **Speech model** in the panel, which offers this one too |
@@ -1270,19 +1281,18 @@ What leaves this PC, what can reach what, and what is kept.
   number) is not sent, and the model is told so.
 - Each answer's **Details** list the search words and the pages read for it, and `events.jsonl` records every item
   that left the PC (`outbound`: where to, and what: the search words, the page address, or the kind and size of what
-  went to the agent, never the screen itself). Before showing a screen that must not be seen, switch the screen off or
-  pause.
+  went to the agent, never the screen itself).
 - Faces on the screen (a video call, a video, a photo, a profile picture) are painted gray as each screen arrives,
-  before the change detector, the local model, the cloud agent, the crops or the panel's thumbnail see it
-  (**Screen** > **Cover faces**, on by default). The finder runs on this PC's CPU (about 50 ms a screen at 1080p,
-  120 ms at 4K). It covers most faces from about 64 px wide up and about half of the 32 px ones (an avatar), and
-  leaves drawn figures alone, so a face in a black-and-white photo stays. For a screen that must not be read at all,
+  before the change detector, the local model, the cloud agent, the crops or the panel's thumbnail see it (**Screen** >
+  **Cover faces**, on by default). The finder runs on this PC's CPU (about 50 ms a screen at 1080p, 120 ms at 4K). It
+  covers most faces from about 64 px wide up and about half of the 32 px ones (an avatar), and leaves drawn figures
+  alone, which also leaves a face in a black-and-white photo uncovered. For a screen that must not be read at all,
   switch the screen off or pause.
 - While a window named in **Skip windows** is on screen (a password manager or a private browser window by default,
   section 12), no screenshot is taken at all, so nothing of that screen reaches the server, a model or the agent. The
-  capture program reads the windows' titles and their programs' names on this PC and keeps them there: they go neither to
-  the server nor into a log. The server hears only that a window is skipped and whether the windows could be read, and
-  `capture.log` and `events.jsonl` say only when a skip started and ended.
+  capture program reads the windows' titles and their programs' names on this PC and keeps them there: they go neither
+  to the server nor into a log. The server hears only that a window is skipped and whether the windows could be read,
+  and `capture.log` and `events.jsonl` say only when a skip started and ended.
 
 ### What can reach what
 
@@ -1379,7 +1389,7 @@ Four parts, each built and updated its own way:
 |:---|:---|:---|:---|
 | Server | A container image, `sidenote:local` | `docker/Dockerfile`, built by `./sidenote up` | `./sidenote up` after a change (it rebuilds only what changed) |
 | Code runner | A second image, `sidenote-runner:local`, with no network | `runner/Dockerfile` | the same |
-| Capture program | `client/capture.py`, run by Windows Python, or by `.venv-capture` on Linux | not built: run as it is | `./sidenote setup-capture` for its packages |
+| Capture program | `client/capture.py`, run by Windows Python, or by `.venv-capture` on Linux and macOS | not built: run as it is | `./sidenote setup-capture` for its packages |
 | The app | `Sidenote.exe`, `Sidenote.app` or the Linux `Sidenote`, with its own Python | `desktop/build.py` (PyInstaller), in CI for each release | a newer release's zip |
 
 What is pinned, so that a rebuild gives the same thing:
@@ -1402,8 +1412,8 @@ server image, the panel build the running server serves, Claude Code and Codex o
 image tags, the models pulled and the log folder.
 
 `./sidenote uninstall` lists what this project put on the PC (the containers, the images, among them the Ollama and
-SearXNG ones, the volumes, the desktop shortcut on Windows, the capture packages on Linux) and removes it only with
-`--yes`. The models live in a volume of tens of gigabytes, so nothing is removed by a command typed by accident. An
+SearXNG ones, the volumes, the desktop shortcut on Windows, the capture packages on Linux and macOS) and removes it only
+with `--yes`. The models live in a volume of tens of gigabytes, so nothing is removed by a command typed by accident. An
 image another project is using stays, as Docker refuses to remove it. The logs are left behind on purpose, and so are
 `~/.claude` and `~/.codex`, the login folders Claude Code and Codex use on this PC too, and the capture packages in
 Windows Python, which other programs there may use.
@@ -1445,7 +1455,8 @@ NetworkPolicy with no egress, and the server as its only client), the local mode
 the agent's login comes from a Secret you create. The chart has no Ingress: the server answers only requests addressed
 to `127.0.0.1` or `localhost`, so the panel is reached through a port-forward that you keep on 127.0.0.1.
 
-Create the namespace and the agent's Secret first, then install:
+Write `my-values.yaml` as the README's [Kubernetes](../README.md#kubernetes) section shows, create the namespace and the
+agent's Secret, then install:
 
 ```bash
 kubectl create namespace sidenote
@@ -1463,11 +1474,10 @@ then runs on its own on your PC (section 17).
 
 ## 17. Running the capture program on its own
 
-When the server is not on this PC (in a cluster, for example), the capture program runs alone on the PC whose screen
-and sound it reads, Windows or a Linux desktop: install its packages and start it with the server's address. It sends
-to `ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on
-that PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the
-options.
+When the server is not on this PC (in a cluster, for example), the capture program runs alone on the PC whose screen and
+sound it reads, Windows, a Mac or a Linux desktop: install its packages and start it with the server's address. It sends
+to `ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on that
+PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the options.
 
 ## 18. Panel labels
 

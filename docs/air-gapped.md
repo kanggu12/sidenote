@@ -58,7 +58,7 @@ until docker logs sidenote 2>&1 | grep -q "speech model ready"; do sleep 10; don
 ```
 
 Every model pulled on this PC goes into the bundle, so pull only the ones you want. The speech model `small` comes by
-default. To carry `medium` as well, choose it now, in the panel at <http://127.0.0.1:8777>: **Solver settings**,
+default. To carry `medium` as well, choose it now in the panel (`./sidenote open`): **Solver settings**,
 **Speech**, **Speech model**. Wait until `docker logs sidenote` shows `speech model ready (medium)`, then stop Sidenote:
 
 ```bash
@@ -123,7 +123,7 @@ SETTINGS
 ./sidenote capture
 ```
 
-Compose says the two volumes were not created by it, which does no harm. The panel is at <http://127.0.0.1:8777>, and
+Compose says the two volumes were not created by it, which does no harm. `./sidenote open` opens the panel, and
 `./sidenote status` shows the local model.
 
 | Line in `.env` | What it does |

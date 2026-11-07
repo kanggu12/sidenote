@@ -5,9 +5,9 @@ sends a frame when the screen changes and settles, the speaker sound for spoken 
 windows, so that a crop of the problem stops at its window's edge. It connects to the Sidenote server over a WebSocket
 and does nothing else.
 
-The app starts it by itself. On a PC that runs the server with Docker (in WSL, or on Linux), `./sidenote install` sets
-it up and `./sidenote capture` starts it. To run it on its own, for a server in Kubernetes or on another machine whose
-port is forwarded to this PC:
+The app starts it by itself. On a PC that runs the server with Docker (in WSL, on Linux or on a Mac),
+`./sidenote install` sets it up and `./sidenote capture` starts it. To run it on its own, for a server in Kubernetes or
+on another machine whose port is forwarded to this PC:
 
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
@@ -24,7 +24,7 @@ port is forwarded to this PC:
    screen (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's
    PulseAudio service. On macOS, run the same in Terminal: macOS asks once for **Screen Recording** for Terminal, and
    the speaker sound comes through a loopback input such as BlackHole
-   ([the README's macOS section](https://github.com/kanggu12/sidenote/blob/main/README.md#macos-the-app)).
+   ([the README's macOS section](https://github.com/kanggu12/sidenote/blob/main/README.md#macos)).
 
 For a server in a cluster, forward its port to this PC first and keep the forward on 127.0.0.1:
 `kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777`. The server answers only requests addressed
@@ -40,7 +40,7 @@ has no login of its own, so keep the server off public networks.
 | `--monitor N` | capture monitor N (`--list-monitors` lists them; 0 takes all of them as one image) |
 | `--stitch` | join a long problem into one image while you scroll through it |
 | `--no-audio` | capture the screen only |
-| `--audio-device NAME` | take the sound from this loopback device instead of the default speaker (any part of its name) |
+| `--audio-device NAME` | take the sound from this device instead of the default speaker, or on a Mac instead of the first loopback input (any part of its name) |
 | `--no-tray` | no icon in the notification area |
 | `--fps N` | how often the screen is looked at, per second (default 3) |
 
@@ -75,11 +75,12 @@ holds the server's default list (the common password managers and the browsers' 
 
 A Wayland session tells other programs nothing of its windows, so there nothing is skipped. A window manager that keeps
 no list of its windows leaves the window in front to go by, and one that keeps neither leaves nothing. The log says so
-once for each reason, and the panel's screen card says **Windows not skipped** or **Front window only** while it lasts.
-A read that fails counts as nothing known and is tried again at the next look.
+once for each reason, and the **Screen capture** line on the panel's capture card says **Windows not skipped** or
+**Front window only** while it lasts. A read that fails counts as nothing known and is tried again at the next look.
 
-The windows are looked at before each screenshot and again after it, so a window that comes to show while a screenshot was
-being taken does not go out in it. The titles and the names stay in this program: the server hears only that a window
-is skipped and whether the windows could be read, and the log says only when a skip started and ended. Meanwhile the line
-under **Open the panel** in the tray menu reads **Skipped window**, as does the screen card in the panel. Once the
-window no longer shows the program captures again, and the same problem as before is not taken for a new screen.
+The windows are looked at before each screenshot and again after it, so a window that comes to show while a screenshot
+was being taken does not go out in it. The titles and the names stay in this program: the server hears only that a
+window is skipped and whether the windows could be read, and the log says only when a skip started and ended. Meanwhile
+the line under **Open the panel** in the tray menu reads **Skipped window**, as does the **Screen capture** line in the
+panel. Once the window no longer shows the program captures again, and the same problem as before is not taken for a new
+screen.

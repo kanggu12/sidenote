@@ -841,6 +841,13 @@ file, out of reach of the PC's own CLI. A long-lived token from `claude setup-to
 step, so the login folder is shared instead. The port is opened on `127.0.0.1` only (the panel has no login and shows
 screen thumbnails). The port and address inside the container are fixed in compose, so `.env` cannot change them.
 
+On a Mac the folder holds no login: Claude Code keeps it in the Keychain, which a container cannot read. A copy taken
+out of the Keychain would be the Mac's own refresh token with no lock shared between the two, so a refresh on one side
+could end the session on the other (the chart's README weighs the same for a copied login). There the token is the
+way in, so `./sidenote login` makes one with `claude setup-token` and keeps it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`,
+which compose hands to the server. With it `claude auth status --json` in the container says
+`"authMethod": "oauth_token"`, and without it `"none"`.
+
 ### <a id="note-29"></a>29. Sign-in state and error classification
 
 `loggedIn` from `claude auth status --json` does not know whether the token is valid, and neither does
