@@ -61,15 +61,14 @@ def health(port):
         return None
 
 
-def on_login_path(home, folder):
-    """`folder` put on PATH by the login shell's start-up files alone. Returns what the files held, to put back."""
-    kept = {}
+def on_login_path(home, folder, kept):
+    """`folder` put on PATH by the login shell's start-up files alone. What each file held goes into `kept` before the
+    file is changed, so that a failure part way leaves nothing behind once `kept` is put back."""
     for name in LOGIN_FILES:
         f = home / name
         kept[f] = f.read_bytes() if f.exists() else None
         with open(f, "a", encoding="utf-8") as out:
             out.write(f'\nexport PATH="{folder}:$PATH"\n')
-    return kept
 
 
 def put_back(kept):
@@ -114,13 +113,13 @@ def main(argv):
         url = f"http://127.0.0.1:{port}"
         # On CI only, as it changes the login shell's start-up files: a CLI on no PATH but the login shell's
         kept, on_ci = {}, os.environ.get("GITHUB_ACTIONS") == "true"
-        if on_ci:
-            folder = d / "login-bin"
-            folder.mkdir()
-            (folder / "claude").write_text(STAND_IN_CLAUDE, encoding="utf-8")
-            (folder / "claude").chmod(0o755)
-            kept = on_login_path(Path.home(), folder)
         try:
+            if on_ci:
+                folder = d / "login-bin"
+                folder.mkdir()
+                (folder / "claude").write_text(STAND_IN_CLAUDE, encoding="utf-8")
+                (folder / "claude").chmod(0o755)
+                on_login_path(Path.home(), folder, kept)
             print("[opened as the Finder opens it]")
             subprocess.run(["open", *[a for k, v in env.items() for a in ("--env", f"{k}={v}")], str(app)],
                            check=True, timeout=60)
