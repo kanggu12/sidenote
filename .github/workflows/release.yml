@@ -1,5 +1,5 @@
 # A version tag (v1.2.3) publishes a release: both images to the GitHub Container Registry, the Helm chart as an OCI
-# artifact and a .tgz, the desktop app for Windows and Linux (desktop.yml), and the capture program on its own as a
+# artifact and a .tgz, the desktop app for Windows, macOS and Linux (desktop.yml), and the capture program on its own as a
 # .zip, all attached to the GitHub release. A tag with a pre-release part (v1.2.3-rc.1) publishes as a pre-release, with
 # no `latest` images.
 #

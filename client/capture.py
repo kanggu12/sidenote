@@ -1931,9 +1931,9 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
             stop.wait(3.0)
 
 
-# macOS hands no program the sound its speakers play. A loopback driver makes an input of it (BlackHole, free): the
-# sound reaches it when the output is a Multi-Output Device of the speakers and BlackHole (Audio MIDI Setup). Asked
-# again every 3 s, so one installed while this runs is picked up.
+# On macOS the sound library records inputs only, none of the speakers' sound. A loopback driver makes an input of it
+# (BlackHole, free): the sound reaches it when the output is a Multi-Output Device of the speakers and BlackHole (Audio
+# MIDI Setup). Asked again every 3 s, so one installed while this runs is picked up.
 MAC_LOOPBACK = ("blackhole", "loopback", "soundflower")
 
 

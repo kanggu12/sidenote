@@ -7,7 +7,8 @@ problem that needs reasoning goes to the agent (Claude Code, Codex or the Anthro
 sooner or its type is set for the agent. One worker runs one analysis at a time. The panel shows each answer as it is
 written, and the code in an answer runs on the problem's examples in a code runner with no network.
 
-The same code runs in three ways. The app (`Sidenote.exe` on Windows, or the Linux app; both are `desktop/app.py`)
+The same code runs in three ways. The app (`Sidenote.exe` on Windows, `Sidenote.app` on macOS, or the Linux app; each is
+`desktop/app.py`)
 starts the server, the capture program and the PC's own Ollama as child processes and starts again what stops; it has no
 code runner and no web search, since both are containers. With Docker, `./sidenote up` starts the server, the local
 model, the code runner and SearXNG as containers (`compose.yaml`), and the capture program runs on the desktop. On
@@ -150,8 +151,8 @@ measurements.
 | Version and releases | `server/version.py`, `server/updates.py` | The one version (`VERSION`), which `/health`, the panel, `./sidenote version` and the release workflow read; the check for a newer release on GitHub, a minute after the start and then once a day | `ReleaseCheck.run` |
 | Tools | `server/control.py`, `server/probe.py`, `server/mock_capture.py`, `server/ocr_gate.py` | `./sidenote gpu off`, `on` and `status` over the panel's own WebSocket; a check of a real engine with one image; a capture stand-in that sends made-up screens; the optional OCR gate, not in the image | `gpu`, `main` |
 | Panel | `panel/` | Plain HTML, CSS and JavaScript with no build step: `index.html` (structure and style), `app.js`, `theme.js`, `i18n.js` and `i18n/ko.js`, and the pinned libraries in `vendor/`. `?demo=1` shows it with samples and no server | `handle` in `app.js` |
-| Capture program | `client/capture.py`, `client/launch.pyw` | The screen, the speaker sound and the window list, on Windows and on Linux with X11: `SendGate`, `ScrollStitcher`, `Sender` and the tray menu | `main` |
-| Desktop app | `desktop/` | `Sidenote.exe` and the Linux app: starts and watches the server, the capture program and Ollama, with capped logs; `build.py` builds it with PyInstaller | `run` in `app.py` |
+| Capture program | `client/capture.py`, `client/launch.pyw` | The screen, the speaker sound and the window list, on Windows, on macOS and on Linux with X11: `SendGate`, `ScrollStitcher`, `Sender` and the tray menu | `main` |
+| Desktop app | `desktop/` | `Sidenote.exe`, `Sidenote.app` and the Linux app: starts and watches the server, the capture program and Ollama, with capped logs; `build.py` builds it with PyInstaller | `run` in `app.py` |
 | Code runner | `runner/` | Runs code with no network, one run at a time, each compile and each run as a user of its own: Python, C, C++, JavaScript, TypeScript, Java, Kotlin, Go and Bash | `LANGS`, `run` in `runner.py` |
 | Launcher | `sidenote` | The user commands (`install`, `up`, `down`, `status`, `capture`, `login`, `llm`, `gpu`, `doctor`, `report` and more); reads `.env` as compose does and adds the GPU's compose file | the `case` at its end |
 | Images and compose | `docker/`, `compose.yaml` | The server image, its entrypoint and pinned packages, the panel's pinned libraries, and the GPU files compose adds (`docker/compose.{nvidia,amd,cpu}.yaml`) | `docker/Dockerfile`, `services` in `compose.yaml` |
@@ -199,7 +200,8 @@ out. A run's result goes only to the panel that sent the code. The app and the c
 ## What is kept on disk
 
 The server writes to its log folder: `~/.local/state/sidenote/logs` under Docker (bound to `/data/logs`), `logs/` in the
-app's data folder (`%LOCALAPPDATA%\Sidenote` on Windows, `~/.local/share/sidenote` on Linux), and a
+app's data folder (`%LOCALAPPDATA%\Sidenote` on Windows, `~/Library/Application Support/Sidenote` on macOS,
+`~/.local/share/sidenote` on Linux), and a
 PersistentVolumeClaim on Kubernetes.
 
 | File | What it holds | How long | How big |

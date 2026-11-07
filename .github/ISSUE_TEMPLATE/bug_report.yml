@@ -51,5 +51,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: "The lines around the problem. With the app, from its `logs` folder (`%LOCALAPPDATA%\\Sidenote\\logs` on Windows, `~/.local/share/sidenote/logs` on Linux): `app.log`, `server.log`, `server-console.log` (why a server did not start), `capture.log` and `ollama.log`. With Docker: `./sidenote events --errors`. Please do not attach screenshots with private content."
+      description: "The lines around the problem. With the app, from its `logs` folder (`%LOCALAPPDATA%\\Sidenote\\logs` on Windows, `~/Library/Application Support/Sidenote/logs` on macOS, `~/.local/share/sidenote/logs` on Linux): `app.log`, `server.log`, `server-console.log` (why a server did not start), `capture.log` and `ollama.log`. With Docker: `./sidenote events --errors`. Please do not attach screenshots with private content."
       render: text

@@ -139,10 +139,10 @@ A speech model that is not in the bundle cannot be chosen in the panel: the choi
 
 ## The app, with no Docker
 
-The Windows and Linux apps hold the server and the capture program, so they need no images and no Python packages. Bring
-`models.tar` and `speech.tar` from step 1, the app's zip from the [release](https://github.com/kanggu12/sidenote/releases)
-(`Sidenote-windows-x64.zip` or `Sidenote-linux-x64.zip`), and Ollama's own download: on Linux its archive, as its install
-script needs the internet.
+The apps for Windows, macOS and Linux hold the server and the capture program, so they need no images and no Python
+packages. Bring `models.tar` and `speech.tar` from step 1, the app's zip from the
+[release](https://github.com/kanggu12/sidenote/releases) (`Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or
+`Sidenote-linux-x64.zip`), and Ollama's own download: on Linux its archive, as its install script needs the internet.
 
 Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a
 bundle made with Sidenote 0.1.5 or later carries Sidenote's context with it. With an older bundle, quit Ollama from its
@@ -174,6 +174,18 @@ SIDENOTE_AGENT=off SIDENOTE_UPDATE_CHECK=0 SIDENOTE_LOCAL_PULL=0 HF_HUB_OFFLINE=
 
 An Ollama that runs as a service keeps its own settings, and its models in `/usr/share/ollama/.ollama`. Stop it with
 `sudo systemctl disable --now ollama` so that Sidenote starts its own.
+
+On macOS, with Ollama for Mac installed and Sidenote in Applications, start it from Terminal so the settings reach it:
+
+```bash
+mkdir -p ~/.ollama "$HOME/Library/Application Support/Sidenote/hf"
+tar xf models.tar -C ~/.ollama
+tar xf speech.tar -C "$HOME/Library/Application Support/Sidenote/hf"
+SIDENOTE_AGENT=off SIDENOTE_UPDATE_CHECK=0 SIDENOTE_LOCAL_PULL=0 HF_HUB_OFFLINE=1 \
+  /Applications/Sidenote.app/Contents/MacOS/Sidenote
+```
+
+Started this way, macOS asks for Screen Recording for Terminal, which started it, rather than for Sidenote.
 
 ## Kubernetes
 

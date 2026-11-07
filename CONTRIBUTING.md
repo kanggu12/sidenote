@@ -30,9 +30,8 @@ Look for issues labeled `good first issue` and `help wanted`. Ideas and question
 change, start an idea there first, so the design can be agreed on before the code is written. Everyone taking part
 follows the [code of conduct](.github/CODE_OF_CONDUCT.md).
 
-**One rule for features.** Sidenote is for learning, practice and your own work
-([Please use it fairly](README.md#please-use-it-fairly)). A change whose purpose is to hide Sidenote from a proctor,
-an exam or a screen share is not accepted.
+**One rule for features.** Sidenote is for learning, practice and your own work. A change whose purpose is to hide
+Sidenote from a proctor, an exam or a screen share is not accepted.
 
 ## How the pieces fit
 
@@ -115,8 +114,8 @@ the speech model, which is otherwise downloaded on the first start. Add `?lang=k
 Korean. A warning from onnxruntime that "GPU device discovery failed" is harmless: the face detector then runs on the
 CPU.
 
-To run everything the way the Windows and Linux apps do (the server, the capture program, and Ollama when it is
-installed), add the capture program's packages and start the app from the checkout:
+To run everything the way the apps for Windows, macOS and Linux do (the server, the capture program, and Ollama when it
+is installed), add the capture program's packages and start the app from the checkout:
 
 ```bash
 .venv/bin/pip install -r client/requirements.txt -c docker/constraints.txt
@@ -125,7 +124,9 @@ SIDENOTE_DATA_DIR=/tmp/sidenote-dev .venv/bin/python -m desktop --port 8800 --no
 
 Then open http://127.0.0.1:8800. Its own port and data folder keep it apart from an installed app, whose panel it
 would otherwise open. `SIDENOTE_ANALYZER=mock` and `--no-capture` run it with stand-in models and no capture program.
-`desktop/build.py` builds the app itself with PyInstaller.
+`desktop/build.py` builds the app itself with PyInstaller, on the system it is for: `Sidenote.exe`, `Sidenote.app` (an
+app bundle, signed ad hoc) or the Linux folder, each started with `--check` before it is zipped. CI builds all three
+(`.github/workflows/desktop.yml`), and the Mac build also runs its capture program against its server.
 
 To work with a real local model, run [Ollama](https://ollama.com), pull a model (`ollama pull gemma4:e4b`), and start the
 server with `SIDENOTE_ANALYZER=local SIDENOTE_LOCAL_URL=http://127.0.0.1:11434/v1` instead. Sidenote also speaks the
@@ -262,7 +263,7 @@ through `on_delta` and returns the result. Then name it where the agents are lis
 
 - `server/config.py`: the names `SIDENOTE_AGENT` accepts (`Config.__post_init__`), and `AGENT_LABELS` and
   `AGENT_SHORT`, the names the panel shows.
-- - `server/agents.py`: `make_agent()`; the class's `auth_status()` method, which tells the panel whether it is signed in
+- `server/agents.py`: `make_agent()`; the class's `auth_status()` method, which tells the panel whether it is signed in
   or has its key; and `LOGIN_HINTS` and `DESKTOP_LOGIN_HINTS`, what the panel says to run to sign in.
 - For an agent with a CLI: `cmd_login` and the agent's line in `cmd_doctor` in `sidenote`, and `agent_found()` in
   `desktop/app.py`, which picks the CLI up from the PATH.

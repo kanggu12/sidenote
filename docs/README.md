@@ -6,8 +6,8 @@ agent you are signed in to: Claude Code, Codex or the Anthropic API.
 
 It runs in one of three ways:
 
-- **The app** (Windows or Linux, no Docker): `Sidenote.exe` (`Sidenote` on Linux) starts everything on this PC, with
-  Ollama for the local model (section 3).
+- **The app** (Windows, macOS or Linux, no Docker): `Sidenote.exe`, `Sidenote.app` or the Linux `Sidenote` starts
+  everything on this PC, with Ollama for the local model (section 3).
 - **With Docker** (Linux, Windows with WSL 2, or a Mac): `./sidenote <command>`, typed in a terminal in this repository's
   folder, runs the server in containers and adds web search for the local model and a sandbox for code checks.
   `./sidenote help` lists the commands. Most of this guide describes this setup.
@@ -49,7 +49,7 @@ Sidenote is a few programs that work together. Which of them run, and where, dep
 | Local model | The vision model that solves (Ollama) | this PC's Ollama | the `sidenote-llm` container, on the GPU, with no internet |
 | Web search | Sends the local model's searches to search engines (SearXNG) | none | the `sidenote-searxng` container |
 | Code runner, `runner/runner.py` | Runs the code you run from the panel and the example checks, and returns the real output | none | the `sidenote-runner` container, with no network |
-| Panel, `panel/` | Writes the solutions down one below the other, like a notebook | the browser, at `http://127.0.0.1:8777` | the same |
+| Panel, `panel/` | Writes the solutions down one below the other, like a notebook | a browser tab the app opens, and its icon's **Open the panel** | a browser tab `./sidenote open` opens |
 | Cloud agent, `server/agents.py` | Solves the problems that need reasoning, with this PC's own login (section 3) | the Claude Code or Codex CLI on this PC, or the Anthropic API | the CLI inside the `sidenote` container, or the Anthropic API |
 
 With Docker on Windows, the server runs in WSL, which cannot see the Windows screen or sound, so only the capture
@@ -63,8 +63,9 @@ virtual environment of its own (`.venv-capture`).
 What each setup needs before its first start. The memory, GPU and disk each model needs, with what was measured, are in the
 README's [What it runs on](../README.md#what-it-runs-on).
 
-- **The app**: Windows 10 or 11, or Linux with an X11 session and glibc 2.35 or newer (Ubuntu 22.04 or newer, Debian
-  12 or newer). [Ollama](https://ollama.com/download) runs the local model.
+- **The app**: Windows 10 or 11; macOS 14 or newer on Apple silicon; or Linux with an X11 session and glibc 2.35 or
+  newer (Ubuntu 22.04 or newer, Debian 12 or newer). [Ollama](https://ollama.com/download) runs the local model. On a
+  Mac the sound needs a loopback input such as BlackHole.
 - **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux
   the NVIDIA Container Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
   installs the capture program's packages into it.
@@ -72,10 +73,12 @@ README's [What it runs on](../README.md#what-it-runs-on).
   local model on Apple silicon's GPU (Docker on a Mac has none): the README's
   [With Docker on a Mac](../README.md#with-docker-on-a-mac). For the sound, a loopback input such as BlackHole. Not yet
   measured on a Mac: how fast the models are there and how well they answer.
-- **The local model**: an NVIDIA or AMD GPU. Sidenote reads its memory and picks the largest measured model that fits:
-  `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. With less, or no GPU, the cloud agent
+- **The local model**: an NVIDIA or AMD GPU, or a Mac's Apple silicon. Sidenote reads its memory and picks the largest
+  measured model that fits: `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. A Mac's GPU works
+  in the Mac's own memory and gets as much of it as macOS lets it keep (two thirds up to 36 GB, three quarters above, or
+  `iogpu.wired_limit_mb` when raised): the e4b from 16 GB, the 26b from 32 GB. With less, or no GPU, the cloud agent
   solves everything (a model can still be pulled to run on the CPU, slowly). `SIDENOTE_LOCAL_MODEL` names one by hand.
-- - **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
+- **The cloud agent** (optional): Claude Code (the `claude` command) or Codex (the `codex` command), signed in with an
   account that can use it, or an Anthropic API key. With Docker the server runs its own copy of the CLI with the login from
   WSL (`~/.claude`, `~/.codex`); `./sidenote login codex` signs Codex in even without `codex` in WSL. The server uses the
   CLI's login as it is (section 3).
@@ -88,23 +91,33 @@ Install Sidenote, start it once, and sign the cloud agent in.
 
 1. Install [Ollama](https://ollama.com/download). Without it, the agent solves everything; turn **Local model** off
    in **Solver settings** so the panel stops asking for it.
-2. Download `Sidenote-windows-x64.zip` or `Sidenote-linux-x64.zip` from the
-   [releases](https://github.com/kanggu12/sidenote/releases/latest). On Windows, right-click the zip, choose
-   **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`: it does not start from inside the
-   zip. The first time, Windows may warn about an unknown publisher: **More info**, then **Run anyway**. On Linux,
-   `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
+2. Download `Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or `Sidenote-linux-x64.zip` from the
+   [releases](https://github.com/kanggu12/sidenote/releases/latest).
+   - **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
+     `Sidenote.exe`: it does not start from inside the zip. The first time, Windows may warn about an unknown
+     publisher: **More info**, then **Run anyway**.
+   - **macOS**: open the zip, drag **Sidenote** to **Applications** and open it there. The app is not signed by a
+     publisher yet, so macOS stops it the first time: in **System Settings**, **Privacy & Security**, choose **Open
+     Anyway** at the bottom. (On macOS 14, right-click the app, choose **Open**, then **Open** again.)
+   - **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
 3. The first start can take a minute. Then the panel opens in the browser, and an icon appears in the notification
-   area (on Windows 11 it may be hidden under the **^** by the clock). When the model for this GPU is not there yet,
-   the **Local model** card offers it with **Download**, shows how far the download has got, and says when the model
-   is ready.
+   area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS. When the model for
+   this GPU is not there yet, the **Local model** card offers it with **Download**, shows how far the download has got,
+   and says when the model is ready.
 4. For the cloud agent, install Claude Code or Codex and sign in once in a terminal (`claude`, or `codex login`). The
    app uses the CLI it finds when it starts, Claude Code first: after installing one while the app runs, quit Sidenote
-   and start it again.
+   and start it again. Opened from the Finder or a desktop's menu, the app asks your login shell for its `PATH`, so it
+   finds a CLI the shell finds.
+5. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Allow it, then quit Sidenote from
+   its menu bar icon and open it again: until then the screen holds only the desktop picture. For the speaker sound,
+   install BlackHole (`brew install blackhole-2ch`), make a **Multi-Output Device** of your speakers and BlackHole in
+   **Audio MIDI Setup**, and choose it as the output; macOS then asks once for the microphone, as Sidenote hears
+   BlackHole as an input.
 
 While it runs, the app starts Ollama when it is installed but not running, and starts again any part that stops.
-**Quit Sidenote** in the tray icon's menu stops everything. Starting the app again while it runs opens the panel.
-`SIDENOTE_*` settings (section 12) are read from the environment the app starts with. Options go after
-`Sidenote.exe` (or `Sidenote`):
+**Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the app again while it runs
+opens the panel. `SIDENOTE_*` settings (section 12) are read from the environment the app starts with. Options go after
+`Sidenote.exe`, after `Sidenote.app/Contents/MacOS/Sidenote` on macOS, or after the Linux `Sidenote`:
 
 | Option | Meaning |
 |:---|:---|
@@ -113,7 +126,8 @@ While it runs, the app starts Ollama when it is installed but not running, and s
 | `--port 8778` | The server's port on 127.0.0.1 (default 8777) |
 | `--check` | Start the server with stand-in models on a free port, check that it answers, and stop |
 
-On Linux, `./Sidenote/Sidenote --check` prints its result in the terminal. The Windows app has no console, so there it
+On Linux, `./Sidenote/Sidenote --check` prints its result in the terminal, and on macOS
+`/Applications/Sidenote.app/Contents/MacOS/Sidenote --check` in Terminal. The Windows app has no console, so there it
 writes the result to the file `SIDENOTE_CHECK_LOG` names. In PowerShell, in the `Sidenote` folder that holds
 `Sidenote.exe`:
 
@@ -123,8 +137,9 @@ Start-Process .\Sidenote.exe -ArgumentList '--check' -Wait
 Get-Content $env:SIDENOTE_CHECK_LOG
 ```
 
-The app keeps its files in a data folder: `%LOCALAPPDATA%\Sidenote` on Windows, `~/.local/share/sidenote` on Linux
-(`$XDG_DATA_HOME/sidenote` when that is set), or the folder `SIDENOTE_DATA_DIR` names. Its `logs` folder holds the
+The app keeps its files in a data folder: `%LOCALAPPDATA%\Sidenote` on Windows, `~/Library/Application Support/Sidenote`
+on macOS, `~/.local/share/sidenote` on Linux (`$XDG_DATA_HOME/sidenote` when that is set), or the folder
+`SIDENOTE_DATA_DIR` names. Its `logs` folder holds the
 logs (section 11 lists them), the panel's settings (`.settings.json`) and the kept answers (`history.sqlite`).
 
 `./sidenote stats`, `events`, `report` and `gpu` run inside the server's container, so the app has no counterpart to
@@ -177,7 +192,7 @@ Signing in:
 
 - The CLI agents use this PC's own login as it is; there is no token to create or paste.
 - `./sidenote login` signs in the agent the server is set to use, when it is not signed in.
-- - `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
+- `./sidenote login codex` signs Codex in. With the `codex` command in WSL it signs in there; without it, the server's
   own copy shows an address to open and a code to enter there (the server has to be running, and the login lands in the
   same `~/.codex`).
 - The server notices a new login within 20 seconds, with no restart.
@@ -200,8 +215,9 @@ sessions on this PC.
 
 ## 4. Everyday use
 
-Start Sidenote, stop it, and lend the GPU to other work. With the app, start `Sidenote.exe` and quit it from its tray
-icon; the rest of this section is the Docker setup.
+Start Sidenote, stop it, and lend the GPU to other work. With the app, start it (`Sidenote.exe`, **Sidenote** in
+Applications, or the Linux `Sidenote`) and quit it from its icon in the tray or the menu bar; the rest of this section
+is the Docker setup.
 
 ```bash
 ./sidenote up        # start the server; when it is running, rebuild only what changed and show the status
@@ -1146,18 +1162,21 @@ the panel, the tray menu and `./sidenote` show for each.
 ### The app
 
 The app's logs are in its data folder's `logs`: `%LOCALAPPDATA%\Sidenote\logs` on Windows,
-`~/.local/share/sidenote/logs` on Linux. `app.log` says what the app did, and `server-console.log` why the server
-stopped (section 11 lists the rest).
+`~/Library/Application Support/Sidenote/logs` on macOS, `~/.local/share/sidenote/logs` on Linux. `app.log` says what
+the app did, and `server-console.log` why the server stopped (section 11 lists the rest).
 
 | Symptom | What to do |
 |:---|:---|
 | Windows says it protected your PC, or warns about an unknown publisher | The app is not code-signed yet: choose **More info**, then **Run anyway** |
 | `Sidenote.exe` does not start, or says files are missing | Extract the zip first (right-click it, **Extract All**), then run `Sidenote.exe` from the `Sidenote` folder inside |
+| macOS says Sidenote was not opened, or cannot be checked for malicious software | The app is not signed by a publisher yet: in **System Settings**, **Privacy & Security**, choose **Open Anyway** |
+| On a Mac the panel's screen shows only the desktop picture, or no window is skipped | Screen Recording is off for Sidenote: turn it on in **System Settings**, **Privacy & Security**, **Screen & System Audio Recording** (**Screen Recording** on macOS 14), then quit Sidenote from its menu bar icon and open it again |
+| On a Mac nothing is heard | The capture program hears the speaker sound through a loopback input: install BlackHole and choose a Multi-Output Device of your speakers and BlackHole as the output (section 3). Allow **Microphone** for Sidenote in **Privacy & Security** if you turned it down. `capture.log` names the input it listens to |
 | Nothing appears after starting it | The first start can take a minute or two. If no panel opens after that, open `http://127.0.0.1:8777` yourself; if nothing answers there, read `app.log` and `server-console.log` |
 | A message box says the server did not start | The message box shows the end of `server-console.log`, which says why. Start Sidenote again; if it happens again, open an issue with the logs |
 | A message box says another program is using the port | Close that program, or start the app on another port: `Sidenote.exe --port 8778` |
 | The Linux app stops with "version 'GLIBC_2.38' not found" | Sidenote 0.1.0 needs Ubuntu 24.04 or newer. Download the newest release, which also runs on Ubuntu 22.04 and Debian 12 |
-| No icon in the notification area | On Windows 11, look under the **^** by the clock. On Linux, the icon needs a desktop that shows tray icons (an AppIndicator or the X11 tray); without one, quit with Ctrl+C in the terminal. `capture.log` says why there is no icon |
+| No icon in the notification area | On Windows 11, look under the **^** by the clock. On macOS it is in the menu bar, which may hide it behind the notch when the bar is full. On Linux, the icon needs a desktop that shows tray icons (an AppIndicator or the X11 tray); without one, quit with Ctrl+C in the terminal. `capture.log` says why there is no icon |
 | The panel says "Ollama does not answer" | Install Ollama, or start it: Sidenote finds it within 20 seconds. To use the agent alone, turn **Local model** off in **Solver settings** |
 | The panel says "No local model yet" | Press **Download** in the band, or on the **Local model** card |
 | The **Agent** card says **Optional** | No Claude Code or Codex was found. Install one and sign in once in a terminal; if Sidenote was running while you installed it, quit Sidenote and start it again |
@@ -1285,7 +1304,7 @@ What leaves this PC, what can reach what, and what is kept.
   behind and every file it wrote are deleted when it ends. Code that runs there cannot reach the server or the
   internet, cannot read or change the files or the processes of another run or of the compile, and cannot read or
   stop the runner itself. A run's result goes only to the panel that sent the code.
-- - Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
+- Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
   `./sidenote`, so the login files and the logs stay that user's; a short-lived `server-init` container hands the log
   folder and the speech model's volume to that user first, as root with CHOWN and no network. The server adds back one
   capability (CHOWN, of use only when that user is root) and the code runner four (SETUID, SETGID, CHOWN and KILL, to start
@@ -1356,7 +1375,7 @@ Four parts, each built and updated its own way:
 | Server | A container image, `sidenote:local` | `docker/Dockerfile`, built by `./sidenote up` | `./sidenote up` after a change (it rebuilds only what changed) |
 | Code runner | A second image, `sidenote-runner:local`, with no network | `runner/Dockerfile` | the same |
 | Capture program | `client/capture.py`, run by Windows Python, or by `.venv-capture` on Linux | not built: run as it is | `./sidenote setup-capture` for its packages |
-| The app | `Sidenote.exe` or `Sidenote`, one folder with its own Python | `desktop/build.py` (PyInstaller), in CI for each release | a newer release's zip |
+| The app | `Sidenote.exe`, `Sidenote.app` or the Linux `Sidenote`, with its own Python | `desktop/build.py` (PyInstaller), in CI for each release | a newer release's zip |
 
 What is pinned, so that a rebuild gives the same thing:
 
