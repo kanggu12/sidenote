@@ -8,6 +8,8 @@ and an empty list when its tool or file is not there:
     AMD      amd-smi, then rocm-smi                   Linux with ROCm
              the amdgpu driver's files in sysfs       Linux, no tools needed
     any      DXGI, the adapter's dedicated memory     Windows
+    Apple    sysctl, the share of the Mac's memory    macOS on Apple silicon
+             macOS lets the GPU keep
 
 Run it to see what it finds:  python3 -m server.hardware   (or python3 server/hardware.py), --json for the record.
 """
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -25,12 +28,12 @@ from pathlib import Path
 # PCI vendor ids, as DXGI and sysfs give them
 VENDORS = {0x10DE: "nvidia", 0x1002: "amd", 0x1022: "amd", 0x8086: "intel"}
 # The vendors a local model server (Ollama) runs on; any other GPU counts as none for the suggestion
-SUPPORTED = ("nvidia", "amd")
+SUPPORTED = ("nvidia", "amd", "apple")
 
 
 @dataclass(frozen=True)
 class Gpu:
-    vendor: str        # "nvidia", "amd", "intel" or "other"
+    vendor: str        # "nvidia", "amd", "apple", "intel" or "other"
     name: str          # the product name, as the driver gives it
     memory_gb: float   # the GPU's own memory in GB (10^9 bytes), one decimal
 
@@ -260,6 +263,25 @@ def dxgi() -> list[Gpu]:
     return gpus
 
 
+def apple() -> list[Gpu]:
+    """Apple silicon's GPU, which shares the Mac's memory: as much of it as macOS lets the GPU keep, which is what Ollama
+    loads a model into. That is iogpu.wired_limit_mb when it has been raised, else Metal's own default: two thirds of
+    the memory up to 36 GB, three quarters above. An Intel Mac gives nothing: Ollama runs on its CPU."""
+    if platform.machine() != "arm64" and (_run(["sysctl", "-n", "hw.optional.arm64"]) or "").strip() != "1":
+        return []
+    try:
+        total = int((_run(["sysctl", "-n", "hw.memsize"]) or "").strip())
+    except ValueError:
+        return []
+    try:
+        raised = int((_run(["sysctl", "-n", "iogpu.wired_limit_mb"]) or "0").strip()) * 1048576
+    except ValueError:
+        raised = 0
+    keep = raised if 0 < raised <= total else total * (0.75 if total > 36 * 2**30 else 2 / 3)
+    name = (_run(["sysctl", "-n", "machdep.cpu.brand_string"]) or "").strip() or "Apple silicon"
+    return [Gpu("apple", name, _gb(keep))]
+
+
 def detect() -> list[Gpu]:
     """Every GPU found, one entry each: the vendor's own tool where there is one, DXGI or sysfs for the rest."""
     found = nvidia()
@@ -269,6 +291,8 @@ def detect() -> list[Gpu]:
         # DXGI lists the NVIDIA cards nvidia-smi already gave; those are left out, every other adapter is kept
         have_nvidia = bool(found)
         found += [g for g in dxgi() if not (have_nvidia and g.vendor == "nvidia")]
+    elif sys.platform == "darwin":
+        found += apple()
     return found
 
 
@@ -309,7 +333,7 @@ def main(argv: list[str]) -> int:
         print(f"{g['vendor']:7} {g['memory_gb']:6.1f} GB  {g['name']}")
     s = rep["suggest"]
     print(f"Suggested local model: {s['pull']} (needs {s['vram_gb']} GB)" if s else
-          "Suggested: no local model (not enough GPU memory, or no NVIDIA or AMD GPU); use a cloud agent")
+          "Suggested: no local model (not enough GPU memory, or no NVIDIA, AMD or Apple silicon GPU); use a cloud agent")
     return 0
 
 

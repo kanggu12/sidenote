@@ -69,6 +69,11 @@ jobs:
         run: python docker/fetch_vendor.py docker/vendor.json panel/vendor
       - name: The desktop suite, from the checkout
         run: python tests/desktop_check.py
+      - name: The Mac's GPU, as the server reads it to pick a model
+        if: runner.os == 'macOS'
+        run: |
+          python -m server.hardware
+          python -m server.hardware --json | python -c "import json,sys; g=json.load(sys.stdin)['best']; assert g and g['vendor'] == 'apple' and g['memory_gb'] > 0, g"
       - name: Build, then start the build with --check
         run: python desktop/build.py
       - uses: actions/upload-artifact@v7

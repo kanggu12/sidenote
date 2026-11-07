@@ -1237,7 +1237,7 @@ _HOST_GPU: list = []   # this machine's GPU memory as found once (server/hardwar
 
 def gpu_memory_gb() -> float | None:
     """The GPU memory the local model has, in GB: SIDENOTE_LOCAL_VRAM_GB when set, else the llm container's readings,
-    else this machine's largest NVIDIA or AMD GPU (a host install). None when none of them says."""
+    else this machine's largest NVIDIA or AMD GPU, or a Mac's Apple silicon (a host install). None when none of them says."""
     if CONFIG.local_vram_gb:
         return CONFIG.local_vram_gb
     reading = read_gpu()

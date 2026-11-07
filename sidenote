@@ -85,7 +85,8 @@ LOCAL_MODEL="$(setting SIDENOTE_LOCAL_MODEL auto)"            # auto: the larges
 BUSY_MODEL="$(setting SIDENOTE_LOCAL_BUSY_MODEL auto)"         # for while the GPU is busy; auto: the model's smaller one
 # The models `llm pull` fetches when none are named: the ones set, or for "auto" the largest measured model that fits
 # this machine's GPU and its smaller one (server/models.py reads the profiles, server/hardware.py the GPU). Nothing
-# when no NVIDIA or AMD GPU has room for the smallest: the cloud agent then solves every problem.
+# when no NVIDIA or AMD GPU has room for the smallest: the cloud agent then solves every problem. A Mac's own GPU is out
+# of a container's reach: with Docker on a Mac the model runs in Ollama for Mac, named in .env (README).
 models_to_pull() {
   python3 - "$LOCAL_MODEL" "$BUSY_MODEL" <<'PY'
 import sys
@@ -93,7 +94,7 @@ sys.path.insert(0, "server")
 import hardware, models
 main, busy = sys.argv[1], sys.argv[2]
 if main == "auto":
-    gpu = hardware.best(hardware.detect())
+    gpu = hardware.best([g for g in hardware.detect() if g.vendor != "apple"])
     fit = models.fits(gpu.memory_gb) if gpu else None
     main = fit.name if fit else ""
 names = models.wanted(main)[:1] if main else []
@@ -1406,7 +1407,7 @@ cmd_doctor() {
 import sys
 sys.path.insert(0, "server")
 import hardware
-gpu = hardware.best(hardware.detect())
+gpu = hardware.best([g for g in hardware.detect() if g.vendor != "apple"])   # none a container can use on a Mac
 print(f"{gpu.name}, {gpu.memory_gb:.0f} GB ({gpu.vendor})" if gpu else "")
 PY
 )"
