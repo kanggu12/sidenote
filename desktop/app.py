@@ -83,9 +83,9 @@ def data_dir() -> Path:
 def server_env(base: dict, data: Path, port: int) -> dict:
     """The server's environment on the host: `base` with the defaults below added where it has none."""
     env = dict(base)
-    if sys.platform == "darwin":
-        # An app opened from the Finder gets /usr/bin:/bin:/usr/sbin:/sbin alone, without where Homebrew, npm and
-        # the agents' own installers put their commands (claude, codex, node, ollama)
+    if sys.platform == "darwin" and FROZEN:
+        # The app opened from the Finder gets /usr/bin:/bin:/usr/sbin:/sbin alone, without where Homebrew, npm and
+        # the agents' own installers put their commands (claude, codex, node, ollama); a terminal has them already
         have = (env.get("PATH") or "/usr/bin:/bin:/usr/sbin:/sbin").split(os.pathsep)
         more = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local" / "bin")]
         env["PATH"] = os.pathsep.join(have + [d for d in more if d not in have])
