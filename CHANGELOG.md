@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
 ### Added
 
 - A **Setup guide** in the panel, in four steps: what solves (the local model and the agent as their cards say them),
@@ -384,7 +386,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kanggu12/sidenote/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kanggu12/sidenote/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/kanggu12/sidenote/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/kanggu12/sidenote/compare/v0.2.0...v0.2.1
