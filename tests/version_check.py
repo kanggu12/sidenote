@@ -136,6 +136,19 @@ check("the guide names the TZ setting", "| `TZ` |" in doc("docs", "README.md"))
 check("the architecture's list of notes counts nothing that goes stale", not re.search(r"\b\d+ numbered notes", doc("docs", "ARCHITECTURE.md"))
       and "| Topic | Notes |" not in doc("docs", "ARCHITECTURE.md"))
 check("CONTRIBUTING claims no restart policy compose.yaml does not have", "restart policy" not in doc("CONTRIBUTING.md"))
+# A list item written over another ("- - x", "3. 3. x") shows on GitHub as an empty item with the text nested below it
+OUT_OF_TREE = {".git", ".claude", "scratch", ".venv", ".venv-panel", ".venv-capture", "node_modules", "vendor", "dist", "build"}
+doubled = []
+for md in sorted(ROOT.rglob("*.md")):
+    if OUT_OF_TREE & set(md.relative_to(ROOT).parts):
+        continue
+    fenced = False
+    for n, line in enumerate(md.read_text(encoding="utf-8").splitlines(), 1):
+        if re.match(r"\s*(```|~~~)", line):
+            fenced = not fenced
+        elif not fenced and re.match(r"\s*(?:[-*+]|\d+\.) +(?:[-*+]|\d+\.) ", line):
+            doubled.append(f"{md.relative_to(ROOT)}:{n}")
+check("no list item in the documents starts with a second marker", not doubled, doubled)
 capture_doc = doc("docs", "capture-client.md")
 pictures = re.findall(r'src="(assets/[^"]+)"', capture_doc)
 check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/sidenote-capture/assets/" in release for p in pictures), pictures)

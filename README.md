@@ -15,7 +15,7 @@
   <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.1.8" src="docs/assets/badges/release.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
   <img alt="Runs on Windows, Linux and macOS" src="docs/assets/badges/runs-on.svg">
-  <img alt="GPU: NVIDIA, AMD or none" src="docs/assets/badges/gpu.svg">
+  <img alt="GPU: NVIDIA, AMD, Apple silicon or none" src="docs/assets/badges/gpu.svg">
 </p>
 
 <p align="center">
@@ -38,23 +38,19 @@ Sidenote reads your screen and listens to your speakers. When a problem appears 
 your course material, an error log to debug, a question someone asks out loud), it writes a worked answer into a notebook
 panel beside your work. It runs on your own PC, and the cloud agent sees only the problems that need it.
 
-## Please use it fairly
-
-Sidenote is made for learning, practice and your own work. Please do not use it where outside help is not allowed,
-such as a graded exam, a certification test or a job interview. Thank you.
-
 ## Quick start
 
 | Your PC | What to do | What you need |
 |:---|:---|:---|
 | **Windows 10 or 11** | [Download the app and run it](#windows-the-app) | Ollama, for the local model |
+| **A Mac with Apple silicon** | [Download the app and open it](#macos-the-app) | Ollama for Mac |
 | **A Linux desktop** | [Download the app and run it](#linux-the-app) | Ollama |
 | **Linux or WSL 2, with Docker** | [`./sidenote install`](#with-docker-linux-or-windows-with-wsl-2) | Docker and `python3` |
-| **A Mac** | [`./sidenote install`](#with-docker-on-a-mac) | Docker Desktop and Ollama for Mac |
+| **A Mac, with Docker** | [`./sidenote install`](#with-docker-on-a-mac) | Docker Desktop and Ollama for Mac |
 | **A Kubernetes cluster** | [`helm install`](#kubernetes) | Helm 3 |
 
 All of them run the same server and panel. Docker and Kubernetes add web search for the local model and a sandbox that
-checks code answers. Not sure? On a Windows PC, use the app.
+checks code answers. Not sure? Use the app.
 
 ### Windows: the app
 
@@ -65,7 +61,7 @@ No Docker and no Python needed.
 2. Optional, for the hard problems: install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
    [Codex](https://github.com/openai/codex), and sign in once in a terminal: `claude`, or `codex login`. Sidenote uses
    the one it finds when it starts, Claude Code first.
-3. 3. Download
+3. Download
    [Sidenote-windows-x64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip),
    right-click it, choose **Extract All**, then open the `Sidenote` folder inside and run `Sidenote.exe`. If Windows warns
    about an unknown publisher, choose **More info**, then **Run anyway**.
@@ -75,6 +71,29 @@ No Docker and no Python needed.
 Open a practice problem and the answer appears in the panel. To stop, right-click the icon and choose **Quit Sidenote**.
 If the panel does not open, see [Troubleshooting](docs/README.md#13-troubleshooting); the logs are in
 `%LOCALAPPDATA%\Sidenote\logs`.
+
+### macOS: the app
+
+For macOS 14 or newer on a Mac with Apple silicon (M1 or later). No Docker and no Python needed.
+
+1. Install [Ollama for Mac](https://ollama.com/download) for the local model, and open it once.
+2. Optional, for the hard problems: install Claude Code or Codex and sign in once in Terminal: `claude`, or
+   `codex login`.
+3. Download
+   [Sidenote-macos-arm64.zip](https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip),
+   open it, drag **Sidenote** to **Applications** and open it there. The app is not signed by a publisher yet, so macOS
+   stops it the first time: open **System Settings**, then **Privacy & Security**, and choose **Open Anyway** at the
+   bottom.
+4. The panel opens in your browser, and an icon appears in the menu bar. macOS asks once for **Screen Recording** for
+   Sidenote: allow it, then choose **Quit Sidenote** in the menu bar icon and open Sidenote again. In the panel, choose
+   **Download** for the model that fits your Mac's memory.
+
+For the speaker sound, the capture program listens to a loopback input: install
+[BlackHole](https://github.com/ExistentialAudio/BlackHole) (`brew install blackhole-2ch`), make a **Multi-Output
+Device** of your speakers and BlackHole in **Audio MIDI Setup**, and choose it as the output. Sidenote hears BlackHole as
+an input, so macOS asks once for the microphone too. The logs are in `~/Library/Application Support/Sidenote/logs`. CI
+builds the app on macOS 15 and starts it there: its server, and its capture program with the menu bar icon, which sends a
+screen and reads the windows. Outside CI it has not been used on a Mac yet.
 
 ### Linux: the app
 
@@ -93,10 +112,11 @@ tray icon. The logs are in `~/.local/share/sidenote/logs`.
 <details>
 <summary>Checking a download</summary>
 
-The app is not code-signed yet. Each release lists the SHA-256 of its files in `SHA256SUMS`: run
-`sha256sum -c --ignore-missing SHA256SUMS` in the download folder, or in PowerShell compare
-`Get-FileHash Sidenote-windows-x64.zip` with its line there. GitHub also records where each file was built (from 0.1.1
-on): `gh attestation verify Sidenote-windows-x64.zip --repo kanggu12/sidenote`.
+The app is not signed by a publisher yet. Each release lists the SHA-256 of its files in `SHA256SUMS`: run
+`sha256sum -c --ignore-missing SHA256SUMS` in the download folder; on macOS compare `shasum -a 256
+Sidenote-macos-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-windows-x64.zip`, with its line there. GitHub also
+records where each file was built (from 0.1.1 on): `gh attestation verify Sidenote-windows-x64.zip --repo
+kanggu12/sidenote`.
 </details>
 
 ### With Docker: Linux, or Windows with WSL 2
@@ -141,10 +161,9 @@ it in `SIDENOTE_LOCAL_URL` as `http://host.docker.internal:<its port>/v1`, with 
 panel download a model, switch to a smaller one while the GPU is busy, or free the GPU.
 
 The first capture makes macOS ask for **Screen Recording** for your terminal: allow it in **System Settings**, then run
-`./sidenote capture --up` again. For the sound, install [BlackHole](https://github.com/ExistentialAudio/BlackHole)
-(`brew install blackhole-2ch`), and in **Audio MIDI Setup** make a **Multi-Output Device** of your speakers and
-BlackHole, then choose it as the output. CI checks the control script, the capture program and the arm64 images on
-macOS; the models' speed and answers have not been measured on a Mac yet.
+`./sidenote capture --up` again. For the sound, set up BlackHole as [the app's section](#macos-the-app) says. CI checks
+the control script, the capture program and the arm64 images on macOS; the models' speed and answers have not been
+measured on a Mac yet.
 
 ### Kubernetes
 
@@ -179,12 +198,12 @@ has the Secret for each agent, an AMD GPU and a full values file. The capture pr
 
 | To | The app | Docker |
 |:---|:---|:---|
-| Start | `Sidenote.exe`, or `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
-| Open the panel | click the tray icon | `./sidenote open` |
+| Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
+| Open the panel | the tray icon, or **Open the panel** in the menu bar icon on macOS | `./sidenote open` |
 | See what runs | the panel's cards | `./sidenote status` |
-| Stop | **Quit Sidenote** in the tray icon's menu | `./sidenote down` |
+| Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
 | Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
-| Read the logs | `%LOCALAPPDATA%\Sidenote\logs`, or `~/.local/share/sidenote/logs` | `./sidenote logs` |
+| Read the logs | `logs` in the data folder: `%LOCALAPPDATA%\Sidenote`, `~/Library/Application Support/Sidenote` or `~/.local/share/sidenote` | `./sidenote logs` |
 </details>
 
 ## Why Sidenote
@@ -208,11 +227,13 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
 
 - **Local first, and it shows the cost.** Each answer says which engine answered, how long it took and what it cost.
 - **Uses the agent you already have.** Claude Code or Codex with your own sign-in, so no API key; or the Anthropic API.
-- **Fits your GPU.** It reads the GPU's memory, NVIDIA or AMD, and picks the largest measured model that fits.
+- **Fits your GPU.** It reads the GPU's memory, NVIDIA, AMD or Apple silicon, and picks the largest measured model that
+  fits.
 - **Checks code answers.** With Docker or Kubernetes, code runs on the problem's examples in a sandbox with no network.
 - **Lets you try first.** **Practice** shows the question, then one hint at a time, and the answer when you ask.
 - **Keeps what you learn.** Star an answer, find it in the history, and export it as Markdown or as Anki notes.
-- **Private by design.** Faces are covered before any model sees the screen, and each answer lists what left your PC.
+- **Private by design.** Faces are covered before any model sees the screen, the windows you name (a password manager,
+  a private browser window) stop the capture while they show, and each answer lists what left your PC.
 - **Open source.** MIT licensed, with the test suite run on every push.
 
 ## What it runs on
@@ -221,13 +242,19 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
 |:---|:---|:---|:---|
 | GPU | none: the agent answers | 10 GB or more, NVIDIA or AMD | 24 GB, such as an RTX 3090 or 4090 |
 | Memory | 8 GB | 16 GB | 32 GB |
+| A Mac's memory, shared with its GPU | any | 16 or 24 GB | 32 GB or more |
 | Disk, beside the app or the images | none | 6.6 GB | 18 GB |
 
-It runs on Windows 10 or 11, Linux with X11 (Ubuntu 22.04 or newer), Docker on Linux or WSL 2, and Docker on a Mac.
-Measured on the test PC (Ryzen 9 9950X, RTX 4090 24 GB): the server takes about 0.1 GB of memory, the speech model 0.6 GB,
-and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each figure is room for the system and the
-browser. The speech model runs on the CPU, about 8 s of it a sentence with `small`. The Windows app downloads as 110 MB;
-with Docker, the images take about 8.5 GB, Ollama's 5.6 GB of it.
+It runs on Windows 10 or 11, macOS 14 or newer on Apple silicon, Linux with X11 (Ubuntu 22.04 or newer), Docker on Linux
+or WSL 2, and Docker on a Mac. Measured on the test PC (Ryzen 9 9950X, RTX 4090 24 GB): the server takes about 0.1 GB of
+memory, the speech model 0.6 GB, and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each
+figure is room for the system and the browser. The speech model runs on the CPU: with `small`, 15 s of steady speech
+takes about 8 s of CPU time. The app downloads as 111 MB on Windows, 76 MB on macOS and 217 MB on Linux; with Docker, the
+images take about 8.5 GB, Ollama's 5.6 GB of it.
+
+A Mac's GPU works in the Mac's own memory, of which macOS lets it keep two thirds up to 36 GB and three quarters above,
+so Sidenote offers the e4b from 16 GB and the 26b from 32 GB. How fast the models are on a Mac, and how well they answer
+there, has not been measured yet.
 
 | GPU memory | Local model | Right, of 56 | Code passing, of 7 | Spoken, of 8 | Empty screen |
 |:---:|:---:|---:|---:|---:|---:|
@@ -247,14 +274,15 @@ server 35, against Ollama's 38 in that separate run ([how to start
 them](docs/air-gapped.md#with-a-model-server-you-already-run)). Reports from other GPUs are welcome: [open a hardware
 report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml).
 
-| | The app on Windows | The app on Linux (X11) | Docker on Linux or WSL 2 | Kubernetes |
-|:---|:---:|:---:|:---:|:---:|
-| NVIDIA GPU | yes | yes | yes | yes |
-| AMD GPU | yes, through Ollama | yes, through Ollama | Linux, with ROCm | yes, with ROCm |
-| No GPU | the agent answers | the agent answers | the agent answers | the agent answers |
-| Web search for the local model | no | no | yes | yes |
-| Code checks in a sandbox | no | no | yes | yes |
-| [No internet](docs/air-gapped.md) | yes | yes | yes | yes |
+| | The app on Windows | The app on macOS | The app on Linux (X11) | Docker | Kubernetes |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| NVIDIA GPU | yes | no | yes | yes | yes |
+| AMD GPU | yes, through Ollama | no | yes, through Ollama | Linux, with ROCm | yes, with ROCm |
+| Apple silicon's GPU | no | yes, through Ollama | no | on a Mac, through Ollama for Mac | no |
+| No GPU | the agent answers | the agent answers | the agent answers | the agent answers | the agent answers |
+| Web search for the local model | no | no | no | yes | yes |
+| Code checks in a sandbox | no | no | no | yes | yes |
+| [No internet](docs/air-gapped.md) | yes | yes | yes | yes | yes |
 
 ## How it works
 
@@ -311,6 +339,8 @@ setting offers `opus`, `sonnet` and `haiku`, each its newest release.
 - The problems that need reasoning go to the agent you signed in to (Anthropic for Claude Code and the API, OpenAI for
   Codex), by default as only the problem's part of the screen. **Solver settings** can send the problem's text or the
   whole screen instead, or nothing at all.
+- While a window you named in **Skip windows** shows, nothing of the screen is taken: a password manager and private
+  browser windows are on that list from the start.
 - Each answer lists what left your PC for it, and only this PC can open the panel: the server is reached on 127.0.0.1
   (on Kubernetes, through `kubectl port-forward`).
 - Web searches go through SearXNG, and once a day the server asks GitHub whether a newer release is out, sending only
@@ -326,7 +356,7 @@ The details are in [Security and privacy](docs/README.md#14-security-and-privacy
 - [Local-first design](docs/DESIGN-local-first.md): why the local model answers first, and when the agent takes over.
 - [Quality](docs/QA.md): from a test case through CI to a release.
 - [Helm chart](deploy/helm/sidenote/README.md) and [the capture program on its own](docs/capture-client.md).
-- - [Running with no internet](docs/air-gapped.md): the local model and speech on a closed network, and what cannot work
+- [Running with no internet](docs/air-gapped.md): the local model and speech on a closed network, and what cannot work
   there.
 - [Changelog](CHANGELOG.md): what changed in each release.
 
@@ -339,7 +369,8 @@ Korean. **Language** in the panel's gear menu picks one by hand. To add a langua
 Questions and ideas are welcome in [Discussions](https://github.com/kanggu12/sidenote/discussions). Most of Sidenote
 can be worked on without a GPU: the tests run the server with stand-in models and the panel in a headless browser. Start
 with [CONTRIBUTING.md](CONTRIBUTING.md): how the pieces fit, the setup, the tests, and recipes for adding a model, a GPU
-vendor, a language or a cloud agent.
+vendor, a language or a cloud agent. Everyone taking part follows the [code of conduct](.github/CODE_OF_CONDUCT.md), and
+security problems are reported as [SECURITY.md](.github/SECURITY.md) says.
 
 ```bash
 python3 -m venv .venv

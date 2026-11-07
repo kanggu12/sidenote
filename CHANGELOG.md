@@ -6,11 +6,28 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- The app for macOS: `Sidenote-macos-arm64.zip` holds `Sidenote.app`, for macOS 14 or newer on Apple silicon, with its
+  icon in the menu bar. It is not signed by a publisher yet, so macOS asks once to open it (the README says where). CI
+  builds it on macOS 15 and starts it there with its server, and its capture program sends a screen, reads the windows
+  and quits when asked; outside CI it has not been used on a Mac yet.
+- Apple silicon counts as the GPU the local model runs on. It is read as the share of the Mac's memory macOS lets the GPU
+  keep, so the panel offers `gemma4:e4b` on a Mac of 16 GB or more and `gemma4:26b` from 32 GB. How fast and how well
+  the models answer on a Mac has not been measured yet.
+
 ### Fixed
 
+- The capture program on macOS ran its tray icon off the main thread, which AppKit does not take; it runs it on the
+  main thread and captures beside it. **Skip windows** and the cover over the panel's own window read macOS's window
+  list there: they had tried X11 and skipped nothing.
+- The app opened from the Finder or a desktop's menu starts with a short `PATH`, so a Claude Code or Codex the terminal
+  finds looked missing. It asks the login shell for its `PATH`, with a time limit, and looks in the agents' usual
+  folders. On macOS with no locale set, it speaks the first of the system's languages.
 - The panel: on a wide window bands too many for the bar floated over the first answer. They take their room above
   the thread when the page is at its top and keep it while it scrolls, so the thread moves only by the scroll.
 - Korean: a chip with a command in it takes no particle after the command.
+- Six list items in the README, the user guide and CONTRIBUTING showed as an empty item with the text nested below it.
 
 ### Removed
 
