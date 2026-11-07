@@ -2853,12 +2853,10 @@
   :root[data-skin="classic"] .v-seg { flex: 1 1 auto; min-width: 72px; }
   /* Two bands stacked over the thread read as one block: what passes under them does not show between them */
   html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { background: color-mix(in srgb, var(--paper) 78%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 4px; }
-  /* One column (1000 px and narrower): the bands are never in the bar there (placeBands), so they can take their room over the
-     thread without the page jumping when it scrolls; floating, they lay over the first answer, whose keys could not be
-     pressed. Up to a third of the window, past which they scroll inside themselves rather than spill over the page. */
-  @media (max-width: 1000px) {
-    html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { margin-bottom: 16px; overflow-y: auto; padding-bottom: 2px; }
-  }
+  /* The bands that do not go in the bar at the top of the page take their room over the thread (html.bands-room, placeBands),
+     there and scrolled alike, so the page never jumps as it scrolls; floating, they lay over the first answer, whose keys
+     could not be pressed. Up to a third of the window, past which they scroll inside themselves rather than spill over. */
+  html.bands-room:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { margin-bottom: 16px; overflow-y: auto; padding-bottom: 2px; }
 
   /* ---- Practice, the keyboard shortcuts and Export's menu: parts the panel has, put to these uses ---- */
   /* An answer Practice keeps back: its keys wear the follow-up row's look (.row.asks), how many hints it has stands on their middle */

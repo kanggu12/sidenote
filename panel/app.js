@@ -2708,6 +2708,11 @@ function noticeMsg(text, cmd = "") {
   return `<b>${chip(cut ? s.slice(0, cut.index) : s)}</b>${cut ? ` ${chip(s.slice(cut.index + cut[0].length))}` : ""}`;
 }
 // The bands stand in the bar's free middle, covering nothing of the thread, where that leaves them room (index.html, html.bands-in-bar)
+// Whether the bands take their room over the thread (html.bands-room): where they do not go in the bar at the top of the
+// page. Decided where that can be seen, at the top or in one column, and kept while the page scrolls, so the thread never
+// moves by their height: in the bar at the top they take none and scrolled they float under it, as before; out of it they
+// take their room at the top and keep it scrolled. Floating there, they lay over the first answer and its keys.
+let bandsRoom = false;
 function placeBands() {
   const shown = document.querySelector(".signals"), sig = (shown?.offsetParent ? shown : document.querySelector(".brand"))?.getBoundingClientRect(), act = document.querySelector(".actions")?.getBoundingClientRect();
   if (!sig || !act) return;
@@ -2725,6 +2730,8 @@ function placeBands() {
     fits = false;
     document.documentElement.classList.remove("bands-in-bar");
   }
+  if (window.matchMedia("(max-width: 1000px)").matches || window.scrollY <= 4) bandsRoom = !fits;
+  document.documentElement.classList.toggle("bands-room", bandsRoom && !!bands?.children.length);
   // A passing notice stands over the thread's own column, wherever that is at this width
   const col = document.getElementById("stage")?.getBoundingClientRect();
   if (col?.width) {
