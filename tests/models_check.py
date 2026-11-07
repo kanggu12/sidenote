@@ -54,6 +54,33 @@ gpus = [hardware.Gpu("intel", "Iris Xe", 2.0), hardware.Gpu("amd", "RX 7600", 8.
 check("the GPU a model runs on is the supported one with the most memory", hardware.best(gpus).name == "RTX 3060")
 check("...and an Intel GPU alone counts as none", hardware.best([hardware.Gpu("intel", "Arc", 16.0)]) is None)
 
+
+
+def mac(memory_gb, wired_mb=0, arm=True):
+    """Apple silicon's reader against a stand-in sysctl: what a Mac with this much memory says."""
+    said = {"hw.optional.arm64": "1" if arm else "0", "hw.memsize": str(memory_gb * 2**30),
+            "iogpu.wired_limit_mb": str(wired_mb), "machdep.cpu.brand_string": "Apple M2 Pro"}
+    saved_run, saved_machine = hardware._run, hardware.platform.machine
+    hardware._run = lambda cmd, timeout=5.0: said.get(cmd[-1], "") + "\n" if cmd[0] == "sysctl" else None
+    hardware.platform.machine = lambda: "arm64" if arm else "x86_64"
+    try:
+        return hardware.apple()
+    finally:
+        hardware._run, hardware.platform.machine = saved_run, saved_machine
+
+
+m16, m32, m64 = mac(16), mac(32), mac(64)
+check("Apple silicon: the GPU keeps two thirds of a 16 GB Mac's memory, as Metal's default", [(g.vendor, g.name, g.memory_gb)
+      for g in m16] == [("apple", "Apple M2 Pro", 11.5)], m16)
+check("...of a 32 GB one too, and three quarters above 36 GB", m32[0].memory_gb == 22.9 and m64[0].memory_gb == 51.5,
+      (m32, m64))
+check("...or the limit set in iogpu.wired_limit_mb", mac(32, wired_mb=28 * 1024)[0].memory_gb == 30.1, mac(32, 28 * 1024))
+picked = [getattr(models.fits(mac(n)[0].memory_gb), "key", None) for n in (8, 16, 24, 32)]
+check("...which picks the model as a card of that memory would: none on 8 GB, e4b on 16 and 24 GB, the 26b from 32 GB",
+      picked == [None, "gemma4:e4b", "gemma4:e4b", "gemma4:26b"], picked)
+check("...and an Intel Mac has none Ollama runs a model on", mac(32, arm=False) == [])
+check("...and is the GPU a model runs on", hardware.best(m16) == m16[0])
+
 print("[the GPU chart on a host, where no container writes the readings]")
 use = hardware.parse_nvidia_usage("1796, 23028, 1, 35, 70.12\n500, 8192, 3, 40, [N/A]\n")
 check("nvidia-smi's reading: the card with the most memory, power rounded",
