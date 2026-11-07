@@ -42,10 +42,11 @@ weights are downloaded by you from their publisher, under the publisher's terms.
 
 ## In the desktop app (`desktop/build.py`)
 
-The app for Windows, macOS and Linux is one folder (on macOS, an app bundle) with Python (PSF License 2.0) and the Python
-packages the server and the capture program use, built with PyInstaller (GPL-2.0 with its bootloader exception, which leaves the built program's
-license to its author). Each package's license files are in the app's `licenses/` folder, one folder per package,
-with a line naming its license. Most are MIT, BSD or Apache-2.0. These are under other terms:
+The app for Windows, macOS and Linux is one folder (on macOS, an app bundle) with Python (PSF License 2.0) and the
+Python packages the server and the capture program use, built with PyInstaller (GPL-2.0 with its bootloader exception,
+which leaves the built program's license to its author). Each package's license files are in the app's `licenses/`
+folder (on macOS, `Sidenote.app/Contents/Resources/licenses`), one folder per package, with a line naming its license.
+Most are MIT, BSD or Apache-2.0. These are under other terms:
 
 | Component | License | Note |
 |:---|:---:|:---|
