@@ -349,6 +349,20 @@ def _die_with_parent() -> None:
     _PRCTL(1, signal.SIGTERM)            # 1: PR_SET_PDEATHSIG
 
 
+def _end_with_parent(every: float = 1.0) -> None:
+    """macOS has no PR_SET_PDEATHSIG, so a child of the app looks at its parent once a second and ends itself the way
+    SIGTERM ends it once the app is gone (force-quit, or killed): the next start would otherwise find the old server up
+    and only open the panel, with a capture program nobody watches. SIDENOTE_APP_PARENT says which parent it had."""
+    parent = int(os.environ.get("SIDENOTE_APP_PARENT") or os.getppid())
+
+    def watch() -> None:
+        while os.getppid() == parent:
+            time.sleep(every)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=watch, name="end-with-parent", daemon=True).start()
+
+
 class Child:
     """One child process, its output written to a CappedLog. `starts` keeps when it was started, so one that keeps
     stopping can be given up on instead of started for ever."""
@@ -367,7 +381,9 @@ class Child:
             group = {"start_new_session": True}
         if _PRCTL is not None:           # Linux: the child is told to stop when this program dies, a kill -9 included
             group["preexec_fn"] = _die_with_parent
-        self.proc = subprocess.Popen([*self.cmd, *extra], cwd=str(ROOT), env=self.env, stdin=subprocess.DEVNULL,
+        # elsewhere one of this program's own roles looks for that itself (_end_with_parent), told who its parent is
+        env = {**self.env, "SIDENOTE_APP_PARENT": str(os.getpid())}
+        self.proc = subprocess.Popen([*self.cmd, *extra], cwd=str(ROOT), env=env, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **group)
         if _JOIN_JOB is not None:
             _JOIN_JOB(self.proc)
@@ -796,6 +812,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")
     if FROZEN and argv[:1] == ["-c"] and len(argv) > 1:
         return python_c(argv[1], argv[2:])
+    # the server and the capture program, started by the app on a system with no PR_SET_PDEATHSIG: ended with it
+    if argv[:1] in (["--capture"], ["--serve"]) and os.environ.get("SIDENOTE_APP_PARENT") and _PRCTL is None \
+            and sys.platform != "win32":
+        _end_with_parent()
     if argv[:1] == ["--capture"]:        # everything after it is the capture program's own (client/capture.py --help)
         return capture(argv[1:])
     ap = argparse.ArgumentParser(prog="sidenote", description="Start Sidenote on this PC: the server, the capture "
