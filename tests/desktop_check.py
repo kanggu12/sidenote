@@ -255,7 +255,7 @@ print("[Ollama on the widened PATH, and ended with the app where nothing else en
 with tempfile.TemporaryDirectory() as d:
     brew = Path(d) / "opt-homebrew-bin"
     brew.mkdir()
-    fake = brew / ("ollama.exe" if os.name == "nt" else "ollama")
+    fake = brew / "ollama"            # as on a Mac: shutil.which adds no .exe once sys.platform says darwin
     fake.write_text("")
     fake.chmod(0o755)
     with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
