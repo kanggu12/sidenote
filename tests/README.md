@@ -146,7 +146,9 @@ The chart-e2e workflow runs it on a push that changes the chart, the images or t
 with a data folder and a port of its own and a stand-in browser that writes down each address it is given. It checks
 what only macOS itself can show: the server, the capture program and its menu bar icon come up and the panel is
 opened; opening the app again while it runs starts no second copy and opens the panel again; and a quit sent as the
-system sends one at log out ends the app and all it started, with the server's own close-down run. It needs a Mac
+system sends one at log out ends the app and all it started, with the server's own close-down run. On CI it also puts a
+stand-in for Claude Code's CLI in a folder that only the login shell's start-up files add to `PATH` (a line in
+`~/.zprofile` and `~/.bash_profile`, taken out again at the end) and checks that the app finds it there. It needs a Mac
 with no Sidenote running; the desktop workflow's macOS job runs it on the app it has just built.
 
 ```bash
@@ -187,7 +189,7 @@ Server and capture (`PY`):
 | `ci_gate.py` | the CI check before a deploy (`SIDENOTE_CI_GATE=1`): a failed commit is refused, `--when-green` waits, what CI has not seen goes up and says so (the launcher's `ci_state` and `ci_gate`, with a stand-in `gh`) |
 | `server_scenarios.py` | what real use has done to the server and the capture program: a restart in the middle of a problem, a reading mistaken for a busy GPU, a plan's limit outliving a new sign-in, a late probe of the agent's CLI, the averages, example headings, a tray menu whose program has gone |
 | `models_check.py` | which local model fits which GPU: the GPU readers on NVIDIA, AMD (amd-smi, rocm-smi, sysfs) and DXGI output, the model profiles and the choice among pulled models, "auto" in the server, and a local server that is not Ollama |
-| `desktop_check.py` | Sidenote on one PC without Docker (`desktop/`): the server's environment on the host, the data folder on each system, the capped logs, the port check, the watch that starts a stopped child again, the capture program's restart code, `python -c` in the built app, a whole start and stop with stand-in models, a start while another copy closes down, and a server that ends at once with jobs still running on its threads |
+| `desktop_check.py` | Sidenote on one PC without Docker (`desktop/`): the server's environment on the host, the data folder on each system, the capped logs, the port check, the watch that starts a stopped child again, the capture program's restart code, `python -c` in the built app, a whole start and stop with stand-in models, a start while another copy closes down (its server gone or still answering) or runs, and a server that ends at once with jobs still running on its threads, what it left running cancelled |
 | `i18n_check.py` | the server's words in English or Korean: English with no language set, the panel's language on `ui_lang` and back, the settings, a notice and the agent's card in that language, a level on every notice, a Korean entry for every word the code asks for, `./sidenote report` in the terminal's language, and the line asking the models for an English answer only in English |
 | `history_star.py` | starred answers in `history.sqlite`: a file from 0.1.0 gaining the column with its rows kept, a star set and taken off over the panel's socket and heard by a second panel, a refused id, the starred answers alone from `/history`, the pruning that keeps them past the age limit and outside the size cap, and **Clear history** |
 | `report_period.py` | `./sidenote report`: the period's numbers by engine, the agent's cost split, the GPU and the example checks |

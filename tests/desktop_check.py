@@ -5,12 +5,15 @@ stand-in models.
 
     .venv/bin/python tests/desktop_check.py
 """
+import http.server
 import io
+import json
 import os
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -435,6 +438,71 @@ else:
             proc.kill()
         check("...and stops as any start does", proc.returncode == 0, f"exit {proc.returncode}")
 
+    def stand_in_server(port: int, clients: int):
+        """A Sidenote /health on the port, as the other copy's server answers it, with this many capture programs."""
+        class Health(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = json.dumps({"ok": True, "analyzer": "stand-in", "capture": {"clients": clients}}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_):
+                pass
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Health)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return srv
+
+    def started(port: int, d: str):
+        return subprocess.Popen([sys.executable, "-m", "desktop", "--port", str(port), "--no-browser", "--no-capture"],
+                                cwd=str(ROOT), env=dict(os.environ, SIDENOTE_ANALYZER="mock", SIDENOTE_TRANSCRIBER="null",
+                                                        SIDENOTE_DATA_DIR=d),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def ended(proc, timeout=30):
+        try:
+            proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        return proc.returncode
+
+    # Opened again within a second or so of a quit: the copy closing down still holds the lock, and its server still
+    # answers, with its capture program gone. Then the server goes, and the copy ends.
+    port = app.free_port()
+    with tempfile.TemporaryDirectory() as d:
+        held = app.only_one(Path(d))
+        closing = stand_in_server(port, clients=0)
+        proc = started(port, d)
+        time.sleep(1.5)
+        closing.shutdown()
+        closing.server_close()
+        time.sleep(0.5)
+        held.close()
+        up = app.wait_for(lambda: (app.health(port) or {}).get("analyzer") == "mock", timeout=60)
+        check("opened again while a copy closes down and its server still answers, it starts in that copy's place",
+              bool(up), (Path(d) / "logs" / "app.log").read_text() if (Path(d) / "logs" / "app.log").is_file() else "")
+        proc.send_signal(signal.SIGTERM)
+        check("...and stops as any start does", ended(proc) == 0, f"exit {proc.returncode}")
+
+    # Opened again while a copy runs, its capture program connected: the panel is all this start is for, at once.
+    port = app.free_port()
+    with tempfile.TemporaryDirectory() as d:
+        held = app.only_one(Path(d))
+        running = stand_in_server(port, clients=1)
+        asked = time.monotonic()
+        proc = started(port, d)
+        code = ended(proc, 20)
+        took = time.monotonic() - asked
+        # and the copy quitting right after starts nothing: this start had ended already
+        held.close()
+        running.shutdown()
+        running.server_close()
+        check("opened again while a copy runs with its capture program, it ends at once and starts nothing",
+              code == 0 and took < 8 and not app.wait_for(lambda: app.port_free(port) is False, timeout=2),
+              f"exit {code} after {took:.1f} s")
+
 print("[the server role ends at once after its close-down, with jobs still running on its threads]")
 if sys.platform == "win32":
     print("  skipped: it runs on Linux and macOS here")
@@ -442,24 +510,43 @@ else:
     port = app.free_port()
     with tempfile.TemporaryDirectory() as d:
         # A job on the loop's threads that nothing cuts short, as the speech model's first download is, itself waiting
-        # on threads of its own, which Python waits for before it ends. Started by the server's own speech load.
+        # on threads of its own, which Python waits for before it ends. Started by the server's own speech load, with
+        # an answer being written beside it, as the worker starts one: a task no close-down cancels by name, whose own
+        # clean-up ends its agent's CLI.
         stand_in = Path(d) / "slow_speech.py"
         stand_in.write_text(
-            "import concurrent.futures, time\n"
+            "import asyncio, concurrent.futures, os, signal, subprocess, sys, time\n"
             "from server import app as server\n"
             "def slow(cfg, model=''):\n"
             "    pool = concurrent.futures.ThreadPoolExecutor(2)\n"
             "    pool.submit(time.sleep, 60).result()\n"
             "server.make_transcriber = slow\n"
+            "KEPT = []\n"
+            "async def answering():\n"
+            "    cli = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)\n"
+            "    with open(os.environ['CLI_PID'], 'w') as f:\n"
+            "        f.write(str(cli.pid))\n"
+            "    try:\n"
+            "        await asyncio.sleep(3600)\n"
+            "    finally:\n"
+            "        os.killpg(cli.pid, signal.SIGKILL)\n"
+            "load = server.load_speech\n"
+            "async def load_speech(app):\n"
+            "    KEPT.append(asyncio.get_running_loop().create_task(answering()))\n"
+            "    await load(app)\n"
+            "server.load_speech = load_speech\n"
             "from desktop.app import main\n"
             "raise SystemExit(main())\n", encoding="utf-8")
         token = "check-token"
+        cli_pid = Path(d) / "cli.pid"
         env = dict(os.environ, SIDENOTE_ANALYZER="mock", SIDENOTE_DATA_DIR=d, SIDENOTE_STOP_TOKEN=token,
-                   SIDENOTE_LOG_DIR=str(Path(d) / "logs"), PYTHONPATH=str(ROOT))
+                   SIDENOTE_LOG_DIR=str(Path(d) / "logs"), PYTHONPATH=str(ROOT), CLI_PID=str(cli_pid))
         proc = subprocess.Popen([sys.executable, str(stand_in), "--serve", "--port", str(port)], cwd=str(ROOT), env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         up = app.wait_for(lambda: app.health(port) is not None, timeout=60)
-        check("the server comes up with the speech model still loading", bool(up))
+        check("the server comes up with the speech model still loading and an answer being written",
+              bool(up) and app.wait_for(lambda: cli_pid.is_file() and cli_pid.read_text().strip(), timeout=30))
+        cli = int(cli_pid.read_text()) if cli_pid.is_file() and cli_pid.read_text().strip() else 0
         asked = time.monotonic()
         check("...and closes down when the app asks", app.ask_server_to_stop(port, token))
         try:
@@ -470,6 +557,12 @@ else:
         took = time.monotonic() - asked
         check("...within a few seconds, waiting for neither", proc.returncode == 0 and took < 5,
               f"exit {proc.returncode} after {took:.1f} s")
+        # cancelled as asyncio.run cancels what is left, so its clean-up ran: no CLI writing on for an answer nobody sees
+        ended = cli and app.wait_for(lambda: not alive(cli), timeout=5)
+        check("...and the answer being written was cancelled, its agent's CLI ended by its own clean-up", bool(ended),
+              f"CLI {cli} still running" if cli else "no CLI was started")
+        if cli and alive(cli):
+            os.kill(cli, signal.SIGKILL)
 
 print("[the icon the Windows shortcut wears]")
 from PIL import Image, ImageChops  # noqa: E402
