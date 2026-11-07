@@ -13,9 +13,10 @@ that only fixes raises the patch number. Each release's section here is its rele
   the Finder does, opens it again and quits it as macOS does at log out.
 - Starting the app while it was still closing down did nothing: it waited for that copy's server, which was not coming
   back. It now waits for that copy to end and starts in its place.
-- A quit during the first start's download of the speech model waited for the rest of that download, and after 10 s
-  the app ended its server the hard way. The app's server now ends as soon as its own close-down is done (0.4 s, from
-  11.1 s), and the next start downloads the model again.
+- A quit could take 10 s, after which the app ended its server the hard way: the server waited for jobs still running
+  on its threads, such as the first start's download of the speech model or the question to the agent's CLI of which
+  model it runs on. The app's server now ends as soon as its own close-down is done (0.4 s, from 11.1 s during the
+  download), and a download cut off this way is made again at the next start.
 - The capture program's lines reached `capture.log` in blocks of 8 KB, and on macOS a quit sent by the system lost the
   ones not yet written. Each line is written as it is printed.
 
