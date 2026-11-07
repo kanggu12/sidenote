@@ -851,7 +851,7 @@
   /* What was heard: a quote under the label, three sentences a paragraph, the first lines of a long one and the whole on
      a press; folded, its end on one line, and nothing of it where the card shows its question */
   .heard-text { color: var(--ink-2); font-size: 14px; line-height: 1.65; border-left: 2px solid var(--rule-2); padding: 1px 0 1px 12px;
-    max-width: 84ch; overflow-wrap: anywhere; }
+    max-width: 84ch; overflow-wrap: anywhere; word-break: keep-all; }   /* Korean breaks between words, as the answers' prose does */
   .heard-text p { margin: 0; }
   .heard-text p + p { margin-top: 7px; }
   .heard-text.clamp { max-height: calc(1.65em * 4 + 7px); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
@@ -859,7 +859,9 @@
   .heard-text.clamp.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
   .heard-more { margin-top: 6px; }
   .heard-more[aria-expanded="true"] svg { transform: rotate(180deg); }
-  .heard-tail { display: none; color: var(--ink-2); font-size: 14px; max-width: 84ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .heard-tail { display: none; color: var(--ink-2); font-size: 14px; max-width: 84ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    direction: rtl; text-align: left; }   /* laid out from its end: too long for the line, it loses its start and keeps the question at its end */
+  .heard-tail > span { unicode-bidi: plaintext; }   /* its words in their own order, the line's direction for where it is cut */
   .entry.folded .heard-tail { display: block; }
   .entry.folded .heard-text, .entry.folded .heard-more, .entry.folded.has-asked .heard-row { display: none; }
   /* A summary of several sentences: the point marked, the rest a line each under it; folded, the point alone */
@@ -1242,6 +1244,12 @@
     .set { grid-template-columns: minmax(0, 1fr); }
     .set .ctl { justify-self: start; }
     .set .seg { justify-content: flex-start; }
+    /* The keys of a choice in even columns across the row: left to wrap, four of them set three and then one alone, under keys of
+       other widths */
+    .set .ctl:has(> .seg) { justify-self: stretch; }
+    .set .ctl > .seg { width: 100%; }
+    .set .seg { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+    .set .seg button { min-width: 0; }
   }
   /* The dropdown. A <select> is drawn by the operating system: on a glass sheet it came out as a
      grey box with the system's own arrow, and its list opened in the system's font and colours. This
@@ -1344,6 +1352,12 @@
     .row.head:not(.err) { display: flex; flex-wrap: wrap; }
     .row.head:not(.err) > .mg { flex: none; }
     .row.head:not(.err) > .ct { flex: 1 1 0; min-width: min-content; }
+    /* How a problem came (heard by voice, gathered by scrolling) on a line of its own under the whole head: beside the keys, in
+       what the date leaves, it took three lines and pushed the keys off the date's line, where every other answer has them.
+       Its words and the keys stand in the head's own row for this (display: contents), the keys at the right of the date */
+    .row.head:not(.err) > .ct, .row.head:not(.err) .headline { display: contents; }
+    .row.head:not(.err) .headline > .tools { order: 2; margin-left: auto; }
+    .row.head:not(.err) .headline > :not(.tools) { order: 3; flex: 1 0 100%; text-align: right; }
     .turn { margin-left: 0; }
     .turn .row { margin-left: 0; }
     .short .hl { font-size: 30px; }
@@ -1486,7 +1500,7 @@
 
   /* The highlighter, in every design: what an answer sets in bold is what it means to stress, so bold words wear
      the same yellow as the answer line. A paragraph that is only a bold line is a heading, not a stress. */
-  .md :is(p:not(.lead, .para-head), li, td, blockquote, dd) strong:not(.lab), .welcome mark.key, .facts mark.key {
+  .md :is(p:not(.lead, .para-head), li, td, blockquote, dd) strong:not(.lab), .welcome mark.key, .facts mark.key, .setup-try mark.key {
     color: var(--mark-ink, var(--ink)); padding: 0 .14em; margin: 0 -.04em; border-radius: var(--mark-radius, 0);
     background: linear-gradient(180deg, transparent var(--hl-top), var(--hl-yellow) var(--hl-top), var(--hl-yellow) var(--hl-bot), transparent var(--hl-bot));
     -webkit-box-decoration-break: clone; box-decoration-break: clone; }
@@ -2442,7 +2456,7 @@
   /* ---- The column, third pass ---- */
   /* The screen and sound rows have short names and a long value: their values at 48, or a monitor's size took a row of its own in one source and not in the other */
   :root[data-skin="classic"] .rail .card:not(.engine) .fact dt { min-width: 40px; }
-  :root[data-skin="classic"] .rail .card:not(.engine) .fact:nth-child(even) dt { min-width: var(--col-name); }
+  :root[data-skin="classic"] .rail .card:not(.engine) .fact:nth-child(even) dt { min-width: var(--col-name-2, var(--col-name)); }
   /* What a value is, beside the value, is in a label's size: "medium · 기본" fits its half of the card */
   :root[data-skin="classic"] .rail .fact dd .sub { font-size: 11px; }
   /* A grid takes the width of what it holds unless told: a long address and product made the card, and the whole page, wider */
@@ -2962,7 +2976,7 @@
   .setup-try { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 13.5px; color: var(--ink-2); }
   .setup-try.done { color: var(--ok); font-weight: 600; }
   .setup-try > svg { width: 16px; height: 16px; flex: none; }
-  .setup-try b { color: var(--ink); font-size: 17px; font-weight: 700; line-height: 1; }   /* a circled ④ at the line's size read as a dot */
+  .setup-try mark.key { font-size: 15.5px; font-weight: 650; }   /* the answer, as the notebook marks it: a little over the line's words */
   .setup-foot { justify-content: flex-start; }
   .setup-foot #setup-next { margin-left: auto; }
   @media (max-width: 560px) { .setup-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -3096,8 +3110,8 @@
       <div class="src">
         <div class="src-top"><span class="src-name" data-t data-card-fold role="button" tabindex="0" aria-expanded="true" title="Fold the card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M4.5 9h-2M4.5 15h-2M19.5 9h2M19.5 15h2M9 4.5v-2M15 4.5v-2M9 19.5v2M15 19.5v2" stroke-linecap="round"/></svg>Local model<svg class="fold-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span>
           <span class="pill" id="pill-local" data-state="idle" data-t>Checking</span>
-          <button class="btn sm" id="gpu-release" type="button" hidden title="Unloads it from the GPU · loads again with the next problem" data-t data-t-title>Free the GPU</button>
-          <button class="btn sm" id="gpu-load" type="button" hidden title="Loads it ahead so the first problem is solved at once" data-t data-t-title>Load onto the GPU</button></div>
+          <button class="btn sm" id="gpu-release" type="button" hidden title="Unloads it from the GPU · loads again with the next problem" data-t data-t-title>Free GPU</button>
+          <button class="btn sm" id="gpu-load" type="button" hidden title="Loads it ahead so the first problem is solved at once" data-t data-t-title>Load to GPU</button></div>
         <div class="src-state" id="st-local"></div>
         <div class="gpu-viz" id="gpu-viz" hidden></div>
         <div class="usage" id="usage-local"></div>

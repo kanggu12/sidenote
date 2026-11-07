@@ -432,10 +432,18 @@ state; run shortcut
 last_call_with ps CreateShortcut; script="${CALL[2]:-}"
 target="$(sed -n 's/^.*$s\.TargetPath = \(.*\);$/\1/p' <<<"$script")"
 args="$(sed -n 's/^.*$s\.Arguments = \(.*\);$/\1/p' <<<"$script")"
-want_args="'-3 \"$(wslpath -w "$work/repo/client/launch.pyw")\" --distro $distro --repo \"$work/repo\"'"
+want_args="'-3 \"$(wslpath -w "$work/repo/client/launch.pyw")\" --distro $distro --repo \"$work/repo\" --port 8777'"
 if [ "$target" = "'C:\WINDOWS\pyw.exe'" ] && [ "$args" = "$want_args" ] && [[ $args != *capture.py* ]]; then
   ok "the shortcut runs launch.pyw with pyw.exe, not wsl.exe"
 else bad "the shortcut runs launch.pyw with pyw.exe, not wsl.exe" "target ${target:-none}, arguments ${args:-none}"; fi
+
+# 16a. The start's window asks the server on its own port: the shortcut once named none, and on SIDENOTE_PORT=8779 the window
+#     waited on 8777, at "Starting the server", for a server that was up all along.
+state; EXTRA_ENV="SIDENOTE_PORT=8779" run shortcut
+last_call_with ps CreateShortcut; script="${CALL[2]:-}"
+args="$(sed -n 's/^.*$s\.Arguments = \(.*\);$/\1/p' <<<"$script")"
+if [[ $args == *"--port 8779'" ]]; then ok "the shortcut gives the start's window the server's port (SIDENOTE_PORT)"
+else bad "the shortcut gives the start's window the server's port (SIDENOTE_PORT)" "arguments ${args:-none}"; fi
 
 # 16b. It wears Sidenote's own icon, copied to a Windows folder. It used to name shell32.dll's picture 16, a printer.
 icon="$(sed -n 's/^.*$s\.IconLocation = \(.*\);$/\1/p' <<<"$script")"

@@ -102,6 +102,61 @@ def group_cards(br, s) -> None:
     p.close()
 
 
+def group_edges(br, s) -> None:
+    """Reading at its edges: a summary cut inside a **bold** pair showed its marks; Dr. ended a sentence; a
+    folded card's tail showed the start of its last sentences and cut off the question at their end; the key for the whole of
+    what was heard stood under a text that fit; a text opened whole closed again with any redraw of its entry; Korean heard
+    words broke inside a word; the card name's tooltip lost the card's facts after one press."""
+    if not T.group("reading at its edges"):
+        return
+    bold = ("**Yes. The node is drained before the job starts, so a failed check never reaches a running job.** It is "
+            "repaired from the cheapest step up.")
+    title = ("Dr. Kim checked the nodes on Monday and drained the two that failed, and the jobs moved to the others. Mr. Lee "
+             "repaired them the next day.")
+    fit300 = ("We run a few hundred nodes for training and a job goes as fast as its slowest node. We check every node before "
+              "it takes a job and watch it while the job runs, draining it when it fails. How would you find an unhealthy node "
+              "before it joins a job, and what would you do with it then, step by step?")   # over 280 characters, four lines here
+    rows = [voice(1, 4000, key=bold), voice(2, 3000, key=title), voice(3, 2000), voice(4, 10)]
+    rows[3]["transcript"] = fit300
+    p = Page(br, s, rows, w=1440, h=1000, theme="light", settle=700, locale="en-US", query="?lang=en")
+    p.send(support.settings_message())
+    p.wait(400)
+    marks = p.js("""() => [1, 2].map((i) => { const e = document.querySelector(`.entry[data-id="${i}"]`);
+      e?.querySelector('[data-fold]')?.getAttribute('aria-expanded') === 'false' && e.querySelector('[data-fold]').click();
+      const m = document.querySelector(`.entry[data-id="${i}"] [data-aval]`); return m ? m.textContent : null; })""")
+    check("a summary whose point is in a **bold** pair is not cut inside it: no stray marks", marks[0] and "**" not in marks[0], str(marks[0]))
+    check("...and Dr. or Mr. ends no sentence", (marks[1] or "").startswith("Dr. Kim checked") and len(marks[1] or "") > 12, str(marks[1]))
+    fit = p.js("""() => { const b = document.querySelector('.entry[data-id="4"] .heard-text'), k = document.querySelector('.entry[data-id="4"] [data-heard-more]');
+      return { clamp: b?.classList.contains('clamp'), key: k ? !k.hidden : null, wb: b ? getComputedStyle(b).wordBreak : null }; }""")
+    check("what was heard that fits in its first lines shows whole, with no key for the rest", fit["clamp"] is False and not fit["key"], str(fit))
+    check("...and its words break between words, as the answers' Korean does", fit["wb"] == "keep-all", str(fit))
+    p.send({"type": "analysis_start", "id": 5, "ts": p.js("() => Date.now() / 1000"), "thumb": None, "transcript": HEARD + " " + HEARD,
+            "pages": 0, "trigger": "voice", "roi": None})
+    p.done(5, "TYPE: work\nANSWER: 짧은 답\n\n풀이")
+    p.wait(400)
+    kept = p.js("""() => { const e = document.querySelector('.entry[data-id="5"]'), k = e?.querySelector('[data-heard-more]');
+      if (!k || k.hidden) return { key: false }; k.click(); renderEntry(items.get(5));
+      const b = document.querySelector('.entry[data-id="5"] .heard-text'); return { key: true, open: b?.classList.contains('open') }; }""")
+    check("a text opened whole stays whole when its entry is drawn again", kept == {"key": True, "open": True}, str(kept))
+    name = p.js("""() => { const n = document.querySelector('#card-local .src-name'), before = n?.title || ''; n?.click(); const after = n?.title || ''; n?.click();
+      return { before, after }; }""")
+    check("the card name's tooltip holds the card's facts and what a press does, before a press and after it",
+          all(":" in name[k] and "\n" in name[k] for k in ("before", "after")) and name["before"] != name["after"], str(name)[:200])
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+    p = Page(br, s, [voice(1, 4000), row(2, ago=3000), row(3, ago=2000), row(4, ago=1000), voice(5, 10)], w=390, h=844, theme="dark",
+             settle=700, locale="en-US", query="?lang=en")
+    p.send(support.settings_message())
+    p.wait(400)
+    tail = p.js("""() => [...document.querySelectorAll('.entry.folded .heard-tail')].filter((x) => x.offsetParent !== null).map((x) => {
+      const r = x.getBoundingClientRect(), rg = document.createRange(); rg.selectNodeContents(x); const s = rg.getBoundingClientRect();   // where its words end, cut or not
+      return { cut: x.scrollWidth > x.clientWidth + 1, endIn: s.right <= r.right + 1 }; })""")
+    check("on a phone a folded card's tail keeps the end of what was heard, its start cut where the line runs out",
+          bool(tail) and all(x["endIn"] for x in tail) and any(x["cut"] for x in tail), str(tail))
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+
+
 def main():
     from playwright.sync_api import sync_playwright
     support.need_vendor(h.PANEL)
@@ -110,6 +165,7 @@ def main():
         s = Stand("reading")
         group_heard_and_summary(br, s)
         group_cards(br, s)
+        group_edges(br, s)
         br.close()
     return T.end()
 

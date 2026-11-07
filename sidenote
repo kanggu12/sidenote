@@ -1435,7 +1435,8 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   # distribution name has none (WSL allows letters, digits, '.', '_' and '-'). capture.py's path must not be in
   # here: capture and capture-stop find the capture program by it. The single quotes of PowerShell's own strings
   # below are doubled inside them (ps_quote).
-  local args="-3 \"$launch\" --distro $distro --repo \"$PWD\""
+  # --port: the start's window asks the server on the port it runs on (SIDENOTE_PORT), or it waited on 8777 for a server elsewhere
+  local args="-3 \"$launch\" --distro $distro --repo \"$PWD\" --port $PORT"
   # Sidenote's icon, the tray's S (client/sidenote.ico), copied to a Windows folder: Explorer reads a shortcut's icon from
   # its file whenever it draws it, and a file inside WSL would wake the distribution for that, or draw blank where it
   # cannot. Should the copy fail, the checkout's own file still serves while WSL runs.

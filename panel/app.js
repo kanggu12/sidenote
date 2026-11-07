@@ -43,20 +43,46 @@ const HINT = {
 // so three settings (Think before answering, Problems the agent solves, What is sent to the agent) did nothing when clicked.
 // (The Korean particle after a word is the translation's own: "{name|이/가}" in panel/i18n/ko.js, panel/i18n.js particle.)
 // A text cut into its sentences: after . ! ? and their full-width forms where a space follows, and not after e.g., i.e.,
-// etc. or vs., whose dots end no sentence
+// etc., vs., cf. or a title such as Dr. or Mr., whose dots end no sentence
 function sentences(text) {
-  const kept = String(text ?? "").replace(/\b(e\.g|i\.e|etc|vs|cf)\./gi, (m) => m.replace(/\./g, "\u2024"));
+  const kept = String(text ?? "").replace(/\b(e\.g|i\.e|etc|vs|cf|Dr|Mr|Mrs|Ms|St|Jr|Sr|Prof|Fig)\./gi, (m) => m.replace(/\./g, "\u2024"));
   return kept.split(/(?<=[.!?\u3002\uFF01\uFF1F])\s+(?=\S)/).map((x) => x.replace(/\u2024/g, ".").trim()).filter(Boolean);
 }
-// What was heard, as it was said: three sentences a paragraph, its first lines when it is long and the whole on a press;
-// folded, the end alone, where the question usually is
-function heardHtml(text) {
-  const parts = sentences(text), paras = [];
+// A summary's sentences, for the split under its point: the whole of it when a cut would fall inside a pair that marks
+// something, **bold**, `code` or $math$, which a split showed as a stray mark at each end
+function summarySentences(text) {
+  const parts = sentences(text);
+  const odd = (s, re) => (s.match(re) || []).length % 2 === 1;
+  return parts.some((p) => odd(p, /\*\*/g) || odd(p.replace(/\*\*/g, ""), /`/g) || odd(p, /(?<!\\)\$/g)) ? [String(text)] : parts;
+}
+// What was heard, as it was said: three sentences a paragraph, its first lines when it does not fit in them (heardFit, once
+// it is laid out) and the whole on a press, kept so for the entry across a redraw (heardOpen); folded, its end alone, where
+// the question usually is
+const heardOpen = new Set();
+function heardHtml(text, id) {
+  const parts = sentences(text), paras = [], key = String(id ?? ""), open = heardOpen.has(key);
   for (let i = 0; i < parts.length; i += 3) paras.push(parts.slice(i, i + 3).join(" "));
-  const long = String(text).length > 280;
-  return `<div class="heard-text${long ? " clamp" : ""}">${paras.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}</div>`
-    + (long ? `<button type="button" class="btn sm ghost heard-more" data-heard-more aria-expanded="false">${OPEN_MARK}<span>${t("Show it all")}</span></button>` : "")
-    + `<div class="heard-tail">${escapeHtml(parts.slice(-2).join(" "))}</div>`;
+  // The tail: the last sentence, with the one before it when it is short ("And then what?"); laid out from its end, so a line
+  // too narrow for it cuts its start and never the question at its end (index.html, .heard-tail)
+  const last = parts.at(-1) || "", tail = last.length < 40 && parts.length > 1 ? parts.slice(-2).join(" ") : last;
+  return `<div class="heard-text${open ? " open" : ""}" data-heard-id="${escapeHtml(key)}">${paras.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}</div>`
+    + `<button type="button" class="btn sm ghost heard-more" data-heard-more aria-expanded="${open}" hidden>${OPEN_MARK}<span>${open ? t("Fold") : t("Show it all")}</span></button>`
+    + `<div class="heard-tail"><span>${escapeHtml(tail)}</span></div>`;
+}
+// Each text heard cut to its first lines, with the key for the rest, only when it is taller than them as laid out: by its
+// length alone a text that fit in four lines on a wide window had a faded last line and a key that changed nothing.
+// Measured where it shows; a folded entry is measured when it opens, as it is drawn again then
+function heardFit(root = document) {
+  for (const box of root.querySelectorAll(".heard-text")) {
+    const key = box.nextElementSibling;
+    if (!key?.matches("[data-heard-more]") || box.offsetParent === null) continue;
+    const open = box.classList.contains("open");
+    box.classList.remove("open"); box.classList.add("clamp");
+    const over = box.scrollHeight > box.clientHeight + 2;
+    box.classList.toggle("clamp", over);
+    box.classList.toggle("open", over && open);
+    key.hidden = !over;
+  }
 }
 const escapeHtml = (s) => {
   const d = document.createElement("div");
@@ -2427,7 +2453,7 @@ function localState() {
       t("The GPU is busy, so a smaller model solves"));
   }
   // The pill says the same in a word: ready on the GPU, or resting with the GPU free (still working: it goes on again
-  // by itself, or with Load onto the GPU)
+  // by itself, or with Load to GPU)
   if (L.loading) return card("ok", t("Loading"), [[t("Model"), model]], loadStepsHtml());
   return card("ok", !g ? t("Idle") : g.unknown ? t("Connected") : t("On GPU"), [[t("Model"), model], ["GPU", gpu]]);
 }
@@ -2556,6 +2582,13 @@ function setSignal(id, state, title) {
 function setHtml(id, html) { const el = $(id); if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; if (el.querySelector(".fact")) fitFacts(el); } }
 function fitFacts(root = document) {
   root.querySelectorAll(".rail .fact").forEach((f) => { f.classList.remove("wide"); if (f.scrollWidth > f.clientWidth + 1) f.classList.add("wide"); });
+  // The capture card's two sources share their second half's name column: a name wider than the column ("Last screen" in
+  // English) pushed its value 4 px past the other source's ("Last sound"), where the names of one width lined up
+  for (const card of document.querySelectorAll(".rail .card.conn:not(.engine)")) {
+    card.style.removeProperty("--col-name-2");
+    const widest = Math.max(0, ...[...card.querySelectorAll(".fact:nth-child(even) dt")].map((d) => d.getBoundingClientRect().width));
+    if (widest) card.style.setProperty("--col-name-2", `${Math.ceil(widest)}px`);
+  }
 }
 // The card as it is drawn: the state as a pill, the facts as rows, and the one thing to do about
 // it underneath, if there is one.
@@ -2609,7 +2642,7 @@ function renderSignals() {
   // While it loads the button says so, with a bar running through it, and a press stops it
   const loadBtn = $("gpu-load"), isLoading = !!L?.loading;
   loadBtn.classList.toggle("loading", isLoading);
-  loadBtn.textContent = isLoading ? t("Cancel") : t("Load onto the GPU");
+  loadBtn.textContent = isLoading ? t("Cancel") : t("Load to GPU");
   loadBtn.title = isLoading ? t("Stop and free the GPU") : t("Load it onto the GPU now and the first problem is solved at once");
   // The agent on and off from its own card, as the screen and the sound are (it was only in Solving settings)
   const C = eng()?.agent, swc = $("sw-agent");
@@ -3062,7 +3095,8 @@ function agentDoes(mode) {
 }
 let welcomeDrawn = "";   // the page as it is now: rebuilt only when something in it changed
 function renderWelcome() {
-  const L = eng()?.local, C = eng()?.agent;
+  // The engines as last heard while the server is away: unknown, as the cards and the capture step say it, not still ticked
+  const L = wsState === "up" ? eng()?.local : null, C = wsState === "up" ? eng()?.agent : null;
   const capOk = capture.clients == null ? null : capture.clients > 0;
   const srv = wsState === "up" ? true : wsState === "down" ? false : null;
   // A done step is ticked with the drawn tick the dropdown uses (it was the character "✓", put in by the
@@ -3097,7 +3131,7 @@ function renderWelcome() {
             : "{does}. It uses the sign-in this PC has; if there is none, run {cmd} in the server's terminal",
           { does: agentDoes(C.mode), agent: AG(), cmd: `<code class="cmd">${LOGIN()}</code>` }),
         C.mode === "off" ? t("Off") : C.installed === false ? t("Optional") : C.ok ? t("Connected") : t("Needed")) : ""}
-      ${!eng() ? step(null, t("Solving engines"), t("Checked once the server is connected"), t("Checking")) : ""}
+      ${!L && !C ? step(null, t("Solving engines"), t("Checked once the server is connected"), t("Checking")) : ""}
       ${step(capOk, t("Capture program"), status.desktop ? t("The Sidenote app starts it with no window; quitting it from its tray icon ends the app")
         : t("{cmd} (runs with no window; quit it from its tray icon)", { cmd: "<code class=\"cmd\">./sidenote capture</code>" }), capOk === null ? t("Checking") : capOk ? t("On") : t("Not running"))}
     </ul>`)}
@@ -3651,7 +3685,7 @@ function entryHtml(it) {
   // written out (a question too). What the watching added under it by itself (a retry, the answer filled out) waits with
   // the rest, and the follow-ups asked about it show.
   return `${head}
-    ${it.trigger === "voice" && it.transcript ? row(t("Heard"), heardHtml(it.transcript), "heard-row") : ""}
+    ${it.trigger === "voice" && it.transcript ? row(t("Heard"), heardHtml(it.transcript, it.id), "heard-row") : ""}
     ${row(t("Question"), `<div class="asked" data-asked></div>`, "", "data-askedrow hidden")}
     ${it.stopped ? row(t("Stopped"), `<p class="cap stopped">${escapeHtml(it.stopped)}${t(" · to solve it again: {redo}", { redo: REDO_KEY() })}</p>`) : ""}
     ${hold ? `${practiceRows(it)}${it.ptext ? row(t("Problem"), ptextHtml(it.ptext)) : ""}` : !it.error || wrote(it) ? `
@@ -3735,6 +3769,7 @@ function renderEntry(it) {   // create or rebuild one entry in place
   // A button that shows only its mark still says what it does, on the pointer: its word as the tooltip where it has none
   el.querySelectorAll(":is(.btn, .copy):has(svg):not([title])").forEach((b) => { const w = b.textContent.trim(); if (w) b.title = w; });
   el.querySelectorAll("details").forEach((d, i) => { if (opened[i] != null) d.open = opened[i]; });
+  heardFit(el);   // what was heard, cut to its first lines only if it does not fit in them
   if (keep) refocus(keep, el);
 }
 function selectionIn(el) {
@@ -3910,7 +3945,7 @@ function paintAnswer(root, type, answer, label) {
   }
   // A summary of several sentences: the first, the point, marked; the rest under it a line each and unmarked. Marked
   // whole, five lines of it read as one block
-  const parts = answer && String(answer).length > 90 ? sentences(answer) : [];
+  const parts = answer && String(answer).length > 90 ? summarySentences(answer) : [];
   if (parts.length > 1 && holder) {
     holder.innerHTML = `<mark class="hl" data-aval></mark><span class="ans-more">${parts.slice(1).map(() => "<span></span>").join("")}</span>`;
     renderInto(holder.querySelector("[data-aval]"), parts[0], true);
@@ -5141,8 +5176,8 @@ function handle(m) {
     case "analysis_start": onStart(m); if (m.text) onDelta({ type: "delta", id: m.id, text: m.text }); setupSaw(m, false); break;
     case "delta": onDelta(m); break;
     case "analysis_done": liveDone.add(idOf(m.id)); onDone(m); sweepKey(entryEl(m.id)); setupSaw(m, true); break;
-    case "analysis_cancelled": onCancelled(m); break;
-    case "error": onError(m); break;
+    case "analysis_cancelled": onCancelled(m); setupLost(m); break;
+    case "error": onError(m); setupLost(m); break;
     case "run_started": onRunStarted(m); break;
     case "run_result": onRunResult(m); break;
     case "stage": {
@@ -5407,9 +5442,9 @@ function renderSettings() {
   const rows = settingsMeta.items.filter((i) => i.section === sec).map(settingRow).join("");
   const gpu = sec === "resource" && eng()?.local?.present
     ? (eng().local.loaded
-      ? `<div class="set"><span class="lbl">${t("Free the GPU")}</span><span class="ctl"><button type="button" class="btn sm" data-act="gpu"${wsState !== "up" ? " disabled" : ""}>${t("Free")}</button></span>
+      ? `<div class="set"><span class="lbl">${t("Free GPU")}</span><span class="ctl"><button type="button" class="btn sm" data-act="gpu"${wsState !== "up" ? " disabled" : ""}>${t("Free")}</button></span>
         <p class="help">${t("Unloads it from the GPU · loads again with the next problem")}</p></div>`
-      : `<div class="set"><span class="lbl">${t("Load onto the GPU")}</span><span class="ctl"><button type="button" class="btn sm" data-act="gpu-load"${wsState !== "up" ? " disabled" : ""}>${t("Load")}</button></span>
+      : `<div class="set"><span class="lbl">${t("Load to GPU")}</span><span class="ctl"><button type="button" class="btn sm" data-act="gpu-load"${wsState !== "up" ? " disabled" : ""}>${t("Load")}</button></span>
         <p class="help">${t("Load it onto the GPU now and the first problem is solved at once")}</p></div>`) : "";
   const note = sec === "agent" ? outboundNote() : "";
   const keep = body.querySelector(".set-pane")?.scrollTop || 0;
@@ -5874,11 +5909,18 @@ function setSkin(skin) {
 // A connection's row keeps its details in the name's tooltip: a chevron on every row was one more thing to read and press
 function syncSrc() {
   document.querySelectorAll(".conn .src").forEach((src) => {
-    const name = src.querySelector(".src-name"), facts = src.querySelector(".facts");
     src.classList.remove("folds", "open");
-    if (facts) name.title = [...facts.querySelectorAll("dt")].map((d) => `${d.textContent}: ${d.nextElementSibling?.textContent || ""}`).join("\n");
-    else name.removeAttribute("title");
+    srcNameTitle(src);
   });
+}
+// A card name's tooltip: the card's facts, which a folded card hides, then what a press on the name does. The fold kept its
+// own words there and the facts were gone after one press, or the facts and no word of the fold
+function srcNameTitle(src) {
+  const name = src?.querySelector(".src-name"), facts = src?.querySelector(".facts");
+  if (!name) return;
+  const lines = facts ? [...facts.querySelectorAll("dt")].map((d) => `${d.textContent}: ${d.nextElementSibling?.textContent || ""}`) : [];
+  if (name.matches("[data-card-fold]")) lines.push(name.closest(".card")?.classList.contains("shut") ? t("Open the card") : t("Fold the card"));
+  if (lines.length) name.title = lines.join("\n"); else name.removeAttribute("title");
 }
 function toggleMenu(open) {
   const m = $("menu"), want = open ?? m.hidden;
@@ -5935,7 +5977,7 @@ function cardFold(id, shut, keep = true) {
   if (!card || !key) return;
   card.classList.toggle("shut", shut);
   key.setAttribute("aria-expanded", String(!shut));
-  key.title = shut ? t("Open the card") : t("Fold the card");
+  srcNameTitle(key.closest(".src"));
   if (!keep) return;
   try {
     const kept = JSON.parse(localStorage.getItem(CARD_FOLD_KEY) || "{}");
@@ -6036,9 +6078,10 @@ document.addEventListener("click", (e) => {
   const fb = e.target.closest("[data-fold]");
   if (fb) { const id = idOf(fb.dataset.fold), it = items.get(id); if (it) { if (folded(it)) unfolded.add(id); else unfolded.delete(id); renderEntry(it); } }
   const hm = e.target.closest("[data-heard-more]");
-  if (hm) {   // what was heard, whole or its first lines
-    const open = hm.getAttribute("aria-expanded") !== "true";
-    hm.previousElementSibling?.classList.toggle("open", open);
+  if (hm) {   // what was heard, whole or its first lines, kept so for the entry when it is drawn again
+    const open = hm.getAttribute("aria-expanded") !== "true", box = hm.previousElementSibling;
+    box?.classList.toggle("open", open);
+    if (open) heardOpen.add(box?.dataset.heardId ?? ""); else heardOpen.delete(box?.dataset.heardId ?? "");
     hm.setAttribute("aria-expanded", String(open));
     hm.querySelector("span").textContent = open ? t("Fold") : t("Show it all");
   }
@@ -6280,7 +6323,7 @@ $("heard-overlay").addEventListener("click", (e) => { if (heardPress && e.target
 // menu, and once by itself on a new install: the server says fresh while it has kept no answer, and this browser remembers it.
 const SETUP_SEEN = "sidenote.setupSeen";
 const SETUP_STEPS = [["solve", () => t("Solving")], ["screen", () => t("Screen")], ["sound", () => t("Sound")], ["try", () => t("Try it")]];
-let setupStep = 0, setupOpener = null, setupPress = false, setupDrawn = "";
+let setupStep = 0, setupOpener = null, setupPress = false;
 let setupShot = null, setupShotAsked = false;   // the screen the screen step asked for: shown there, and no drawing starts on the screen card
 let setupHeard = "";                            // the last words heard, on the sound step
 let setupTry = null;                            // the sample problem: { state: "open" | "solving" | "done", at, id, answer, missed }
@@ -6300,43 +6343,59 @@ const setupCard = (name, st) => `<div class="setup-state" data-state="${st.s}"><
 // The rows of the settings named, as Solver settings draws them: those the server has
 const setupRows = (...keys) => keys.map(settingItem).filter(Boolean).map(settingRow).join("");
 const onMac = () => /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
-function setupPane(id) {
+// A step's pane, as parts each drawn again only when it changed: the screen step's ages change every second, and the whole
+// pane drawn again took the picture away and back and shut an open list, which came back with its animation each second
+function setupParts(id) {
   const L = eng()?.local, C = eng()?.agent, up = wsState === "up";
   if (id === "solve") {
-    const cards = (L?.present ? setupCard(t("Local model"), localState()) : "") + (C?.present ? setupCard(AG(), agentState()) : "");
-    const none = up && eng() && setupState("solve") === "warn"
-      ? `<p class="setup-note warn">${t("Nothing can solve yet · get the local model, or sign in to the agent", { agent: AG() })}</p>` : "";
-    return `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both. One of them is enough", { agent: AG() })}</p>`
-      + cards + none + setupRows("local_llm", "local_model", "agent_mode");
+    return [
+      ["lede", `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both. One of them is enough", { agent: AG() })}</p>`],
+      ["cards", (L?.present ? setupCard(t("Local model"), localState()) : "") + (C?.present ? setupCard(AG(), agentState()) : "")],
+      ["none", up && eng() && setupState("solve") === "warn"
+        ? `<p class="setup-note warn">${t("Nothing can solve yet · get the local model, or sign in to the agent", { agent: AG() })}</p>` : ""],
+      ["rows", setupRows("local_llm", "local_model", "agent_mode")],
+    ];
   }
   if (id === "screen") {
     const shot = setupShot?.url
       ? `<figure class="setup-shot"><img src="${escapeHtml(setupShot.url)}" alt="${escapeHtml(t("The screen Sidenote receives"))}">`
         + `<figcaption>${setupShot.live ? t("Screen now") : t("Last screen {when}", { when: fmtAgo(serverNow() - setupShot.ts) })}</figcaption></figure>`
       : setupShot?.text ? `<p class="setup-note warn">${escapeHtml(setupShot.text)}</p>` : "";
-    return `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends. A problem on another monitor is not read")}</p>`
-      + setupCard(t("Screen capture"), screenState())
-      + `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`
-      + shot + (onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : "")
-      + setupRows("monitor", "skip_windows");
+    return [
+      ["lede", `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends. A problem on another monitor is not read")}</p>`],
+      ["card", setupCard(t("Screen capture"), screenState())],
+      ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`],
+      ["shot", shot],
+      ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : ""],
+      ["rows", setupRows("monitor", "skip_windows")],
+    ];
   }
   if (id === "sound") {
-    return `<p class="setup-lede">${t("The sound is optional: with it, a problem asked aloud is solved too")}</p>`
-      + setupCard(t("Sound capture"), audioState())
-      + `<p class="setup-heard" id="setup-heard">${escapeHtml(setupHeard || t("Nothing heard yet · play a video or say something"))}</p>`
-      + (onMac() ? `<p class="setup-note">${t("On a Mac, the sound of other apps comes in through a loopback input such as BlackHole (the user guide)")}</p>` : "")
-      + setupRows("voice_auto", "speech_lang");
+    return [
+      ["lede", `<p class="setup-lede">${t("The sound is optional: with it, a problem asked aloud is solved too")}</p>`],
+      ["card", setupCard(t("Sound capture"), audioState())],
+      ["heard", `<p class="setup-heard" id="setup-heard">${escapeHtml(setupHeard || t("Nothing heard yet · play a video or say something"))}</p>`],
+      ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the sound of other apps comes in through a loopback input such as BlackHole (the user guide)")}</p>` : ""],
+      ["rows", setupRows("voice_auto", "speech_lang")],
+    ];
   }
-  // The sample problem: opened in a tab of its own, then how far it has come
+  // The sample problem: opened in a tab of its own, then how far it has come. Its answer as the notebook marks an answer, or,
+  // with Practice keeping it back there, that it came and no more
   const tr = setupTry, ready = setupState("solve") === "ok" && setupState("screen") === "ok";
+  const it = tr?.id != null ? items.get(tr.id) : null;
   const says = !tr ? ""
-    : tr.state === "done" ? `<p class="setup-try done">${TICK_MARK}<span>${t("Answered: {answer}", { answer: `<b>${escapeHtml(tr.answer || "")}</b>` })}</span>`
+    : tr.state === "done" ? `<p class="setup-try done">${TICK_MARK}<span>${held(it) ? t("Answered · Practice keeps it back in the notebook")
+      : tr.answer ? t("Answered: {answer}", { answer: `<mark class="key">${escapeHtml(tr.answer)}</mark>` }) : t("Answered")}</span>`
       + `<button type="button" class="btn sm" data-setup="see">${t("See the answer")}</button></p>`
     : `<p class="setup-try"><span class="spin"></span><span>${tr.state === "solving" ? t("Solving the sample problem")
+      : tr.failed ? t("No answer came that time · open the sample problem again")
       : tr.missed ? t("No problem found on that screen · bring the sample tab to the front") : t("Waiting for it on the screen · keep the sample tab in view")}</span></p>`;
-  return `<p class="setup-lede">${t("Opens a sample problem in a new tab. With it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`
-    + (ready || !up ? "" : `<p class="setup-note warn">${t("A solving engine and the screen come first")}</p>`)
-    + `<div class="setup-act"><button type="button" class="btn sm" data-setup="sample"${up ? "" : " disabled"}>${t("Open the sample problem")}</button></div>` + says;
+  return [
+    ["lede", `<p class="setup-lede">${t("Opens a sample problem in a new tab. With it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`],
+    ["ready", ready || !up ? "" : `<p class="setup-note warn">${t("A solving engine and the screen come first")}</p>`],
+    ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="sample"${up ? "" : " disabled"}>${t("Open the sample problem")}</button></div>`],
+    ["says", says],
+  ];
 }
 function renderSetup() {
   const body = $("setup-body");
@@ -6355,27 +6414,33 @@ function renderSetup() {
     steps.innerHTML = nav;
     if (at != null) steps.querySelector(`[data-step="${at}"]`)?.focus({ preventScroll: true });
   }
-  // The pane, drawn again only when something in it changed: it comes with every status message, and a redraw takes the keyboard
-  // off a row (put back here by the same keys renderSettings uses) and shuts an open list (opened again on the same choice)
-  const html = setupPane(SETUP_STEPS[setupStep][0]);
-  if (html !== setupDrawn) {
-    const was = body.contains(document.activeElement) ? document.activeElement.dataset : null;
-    const reopen = comboOpen && body.contains(comboOpen.btn) ? { key: comboOpen.btn.dataset.set, at: comboAt() } : null;
+  // The pane: a holder for each part, made again only with another step; then each part drawn again only when it changed, the
+  // keyboard put back on its row (by the keys renderSettings uses) and an open list opened again on the same choice
+  const parts = setupParts(SETUP_STEPS[setupStep][0]);
+  const shape = `${setupStep}:${parts.map(([k]) => k).join(",")}`, moved = body.dataset.step !== String(setupStep);
+  if (body.dataset.shape !== shape) {
+    if (comboOpen && body.contains(comboOpen.btn)) comboClose(false);
+    body.innerHTML = parts.map(([k]) => `<div class="setup-part" data-part="${k}"></div>`).join("");
+    body.dataset.shape = shape;
+  }
+  for (const [k, html] of parts) {
+    const part = body.querySelector(`:scope > [data-part="${k}"]`);
+    if (!part || part.dataset.html === html) continue;
+    const was = part.contains(document.activeElement) ? { ...document.activeElement.dataset } : null;
+    const reopen = comboOpen && part.contains(comboOpen.btn) ? { key: comboOpen.btn.dataset.set, at: comboAt() } : null;
     if (reopen) comboClose(false);
-    const moved = body.dataset.step !== String(setupStep);
-    setupDrawn = html;
-    body.innerHTML = html;
-    body.dataset.step = String(setupStep);
-    if (moved) { body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
-    fitWords(body);
+    part.dataset.html = html;
+    part.innerHTML = html;
+    fitWords(part);
     const sel = was?.set ? `[data-set="${CSS.escape(was.set)}"]` + (was.val !== undefined ? `[data-val="${CSS.escape(was.val)}"]`
       : was.multi !== undefined ? `[data-multi="${CSS.escape(was.multi)}"]` : "") : was?.setup ? `[data-setup="${CSS.escape(was.setup)}"]` : "";
-    if (sel) (body.querySelector(sel) || (was.set ? body.querySelector(`[data-set="${CSS.escape(was.set)}"]`) : null))?.focus({ preventScroll: true });
+    if (sel) (part.querySelector(sel) || (was.set ? part.querySelector(`[data-set="${CSS.escape(was.set)}"]`) : null))?.focus({ preventScroll: true });
     if (reopen) {
-      const btn = body.querySelector(`.combo-btn[data-set="${CSS.escape(reopen.key)}"]:not([disabled])`);
+      const btn = part.querySelector(`.combo-btn[data-set="${CSS.escape(reopen.key)}"]:not([disabled])`);
       if (btn) { comboToggle(btn); if (reopen.at >= 0) comboMove(reopen.at); }
     }
   }
+  if (moved) { body.dataset.step = String(setupStep); body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
   $("setup-back").hidden = setupStep === 0;
   $("setup-next").textContent = setupStep === SETUP_STEPS.length - 1 ? t("Finish") : t("Next");
 }
@@ -6388,7 +6453,8 @@ function openSetup(step) {
   if (typeof step === "number") setupStep = step;
   try { localStorage.setItem(SETUP_SEEN, "1"); } catch (_) {}
   $("setup-overlay").hidden = false;
-  setupDrawn = "";
+  $("setup-body").dataset.shape = "";             // drawn afresh: the parts as they are now
+  $("setup-body").dataset.step = "";
   $("setup-steps").dataset.html = "";
   renderSetup();
   $("setup-close").focus({ preventScroll: true });
@@ -6397,7 +6463,6 @@ function closeSetup() {
   if ($("setup-overlay").hidden) return;
   $("setup-overlay").hidden = true;
   comboClose(false);          // a list stands on the page's body, and would stay behind
-  setupShotAsked = false;     // a screen still on its way goes to nobody
   const was = setupOpener;
   setupOpener = null;
   focusBack(was);
@@ -6448,6 +6513,7 @@ $("setup-body").addEventListener("click", (e) => {
 // The screen asked for, as the server sends it back: shown on the step with its age, or why there is none
 function setupShotFrom(m) {
   setupShotAsked = false;
+  if ($("setup-overlay").hidden) return;   // the guide closed while it was on its way: it goes to nobody, and starts no drawing
   setupShot = m.url ? { url: m.url, ts: typeof m.ts === "number" ? m.ts : serverNow(), live: m.live !== false } : { text: m.text || t("No screen received") };
   renderSetup();
 }
@@ -6469,9 +6535,19 @@ function setupSaw(m, done) {
     setupTry = { ...tr, state: "solving", id: idOf(m.id) };
   } else {
     if (tr.id !== idOf(m.id)) return;
-    const head = items.get(idOf(m.id))?.head || splitHead(m.text || "", true);
-    setupTry = !head.type || head.type === "none" ? { ...tr, state: "open", id: null, missed: true } : { ...tr, state: "done", answer: head.answer || "" };
+    const it = items.get(idOf(m.id));   // onDone has kept it, or dropped one with nothing to solve
+    setupTry = !it ? { ...tr, state: "open", id: null, missed: true, failed: false } : { ...tr, state: "done", answer: it.head?.answer || "" };
   }
+  renderSetup();
+}
+// The sample's analysis that came to no answer: an error, called off, or the connection gone. The step waits again and says
+// so, where it said "Solving" until the page was loaded again. One called off as a problem solved before (a repeat, the sample
+// opened a second time) has that answer
+function setupLost(m) {
+  const tr = setupTry;
+  if (!tr || tr.state !== "solving" || (m && tr.id !== idOf(m.id))) return;
+  const of = m?.reason === "repeat" && m.of != null ? items.get(idOf(m.of)) : null;
+  setupTry = of ? { ...tr, state: "done", id: of.id, answer: of.head?.answer || "" } : { ...tr, state: "open", id: null, failed: true, missed: false };
   renderSetup();
 }
 // Closed by a press on the veil only when the press and the release are both on it, and the keyboard stays inside while it is open
@@ -6582,6 +6658,7 @@ function connect() {
   sock.onclose = () => {   // a failed connection attempt closes too: only a connection that was up drops answers
     const was = wsState; wsState = "down"; capture.clients = null;
     hideGpu();
+    setupLost(null);   // the sample being solved will not come
     if (was === "up") {
       interruptLive();
       failPendingRuns(t("Connection lost: no result · run it again"));

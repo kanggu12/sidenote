@@ -985,7 +985,7 @@ def group_found(br, s):
         p.answer(1710, "code", "", "답", "풀이")
         p.send({"type": "check", "id": 1710, "lang": "python", "passed": 2, "total": 3, "how": "stdin", "rows": runs})
         p.wait(250)
-        got = p.js("""() => { const b = entryEl(1710).querySelector('.vcheck'); b.scrollIntoView({ block: 'center' }); const box = b.getBoundingClientRect(), col = entryEl(1710).querySelector('.ct').getBoundingClientRect(), bad = b.querySelector('.vc-case.bad .vc-io.got pre'), r = document.createRange(); r.selectNodeContents(bad); const last = [...r.getClientRects()].pop(), pb = bad.getBoundingClientRect();
+        got = p.js("""() => { const b = entryEl(1710).querySelector('.vcheck'); b.scrollIntoView({ block: 'center' }); const box = b.getBoundingClientRect(), col = [...entryEl(1710).querySelectorAll(':scope > .row > .ct')].find((c) => c.getBoundingClientRect().width > 0).getBoundingClientRect(), bad = b.querySelector('.vc-case.bad .vc-io.got pre'), r = document.createRange(); r.selectNodeContents(bad); const last = [...r.getClientRects()].pop(), pb = bad.getBoundingClientRect();
             return { inside: box.right <= col.right + 1, none: b.querySelectorAll('pre.none').length, end: Math.abs(last.bottom - pb.bottom) <= 14, tabs: [...b.querySelectorAll('.vc-tab')].map((x) => x.className.replace('vc-tab ', '')) }; }""")
         check(f"{w}: the check stays in its column", got["inside"], got)
         check(f"{w}: what is empty says so", got["none"] == 2, got)
@@ -1628,7 +1628,9 @@ STAR_LOOK = """(id) => {
   const box = (x) => { const r = x.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
   const key = tools.querySelector('[data-star]');
   if (!key) return { missing: true };   // said as a check that failed, not as an error that ends the suite
-  const svg = key.querySelector('svg'), ct = e.querySelector(':scope > .row.head > .ct');
+  // the answer's writing column: the first that has a box, as on a narrow window the head's own has none (its words and keys
+  // stand in the head's row, index.html)
+  const svg = key.querySelector('svg'), ct = [...e.querySelectorAll(':scope > .row > .ct')].find((c) => c.getBoundingClientRect().width > 0);
   const date = e.querySelector(':scope > .row.head time');
   const p = document.createElement('i'); p.style.color = 'var(--hl-yellow)'; document.body.append(p); const token = getComputedStyle(p).color; p.remove();
   // the answer's own inner edges: a head row laid out wider than the page carries its column out with it, so the column is no measure
@@ -1817,13 +1819,58 @@ def group_release(br, s):
     report("the release notice", found)
 
 
+def group_column_kept(br, s):
+    """The column, the welcome and the answers' heads, at the sizes and in the language each shows in: the Local
+    model's pill cut to "On GP" by the English GPU key beside it; the welcome's engines still ticked with the server gone; a
+    spoken problem's "heard by voice" taking two lines beside the keys and pushing them off the date's line on a phone; a
+    choice's keys wrapping one alone on a narrow sheet; the capture card's second values 4 px apart in English."""
+    if not T.group("the column, the welcome and a phone's heads"):
+        return
+    for state, loaded in (("on the GPU", h.ENGINES["local"]["loaded"]), ("idle", None)):
+        p = Page(br, s, many(3), w=1366, h=768, settle=400, locale="en-US", query="?lang=en")
+        p.send({"type": "status", "engines": {**h.ENGINES, "local": {**h.ENGINES["local"], "loaded": loaded}}})
+        p.wait(250)
+        got = p.js("() => { const pl = document.getElementById('pill-local'); return { text: pl.textContent, room: pl.clientWidth, need: pl.scrollWidth }; }")
+        check(f"the Local model's pill whole beside its GPU key in English at 1366, {state}", got["need"] <= got["room"] + 1, got)
+        p.close()
+    p = Page(br, s, [], w=1440, h=900, settle=400)
+    p.drop()
+    p.wait(400)
+    ticked = p.js("() => [...document.querySelectorAll('.welcome .steps li')].filter((li) => li.dataset.done === 'true').map((li) => li.querySelector('.t')?.textContent)")
+    check("with the server gone the welcome ticks no engine as connected", not ticked, ticked)
+    p.close()
+    voice = dict(h.row(9, "algorithm", "", "해시맵으로 한 번 훑는다", "풀이", ago=10), trigger="voice", transcript="What is a hash map, and why is a lookup O(1)?")
+    p = Page(br, s, many(3) + [voice], w=390, h=844, settle=500, locale="en-US", query="?lang=en")
+    p.wait(300)
+    got = p.js("""() => { const e = document.querySelector('.entry[data-id="9"]'), via = e?.querySelector('.headline > span:not(.tools)'), keys = e?.querySelector('.tools'), date = e?.querySelector('.row.head time');
+      if (!via || !keys || !date) return null; const v = via.getBoundingClientRect(), k = keys.getBoundingClientRect(), d = date.getBoundingClientRect();
+      return { keysOnDate: Math.abs((k.top + k.bottom) / 2 - (d.top + d.bottom) / 2) < 8, viaUnder: v.top >= k.bottom - 1, oneLine: v.height < parseFloat(getComputedStyle(via).lineHeight || 18) * 1.5 + 1 }; }""")
+    check("on a phone a spoken problem's 'heard by voice' stands on a line of its own under its keys, the keys on the date's line",
+          got == {"keysOnDate": True, "viaUnder": True, "oneLine": True}, got)
+    p.close()
+    p = Page(br, s, many(3), w=390, h=844, settle=400, locale="en-US", query="?lang=en")
+    p.send(support.settings_message())
+    p.js("() => { openSettings(); document.querySelector(\".set-tab[data-sec='agent']\").click(); }")
+    p.wait(300)
+    got = p.js("""() => [...document.querySelectorAll('#settings-body .set .seg')].map((g) => { const b = [...g.querySelectorAll('button')].map((x) => x.getBoundingClientRect());
+      return { keys: b.length, widths: new Set(b.map((r) => Math.round(r.width))).size, columns: new Set(b.map((r) => Math.round(r.left))).size }; }).filter((g) => g.keys > 1)""")
+    check("on a narrow sheet a choice's keys stand in even columns, none of another width alone on a row",
+          bool(got) and all(g["widths"] == 1 and g["columns"] >= 2 for g in got), got)
+    p.close()
+    p = Page(br, s, many(3), w=1920, h=1080, settle=400, locale="en-US", query="?lang=en")
+    p.wait(300)
+    xs = p.js("() => [...document.querySelectorAll('.rail .card.conn:not(.engine) .fact:nth-child(even) dd')].map((d) => Math.round(d.getBoundingClientRect().left))")
+    check("the capture card's second values at one place in English, where a wider name moved one 4 px", len(xs) >= 2 and len(set(xs)) == 1, xs)
+    p.close()
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     s = Stand("layout")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays, group_release):
+        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays, group_release, group_column_kept):
             group(br, s)
         br.close()
     if os.environ.get("AUDIT_REPORT"):

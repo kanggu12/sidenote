@@ -290,7 +290,7 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | `run` | **Run** on a code box | `id` (`<per-panel prefix>-N`), `lang` (`python`, `c`, `cpp`, `javascript`, `typescript`, `java`, `kotlin`, `go`, `bash`), `code`, `stdin` |
 | `agent_confirm_reply` | the answer to **Confirm before sending** | `cid`, `send` |
 | `thumb`, `problem_text` | a screen to draw a region on; **Problem text** of an answer | `id` for `problem_text` |
-| `gpu_release`, `gpu_load`, `gpu_load_cancel` | giving the GPU back, **Load onto the GPU**, stopping that load | |
+| `gpu_release`, `gpu_load`, `gpu_load_cancel` | giving the GPU back, **Load to GPU**, stopping that load | |
 | `llm_pull` | **Download** on the Local model card | `model` |
 | `history_clear` | **Clear history** | |
 | `star` | **Star** on an answer; refused with a `notice` to that panel alone when `history.sqlite` does not hold the answer | `id`, `starred` |

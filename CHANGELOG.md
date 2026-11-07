@@ -6,6 +6,32 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- The setup guide's sample problem ends whatever becomes of it: an error, a call-off or a dropped connection left
+  "Solving the sample problem" until the page was loaded again, and the sample opened a second time (a problem solved
+  before) now has that answer. With Practice on, the guide no longer shows the answer the notebook keeps back, and an
+  answer with no head line no longer counts as no problem found.
+- The setup guide keeps an open list, the screen it shows and the words in a box while the server talks, where the
+  screen step drew itself again every second; a screen asked for after it closed starts no drawing on the screen card.
+- A folded spoken answer keeps the end of what was heard, the question, where a narrow window cut it off; **Show it
+  all** stands under a text only when it does not fit, a text opened whole stays so when its answer is drawn again,
+  and Korean words heard break between words.
+- A summary is not split inside a **bold** pair, a code span or math, nor after Dr. or Mr.
+- On a phone a spoken problem's "heard by voice" stands on its own line under the answer's keys, which keep their place
+  on the date's line; a choice's keys stand in even columns on a narrow sheet; the capture card's values line up in
+  English; and with the server gone the welcome ticks no engine as connected.
+- The Local model card's GPU keys read **Free GPU** and **Load to GPU** in English: beside the longer words its pill was
+  cut to "On GP" in a column 300 pixels wide.
+- The desktop shortcut's windows: a failure keeps a long line of the launcher whole, the reason being at its end; the
+  note of a start already under way stands above that start's window, where it covered it; no dot at the window's
+  corner before the groove fills; the later steps' shadow follows their round ends; and with no Pillow the steps keep
+  their check and dots. The shortcut gives the window the server's port (`SIDENOTE_PORT`), where it waited on 8777:
+  `./sidenote shortcut` makes it again.
+- The sample problem draws its choices ① to ④ at the text's size, where the font's own marks were a third of it.
+- The macOS quick start restarts Sidenote in a block of its own, once Screen Recording is on, and the user guide's
+  pictures name the agent as the panel does.
+
 ## [0.4.0] - 2026-11-08
 
 ### Added
