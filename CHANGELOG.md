@@ -18,6 +18,11 @@ that only fixes raises the patch number. Each release's section here is its rele
   was heard, where it showed its summary alone. A summary of several sentences marks its first, the point, and gives the
   rest a line each, where all of it was one marked block. The **Local model** and **Agent** cards fold to their top line
   on a press of their name, and stay so in the browser.
+- The README's quick start installs Sidenote on its own, a few lines for each system: the local model and the cloud
+  agent each have an optional part (either one solves, and one is needed), and the Kubernetes install moves to the
+  user guide.
+- The README opens with four of Sidenote's views (an answer, what was heard, the solver settings, the capture), and the
+  user guide gains the shortcut's windows, the voice flow and a figure of what to check when no answer comes.
 
 ## [0.2.2] - 2026-11-07
 
