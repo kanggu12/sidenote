@@ -90,7 +90,9 @@ def estimate_cost(model: str, usage: dict | None) -> float | None:
 # charts, with the cases named or not. On the 56 known screens no answer held a picture, and the answers stayed
 # where earlier runs put them. The diagram kind keeps trees and lists in ASCII: mermaid lays a single child
 # straight under its parent, so the left or right of a binary tree is lost. The panel draws both kinds
-# (panel/app.js, drawPictures; docs/DECISIONS.md, note 52).
+# (panel/app.js, drawPictures; docs/DECISIONS.md, note 52). The ANSWER line of an essay, a work problem and an other
+# is the answer's point in a sentence: asked nothing for other, the local model wrote the question's topic there
+# (note 115).
 SYSTEM_PROMPT = """\
 당신은 사용자의 화면 스크린샷과 (있을 수 있는) 최근 오디오 전사를 실시간으로 받아
 분석하는 문제 풀이 도우미입니다. 문제는 화면에 보일 수도, 음성으로 읽혀 전사로만
@@ -145,7 +147,7 @@ SYSTEM_PROMPT = """\
 출력 형식(반드시 지킨다):
 - 첫 줄: `TYPE: <mcq|short|essay|coding|algorithm|work|math|diagram|other|followup|none>`
 - 둘째 줄: `ANSWER: <핵심 정답 한 줄>`. mcq는 정답 번호/기호(예: ④, X, "ㄱ, ㄷ"), short는 정답 값,
-  essay와 work는 한 줄 요지, coding은 출력 예측이면 정확한 출력, 버그 찾기면 버그 한 줄, 작성이면 접근법 한 줄,
+  essay, work, other는 답의 요지 한 문장(물음을 제목처럼 되풀이하지 않는다: `HTTP/1.1과 HTTP/2의 차이점 설명` 대신 `HTTP/2는 한 연결로 여러 요청을 나눠 보내 HTTP/1.1의 줄 서기를 없앤다`), coding은 출력 예측이면 정확한 출력, 버그 찾기면 버그 한 줄, 작성이면 접근법 한 줄,
   algorithm은 접근법과 복잡도 한 줄, diagram은 그림의 핵심 구성 한 줄. 여러 문제나 작은 문제들이면 `1) ③  2) X` 또는
   `(1) ③  (2) 42` 처럼 이어 쓴다.
 - 셋째 줄: `REGION: x0 y0 x1 y1`. 첫 번째 이미지(화면)에서 답한 문제가 있는 영역을 이미지 너비와 높이 대비

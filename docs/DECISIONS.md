@@ -10,7 +10,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114) |
@@ -707,6 +707,21 @@ server holds it, `Pipeline._seen_upright`) over the 559 first-pass boxes kept fr
 it turned 6, each from 3 to 24 per cent of its problem to 35 to 100, and no box that held its problem; the panes of the
 coding sites stayed as they were. The first version of it, in 0.1.7, was measured on the screens as pictures, and in the
 server, which holds a screen as the PNG that arrived, it turned nothing.
+
+### <a id="note-115"></a>115. The one-line answer of an explanation is its answer
+
+The prompt said what the ANSWER line holds for every type but other, and for a question of that kind the local model
+filled it with the question's topic: a spoken question asking which of two tools had been used came back as the two
+tools' difference and use, and run again as a question about which one was used, which a folded answer showed alone, as
+if the answer had been cut off. The line now asks essay, work and other for the point of the answer in one sentence, and
+not the question restated as a title, with an example on a subject none of the measured questions is about. Measured on
+the local model with the panel in Korean, on 21 spoken questions twice each (the 13 of the known-answer set, and 8 that
+ask for a difference or about the speaker's own setup): the same answers are right, 40 of 42, the two left being a
+question about the speaker's own setup, which both prompts leave as `TYPE: none`; the lines that name a topic go from 2
+to none; the median case goes from 10.4 s to 10.1. The question about two tools now goes through the thinking pass, 61 s
+where its title took 3. The language of the answer is the server's (`in_answer_language`): run with none set, the same
+bench answered in English, and a Korean question about processes and threads came back as `Explain the differences
+between processes and threads`.
 
 ## The agents
 
