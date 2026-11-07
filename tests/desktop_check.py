@@ -251,6 +251,52 @@ if os.name != "nt":
     if alive(pid):
         os.kill(pid, signal.SIGKILL)
 
+print("[Ollama on the widened PATH, and ended with the app where nothing else ends it]")
+with tempfile.TemporaryDirectory() as d:
+    brew = Path(d) / "opt-homebrew-bin"
+    brew.mkdir()
+    fake = brew / ("ollama.exe" if os.name == "nt" else "ollama")
+    fake.write_text("")
+    fake.chmod(0o755)
+    with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
+        check("the app finds Ollama on the server's PATH, where the Finder's own has no Homebrew",
+              app.ollama_binary(str(brew)) == str(fake), app.ollama_binary(str(brew)))
+
+if os.name != "nt":
+    # the app (middle) starts a guard over a long sleep, says the sleep's pid once it runs, and ends two seconds later
+    guarded_code = ("import os, subprocess, sys, time\n"
+                    "sys.path.insert(0, os.environ['CHECKOUT'])\n"
+                    "from desktop import app\n"
+                    "sys.exit(app.guard([sys.executable, '-c', 'import os, time; print(os.getpid(), flush=True); time.sleep(30)'], every=0.2))\n")
+    middle_code = ("import os, subprocess, sys, time\n"
+                   "subprocess.Popen([sys.executable, '-c', os.environ['GUARD_CODE']],\n"
+                   "                 env={**os.environ, 'SIDENOTE_APP_PARENT': str(os.getpid())})\n"
+                   "time.sleep(2)\n")
+    middle = subprocess.Popen([sys.executable, "-c", middle_code], stdout=subprocess.PIPE, text=True,
+                              env={**os.environ, "CHECKOUT": str(ROOT), "GUARD_CODE": guarded_code})
+    guarded = int(middle.stdout.readline())
+    time.sleep(1.0)
+    check("a program the guard runs goes on while the app runs", alive(guarded))
+    middle.wait(timeout=10)
+    t0 = time.time()
+    while alive(guarded) and time.time() - t0 < 5:
+        time.sleep(0.1)
+    check("...and ends once the app is gone", not alive(guarded), f"still running after {time.time() - t0:.1f} s")
+    if alive(guarded):
+        os.kill(guarded, signal.SIGKILL)
+    # the app's own stop: SIGTERM to the guard ends the program it runs
+    guard = subprocess.Popen([sys.executable, "-c", guarded_code], stdout=subprocess.PIPE, text=True,
+                             env={**os.environ, "CHECKOUT": str(ROOT)})
+    inner = int(guard.stdout.readline())
+    guard.terminate()
+    guard.wait(timeout=10)
+    t0 = time.time()
+    while alive(inner) and time.time() - t0 < 5:
+        time.sleep(0.1)
+    check("...and with the guard when the app stops it", not alive(inner))
+    if alive(inner):
+        os.kill(inner, signal.SIGKILL)
+
 print("[the Mac app's language]")
 app.mac_language.cache_clear()
 listed = mock.Mock(stdout='(\n    "ko-KR",\n    "en-US"\n)\n')

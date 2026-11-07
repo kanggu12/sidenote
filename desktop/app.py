@@ -349,6 +349,30 @@ def _die_with_parent() -> None:
     _PRCTL(1, signal.SIGTERM)            # 1: PR_SET_PDEATHSIG
 
 
+def guard(argv: list[str], every: float = 1.0) -> int:
+    """Run a program of another make (Ollama) as this program's child on a system with no PR_SET_PDEATHSIG, and end it
+    once the app that started this guard is gone, as _end_with_parent ends the app's own roles. SIGTERM, as the app's
+    stop sends it, ends the program too. Returns its exit code."""
+    parent = int(os.environ.get("SIDENOTE_APP_PARENT") or os.getppid())
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL)
+
+    def end(*_) -> None:
+        if proc.poll() is None:
+            proc.terminate()
+
+    signal.signal(signal.SIGTERM, end)
+    while proc.poll() is None:
+        if os.getppid() != parent:
+            end()
+            try:
+                proc.wait(10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            break
+        time.sleep(every)
+    return proc.wait()
+
+
 def _end_with_parent(every: float = 1.0) -> None:
     """macOS has no PR_SET_PDEATHSIG, so a child of the app looks at its parent once a second and ends itself the way
     SIGTERM ends it once the app is gone (force-quit, or killed): the next start would otherwise find the old server up
@@ -510,8 +534,10 @@ def capture_supported() -> tuple[bool, str]:
                    "the panel start, and another PC can send screens to them (docs/capture-client.md).")
 
 
-def ollama_binary() -> str | None:
-    found = shutil.which("ollama")
+def ollama_binary(path: str | None = None) -> str | None:
+    """Ollama's command: on `path` (the server's PATH, widened for an app opened from the Finder, where Homebrew's is
+    missing), else where Ollama's own installers put it."""
+    found = shutil.which("ollama", path=path)
     if found:
         return found
     if sys.platform == "win32":          # where Ollama's installer puts it, when its folder is not on PATH
@@ -608,14 +634,18 @@ def run(args) -> int:
     capture: Child | None = None
     try:
         needed = ollama_needed(env)
-        binary = ollama_binary() if needed else None
+        binary = ollama_binary(env.get("PATH")) if needed else None
         if not needed and env.get("SIDENOTE_ANALYZER", "local") == "local" \
                 and env.get("SIDENOTE_LOCAL_URL", "").startswith(("http://127.0.0.1:11434", "http://localhost:11434")):
             # Ollama's own installer starts it at sign-in, with its defaults: a shorter context and images cut to fewer
             # tokens than OLLAMA_ENV gives, which blurs small code text. The tuned model brings its context along.
             say("Ollama was already running, with its own settings; quit it before starting Sidenote to have Sidenote's", log)
         if binary:
-            ollama = Child("ollama", [binary, "serve"], {**env, **{k: env.get(k, v) for k, v in OLLAMA_ENV.items()}},
+            # Linux ends it with this program (PR_SET_PDEATHSIG) and Windows with the job; elsewhere a guard of this
+            # program's own runs it and ends it once this program is gone
+            command = [binary, "serve"] if _PRCTL is not None or sys.platform == "win32" \
+                else role_cmd("--guard", binary, "serve")
+            ollama = Child("ollama", command, {**env, **{k: env.get(k, v) for k, v in OLLAMA_ENV.items()}},
                            CappedLog(logs / "ollama.log"))
             ollama.start()
             say(f"started Ollama ({binary})", log)
@@ -816,6 +846,8 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] in (["--capture"], ["--serve"]) and os.environ.get("SIDENOTE_APP_PARENT") and _PRCTL is None \
             and sys.platform != "win32":
         _end_with_parent()
+    if argv[:1] == ["--guard"] and len(argv) > 1:   # another program, ended with the app (guard)
+        return guard(argv[1:])
     if argv[:1] == ["--capture"]:        # everything after it is the capture program's own (client/capture.py --help)
         return capture(argv[1:])
     ap = argparse.ArgumentParser(prog="sidenote", description="Start Sidenote on this PC: the server, the capture "

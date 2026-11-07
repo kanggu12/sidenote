@@ -286,5 +286,43 @@ mac.sidenote_main()
 check("...and is run by whoever calls it, main() on the main thread", ran_on == [True], str(ran_on))
 stop_mac.set()
 
+# macOS: the end of the icon's loop goes through AppKit's queue (PyObjCTools.AppHelper.callAfter), which the loop runs
+# once it runs. pystray's stop() does nothing before then, so a quit that came while the program was starting was lost.
+class LoopIcon:
+    """pystray's darwin icon as far as this goes: stop() is a no-op until run() has started its loop, and the loop runs
+    what was handed to AppKit's queue."""
+    def __init__(self):
+        self.running, self.queue, self.ended = False, [], threading.Event()
+
+    def stop(self):
+        if self.running:
+            self.ended.set()
+
+    def sidenote_main(self):
+        time.sleep(0.3)                    # the program is still starting: the waiting beside it may be done already
+        self.running = True
+        t0 = time.time()
+        while not self.ended.is_set() and time.time() - t0 < 3:
+            while self.queue:
+                self.queue.pop(0)()
+            time.sleep(0.02)
+        self.running = False
+
+
+icon_mac = LoopIcon()
+sys.modules["PyObjCTools"] = types.SimpleNamespace(AppHelper=types.SimpleNamespace(callAfter=icon_mac.queue.append))
+sys.modules["PyObjCTools.AppHelper"] = sys.modules["PyObjCTools"].AppHelper
+stop_quit = threading.Event()
+t0 = time.time()
+cap.hold_main_thread(icon_mac, lambda: None, stop_quit)   # a quit asked before the loop ran: the waiting ends at once
+check("on macOS a quit that comes before the icon's loop runs ends the loop all the same",
+      icon_mac.ended.is_set() and stop_quit.is_set() and time.time() - t0 < 2, round(time.time() - t0, 2))
+failing = LoopIcon()
+failing.sidenote_main = lambda: None                        # an icon that could not run returns at once
+waited = []
+cap.hold_main_thread(failing, lambda: (time.sleep(0.3), waited.append(1)), threading.Event())
+check("...and an icon that cannot run leaves the capture going until it is done", waited == [1])
+del sys.modules["PyObjCTools"], sys.modules["PyObjCTools.AppHelper"]
+
 print(f"\n==== {len(OK)} passed, {len(BAD)} failed ====")
 sys.exit(1 if BAD else 0)
