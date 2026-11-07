@@ -49,7 +49,7 @@ program keeps the GPU busy; leave it out if you do not want that.
 | 8 GB | `sidenote-gemma4:e2b` | none | 4.6 GB |
 
 ```bash
-V=0.1.8                                     # the newest release, from the releases page
+V=0.2.0                                     # the newest release, from the releases page
 git clone --depth 1 --branch "v$V" https://github.com/kanggu12/sidenote
 cd sidenote
 ./sidenote up                               # builds the images, pulls Ollama's and downloads the speech model
@@ -194,7 +194,7 @@ Push the bundle's images to a registry inside the network, under the names the c
 their tag:
 
 ```bash
-V=0.1.8                                     # the release the bundle was made from
+V=0.2.0                                     # the release the bundle was made from
 gunzip -c images.tar.gz | docker load
 for name in sidenote sidenote-runner; do
   docker tag "$name:local" "registry.internal/$name:$V" && docker push "registry.internal/$name:$V"

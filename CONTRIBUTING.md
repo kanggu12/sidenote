@@ -185,9 +185,9 @@ the person running Sidenote.
 Versions follow [Semantic Versioning](https://semver.org/), and [CHANGELOG.md](CHANGELOG.md) holds each release's notes in
 the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-- **Which number.** A release that only fixes raises the patch number (0.1.8). One that adds something, such as a
-  feature, a setting or a platform, raises the minor number (0.2.0). One that asks people to change a setting, their
-  `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
+- **Which number.** A release that only fixes raises the patch number (0.2.0 to 0.2.1). One that adds something, such as
+  a feature, a setting or a platform, raises the minor number (0.2.1 to 0.3.0). One that asks people to change a
+  setting, their `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
 - **One place.** The number is written in `server/version.py`. The chart (`version`, `appVersion`), the `V=` lines of
   [docs/air-gapped.md](docs/air-gapped.md) and the README's release badge follow it, and `tests/version_check.py` fails
   when one does not.

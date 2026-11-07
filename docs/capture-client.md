@@ -1,6 +1,6 @@
 # Sidenote capture program
 
-The capture program runs on the PC whose screen and sound Sidenote reads: Windows, or a Linux desktop with X11. It
+The capture program runs on the PC whose screen and sound Sidenote reads: Windows, a Mac, or a Linux desktop with X11. It
 sends a frame when the screen changes and settles, the speaker sound for spoken problems, and the list of visible
 windows, so that a crop of the problem stops at its window's edge. It connects to the Sidenote server over a WebSocket
 and does nothing else.
@@ -12,7 +12,7 @@ port is forwarded to this PC:
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
 2. Install its packages from the folder of the release's `sidenote-capture-<version>.zip`, or from the repository's
-   `client` folder: `py -m pip install -r requirements.txt` on Windows, or on Linux
+   `client` folder: `py -m pip install -r requirements.txt` on Windows, or on Linux and macOS
    `python3 -m pip install -r requirements.txt` in a virtual environment.
 3. Start it there, pointing at the server:
 
@@ -22,7 +22,9 @@ port is forwarded to this PC:
 
    On Linux, run `python3 capture.py --server ws://127.0.0.1:8777/ingest` in the desktop session. It reads the X11
    screen (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's
-   PulseAudio service.
+   PulseAudio service. On macOS, run the same in Terminal: macOS asks once for **Screen Recording** for Terminal, and
+   the speaker sound comes through a loopback input such as BlackHole
+   ([the README's macOS section](https://github.com/kanggu12/sidenote/blob/main/README.md#macos-the-app)).
 
 For a server in a cluster, forward its port to this PC first and keep the forward on 127.0.0.1:
 `kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777`. The server answers only requests addressed
@@ -48,7 +50,7 @@ The icon in the notification area has **Open the panel**, **Screen capture**, **
 and **Quit**, in Korean on a Korean system
 ([section 18 of the user guide](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#18-panel-labels) lists
 each label). The line under **Open the panel** says what is being sent. On Linux the icon appears where the desktop
-shows such icons: an AppIndicator, or the X11 tray.
+shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu.
 
 <img alt="The tray menu: Open the panel; the state, Capturing: Screen · Sound; the Screen capture and Sound capture
   switches, both on; Restart capture; Quit" src="assets/tray-menu.png" width="272">
@@ -69,6 +71,7 @@ holds the server's default list (the common password managers and the browsers' 
 |:---|:---|:---|:---|:---|
 | Windows | `GetForegroundWindow` | `EnumWindows`, with a title, not minimized, not cloaked, and neither a tool window nor click-through | `GetWindowTextW` | the file name of the process (`QueryFullProcessImageNameW`), such as `Bitwarden.exe` |
 | Linux with X11 | the root window's `_NET_ACTIVE_WINDOW`, which the window manager keeps | the root window's `_NET_CLIENT_LIST_STACKING`, without those `_NET_WM_STATE_HIDDEN` or on another `_NET_WM_DESKTOP` | `_NET_WM_NAME`, else `WM_NAME` | `WM_CLASS`, such as `keepassxc KeePassXC` |
+| macOS | the first of the windows, which the app in front keeps over the others | `CGWindowListCopyWindowInfo`, the windows on screen of the normal layer that are not wholly see-through (a minimized one, or one on another Space, is not on it) | `kCGWindowName`, once Screen Recording is allowed | the app's name (`kCGWindowOwnerName`), such as `Bitwarden` |
 
 A Wayland session tells other programs nothing of its windows, so there nothing is skipped. A window manager that keeps
 no list of its windows leaves the window in front to go by, and one that keeps neither leaves nothing. The log says so
