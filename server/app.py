@@ -702,7 +702,30 @@ def window_list(raw) -> list | None:
     return out
 
 
+# The answers being written, as the panels were told of them, by id: a panel that opens meanwhile (a reload) is told each
+# again at once, with its words so far and where it stands. It used to see nothing of it until the answer was done.
+LIVE: dict = {}
+LIVE_MAX_SEC = 1800   # longer than any answer is let run: one that ended with no word of it is not told again for ever
+
+
+def note_live(message: dict) -> None:
+    kind, key = message.get("type"), message.get("id")
+    now = time.time()
+    for old in [k for k, v in LIVE.items() if now - v["at"] > LIVE_MAX_SEC]:
+        LIVE.pop(old, None)
+    if kind == "analysis_start":
+        LIVE[key] = {"start": message, "text": "", "stage": None, "at": now}
+    elif key in LIVE:
+        if kind == "delta":
+            LIVE[key]["text"] += message.get("text") or ""
+        elif kind == "stage":
+            LIVE[key]["stage"] = message
+        elif kind in ("analysis_done", "analysis_cancelled", "error"):
+            LIVE.pop(key, None)
+
+
 async def broadcast(message: dict) -> None:
+    note_live(message)
     dead = []
     for ws in list(STATE.panel_clients):
         try:
@@ -904,6 +927,13 @@ async def run_code(seq, lang: str, code: str, stdin: str, reply=None) -> None:
             await fail(t("Code run error"), "error")
     finally:
         STATE.runs_active -= 1
+
+
+def runner_here() -> bool:
+    """Whether a code runner is set up for the automatic checks: the desktop app has none (Docker and Kubernetes start
+    one). With none, no check starts: this PC's model read the problem's examples first, and then every coding answer
+    was marked as failed because the runner was off."""
+    return bool(CONFIG.runner_url)
 
 
 async def runner_exec(lang: str, code: str, stdin: str | list) -> dict:
@@ -2007,7 +2037,7 @@ async def check_continuation(app: FastAPI, seq: int, task, last: dict, pages, re
     text = result.text if answer_code(result.text) is not None else last["text"]
     # the whole stitched problem, as the continuation read it, not the first screen's crop
     code = replace(result, text=text, crop_box=None, local_view=None)
-    found = checkable(PIPELINE, pages, code, any_type=True)
+    found = checkable(PIPELINE, pages, code, any_type=True) if runner_here() else None
     if not found or not found[0]:
         return
     # The pause stops it, as it stops the first check, and so does screen-off: it reads that screen's examples, and the
@@ -2680,6 +2710,10 @@ async def analysis_worker(app: FastAPI) -> None:
         words of `voice` end, which the next spoken problem starts from once these have their answer."""
         start = time.time()
         trigger = "voice" if voice else "screen"
+        # The answer's time, on its card and in the record: when its screen was taken, for a screen picked up by itself;
+        # when it was asked, for a spoken problem or a Reanalyze press. Those took the last screen's time, minutes earlier,
+        # and stood out of order in the record, out of Practice's reach as answers that came before it was switched on
+        asked = start if (voice or manual or frame is None) else frame.ts
         first: list[float] = []
         epoch = STATE.screen_epoch   # a screen-off from here on means this frame may not be used afterwards
         # The last answer's example check, its the agent check and its retry or continuation are about that answer, and
@@ -2711,7 +2745,7 @@ async def analysis_worker(app: FastAPI) -> None:
             else:
                 transcript = await transcribe_current(app.state.transcriber, loop)
             await broadcast(
-                {"type": "analysis_start", "id": seq, "ts": frame.ts if frame else start,
+                {"type": "analysis_start", "id": seq, "ts": asked,
                  "thumb": frame.thumb_url if frame else None, "transcript": transcript,
                  "pages": len(frame.extra_b64) if frame else 0, "trigger": trigger,
                  "roi": SETTINGS.get("roi_box") if frame is not None else None}
@@ -2883,7 +2917,7 @@ async def analysis_worker(app: FastAPI) -> None:
                         via=(result.stages or {}).get("why"), **usage_fields(result))
         if not is_none:
             keep_answer(seq, kind, {
-                "ts": frame.ts if frame else start, "trigger": trigger, "transcript": voice or "", "text": result.text,
+                "ts": asked, "trigger": trigger, "transcript": voice or "", "text": result.text,
                 "model": result.model, "engine": result.engine, "sent": result.sent, "stages": result.stages,
                 "usage": result.usage, "cost_usd": result.cost_usd, "elapsed": round(time.time() - start, 2),
                 "first_token": round(first[0] - start, 2) if first else None,
@@ -2895,7 +2929,7 @@ async def analysis_worker(app: FastAPI) -> None:
                  time.time() - start, "none" if region is None else "%.2f %.2f %.2f %.2f" % region)
         if frame is not None and STATE.screen_epoch != epoch:   # switched off while this was finishing
             return
-        if not is_none and checkable(PIPELINE, frame, result):
+        if not is_none and runner_here() and checkable(PIPELINE, frame, result):
             STATE.check_task = asyncio.create_task(run_check(app, seq, frame, result))
         if PIPELINE.verifying(result):
             STATE.verify_carries = {"image": frame is not None and (not voice or SETTINGS.get("agent_payload") == "screen"),
@@ -3574,6 +3608,12 @@ def create_app() -> FastAPI:
                 # a 120 s wait would otherwise count 120 down and then watch the card vanish.
                 left = max(0.0, round(msg["timeout"] - (time.time() - msg["ts"]), 1))
                 await ws.send_text(json.dumps({**msg, "timeout": left, "ts": time.time()}))
+        # An answer being written: its start with its words so far in one message, so that the words broadcast from here on
+        # follow them in order, and where it stands
+        for live in list(LIVE.values()):
+            await ws.send_text(json.dumps({**live["start"], "text": live["text"]}))
+            if live["stage"]:
+                await ws.send_text(json.dumps(live["stage"]))
 
         async def reply(m: dict) -> None:   # to this panel only (a code run's result)
             try:
@@ -3666,6 +3706,8 @@ def create_app() -> FastAPI:
                     STATE.answers.clear()
                     STATE.repeat_said = 0
                     telemetry.event("history_clear", ok=cleared)
+                    if cleared:   # every panel open clears what it shows: one told nothing kept the answers that went
+                        await broadcast({"type": "history_cleared"})
                     await reply({"type": "notice", "level": "done" if cleared else "bad",
                                  "text": t("Cleared, the saved history too") if cleared
                                  else t("Clearing the saved history failed")})

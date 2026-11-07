@@ -554,6 +554,10 @@ print("[the server role ends at once after its close-down, with jobs still runni
 if sys.platform == "win32":
     print("  skipped: it runs on Linux and macOS here")
 else:
+  # Asked to close down, as the app asks, and ended with SIGTERM, as it is when asking does not work or the app dies (uvicorn
+  # then sends the signal on to the handler that was there before it, and the default one ended the process before its
+  # clean-up)
+  for how in ("asked", "SIGTERM"):
     port = app.free_port()
     with tempfile.TemporaryDirectory() as d:
         # A job on the loop's threads that nothing cuts short, as the speech model's first download is, itself waiting
@@ -591,22 +595,25 @@ else:
         proc = subprocess.Popen([sys.executable, str(stand_in), "--serve", "--port", str(port)], cwd=str(ROOT), env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         up = app.wait_for(lambda: app.health(port) is not None, timeout=60)
-        check("the server comes up with the speech model still loading and an answer being written",
+        check(f"{how}: the server comes up with the speech model still loading and an answer being written",
               bool(up) and app.wait_for(lambda: cli_pid.is_file() and cli_pid.read_text().strip(), timeout=30))
         cli = int(cli_pid.read_text()) if cli_pid.is_file() and cli_pid.read_text().strip() else 0
         asked = time.monotonic()
-        check("...and closes down when the app asks", app.ask_server_to_stop(port, token))
+        if how == "asked":
+            check("...and closes down when the app asks", app.ask_server_to_stop(port, token))
+        else:
+            proc.send_signal(signal.SIGTERM)
         try:
             proc.wait(30)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
         took = time.monotonic() - asked
-        check("...within a few seconds, waiting for neither", proc.returncode == 0 and took < 5,
+        check(f"...{how}, it ends within a few seconds with exit 0, waiting for neither", proc.returncode == 0 and took < 5,
               f"exit {proc.returncode} after {took:.1f} s")
         # cancelled as asyncio.run cancels what is left, so its clean-up ran: no CLI writing on for an answer nobody sees
         ended = cli and app.wait_for(lambda: not alive(cli), timeout=5)
-        check("...and the answer being written was cancelled, its agent's CLI ended by its own clean-up", bool(ended),
+        check(f"...{how}, the answer being written is cancelled, its agent's CLI ended by its own clean-up", bool(ended),
               f"CLI {cli} still running" if cli else "no CLI was started")
         if cli and alive(cli):
             os.kill(cli, signal.SIGKILL)

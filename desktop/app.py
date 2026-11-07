@@ -257,7 +257,7 @@ KO = {
     "The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.":
         "로그는 {folder}에 있습니다. Sidenote를 다시 켜 보고, 또 그러면 로그를 붙여 이슈를 열어 주세요.",
     "Sidenote goes on without starting Ollama: the local model answers only once Ollama runs.":
-        "Sidenote는 Ollama 없이 계속 실행합니다. 이 PC의 모델은 Ollama가 켜져 있어야 답합니다.",
+        "Sidenote는 Ollama를 켜지 않고 계속 실행됩니다. 이 PC의 모델은 Ollama가 켜져 있어야 답합니다.",
 }
 
 
@@ -804,6 +804,11 @@ def serve(port: int) -> int:
         config.setup_event_loop()
         loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    # uvicorn closes down on SIGTERM as on Ctrl+C, then sends the signal again to the handler that was there before it ran,
+    # to end the process the way that signal would have. The default there ended it at once, before the clean-up below: an
+    # answer's agent CLI went on writing, and its screens stayed in the temporary folder. The app sends SIGTERM when asking
+    # did not work (Child.stop), and so does the system when the app dies (PR_SET_PDEATHSIG, _end_with_parent on macOS).
+    signal.signal(signal.SIGTERM, lambda *_: None)
     try:
         loop.run_until_complete(uvicorn.Server(config).serve())
     except KeyboardInterrupt:                    # uvicorn raises again the Ctrl+C its close-down was asked with
