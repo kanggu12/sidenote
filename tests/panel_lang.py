@@ -191,6 +191,12 @@ def group_korean(br, s):
     # The particle after a Hangul word goes by its last letter, inside its quotes and past a bracketed aside
     picked = p.js("(ws) => ws.map((w) => w + particle(w, '이/가'))", ["'큐'", "'스택'", "스택 (2)"])
     check("the particle after a quoted word goes by the word", picked == ["'큐'가", "'스택'이", "스택 (2)이"], picked)
+    # The agent's name, Latin, takes its particle as it is read: Claude Code, Codex and Claude all end in a vowel (코드, 코덱스,
+    # 클로드). "아직 Claude Code이 쓴 답 없음" was on the agent's card before its first answer
+    named = p.js("""(names) => { const keys = Object.keys(CATALOGS.ko).filter((k) => CATALOGS.ko[k].includes('{agent'));
+        return names.flatMap((n) => keys.map((k) => t(k, { agent: n }))); }""", ["Claude Code", "Codex", "Claude"])
+    wrong = [x for x in named if re.search(r"(Claude Code|Codex|Claude)(이|은|을|과|으로)(?![가-힣])", x)]
+    check(f"the agent's name takes the particle it is read with ({len(named)} words)", named and not wrong, wrong[:4])
     no_errors(p, "korean")
     p.close()
 

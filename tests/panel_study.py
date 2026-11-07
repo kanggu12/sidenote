@@ -718,6 +718,12 @@ def group_anki(br, s):
     entries = re.findall(r"^## \d{4}-\d{2}-\d{2} \d{2}:\d{2} ", md, re.M)   # an answer's own heading: its time first
     check("Markdown from the menu: the file it always was, the failure in it", dl.value.suggested_filename.endswith(".md") and len(entries) == 7 and "ANSWER:" not in md
           and "분석 실패" in md, [len(entries), md[:120]])
+    # An answer's own headings go two levels under the answer's (##), lines in code left alone: a body's "## Approach" stood
+    # level with the answers themselves
+    others = [x for x in re.findall(r"^## .*$", md, re.M) if not re.match(r"## \d{4}-\d{2}-\d{2} \d{2}:\d{2} ", x)]
+    nested = p.js("() => nestHeadings('## 접근\\n```python\\n# 주석\\n```\\n### 단계\\n#해시태그')")
+    check("...the answers' own headings under each answer, a code comment left as it was", not others
+          and nested == "#### 접근\n```python\n# 주석\n```\n##### 단계\n#해시태그", [others[:3], nested])
     # Anki
     p.page.click("#hist-export")
     with p.page.expect_download() as dl:

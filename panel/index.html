@@ -2455,7 +2455,14 @@
   :root[data-skin="classic"] .md .v-terms > li:nth-last-child(2):nth-child(3n + 1), :root[data-skin="classic"] .md .v-terms > li:last-child:nth-child(3n + 2) { grid-column: span 3; }
   :root[data-skin="classic"] .md .v-terms > li:nth-last-child(4):nth-child(3n + 1), :root[data-skin="classic"] .md .v-terms > li:nth-last-child(3):nth-child(3n + 2), :root[data-skin="classic"] .md .v-terms > li:nth-last-child(2):nth-child(3n), :root[data-skin="classic"] .md .v-terms > li:last-child:nth-child(3n + 4) { grid-column: span 3; }
   @media (max-width: 1500px) { :root[data-skin="classic"] .md .v-terms > li, :root[data-skin="classic"] .md .v-terms > li:nth-last-child(n) { grid-column: span 3; } :root[data-skin="classic"] .md .v-terms > li:last-child:nth-child(odd) { grid-column: 1 / -1; } }
-  @media (max-width: 760px) { :root[data-skin="classic"] .md .v-terms > li, :root[data-skin="classic"] .md .v-terms > li:nth-last-child(n), :root[data-skin="classic"] .md .v-terms > li:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+  /* !important: the rules above that give a card half a row by its place in the list are more specific, and on a narrow window
+     they kept two, four or five cards two to a row at about 150 px each */
+  @media (max-width: 760px) { :root[data-skin="classic"] .md .v-terms > li { grid-column: 1 / -1 !important; } }
+  /* The list goes by its own width as well: beside the column on a window of 1,001 to about 1,150 px the thread is narrow,
+     and two cards were 220 to 290 px each, their code broken inside an option. With no room for two of 290 px (the width
+     the cards were first laid out by), each takes its row */
+  :root[data-skin="classic"] .md .v-terms { container-type: inline-size; }
+  @container (max-width: 587px) { :root[data-skin="classic"] .md .v-terms > li { grid-column: 1 / -1 !important; } }
 
   /* ---- Motion. Nothing moves at rest, and nothing loops but what is at work: a spinner while it thinks, a caret while it writes, the ears while it hears.
      What moves says what just changed: a key's state, a value, the page's ribbon, an answer finished and its pictures being drawn, once, when first seen ---- */
@@ -2880,7 +2887,7 @@
   .heard-tools .combo.pick { flex: 1 1 200px; min-width: 0; max-width: none; }
   .heard-tools .combo.pick .combo-btn { height: 28px; font-size: 12.5px; }
   .heard-lines { list-style: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -8px 0 0; padding: 0 8px 0 0; }
-  .heard-line { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 6px 0;
+  .heard-line { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 6px 0;
     font-size: 13.5px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
   .heard-line + .heard-line { border-top: 1px dashed var(--rule); }
   .heard-line time { font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2902,6 +2909,28 @@
   html.bands-in-bar .alerts .alert .btn.icon { width: 26px; }
   /* A link in a band wraps whole: "Release notes" broke between its two words on a narrow window */
   .alert .msg a { white-space: nowrap; }
+  /* The settings sheet's rows one height whatever their control: a switch's row was 62 px, a key's 66 and a choice's 68, and
+     the first title moved 3 px between two sections */
+  :root[data-skin="classic"] #settings-body .set .ctl { min-height: 30px; }
+  /* Every card's title in the column on one line from the card's top: those with no key beside them (What is heard, the
+     contents) sat 3.5 px higher than the others */
+  :root[data-skin="classic"] .rail .card > h2 { min-height: 30px; }
+  /* The small keys one height, 28 px, as the keys with a mark alone are: Details was 24, the bands' keys 26 in the bar and
+     28 in the page, the heard card's key 36 wide, the search field 32 beside filters of 30. A code block's own bar keeps its
+     26 px keys: at 28 the bar grew 2 px once the answer was written, its keys taking the place of the writing note */
+  :root[data-skin="classic"] .meta-more { height: 28px; }
+  html.bands-in-bar[data-skin="classic"] .alerts .alert .btn { height: 28px; }
+  html.bands-in-bar .alerts .alert .btn.icon { width: 28px; }
+  :root[data-skin="classic"] .hear-foot > .btn:has(svg) { width: 28px; height: 28px; padding: 0; justify-content: center; }
+  :root[data-skin="classic"] .rail .hist-tools input { height: 30px; }
+  @media (max-width: 760px) {
+    /* A band's words take the band's width and its key goes under them: beside the key they had 170 of 334 px at 390, the
+       model's name broken in two over seven lines */
+    :root[data-skin="classic"] .alert:not(.confirm) .msg { flex: 1 1 calc(100% - 30px); }
+    :root[data-skin="classic"] .alert:not(.confirm) > .btn { margin-left: 30px; }
+    /* The day on a row of its own and the two keys under it, not one key alone on the second row */
+    :root[data-skin="classic"] .heard-tools .combo.pick { flex-basis: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -3078,7 +3107,7 @@
   <section class="card settings" id="heard" role="dialog" aria-modal="true" aria-labelledby="heard-title">
     <header><h2 id="heard-title" data-t>What was heard</h2>
       <button class="btn icon" id="heard-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
-    <p class="lede" data-t>Stays on this PC. Clear history in the menu clears it</p>
+    <p class="lede" data-t>Stays on this PC · Clear history in the menu clears it</p>
     <div class="heard-tools">
       <select id="heard-day" aria-label="Date" data-t-aria tabindex="-1"></select>
       <button class="btn sm" id="heard-copy" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11.5" height="11.5" rx="2.5"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3h-7A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15"/></svg><span data-t>Copy all</span></button>

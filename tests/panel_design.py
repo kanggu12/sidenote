@@ -642,9 +642,9 @@ def group_skip(br, s):
         got.append(p.js("""() => { const e = document.getElementById('pill-screen'), n = document.querySelector('#st-screen .src-note');
             return [e.textContent, e.dataset.state, e.scrollWidth <= e.clientWidth + 1, n ? n.textContent : '']; }"""))
     check("no way to read the windows: the card warns, whole, and says what to do",
-          got[0] == ["창 못 건너뜀", "warn", True, "이 데스크톱은 열린 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요"], got[0])
+          got[0] == ["창 못 건너뜀", "warn", True, "이 데스크톱은 열린 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면 끄기"], got[0])
     check("only the window in front to go by: the same caution, told apart",
-          got[1] == ["맨 앞 창만", "warn", True, "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면을 끄세요"], got[1])
+          got[1] == ["맨 앞 창만", "warn", True, "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면 끄기"], got[1])
     check("...and with nothing to say the card is receiving", got[2][:2] == ["받는 중", "ok"] or got[2][0] == "받는 중", got[2])
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skip_limit": "none", "skipping": True}})
     p.wait(120)
