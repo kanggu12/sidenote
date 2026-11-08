@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-08
+
 ### Fixed
 
 - A problem this PC's model took and could not answer goes to the agent, on the same card with a note, where it ended
@@ -448,7 +450,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kanggu12/sidenote/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kanggu12/sidenote/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/kanggu12/sidenote/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kanggu12/sidenote/compare/v0.4.0...v0.4.1
