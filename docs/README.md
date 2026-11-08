@@ -739,6 +739,13 @@ asks for more of it.
 | **All** | Every problem goes to the agent |
 | **Off** | The agent is not used |
 
+- When the local model cannot answer a problem it took, the agent answers it on the same card, with a note saying so:
+  when its thinking pass brings nothing for 30 seconds (`SIDENOTE_LOCAL_THINK_FIRST_TOKEN_SEC`; a model just loaded gets
+  45), when its answer stops coming for a minute, or when its model server fails. This is how a GPU another program is
+  using (a game, a video call) is met: there the thinking pass can wait minutes before its first word. It is not done
+  when the agent is off, over its spending limit, or kept from the problem (**Confirm before sending** not given,
+  numbers like personal data); and when the agent cannot answer either, the card says that both failed.
+
 - The agent gets only the problem: the problem's part of the screen (**Problem area**, the default), the problem
   written out as text (**Problem text**), or the whole screen (**Whole screen**), as **What is sent to the agent**
   says. **Confirm before sending** shows it first and sends it only on **Send**; **Don't send**, or two minutes
@@ -1501,6 +1508,8 @@ Some of them:
 |:---|:---|
 | `integ.py` | The server end to end with mock engines: the pipeline's branches, the code check in nine languages, the spend brake, the agent's settings |
 | `agent_first.py` | The agent first, and the local model when the agent cannot: routing by speed and by the GPU, the first-token deadline, the verify mode on a 4K screen |
+| `local_fallback.py` | The local model not answering and the agent taking the problem: the thinking pass's own deadlines when the agent can take it, the handover on the same card, and when it is not done |
+| `api_check.py` | The API: each of the panel's messages as a route and on its page, the reads, an answer followed through it, what is refused, and the events from a real server |
 | `codex_agent.py` | The Codex agent against a stand-in CLI that streams, sends whole, fails, dies and signs out |
 | `capture_panel.py`, `capture_loop.py` | The capture program's loop and its messages, with a fake screen grabber |
 | `stall_guard.py` | The stall watchdog (including a stall that holds the GIL) and the fork guard |

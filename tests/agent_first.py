@@ -273,7 +273,7 @@ async def verify_spanning_box():
         # Claude's words are read from in the verify mode; the screen is, as before
         SETTINGS.values["local_think"] = "never"
 
-        async def direct(images, text, on_delta, prior=None, think=True, on_thought=None):
+        async def direct(images, text, on_delta, prior=None, think=True, on_thought=None, **_):
             return AnalysisResult(text="TYPE: coding\nREGION: 300 200 700 800\nANSWER: x\n```python\npass\n```",
                                   model="mock-local")
         eng.local.deep = direct
@@ -464,7 +464,7 @@ async def thinking():
     try:
         SETTINGS.values.update(local_llm=True, agent_mode="off")
 
-        async def deep(images, text, on_delta, prior=None, think=True, on_thought=None):
+        async def deep(images, text, on_delta, prior=None, think=True, on_thought=None, **_):
             await on_thought(1240)
             return await type(eng.local).deep(eng.local, images, text, on_delta, prior=prior, think=think)
         eng.local.deep = deep

@@ -6,6 +6,15 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- A problem this PC's model took and could not answer goes to the agent, on the same card with a note, where it ended
+  in an error with the agent on; a follow-up does the same. When the agent can take it, the thinking pass is given up
+  after 30 seconds with no token, or a minute's silence in its answer, and the GPU is counted busy: on a GPU a video
+  call was using, the pass waited minutes for its first word. With the agent off, over its spending limit or kept from
+  the problem, the error stands; when both fail, the card says so
+  ([note 117](https://github.com/kanggu12/sidenote/blob/main/docs/DECISIONS.md#note-117)).
+
 ## [0.5.0] - 2026-11-08
 
 ### Added

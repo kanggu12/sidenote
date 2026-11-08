@@ -1485,7 +1485,19 @@ class Pipeline:
         # The local model hears what was said around a screen problem; the agent never does.
         text = build_user_text(transcript, pages, voice, bool(look))
         if think == "never" and mode in ("off", "verify"):   # local only, no thinking at all: one direct pass
-            res = await local.deep(look, text, on_delta, think=False)
+            # in verify the agent is there, and takes the problem when this PC's model cannot answer it (note 117)
+            can_take = mode == "verify" and (by_user or not self.spend.blocked())
+            try:
+                res = await local.deep(look, text, on_delta, think=False,
+                                       first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
+                                       stall=CONFIG.local_stuck_sec if can_take else None)
+            except (asyncio.CancelledError, Repeat):
+                raise
+            except Exception as exc:
+                if not can_take:
+                    raise
+                return await self._agent_after_local(seq, exc, agent, local, frame, look, pages, transcript, voice, None,
+                                                     stages, on_delta, None, "", None, False, [], by_user)
             return self._local_outcome(res, view, stages, think=False, windows=windows, aspect=box_aspect(frame, view))
 
         # When the agent could take this screen, the first pass gets local_first_token_sec for its first token: nothing
@@ -1709,13 +1721,25 @@ class Pipeline:
             # the one long wait with nothing else on the card (30 s to the first word at the median on this PC's
             # screens, 100 s for the slowest tenth)
             await self.hooks.stage(seq, "think", t("Thinking: {n} characters", n=f"{chars:,}"), thought=thought_line(tail))
+        # The agent takes the problem over when this PC's model cannot answer it (design note 117): not given up on
+        # here while the agent can, it waited minutes on a GPU another program held and ended in an error with the agent
+        # on. Not when the agent has had it already (failed or declined), was held back from it (not sent), is off or
+        # braked: then the pass waits as before, there being nothing else to answer with.
+        can_take = (agent is not None and mode != "off" and not agent_wrote and declined is None
+                    and not stages.get("not_sent") and not brake)
         try:
             res = await local.deep(images, build_user_text(transcript, pages, voice, bool(images), zoom=zoom),
                                    self.speed.timed("think", on_delta) if on else on_delta,
-                                   prior=f.messages, think=on, on_thought=thinking if on else None)
+                                   prior=f.messages, think=on, on_thought=thinking if on else None,
+                                   first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
+                                   stall=CONFIG.local_stuck_sec if can_take else None)
         except (asyncio.CancelledError, Repeat):
             raise
         except Exception as exc:
+            if can_take:
+                return await self._agent_after_local(seq, exc, agent, local, frame, look, pages, transcript, voice, box,
+                                                     stages, on_delta, seen, f.type, searched_facts(f.messages),
+                                                     present_question(f.messages), sent, by_user)
             if declined is None:
                 raise
             # it took over a problem the agent declined and failed: the agent's reply is the card, not an error
@@ -1900,6 +1924,42 @@ class Pipeline:
         await self.hooks.stage(seq, "confirm", what)
         if not await self.hooks.confirm(seq, preview):
             raise NotSent()
+
+    async def _agent_after_local(self, seq, exc, agent, local, frame, look, pages, transcript, voice, box, stages,
+                                 on_delta, seen, kind, facts, web, sent, by_user) -> Outcome:
+        """This PC's model could not answer (`exc`: no first token while the GPU was held, a stream gone silent, its
+        server failing): the agent takes the problem, with what the payload setting and the confirm allow, as it takes
+        those it is given at once. What the local model wrote before it stopped is cleared from the card. When the
+        problem may not go (not sent), or the agent fails too, the card says why: there is nothing else to answer."""
+        # a deadline of its own (NoFirstToken, a silent stream) is a timeout whatever its message says
+        why = t("no answer in time") if isinstance(exc, TimeoutError) else error_words(str(exc))
+        log.warning("analysis #%d: the local model could not answer (%s); the agent takes it", seq, exc)
+        telemetry.event("local_failed", id=seq, reason=f"{type(exc).__name__}: {exc}"[:200], to_agent=True)
+        stages["local_failed"] = True
+        stages["why"] = "local_failed"   # why the agent got this one (report: VIA_NAMES)
+        await self._warn(t("The local model could not answer ({why}) · the agent solves", why=why, agent=agent_name()))
+        await self.hooks.stage(seq, "agent", "", restart=True)
+        try:
+            out = await self._agent_solve(seq, agent, local, frame, look, pages, transcript, voice, box, stages,
+                                          on_delta, seen=seen, kind=kind, facts=facts, web=web, by_user=by_user)
+        except (asyncio.CancelledError, Repeat):
+            raise
+        except NotSent as held:
+            # what the payload setting, personal data or a declined confirm keeps on this PC stays there
+            log.info("analysis #%d: not sent to the agent either (%s)", seq, str(held) or "not confirmed")
+            telemetry.event("agent_not_sent", id=seq, reason=str(held)[:120] or "not confirmed", type=kind or "")
+            raise exc
+        except Exception as failed:
+            if not getattr(failed, "limit", False):
+                await self.hooks.agent_failed(failed)
+            log.warning("analysis #%d: the agent failed too (%s)", seq, failed)
+            both = RuntimeError(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
+                                  local=why, agent_why=error_words(str(failed)), agent=agent_name()))
+            both.sent = sent + getattr(failed, "sent", [])   # the problem went out all the same: the card says so
+            raise both from failed
+        out.sent = sent + out.sent
+        out.stages = {**out.stages, **stages}
+        return out
 
     async def _agent_solve(self, seq, agent, local, frame, look, pages, transcript, voice, box, stages,
                             on_delta, seen=None, kind: str = "", facts=None, web: bool = False,
@@ -2096,12 +2156,14 @@ def followup_engine(pipeline: "Pipeline", last: dict):
 
 
 async def followup(pipeline: "Pipeline", last: dict, question: str, context: str, on_delta, seq: int = 0,
-                   pages=None) -> Outcome:
+                   pages=None, by_user: bool = True) -> Outcome:
     """A follow-up goes to the engine that wrote the answer it is about, with the same limits on what
     The agent is given (the crop, or no image at all with the text payload) and the same confirm before
     sending (NotSent when declined). `seq`: the follow-up's own number, for that confirm. `pages`: a frame
     carrying the problem scrolled together (its extra_b64), which goes in place of the answer's own screen:
-    the problem as it now reads in full, for the answer to be filled out from (the continuation)."""
+    the problem as it now reads in full, for the answer to be filled out from (the continuation). `by_user`: a
+    question a person asked, which the agent's brake does not hold back (the retry and the continuation are not).
+    One this PC's model cannot answer goes to the agent, as a problem does (design note 117)."""
     local, agent = pipeline._local(), pipeline._agent()
     frame, box = last.get("frame"), last.get("crop_box")
     engine = followup_engine(pipeline, last)
@@ -2109,12 +2171,31 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
         raise NoSolver("no engine can answer the follow-up")
     fu = {"question": question, "context": context}
     tiles = list(getattr(pages, "extra_b64", None) or ())
+    local_failed = None
     if engine is local:
         shown = pages if tiles else frame   # the scrolled-together problem, when there is one, beside its screen
-        res = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
-                                  extra=shown.extra_b64 if shown else (), followup=fu)
-        return Outcome(text=res.text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
-                       sent=_searches(getattr(res, "searches", None)))
+        can_take = (agent is not None and SETTINGS.get("agent_mode") != "off"
+                    and (by_user or not pipeline.spend.blocked()))
+        try:
+            res = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
+                                      extra=shown.extra_b64 if shown else (), followup=fu,
+                                      first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
+                                      stall=CONFIG.local_stuck_sec if can_take else None)
+            return Outcome(text=res.text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
+                           sent=_searches(getattr(res, "searches", None)))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if not can_take:
+                raise
+            local_failed = exc
+            why = t("no answer in time") if isinstance(exc, TimeoutError) else error_words(str(exc))
+            log.warning("follow-up #%d: the local model could not answer (%s); the agent takes it", seq, exc)
+            telemetry.event("local_failed", id=seq, reason=f"{type(exc).__name__}: {exc}"[:200], to_agent=True,
+                            followup=True)
+            await pipeline._warn(t("The local model could not answer ({why}) · the agent solves", why=why,
+                                   agent=agent_name()))
+            await pipeline.hooks.stage(seq, "agent", "", restart=True)   # what it wrote before it stopped goes
     payload, images, what = SETTINGS.get("agent_payload"), [], t("The question and the earlier solution")
     manual = SETTINGS.get("roi_box")
     if tiles:
@@ -2150,7 +2231,15 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
         exc.engine = "agent"
         pipeline.spend.failed(exc)   # paid for all the same
         pipeline.spend.limited(str(exc))   # its plan used up: the agent rests until it comes back
-        raise
+        if local_failed is None:
+            raise
+        log.warning("follow-up #%d: the agent failed too (%s)", seq, exc)
+        why_local = (t("no answer in time") if isinstance(local_failed, TimeoutError)
+                     else error_words(str(local_failed)))
+        both = RuntimeError(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
+                              local=why_local, agent_why=error_words(str(exc)), agent=agent_name()))
+        both.engine = "agent"
+        raise both from exc
     # This one was asked for by hand, so it never counts as an empty row, but what it cost is part
     # of the hour the ceiling watches.
     pipeline.spend.note(res.cost_usd, False)
