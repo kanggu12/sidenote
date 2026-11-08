@@ -6,6 +6,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The README's first picture sets each view on a slate blue backdrop with room and a shadow around it, light blue in the
+  light picture, where the dark views stood on a frame as dark as they are.
+
 ## [0.5.1] - 2026-11-08
 
 ### Fixed
