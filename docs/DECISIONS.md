@@ -761,6 +761,14 @@ example on the same questions, the English one changed no answer's rightness and
 word of Korean into any of the 42 answers, so what it holds off was not seen here: it is turned so that no English
 answer is shown a Korean line to follow.
 
+On screens the line holds as well: the ten screens of the known-answer set that are answered as an essay or a work
+problem, run twice each with the old line and with the new in each language, came out right on the same 18 of 20 in
+Korean, case by case, and 17 of 20 in English, where two cases traded places once each; the one line that named its
+topic was the old line's, in Korean; the English answers held no Korean and every answer its ASKED line; the median
+screen took 38.0 s and 38.6 s in Korean, 39.7 s and 36.7 s in English. Two of those wrong for each line, in each
+language, are a question about a current release, which wants the web search the bench runs without; the third in
+English is one of the two cases that traded places.
+
 ## The agents
 
 Also on this topic:
