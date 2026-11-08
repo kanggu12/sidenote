@@ -278,6 +278,9 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 
 ### Panel to server, on `/panel`
 
+The server runs each of these in one place (`panel_command` in `server/app.py`), which the API runs them through as
+well: every message here has a route under `/api/v1` ([API](API.md)), and `tests/api_check.py` holds the two together.
+
 | Type | Sent for | Fields |
 |:---|:---|:---|
 | `pause`, `resume` | the pause key | |
@@ -306,6 +309,7 @@ An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its
 | `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` and whether anything heard is kept (`heard`) |
 | `POST /capture/quit`, `POST /capture/restart` | asks the capture program to end or to restart (`./sidenote capture-stop`, a deploy); refused from a page |
 | `POST /server/stop` | asks the server to close down by itself, as the app does when it quits (Windows has no SIGTERM); only with the token the app started the server with, in `X-Sidenote-Stop` |
+| `/api/v1/...` | the API: what the panel shows, each of its messages as a route, and what the panels are sent as Server-Sent Events (`GET /api/v1/events`); its routes are listed at `GET /api/v1` and in [API](API.md) |
 
 ### Code runner
 

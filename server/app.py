@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import concurrent.futures
 import http.client
 import io
@@ -49,7 +50,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
@@ -118,11 +121,7 @@ def same_origin(ws: WebSocket) -> bool:
     origin = ws.headers.get("origin")
     if not origin:
         return True   # not a browser (the capture program, curl): a web page cannot open these
-    try:
-        u = urlsplit(origin)
-    except ValueError:
-        return False
-    return u.scheme in ("http", "https") and u.netloc.lower() == (ws.headers.get("host") or "").lower()
+    return origin_ok(origin, ws.headers.get("host"))
 
 
 def route_gateways(route_file: str = "/proc/net/route") -> set[ipaddress.IPv4Address]:
@@ -726,6 +725,8 @@ def note_live(message: dict) -> None:
 
 async def broadcast(message: dict) -> None:
     note_live(message)
+    for stream in list(API_STREAMS):   # the API's readers of /api/v1/events: the same message, as it is
+        stream.put(message)
     dead = []
     for ws in list(STATE.panel_clients):
         try:
@@ -3202,6 +3203,133 @@ def no_core_dumps() -> None:
         log.warning("the core-dump limit could not be set (%s)", exc)
 
 
+# ----------------------------------------------------------------------------------------------------------------------
+# The API (docs/API.md): what the panel does, for a program. Every message the panel's socket takes has a route that runs
+# it through the same panel_command, the reads give what a panel is shown, and /api/v1/events streams what the panels are
+# sent. It is reached as the panel is: from this PC (PeerGuard), at a Host of this PC's (TrustedHostMiddleware), and not
+# from another site's page (api_refused).
+
+# The messages the panel's socket takes, each with its route in create_app's API section (tests/api_check.py holds the
+# two together, and holds panel/app.js to sending none but these)
+PANEL_COMMANDS = ("capture_set", "pause", "resume", "reanalyze", "ask", "problem_text", "run", "setting",
+                  "agent_confirm_reply", "thumb", "gpu_release", "history_clear", "star", "gpu_load", "gpu_load_cancel",
+                  "settings_reset", "llm_pull", "ui_lang", "set_lang")
+API_VERSION = 1                # /api/v1: a change that breaks a caller goes to /api/v2, beside it
+
+
+class EventStream:
+    """One reader of /api/v1/events: the messages the panels are sent, in order. A reader that falls MAX behind loses the
+    oldest, and its next batch starts with how many (a `lagged` message), so it knows to read the state again."""
+
+    MAX = 2000
+
+    def __init__(self):
+        self.items: collections.deque = collections.deque()
+        self.lost = 0                  # dropped since the last batch was taken
+        self.ready = asyncio.Event()   # set when something is waiting to be taken
+
+    def put(self, message: dict) -> None:
+        if len(self.items) >= self.MAX:
+            self.items.popleft()
+            self.lost += 1
+        self.items.append(message)
+        self.ready.set()
+
+    async def take(self, timeout: float) -> list:
+        """What came since the last take, after waiting up to `timeout` s for something; [] when nothing came."""
+        if not self.items:
+            self.ready.clear()         # no await between the look and this: put() runs on the same loop
+            try:
+                await asyncio.wait_for(self.ready.wait(), timeout)
+            except asyncio.TimeoutError:
+                return []
+        out = list(self.items)
+        self.items.clear()
+        if self.lost:
+            out.insert(0, {"type": "lagged", "lost": self.lost})
+            self.lost = 0
+        return out
+
+
+API_STREAMS: set = set()       # the readers of /api/v1/events now (broadcast puts each message in each)
+
+
+def origin_ok(origin: str, host: str | None) -> bool:
+    """An Origin header that is this server's own page: the address the request was sent to (its Host)."""
+    try:
+        u = urlsplit(origin)
+    except ValueError:
+        return False
+    return u.scheme in ("http", "https") and u.netloc.lower() == (host or "").lower()
+
+
+def api_error(status: int, text: str, **more) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": text, **more}, status_code=status)
+
+
+def api_refused(request: Request, write: bool) -> JSONResponse | None:
+    """None when the request may go on. A browser says where a request comes from (Origin), and one from another site's
+    page is refused, as the panel's socket refuses it; a program sends none. What changes something takes a JSON body
+    only: another site's page cannot send one without asking first (a preflight, which this server never answers),
+    and a plain form post sends none."""
+    origin = request.headers.get("origin")
+    if origin and not origin_ok(origin, request.headers.get("host")):   # none, or empty: not a browser, as same_origin
+        telemetry.event("refused", path=request.url.path[:120], origin=origin[:120])
+        return api_error(403, "not allowed from another site's page")
+    if write and request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        return api_error(415, "send JSON (Content-Type: application/json), {} when there is nothing to send")
+    return None
+
+
+async def api_body(request: Request) -> dict | JSONResponse:
+    """A write's JSON object ({} for an empty body), or the error that answers it."""
+    raw = await request.body()
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return api_error(400, "the body is not JSON")
+    return data if isinstance(data, dict) else api_error(400, "the body is a JSON object")
+
+
+class Replies:
+    """What a command sends back to the one who asked (panel_command's `reply`), kept for the API's answer."""
+
+    def __init__(self):
+        self.messages: list = []
+
+    async def __call__(self, message: dict) -> None:
+        self.messages.append(message)
+
+    def notices(self) -> list:
+        return [{"level": m.get("level"), "text": m.get("text")} for m in self.messages if m.get("type") == "notice"]
+
+    def refusal(self) -> str | None:
+        """The words of a notice that says it was not done (a warning or a failure), or None."""
+        return next((m.get("text") for m in self.messages if m.get("type") == "notice" and m.get("level") in ("warn", "bad")),
+                    None)
+
+    def first(self, kind: str) -> dict | None:
+        return next((m for m in self.messages if m.get("type") == kind), None)
+
+
+def waiting_confirms() -> list:
+    """The confirms still waiting for a yes or no, each with the time it has left, not the time it started with: a panel
+    opened 100 s into a 120 s wait would otherwise count 120 down and then watch the card vanish."""
+    out = []
+    for fut, msg in list(STATE.confirms.values()):
+        if not fut.done():
+            left = max(0.0, round(msg["timeout"] - (time.time() - msg["ts"]), 1))
+            out.append({**msg, "timeout": left, "ts": time.time()})
+    return out
+
+
+def sse(n: int, message: dict) -> str:
+    """One message as a Server-Sent Event: its number, then the message as one line of JSON."""
+    return f"id: {n}\ndata: {json.dumps(message, ensure_ascii=False)}\n\n"
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -3350,6 +3478,7 @@ def create_app() -> FastAPI:
                 "runner": {"configured": bool(CONFIG.runner_url), "ok": STATE.runner_ok},
                 "capture": {k: v for k, v in capture_status().items() if k != "type"},
                 "panel_clients": len(STATE.panel_clients),
+                "event_readers": len(API_STREAMS),   # the API's readers of /api/v1/events
                 "analyses_done": STATE.analyses_done,
                 "activity": activity(),
             }
@@ -3564,6 +3693,229 @@ def create_app() -> FastAPI:
             telemetry.event("capture_disconnect", peer=peer, frames=counts["frame"], audio_chunks=counts["audio"])
             await note_capture(force=True)
 
+    async def opening():
+        """What a panel is told as it opens, in order, each made when it is to be sent (so an answer being written is
+        given with its words as of then): its status, the settings, the capture, the usage, a confirm still waiting
+        (with the time it has left), and each answer being written (its start with its words so far, then where it
+        stands). The panel's socket sends them as they come; the API's status and events read the same."""
+        # Off the loop: it waits for the history's lock, which a write or a search can hold, and the loop serves everyone
+        fresh = await asyncio.to_thread(HISTORY.fresh)
+        yield {
+            "type": "status",
+            "text": "connected",
+            "analyzer": CONFIG.analyzer,
+            "gate": app.state.detector.mode,
+            "paused": STATE.paused,
+            "lang": getattr(app.state.transcriber, "language", None),
+            "audio": getattr(app.state.transcriber, "available", False),
+            "voice": SETTINGS.on("voice_auto") and getattr(app.state.transcriber, "available", False),
+            "crop": CONFIG.crop if (CONFIG.crop != "off" and app.state.ocr is not None) else False,
+            "can_ask": STATE.last_result is not None,   # a reloaded panel can still ask follow-ups
+            "run_enabled": run_enabled(),                # show the "run this solution" button
+            "runner": bool(CONFIG.runner_url),           # the run button and the check can be switched on
+            "engines": panel_engines(),
+            "build": panel_build(),   # a panel left open on an older build says so
+            "desktop": CONFIG.desktop,   # the desktop app's server: directions name the app, not ./sidenote
+            "version": VERSION,          # shown in the gear menu
+            "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
+            "update": update_status(),   # a newer release found before this panel opened, or None
+            "fresh": fresh,              # nothing answered yet: the panel opens its setup guide, once in a browser
+        }
+        yield {"type": "settings", "meta": SETTINGS.meta(), "values": SETTINGS.snapshot()}
+        yield capture_status()
+        yield usage_message()
+        # The plan's meters at once, not at the watcher's next turn: a panel opened after a restart stood without them for ten seconds and more
+        if time.time() - STATE.quota_at >= 90:
+            STATE.quota_task = asyncio.create_task(refresh_quota())
+        for msg in waiting_confirms():   # a confirm still waiting shows on a panel opened now
+            yield msg
+        # An answer being written: its start with its words so far in one message, so that the words broadcast from here on
+        # follow them in order, and where it stands
+        for live in list(LIVE.values()):
+            yield {**live["start"], "text": live["text"]}
+            if live["stage"]:
+                yield live["stage"]
+
+    async def panel_command(data, reply, wait: bool = False) -> bool:
+        """One of the panel's messages (PANEL_COMMANDS), run: what the panel's socket and the API (POST /api/v1/commands and
+        the routes over it, install_api) both call, so neither can do what the other cannot. `reply` takes what goes back
+        to the one who asked; `wait` holds the call until a reply that comes later (a code run, a problem written out) has
+        come, as the API answers with it. False for a message that is none of them."""
+        if not isinstance(data, dict):   # a list or a string where an object belongs: nothing to run, and the socket stays
+            return False
+        kind = data.get("type")
+        if kind in ("pause", "resume", "reanalyze", "ask", "set_lang", "capture_set"):
+            telemetry.event("control", action=kind, lang=data.get("lang") if kind == "set_lang" else None,
+                            screen=data.get("screen"), audio=data.get("audio"))
+        if kind == "capture_set":
+            await set_capture(screen=data["screen"] if isinstance(data.get("screen"), bool) else None,
+                              audio=data["audio"] if isinstance(data.get("audio"), bool) else None)
+            return True
+        if kind in ("pause", "resume"):
+            await set_paused(kind == "pause")
+            return True
+        elif kind == "reanalyze":
+            STATE.force_analyze = True
+            user_asked()                 # Reanalyze is pressed by hand: no brake
+            return True
+        elif kind == "ask":
+            question = str(data.get("text") or "").strip()[:2000]
+            if question:
+                spawn(run_followup(app, question), "followup")
+            return True
+        elif kind == "problem_text":   # Problem text: the last problem as text, to copy (this panel only)
+            work = reply_later(reply, problem_text(data.get("id")))
+            await work if wait else spawn(work, "problem_text")
+            return True
+        elif kind == "run":
+            rid = data.get("id")
+            if rid is None:
+                return True
+            work = run_code(rid, str(data.get("lang") or ""), str(data.get("code") or ""), str(data.get("stdin") or ""),
+                            reply=reply)
+            await work if wait else spawn(work, "run")
+            return True
+        elif kind == "setting":
+            key = str(data.get("key") or "")
+            ok, err = await apply_setting(app, key, data.get("value"))
+            if not ok:
+                await reply({"type": "notice", "level": "warn", "text": err})
+            return True
+        elif kind == "agent_confirm_reply":
+            fut, _ = STATE.confirms.get(str(data.get("cid") or ""), (None, None))
+            if fut is not None and not fut.done():
+                fut.set_result(bool(data.get("send")))
+                telemetry.event("agent_confirm", send=bool(data.get("send")))
+            return True
+        elif kind == "thumb":   # a screen to draw the box on, and how old it is
+            # The switch being on does not mean a screen is coming: the capture program may have
+            # ended hours ago and its last screen is still here. It is still worth drawing on (the
+            # box is kept in screen fractions for the next screen), so it is sent with its age and
+            # whether anything is sending now, and the panel says which it is showing.
+            frame = STATE.latest_frame if STATE.screen_on else None
+            await reply({"type": "thumb", "url": frame.thumb_url if frame else None,
+                         "ts": STATE.last_seen_ts if frame else None,
+                         "live": bool(frame and STATE.captures and STATE.screen_on),
+                         "text": None if frame else (t("Screen capture is off") if not STATE.screen_on
+                                                     else t("No screen received")
+                                                     if not STATE.captures else t("No screen received"))})
+            return True
+        elif kind == "gpu_release":
+            local = ENGINES.local if ENGINES is not None else None
+            if local is None:
+                return True
+            done = await local.unload()
+            telemetry.event("gpu_release", reason="panel", ok=done)
+            STATE.local = await check_local()
+            # The runtime still lists it for a moment after saying yes: taken at its word the button stayed for
+            # the next look, 20 s on, and was pressed again
+            if done:
+                STATE.local = {**STATE.local, "loaded": None}
+            await broadcast_engines()
+            await reply({"type": "notice", "level": "done" if done else "bad",
+                         "text": t("Taken off the GPU · loaded again for the next problem")
+                         if done else t("Taking it off the GPU failed")})
+            return True
+        elif kind == "history_clear":   # Clear the history: what is kept goes too
+            cleared = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, clear_history)
+            # Nothing held still points at the answers that went: the same problem seen again is solved, not "above"
+            if PIPELINE is not None:
+                PIPELINE.recent.forget()
+            STATE.answers.clear()
+            STATE.repeat_said = 0
+            telemetry.event("history_clear", ok=cleared)
+            if cleared:   # every panel open clears what it shows: one told nothing kept the answers that went
+                await broadcast({"type": "history_cleared"})
+            await reply({"type": "notice", "level": "done" if cleared else "bad",
+                         "text": t("Cleared, the saved history too") if cleared
+                         else t("Clearing the saved history failed")})
+            return True
+        elif kind == "star":   # the star key on an answer's head: kept past the history's limits
+            seq, on = data.get("id"), data.get("starred")
+            # an answer's id is a number (a follow-up's parent drawn by the panel alone is not), the star a yes or no
+            if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(on, bool):
+                return True
+            # On the history's own thread, after the write that keeps the answer: a star pressed as it ends is not lost
+            held, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, star_answer, seq, on)
+            if not held:   # refused: this panel is told why, and no panel changes
+                await reply({"type": "notice", "level": "warn", "text":
+                             t("Not unstarred: this answer is not in the saved history") if not on
+                             else t("Not starred: Keep answers is off, so this answer was not saved")
+                             if not SETTINGS.get("history_keep")
+                             else t("Not starred: this answer is not in the saved history")})
+                return True
+            telemetry.event("star", id=seq, starred=on)
+            # every panel shows it, with how many are starred for the contents' Starred choice
+            await broadcast({"type": "star", "id": seq, "starred": on, "n": count})
+            return True
+        elif kind == "gpu_load":   # Load onto the GPU: the model on the GPU now, not at the next problem
+            local = ENGINES.local if ENGINES is not None else None
+            if local is None or not SETTINGS.on("local_llm"):
+                await reply({"type": "notice", "level": "warn",
+                             "text": t("The local model is off: nothing to load onto the GPU")})
+                return True
+            if STATE.gpu_loading is None or STATE.gpu_loading.done():
+                STATE.gpu_loading = asyncio.create_task(load_local(local))   # a load takes seconds: this socket keeps reading
+                await broadcast_engines()              # the panel's button says it is loading, and offers to stop
+            return True
+        elif kind == "gpu_load_cancel":   # changed their mind while it loads: stop, and give the GPU back
+            task, STATE.gpu_loading = STATE.gpu_loading, None
+            live = task is not None and not task.done()
+            if live:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            local = ENGINES.local if ENGINES is not None else None
+            # The press came too late, or from a second panel: the load had ended, and taking the model off now would
+            # cut an answer being written. And a problem may be waiting on this same load: only the panel's wait stops.
+            waited_on = live and activity()["busy"]
+            if live and not waited_on and local is not None:
+                await local.unload()
+            STATE.local = await check_local()
+            if live and not waited_on:
+                STATE.local = {**STATE.local, "loaded": None}   # what the server says on the way down is not yet true
+            await broadcast_engines()
+            await reply({"type": "notice", "level": "info",
+                         "text": t("Loading onto the GPU stopped") if live and not waited_on else
+                         t("A problem is waiting on it: still loading") if waited_on else
+                         t("Already loaded")})
+            return True
+        elif kind == "settings_reset":
+            back = [(k, i.default) for k, i in SETTINGS.defs.items() if SETTINGS.get(k) != i.default]
+            done = 0
+            for k, v in back:          # one at a time: each has its own work to do
+                ok, _ = await apply_setting(app, k, v)
+                done += bool(ok)       # a default outside the live options (a model that is
+            left = len(back) - done    # no longer there) is refused, and is not counted
+            await broadcast({"type": "notice", "level": "warn" if left else "done" if back else "info", "text":
+                             t("Already all defaults") if not back else
+                             t("Settings back to default: {n}", n=done)
+                             + (t(", failed: {n}", n=left) if left else "")})
+            return True
+        elif kind == "llm_pull":
+            # the local model's card offered a download (engines.local.pull): one at a time, of a known model
+            if pull_allowed() and not PULL:
+                spawn(pull_model(str(data.get("model") or "")), "llm pull")   # held, as every background task is
+            return True
+        elif kind == "ui_lang":
+            # The panel's own language, said once it connects: the server's words follow the last panel to
+            # say one, and a change sends every panel the messages that carry them again (the settings' words,
+            # the engines' cards)
+            if i18n.set_lang(str(data.get("lang") or "")):
+                log.info("panel language -> %s", i18n.LANG)
+                await broadcast({"type": "settings", "meta": SETTINGS.meta(), "values": SETTINGS.snapshot()})
+                await broadcast_engines()
+            return True
+        elif kind == "set_lang":
+            tr = app.state.transcriber
+            lang = data.get("lang")
+            if lang not in ("auto", "ko", "en") or not hasattr(tr, "language"):
+                return True
+            tr.language = lang     # the worker re-transcribes the buffer in it
+            log.info("speech language -> %s", lang)
+            await broadcast({"type": "status", "lang": lang})
+            return True
+        return False
+
     @app.websocket("/panel")
     async def panel(ws: WebSocket) -> None:
         if not same_origin(ws):
@@ -3572,51 +3924,8 @@ def create_app() -> FastAPI:
             return
         await ws.accept()
         STATE.panel_clients.add(ws)
-        # Off the loop: it waits for the history's lock, which a write or a search can hold, and the loop serves everyone
-        fresh = await asyncio.to_thread(HISTORY.fresh)
-        await ws.send_text(
-            json.dumps(
-                {
-                    "type": "status",
-                    "text": "connected",
-                    "analyzer": CONFIG.analyzer,
-                    "gate": app.state.detector.mode,
-                    "paused": STATE.paused,
-                    "lang": getattr(app.state.transcriber, "language", None),
-                    "audio": getattr(app.state.transcriber, "available", False),
-                    "voice": SETTINGS.on("voice_auto") and getattr(app.state.transcriber, "available", False),
-                    "crop": CONFIG.crop if (CONFIG.crop != "off" and app.state.ocr is not None) else False,
-                    "can_ask": STATE.last_result is not None,   # a reloaded panel can still ask follow-ups
-                    "run_enabled": run_enabled(),                # show the "run this solution" button
-                    "runner": bool(CONFIG.runner_url),           # the run button and the check can be switched on
-                    "engines": panel_engines(),
-                    "build": panel_build(),   # a panel left open on an older build says so
-                    "desktop": CONFIG.desktop,   # the desktop app's server: directions name the app, not ./sidenote
-                    "version": VERSION,          # shown in the gear menu
-                    "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
-                    "update": update_status(),   # a newer release found before this panel opened, or None
-                    "fresh": fresh,              # nothing answered yet: the panel opens its setup guide, once in a browser
-                }
-            )
-        )
-        await ws.send_text(json.dumps({"type": "settings", "meta": SETTINGS.meta(), "values": SETTINGS.snapshot()}))
-        await ws.send_text(json.dumps(capture_status()))
-        await ws.send_text(json.dumps(usage_message()))
-        # The plan's meters at once, not at the watcher's next turn: a panel opened after a restart stood without them for ten seconds and more
-        if time.time() - STATE.quota_at >= 90:
-            STATE.quota_task = asyncio.create_task(refresh_quota())
-        for fut, msg in list(STATE.confirms.values()):   # a confirm still waiting shows on a panel opened now
-            if not fut.done():
-                # With the time it has left, not the time it started with: a panel opened 100 s into
-                # a 120 s wait would otherwise count 120 down and then watch the card vanish.
-                left = max(0.0, round(msg["timeout"] - (time.time() - msg["ts"]), 1))
-                await ws.send_text(json.dumps({**msg, "timeout": left, "ts": time.time()}))
-        # An answer being written: its start with its words so far in one message, so that the words broadcast from here on
-        # follow them in order, and where it stands
-        for live in list(LIVE.values()):
-            await ws.send_text(json.dumps({**live["start"], "text": live["text"]}))
-            if live["stage"]:
-                await ws.send_text(json.dumps(live["stage"]))
+        async for message in opening():
+            await ws.send_text(json.dumps(message))
 
         async def reply(m: dict) -> None:   # to this panel only (a code run's result)
             try:
@@ -3630,183 +3939,407 @@ def create_app() -> FastAPI:
                     data = json.loads(raw)
                 except Exception:
                     continue
-                kind = data.get("type")
-                if kind in ("pause", "resume", "reanalyze", "ask", "set_lang", "capture_set"):
-                    telemetry.event("control", action=kind, lang=data.get("lang") if kind == "set_lang" else None,
-                                    screen=data.get("screen"), audio=data.get("audio"))
-                if kind == "capture_set":
-                    await set_capture(screen=data["screen"] if isinstance(data.get("screen"), bool) else None,
-                                      audio=data["audio"] if isinstance(data.get("audio"), bool) else None)
-                    continue
-                if kind in ("pause", "resume"):
-                    await set_paused(kind == "pause")
-                    continue
-                elif kind == "reanalyze":
-                    STATE.force_analyze = True
-                    user_asked()                 # Reanalyze is pressed by hand: no brake
-                    continue
-                elif kind == "ask":
-                    question = str(data.get("text") or "").strip()[:2000]
-                    if question:
-                        spawn(run_followup(app, question), "followup")
-                    continue
-                elif kind == "problem_text":   # Problem text: the last problem as text, to copy (this panel only)
-                    spawn(reply_later(reply, problem_text(data.get("id"))), "problem_text")
-                    continue
-                elif kind == "run":
-                    rid = data.get("id")
-                    if rid is None:
-                        continue
-                    spawn(run_code(rid, str(data.get("lang") or ""), str(data.get("code") or ""),
-                                   str(data.get("stdin") or ""), reply=reply), "run")
-                    continue
-                elif kind == "setting":
-                    key = str(data.get("key") or "")
-                    ok, err = await apply_setting(app, key, data.get("value"))
-                    if not ok:
-                        await reply({"type": "notice", "level": "warn", "text": err})
-                    continue
-                elif kind == "agent_confirm_reply":
-                    fut, _ = STATE.confirms.get(str(data.get("cid") or ""), (None, None))
-                    if fut is not None and not fut.done():
-                        fut.set_result(bool(data.get("send")))
-                        telemetry.event("agent_confirm", send=bool(data.get("send")))
-                    continue
-                elif kind == "thumb":   # a screen to draw the box on, and how old it is
-                    # The switch being on does not mean a screen is coming: the capture program may have
-                    # ended hours ago and its last screen is still here. It is still worth drawing on (the
-                    # box is kept in screen fractions for the next screen), so it is sent with its age and
-                    # whether anything is sending now, and the panel says which it is showing.
-                    frame = STATE.latest_frame if STATE.screen_on else None
-                    await reply({"type": "thumb", "url": frame.thumb_url if frame else None,
-                                 "ts": STATE.last_seen_ts if frame else None,
-                                 "live": bool(frame and STATE.captures and STATE.screen_on),
-                                 "text": None if frame else (t("Screen capture is off") if not STATE.screen_on
-                                                             else t("No screen received")
-                                                             if not STATE.captures else t("No screen received"))})
-                    continue
-                elif kind == "gpu_release":
-                    local = ENGINES.local if ENGINES is not None else None
-                    if local is None:
-                        continue
-                    done = await local.unload()
-                    telemetry.event("gpu_release", reason="panel", ok=done)
-                    STATE.local = await check_local()
-                    # The runtime still lists it for a moment after saying yes: taken at its word the button stayed for
-                    # the next look, 20 s on, and was pressed again
-                    if done:
-                        STATE.local = {**STATE.local, "loaded": None}
-                    await broadcast_engines()
-                    await reply({"type": "notice", "level": "done" if done else "bad",
-                                 "text": t("Taken off the GPU · loaded again for the next problem")
-                                 if done else t("Taking it off the GPU failed")})
-                    continue
-                elif kind == "history_clear":   # Clear the history: what is kept goes too
-                    cleared = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, clear_history)
-                    # Nothing held still points at the answers that went: the same problem seen again is solved, not "above"
-                    if PIPELINE is not None:
-                        PIPELINE.recent.forget()
-                    STATE.answers.clear()
-                    STATE.repeat_said = 0
-                    telemetry.event("history_clear", ok=cleared)
-                    if cleared:   # every panel open clears what it shows: one told nothing kept the answers that went
-                        await broadcast({"type": "history_cleared"})
-                    await reply({"type": "notice", "level": "done" if cleared else "bad",
-                                 "text": t("Cleared, the saved history too") if cleared
-                                 else t("Clearing the saved history failed")})
-                    continue
-                elif kind == "star":   # the star key on an answer's head: kept past the history's limits
-                    seq, on = data.get("id"), data.get("starred")
-                    # an answer's id is a number (a follow-up's parent drawn by the panel alone is not), the star a yes or no
-                    if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(on, bool):
-                        continue
-                    # On the history's own thread, after the write that keeps the answer: a star pressed as it ends is not lost
-                    held, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, star_answer, seq, on)
-                    if not held:   # refused: this panel is told why, and no panel changes
-                        await reply({"type": "notice", "level": "warn", "text":
-                                     t("Not unstarred: this answer is not in the saved history") if not on
-                                     else t("Not starred: Keep answers is off, so this answer was not saved")
-                                     if not SETTINGS.get("history_keep")
-                                     else t("Not starred: this answer is not in the saved history")})
-                        continue
-                    telemetry.event("star", id=seq, starred=on)
-                    # every panel shows it, with how many are starred for the contents' Starred choice
-                    await broadcast({"type": "star", "id": seq, "starred": on, "n": count})
-                    continue
-                elif kind == "gpu_load":   # Load onto the GPU: the model on the GPU now, not at the next problem
-                    local = ENGINES.local if ENGINES is not None else None
-                    if local is None or not SETTINGS.on("local_llm"):
-                        await reply({"type": "notice", "level": "warn",
-                                     "text": t("The local model is off: nothing to load onto the GPU")})
-                        continue
-                    if STATE.gpu_loading is None or STATE.gpu_loading.done():
-                        STATE.gpu_loading = asyncio.create_task(load_local(local))   # a load takes seconds: this socket keeps reading
-                        await broadcast_engines()              # the panel's button says it is loading, and offers to stop
-                    continue
-                elif kind == "gpu_load_cancel":   # changed their mind while it loads: stop, and give the GPU back
-                    task, STATE.gpu_loading = STATE.gpu_loading, None
-                    live = task is not None and not task.done()
-                    if live:
-                        task.cancel()
-                        await asyncio.gather(task, return_exceptions=True)
-                    local = ENGINES.local if ENGINES is not None else None
-                    # The press came too late, or from a second panel: the load had ended, and taking the model off now would
-                    # cut an answer being written. And a problem may be waiting on this same load: only the panel's wait stops.
-                    waited_on = live and activity()["busy"]
-                    if live and not waited_on and local is not None:
-                        await local.unload()
-                    STATE.local = await check_local()
-                    if live and not waited_on:
-                        STATE.local = {**STATE.local, "loaded": None}   # what the server says on the way down is not yet true
-                    await broadcast_engines()
-                    await reply({"type": "notice", "level": "info",
-                                 "text": t("Loading onto the GPU stopped") if live and not waited_on else
-                                 t("A problem is waiting on it: still loading") if waited_on else
-                                 t("Already loaded")})
-                    continue
-                elif kind == "settings_reset":
-                    back = [(k, i.default) for k, i in SETTINGS.defs.items() if SETTINGS.get(k) != i.default]
-                    done = 0
-                    for k, v in back:          # one at a time: each has its own work to do
-                        ok, _ = await apply_setting(app, k, v)
-                        done += bool(ok)       # a default outside the live options (a model that is
-                    left = len(back) - done    # no longer there) is refused, and is not counted
-                    await broadcast({"type": "notice", "level": "warn" if left else "done" if back else "info", "text":
-                                     t("Already all defaults") if not back else
-                                     t("Settings back to default: {n}", n=done)
-                                     + (t(", failed: {n}", n=left) if left else "")})
-                    continue
-                elif kind == "llm_pull":
-                    # the local model's card offered a download (engines.local.pull): one at a time, of a known model
-                    if pull_allowed() and not PULL:
-                        spawn(pull_model(str(data.get("model") or "")), "llm pull")   # held, as every background task is
-                    continue
-                elif kind == "ui_lang":
-                    # The panel's own language, said once it connects: the server's words follow the last panel to
-                    # say one, and a change sends every panel the messages that carry them again (the settings' words,
-                    # the engines' cards)
-                    if i18n.set_lang(str(data.get("lang") or "")):
-                        log.info("panel language -> %s", i18n.LANG)
-                        await broadcast({"type": "settings", "meta": SETTINGS.meta(), "values": SETTINGS.snapshot()})
-                        await broadcast_engines()
-                    continue
-                elif kind == "set_lang":
-                    tr = app.state.transcriber
-                    lang = data.get("lang")
-                    if lang not in ("auto", "ko", "en") or not hasattr(tr, "language"):
-                        continue
-                    tr.language = lang     # the worker re-transcribes the buffer in it
-                    log.info("speech language -> %s", lang)
-                    await broadcast({"type": "status", "lang": lang})
-                    continue
-                else:
-                    continue
+                await panel_command(data, reply)
         except WebSocketDisconnect:
             pass
         except Exception:   # a message the loop could not handle ends this panel's socket: it reconnects, and the log says why
             log.exception("a panel's connection ended on an error")
         finally:
             STATE.panel_clients.discard(ws)
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # The API (docs/API.md). Each route that changes something runs one of the panel's messages through panel_command,
+    # as the panel's socket does, and answers with what the panel would have been told; the reads give what the panel is
+    # shown. GET /api/v1 lists the routes from api_routes, which the tests hold against PANEL_COMMANDS and the docs.
+    api_routes: list = []
+
+    def api(method: str, path: str, about: str, command: str | None = None):
+        """A route of the API: registered, and listed in its index with what it does and the panel's message it runs."""
+        def wrap(fn):
+            api_routes.append({"method": method, "path": path, "about": about, **({"command": command} if command else {})})
+            app.add_api_route(path, fn, methods=[method], include_in_schema=False)
+            return fn
+        return wrap
+
+    async def run(data: dict) -> Replies:
+        """One of the panel's messages, run to its end, with what it sent back to the one who asked."""
+        replies = Replies()
+        await panel_command(data, replies, wait=True)
+        return replies
+
+    async def write_body(request: Request) -> dict | JSONResponse:
+        """A write's JSON object, or the answer that refuses it (another site's page, not JSON)."""
+        no = api_refused(request, write=True)
+        return no if no is not None else await api_body(request)
+
+    @api("GET", "/api/v1", "this index: the API's version, its routes, and the route that runs each of the panel's messages")
+    async def api_index(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, "api": API_VERSION, "version": VERSION, "routes": api_routes,
+                             "commands": {r["command"]: f'{r["method"]} {r["path"]}' for r in api_routes if "command" in r}})
+
+    # ---- reading: what the panel shows
+
+    @api("GET", "/api/v1/status", "what a panel is shown as it opens: the status, settings, capture, usage, the confirms "
+                                  "waiting and the answers being written")
+    async def api_status(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        said = [m async for m in opening()]
+        one = {m["type"]: m for m in said if m.get("type") in ("status", "settings", "capture", "usage")}
+        return JSONResponse({"ok": True, "status": one.get("status"), "settings": one.get("settings"),
+                             "capture": one.get("capture"), "usage": one.get("usage"),
+                             "confirms": [m for m in said if m.get("type") == "agent_confirm"],
+                             "live": [{**v["start"], "text": v["text"], "stage": v["stage"]} for v in list(LIVE.values())],
+                             "activity": activity()})
+
+    @api("GET", "/api/v1/settings", "every setting's value, and what the settings sheet shows of each (meta)")
+    async def api_settings(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, "meta": SETTINGS.meta(), "values": SETTINGS.snapshot()})
+
+    @api("GET", "/api/v1/settings/{key}", "one setting: its value, and what the sheet shows of it")
+    async def api_setting(request: Request, key: str):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        if key not in SETTINGS.defs:
+            return api_error(404, f"no setting {key!r}: GET /api/v1/settings lists them")
+        return JSONResponse({"ok": True, "key": key, "value": SETTINGS.get(key),
+                             "meta": next(i for i in SETTINGS.meta()["items"] if i["key"] == key)})
+
+    @api("GET", "/api/v1/answers", "the answers kept, the newest first: ?day=YYYY-MM-DD, ?q=words, ?kind=type, ?limit=60, "
+                                   "?starred=true")
+    async def api_answers(request: Request, day: str = "", q: str = "", kind: str = "", limit: int = 60,
+                          starred: bool = False):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        rows = await asyncio.to_thread(HISTORY.query, day, q[:200], kind, limit, starred)   # as the panel's /history
+        return JSONResponse({"ok": True, "answers": rows})
+
+    @api("GET", "/api/v1/answers/{seq}", "one answer kept, by its id")
+    async def api_answer(request: Request, seq: int):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        row = await asyncio.to_thread(HISTORY.get, seq)
+        return JSONResponse({"ok": True, "answer": row}) if row else api_error(404, f"no answer {seq} is kept")
+
+    @api("GET", "/api/v1/days", "the days that have answers, how many are starred, and whether anything heard is kept")
+    async def api_days(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, "days": await asyncio.to_thread(HISTORY.days_list),
+                             "starred": await asyncio.to_thread(HISTORY.starred_count),
+                             "heard": await asyncio.to_thread(HISTORY.heard_any)})
+
+    @api("GET", "/api/v1/heard", "what was heard and kept: the days that hold any, and one day's lines (?day=YYYY-MM-DD, "
+                                 "the newest by default)")
+    async def api_heard(request: Request, day: str = ""):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        days = await asyncio.to_thread(HISTORY.heard_days)
+        day = day if any(d["day"] == day for d in days) else (days[0]["day"] if days else "")
+        lines = await asyncio.to_thread(HISTORY.heard_lines, day) if day else []
+        return JSONResponse({"ok": True, "days": days, "day": day, "lines": lines})
+
+    @api("GET", "/api/v1/stats", "the counters, recent times and costs, the last error, and the settings changed from "
+                                 "their defaults (./sidenote stats)")
+    async def api_stats(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, **json.loads((await stats()).body)})
+
+    @api("GET", "/api/v1/screen", "the latest screen as a small picture (a data URL), when it came, and whether screens "
+                                  "are coming now", "thumb")
+    async def api_screen(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        shown = (await run({"type": "thumb"})).first("thumb") or {}
+        return JSONResponse({"ok": True, **{k: v for k, v in shown.items() if k != "type"}})
+
+    @api("GET", "/api/v1/confirms", "the problems waiting for a yes or no before they go to the agent, each with the "
+                                    "seconds it has left")
+    async def api_confirms(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, "confirms": waiting_confirms()})
+
+    @api("GET", "/api/v1/events", "what the panels are sent, as Server-Sent Events: what a panel is told as it opens, "
+                                  "then each message as it goes")
+    async def api_events(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        if len(API_STREAMS) >= 32:
+            return api_error(429, "32 readers of events are open already")
+        stream = EventStream()
+        first = [m async for m in opening()]
+        API_STREAMS.add(stream)   # nothing awaited since the opening's last message: no message falls between the two
+
+        async def events():
+            n = 0
+            try:
+                for message in first:
+                    n += 1
+                    yield sse(n, message)
+                while True:
+                    batch = await stream.take(15.0)
+                    if not batch:              # a comment line now and then: a reader that went away is found out
+                        if await request.is_disconnected():
+                            return
+                        yield ": still here\n\n"
+                        continue
+                    for message in batch:
+                        n += 1
+                        yield sse(n, message)
+            finally:
+                API_STREAMS.discard(stream)
+        # no proxy holding the stream back to fill a buffer (the cache header is SecurityHeaders', as on every answer)
+        return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+    # ---- changing: each route runs one of the panel's messages
+
+    @api("POST", "/api/v1/pause", "pause the automatic analysis", "pause")
+    async def api_pause(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        await run({"type": "pause"})
+        return JSONResponse({"ok": True, "paused": STATE.paused})
+
+    @api("POST", "/api/v1/resume", "go on with the automatic analysis", "resume")
+    async def api_resume(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        await run({"type": "resume"})
+        return JSONResponse({"ok": True, "paused": STATE.paused})
+
+    @api("POST", "/api/v1/reanalyze", "analyze the screen now, as the panel's Reanalyze; the answer comes as events",
+         "reanalyze")
+    async def api_reanalyze(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        await run({"type": "reanalyze"})
+        return JSONResponse({"ok": True, "accepted": True}, status_code=202)
+
+    @api("POST", "/api/v1/ask", 'ask about the latest problem, {"text": "..."}; the answer comes as events', "ask")
+    async def api_ask(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return api_error(400, 'send {"text": "the question"}')
+        if STATE.last_result is None:
+            return api_error(409, t("No problem analyzed yet to ask about"))
+        await run({"type": "ask", "text": text})
+        return JSONResponse({"ok": True, "accepted": True}, status_code=202)
+
+    @api("PUT", "/api/v1/capture", 'switch the screen or the sound capture, {"screen": true, "audio": false}', "capture_set")
+    async def api_capture(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        given = {k: body[k] for k in ("screen", "audio") if k in body}
+        if not given or not all(isinstance(v, bool) for v in given.values()):
+            return api_error(400, 'send {"screen": true or false}, {"audio": true or false}, or both')
+        await run({"type": "capture_set", **given})
+        return JSONResponse({"ok": True, "capture": capture_status(),
+                             "screen": STATE.screen_on, "audio": STATE.audio_on})
+
+    @api("PUT", "/api/v1/settings/{key}", 'change one setting, {"value": ...}', "setting")
+    async def api_set(request: Request, key: str):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if key not in SETTINGS.defs:
+            return api_error(404, f"no setting {key!r}: GET /api/v1/settings lists them")
+        if "value" not in body:
+            return api_error(400, 'send {"value": ...}')
+        why = (await run({"type": "setting", "key": key, "value": body["value"]})).refusal()
+        if why:
+            return api_error(400, why, key=key, value=SETTINGS.get(key))
+        return JSONResponse({"ok": True, "key": key, "value": SETTINGS.get(key)})
+
+    @api("POST", "/api/v1/settings/reset", "every setting back to its default", "settings_reset")
+    async def api_settings_reset(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        await run({"type": "settings_reset"})
+        return JSONResponse({"ok": True, "values": SETTINGS.snapshot()})
+
+    @api("PUT", "/api/v1/answers/{seq}/star", 'star or unstar an answer kept, {"starred": true}', "star")
+    async def api_star(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        on = body.get("starred")
+        if not isinstance(on, bool):
+            return api_error(400, 'send {"starred": true or false}')
+        why = (await run({"type": "star", "id": seq, "starred": on})).refusal()
+        if why:
+            return api_error(409, why)
+        return JSONResponse({"ok": True, "id": seq, "starred": on,
+                             "count": await asyncio.to_thread(HISTORY.starred_count)})
+
+    @api("POST", "/api/v1/answers/{seq}/run", 'run code in the sandbox as the answer\'s Run key, {"lang": "python", '
+                                              '"code": "...", "stdin": ""}', "run")
+    async def api_run(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        lang, code, stdin = body.get("lang"), body.get("code"), body.get("stdin", "")
+        if not isinstance(lang, str) or not isinstance(code, str) or not isinstance(stdin, str):
+            return api_error(400, 'send {"lang": "python", "code": "...", "stdin": "..."} (stdin may be left out)')
+        result = (await run({"type": "run", "id": seq, "lang": lang, "code": code, "stdin": stdin})).first("run_result")
+        if result is None:
+            return api_error(500, "the run gave no result")
+        result = {k: v for k, v in result.items() if k != "type"}
+        return JSONResponse({"ok": not result.get("error"), **result}, status_code=422 if result.get("error") else 200)
+
+    @api("POST", "/api/v1/answers/{seq}/problem", "the latest answer's problem written out as text (the local model "
+                                                  "writes it once)", "problem_text")
+    async def api_problem(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        said = (await run({"type": "problem_text", "id": seq})).first("problem_text") or {}
+        if said.get("error") or "text" not in said:
+            return api_error(409, said.get("error") or "nothing was written out")
+        return JSONResponse({"ok": True, "id": seq, "text": said["text"]})
+
+    @api("DELETE", "/api/v1/answers", "clear the history: every answer kept, starred ones too, and what was heard",
+         "history_clear")
+    async def api_history_clear(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        replies = await run({"type": "history_clear"})
+        why = replies.refusal()
+        return api_error(500, why) if why else JSONResponse({"ok": True, "notices": replies.notices()})
+
+    @api("POST", "/api/v1/confirms/{cid}", 'answer a problem waiting, {"send": true} sends it to the agent, false keeps '
+                                           'it on this PC', "agent_confirm_reply")
+    async def api_confirm(request: Request, cid: str):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        send = body.get("send")
+        if not isinstance(send, bool):
+            return api_error(400, 'send {"send": true or false}')
+        fut, _ = STATE.confirms.get(cid, (None, None))
+        if fut is None or fut.done():
+            return api_error(404, f"no problem {cid!r} is waiting: GET /api/v1/confirms lists them")
+        await run({"type": "agent_confirm_reply", "cid": cid, "send": send})
+        return JSONResponse({"ok": True, "cid": cid, "send": send})
+
+    @api("POST", "/api/v1/gpu/release", "take the local model off the GPU; it is loaded again for the next problem",
+         "gpu_release")
+    async def api_gpu_release(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if ENGINES is None or ENGINES.local is None:
+            return api_error(409, "there is no local model")
+        replies = await run({"type": "gpu_release"})
+        why = replies.refusal()
+        return api_error(502, why) if why else JSONResponse({"ok": True, "notices": replies.notices()})
+
+    @api("POST", "/api/v1/gpu/load", "load the local model onto the GPU now; the engines' status says when it is on "
+                                     "(events)", "gpu_load")
+    async def api_gpu_load(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        why = (await run({"type": "gpu_load"})).refusal()
+        return api_error(409, why) if why else JSONResponse({"ok": True, "accepted": True}, status_code=202)
+
+    @api("POST", "/api/v1/gpu/load/cancel", "stop a load onto the GPU, unless a problem waits on it", "gpu_load_cancel")
+    async def api_gpu_load_cancel(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        replies = await run({"type": "gpu_load_cancel"})
+        return JSONResponse({"ok": True, "notices": replies.notices()})
+
+    @api("POST", "/api/v1/models/pull", 'download one of the local models the panel offers, {"model": "..."}; how far it '
+                                        'is comes as events', "llm_pull")
+    async def api_pull(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        name = body.get("model")
+        known = sorted({n for prof in models.PROFILES for n in (prof.name, prof.pull) if n})
+        if not isinstance(name, str) or name not in known:
+            return api_error(400, "send {\"model\": ...}, one of the models offered", models=known)
+        if not pull_allowed():
+            return api_error(409, "downloads are off here: SIDENOTE_LOCAL_PULL=0, or a model server other than Ollama")
+        if PULL:
+            return api_error(409, "a download is under way", pull=PULL)
+        await run({"type": "llm_pull", "model": name})
+        return JSONResponse({"ok": True, "accepted": True}, status_code=202)
+
+    @api("PUT", "/api/v1/language/panel", 'the language of the server\'s words, as the panel\'s own, {"lang": "en"}',
+         "ui_lang")
+    async def api_ui_lang(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        lang = body.get("lang")
+        if lang not in i18n.SUPPORTED:
+            return api_error(400, f"send {{\"lang\": ...}}, one of {', '.join(i18n.SUPPORTED)}")
+        await run({"type": "ui_lang", "lang": lang})
+        if i18n.LANG != lang:
+            return api_error(409, "SIDENOTE_LANG holds the language", lang=i18n.LANG)
+        return JSONResponse({"ok": True, "lang": i18n.LANG})
+
+    @api("PUT", "/api/v1/language/speech", 'the language speech is written down in, {"lang": "auto"}, "ko" or "en"',
+         "set_lang")
+    async def api_speech_lang(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        lang = body.get("lang")
+        if lang not in ("auto", "ko", "en"):
+            return api_error(400, 'send {"lang": "auto"}, "ko" or "en"')
+        if not hasattr(app.state.transcriber, "language"):
+            return api_error(409, "nothing writes down speech here (SIDENOTE_TRANSCRIBER)")
+        await run({"type": "set_lang", "lang": lang})
+        return JSONResponse({"ok": True, "lang": app.state.transcriber.language})
+
+    @api("POST", "/api/v1/capture/restart", 'restart the capture program, as its tray\'s Restart; {"quiet": true} waits '
+                                            'for a moment when nothing runs')
+    async def api_capture_restart(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        answer = await ask_captures(request, "restart", "/api/v1/capture/restart",
+                                    {"quiet": True} if body.get("quiet") is True else {})
+        return JSONResponse({"ok": True, **json.loads(answer.body)}, status_code=answer.status_code)
+
+    @api("POST", "/api/v1/capture/quit", "end the capture program, as its tray's Quit")
+    async def api_capture_quit(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        answer = await ask_captures(request, "quit", "/api/v1/capture/quit")
+        return JSONResponse({"ok": True, **json.loads(answer.body)}, status_code=answer.status_code)
+
+    @api("POST", "/api/v1/commands", 'any of the panel\'s messages as the panel sends it, {"type": "pause"}: what it sent '
+                                     'back to the one who asked')
+    async def api_command(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if body.get("type") not in PANEL_COMMANDS:
+            return api_error(400, "send one of the panel's messages", types=list(PANEL_COMMANDS))
+        return JSONResponse({"ok": True, "replies": (await run(body)).messages})
+
+    async def api_unknown(request: Request, rest: str):
+        """An address under /api that is no route: what it is instead of the panel's page, and for a known address
+        asked with another method, which methods it takes."""
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        path = request.url.path
+        takes = sorted({m for r in app.routes
+                        if getattr(r, "path", "").startswith("/api/v1") and getattr(r, "path_regex", None) is not None
+                        and r.path_regex.match(path)
+                        for m in (getattr(r, "methods", None) or ()) if m != "HEAD"})
+        if takes:
+            return api_error(405, f"{path} takes {', '.join(takes)}", methods=takes)
+        return api_error(404, f"no route {path}: GET /api/v1 lists them")
+
+    app.add_api_route("/api/{rest:path}", api_unknown, methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                      include_in_schema=False)
+
+    @app.exception_handler(RequestValidationError)
+    async def api_bad_request(request: Request, exc: RequestValidationError):
+        """A path or query value of the wrong kind (an answer's id that is not a number): said in the API's own shape."""
+        if request.url.path.startswith("/api/"):
+            return api_error(400, "; ".join(f"{e.get('loc', ['?'])[-1]}: {e.get('msg')}" for e in exc.errors()))
+        return await request_validation_exception_handler(request, exc)
 
     # The panel and its files (index.html, app.js, theme.js, fonts.css, new.css, vendor/), after the routes above.
     app.mount("/", StaticFiles(directory=PANEL_DIR, html=True), name="panel")

@@ -127,6 +127,14 @@ class History:
                              (self._words(data), json.dumps(data, ensure_ascii=False), seq))
             self._db.commit()
 
+    def get(self, seq: int) -> dict | None:
+        """One answer as query() gives each, by its id; None when the file holds no answer of that id, or there is no file."""
+        if self._db is None:
+            return None
+        with self._lock:
+            row = self._db.execute("SELECT data, starred FROM answers WHERE id = ?", (seq,)).fetchone()
+        return {**json.loads(row[0]), "starred": bool(row[1])} if row else None
+
     def star(self, seq: int, on: bool) -> bool:
         """Star or unstar one answer. False when the file holds no answer of that id, or there is no file."""
         if self._db is None:

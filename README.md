@@ -24,6 +24,7 @@
   <a href="#what-it-runs-on">What it runs on</a> |
   <a href="docs/README.md">User guide</a> |
   <a href="docs/ARCHITECTURE.md">Architecture</a> |
+  <a href="docs/API.md">API</a> |
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -321,6 +322,8 @@ The details are in [Security and privacy](docs/README.md#14-security-and-privacy
 
 - [User guide](docs/README.md): every control, setting and command, troubleshooting, security and privacy.
 - [Architecture](docs/ARCHITECTURE.md): the components, the data flow and the protocol.
+- [API](docs/API.md): everything the panel does, for a program: read it, change it and follow it as it happens, over
+  HTTP and JSON.
 - [Design decisions](docs/DECISIONS.md): the reason for each part of the design, and the measurements behind it.
 - [Local-first design](docs/DESIGN-local-first.md): why the local model answers first, and when the agent takes over.
 - [Quality](docs/QA.md): from a test case through CI to a release.

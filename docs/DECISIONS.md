@@ -13,9 +13,9 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
-| [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87) |
+| [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
@@ -1492,6 +1492,20 @@ other.
   waits for it, the reply goes to the guide and no drawing starts on the screen card.
 
 Checks: tests/panel_setup.py, and the four steps in the layout audit at six window sizes (tests/panel_layout.py).
+
+### <a id="note-116"></a>116. The API runs the panel's own messages
+
+Everything the panel does is open to a program over HTTP (`/api/v1`, [API](API.md)). Its changes are not a second way
+to the same switches: each route runs one of the panel's messages through the function the panel's socket runs them
+through (`panel_command`), and answers with what the panel would have been told, so a route can do nothing the panel
+cannot, and cannot drift from it later. The tests hold the panel's messages, the routes and the API's page together. The
+reads give what a panel is shown as it opens, and `GET /api/v1/events` streams what the panels are sent as Server-Sent
+Events, which a script reads over plain HTTP where the panel's socket would need a WebSocket client; a reader that falls
+2,000 messages behind loses the oldest and is told how many. The API is reached as the panel is (from this PC, at a Host
+of this PC's, from no other site's page), with no key of its own, and a change has to send JSON: a page of another site
+cannot send JSON without asking the server first, which this server never answers, and a plain form post sends none.
+Of the panel's messages, the two whose answer comes later (a code run, a problem written out) are waited for, so the
+API answers with what they give.
 
 ## Speech
 
