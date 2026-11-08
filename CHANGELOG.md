@@ -6,6 +6,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The README's first picture has square corners and the panel's own greys, as the panel has, where its frames were
+  rounded and in GitHub's blue-greys.
+
 ## [0.4.2] - 2026-11-08
 
 ### Fixed
