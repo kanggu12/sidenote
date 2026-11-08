@@ -227,8 +227,9 @@ jobs:
           if grep -q '^            - "auto"$' /tmp/pull-auto.yaml; then echo "the pull Job would pull a model named auto"; exit 1; fi
       - name: Validate the rendered manifests
         run: |
-          # the release archive, checked against the checksum v0.6.7 publishes before it is unpacked
-          curl -fsSL -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          # the release archive, checked against the checksum v0.6.7 publishes before it is unpacked; asked again when
+          # GitHub's download answers 5xx or hangs, as one 504 once stopped a release here
+          curl -fsSL --retry 4 --retry-delay 5 --max-time 120 -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
           echo "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73  /tmp/kubeconform.tar.gz" | sha256sum -c -
           tar -xzf /tmp/kubeconform.tar.gz -C /tmp
           /tmp/kubeconform -strict -ignore-missing-schemas -summary /tmp/rendered-*.yaml
