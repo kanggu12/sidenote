@@ -5,8 +5,8 @@ description: >-
   browser panel, a local vision LLM, an optional coding agent, a network-isolated code runner and a
   private web search. The capture program runs on the user's PC and connects over WebSocket.
 type: application
-version: 0.4.2
-appVersion: "0.4.2"
+version: 0.5.0
+appVersion: "0.5.0"
 kubeVersion: ">=1.25.0-0"
 keywords:
   - assistant

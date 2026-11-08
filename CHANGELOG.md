@@ -6,15 +6,17 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-08
+
 ### Added
 
-- An API for everything the panel does, at `/api/v1` on the panel's own address ([API](docs/API.md)): the status, the
-  settings, the answers kept, what was heard, the stats and the latest screen to read; each of the panel's controls as a
-  route (pause, reanalyze, a follow-up question, the capture switches, every setting, a star, a code run, the GPU, a
-  model download, the languages, clearing the history, a confirm's yes or no); and what the panels are told as it
-  happens, as Server-Sent Events. Each route runs the panel's own message, so it does what the key in the panel does and
-  every open panel is told the same. It is reached as the panel is, from this PC and not from another site's page, and
-  what changes something takes JSON.
+- An API for everything the panel does, at `/api/v1` on the panel's own address
+  ([API](https://github.com/kanggu12/sidenote/blob/main/docs/API.md)): the status, the settings, the answers kept, what
+  was heard, the stats and the latest screen to read; each of the panel's controls as a route (pause, reanalyze, a
+  follow-up question, the capture switches, every setting, a star, a code run, the GPU, a model download, the languages,
+  clearing the history, a confirm's yes or no); and what the panels are told as it happens, as Server-Sent Events. Each
+  route runs the panel's own message, so it does what the key in the panel does and every open panel is told the same.
+  It is reached as the panel is, from this PC and not from another site's page, and what changes something takes JSON.
 
 ### Changed
 
@@ -437,7 +439,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kanggu12/sidenote/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/kanggu12/sidenote/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kanggu12/sidenote/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kanggu12/sidenote/compare/v0.3.0...v0.4.0
