@@ -42,13 +42,17 @@ RUN python3 -I /tmp/js_packages.py ${NPM_PACKAGES} \
 COPY runner/js_globals.js /app/js_globals.js
 
 # Kotlin: Debian's is 1.3 (2019), so the compiler comes from JetBrains' release, checked against its sha256 (a
-# file whose bytes differ stops the build).
+# file whose bytes differ stops the build). GitHub's download now and then answers 502 or 504, so it is asked up to
+# four times, five seconds apart, and the fourth failure stops the build.
 ARG KOTLIN_VERSION=2.0.21
 ARG KOTLIN_SHA256=0352c0a45bd22f80f6b26e485cd04da8047baa5de54865281fb9f89a4a7bcf2a
-RUN python3 -c "import hashlib, io, urllib.request, zipfile; \
+RUN for n in 1 2 3 4; do \
+      python3 -c "import hashlib, io, urllib.request, zipfile; \
 d = urllib.request.urlopen('https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip', timeout=300).read(); \
 assert hashlib.sha256(d).hexdigest() == '${KOTLIN_SHA256}', 'kotlin compiler: checksum differs'; \
-zipfile.ZipFile(io.BytesIO(d)).extractall('/opt')" \
+zipfile.ZipFile(io.BytesIO(d)).extractall('/opt')" && break; \
+      [ "$n" = 4 ] && exit 1; sleep 5; \
+    done \
     && chmod 755 /opt/kotlinc/bin/* \
     && ln -s /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc
 
