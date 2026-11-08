@@ -997,6 +997,9 @@ response times; `stats` and `report` show them separately. `stats` asks the runn
 `report` read the log folder, so they work with the server down too. `http://127.0.0.1:8777/stats` gives the data of
 `stats` as JSON.
 
+Everything the panel shows and does is open to a program as well: the status, the answers kept, what was heard, every
+switch and setting, and what the panels are told as it happens. See [API](API.md).
+
 ### The logs
 
 With Docker, the logs are kept in `~/.local/state/sidenote/logs/`; the app keeps them in its data folder's `logs`
@@ -1368,6 +1371,10 @@ What leaves this PC, what can reach what, and what is kept.
   and from inside its own container; any other is refused and recorded as `refused`.
 - `POST /capture/quit`, which `./sidenote capture-stop` uses to ask the capture program to end itself, is refused when
   it comes from a page (any Origin that is not this server's own).
+- The [API](API.md) is reached as the panel is: from this PC, at `127.0.0.1` or `localhost`, and not from another
+  site's page. Every request of it that changes something has to send JSON, which a page of another site cannot send
+  without asking the server first, and the server never answers such a question. It has no key of its own: a program
+  that runs on this PC can use it, as it can open the panel.
 - Code that **Run** starts runs in a separate container (`runner`) with no network at all; the server reaches it
   through a socket only the two share. It runs on a read-only filesystem, with process and memory caps. Runs go one at
   a time, each as a user of its own, with CPU, memory, file size and time limits, and every process a run leaves

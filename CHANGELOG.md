@@ -6,6 +6,16 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- An API for everything the panel does, at `/api/v1` on the panel's own address ([API](docs/API.md)): the status, the
+  settings, the answers kept, what was heard, the stats and the latest screen to read; each of the panel's controls as a
+  route (pause, reanalyze, a follow-up question, the capture switches, every setting, a star, a code run, the GPU, a
+  model download, the languages, clearing the history, a confirm's yes or no); and what the panels are told as it
+  happens, as Server-Sent Events. Each route runs the panel's own message, so it does what the key in the panel does and
+  every open panel is told the same. It is reached as the panel is, from this PC and not from another site's page, and
+  what changes something takes JSON.
+
 ### Changed
 
 - The README's first picture has square corners and the panel's own greys, as the panel has, where its frames were
