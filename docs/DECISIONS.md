@@ -9,8 +9,8 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | Topic | Notes |
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
-| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115) |
+| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116) |
@@ -561,6 +561,35 @@ from two weeks of the event log:
   changes.
 - In the panel, a jump to an answer stops the following of the newest one, a countdown never says "3 h 60 min", and a
   search does not match an answer's head lines.
+
+### <a id="note-117"></a>117. What this PC's model cannot answer goes to the agent
+
+A problem the local model took ended in an error when its thinking pass failed, with the agent on: the agent took a
+problem over only before the local model had it, and the local model the agent's only after the agent failed. On a GPU
+that a video call was using, the thinking pass's pictures were read in 5 to 45 s each, where 0.3 to 2.3 s is usual; a
+request the runtime had been told to drop went on with its picture for over two minutes, the next request waited
+behind it, and the problem waited out `local_timeout` (180 s) and ended in an error. Now the agent takes a problem
+whose thinking pass fails, as the local model takes the agent's: on the same card, cleared of what the local model
+wrote, with a note saying so. A follow-up the local model cannot answer goes the same way. And the pass is not
+waited on that long when the agent can take it: no token of any kind (thinking counts) by
+`local_think_first_token_sec` (30 s; 45 s for a model not yet warm), or its stream silent for `local_stuck_sec`
+(60 s), gives it up, and the GPU is counted busy (GpuPace), unless another request of this server was streaming,
+which the silence may have been the wait behind.
+
+Measured on the 43 screens of the known-answer set with the video call on the GPU, the 35 thinking passes brought their
+first token at a median of 9.4 s, and after 30 s in 7 (40 to 131 s), each of those then taking minutes to answer. A
+model just started reads its first picture as fast as later ones (0.6 to 2.2 s over four starts, the call still on), so
+nothing is warmed ahead: the slowness comes and goes with the other program. Run through the pipeline with the agent
+there to take over, under the same call, 15 of the screens were answered with no error: 13 by the agent at a median of
+4.0 s, the first pass's deadline and the busy GPU's hold (notes 53 and 54) sending them before a thinking pass began,
+and two by the local model, in 72 s and in 206 s (a 4K screen whose problem could not be placed, which may not go to the
+agent as its problem area). What the new deadline catches is the case those miss, a first pass that starts in time and a
+thinking pass that then waits, which is how the problems that ended in errors went.
+
+Nothing is handed over with the agent off, over its spending limit, kept from the problem (not sent: **Confirm before
+sending** not given, numbers like personal data), or when it has had the problem already (it failed or declined);
+the pass then waits as before, there being nothing else to answer with. When the agent fails too, the card says that
+both could not answer, each in the panel's words for its kind of failure.
 
 ## The local model and the answer prompt
 

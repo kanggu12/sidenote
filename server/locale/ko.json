@@ -332,5 +332,7 @@
  "Words speech recognition should spell as written, such as product names. Comma-separated, ahead of the built-in hints": "음성 인식이 적힌 그대로 쓸 낱말(제품 이름 등). 쉼표로 구분, 기본 힌트보다 앞에 둠",
  "The model that writes down what is heard, on the CPU. One not downloaded yet is fetched when first chosen": "들리는 말을 받아 적는 모델, CPU에서 돎. 받지 않은 모델은 처음 고를 때 내려받음",
  "Keeps answers and their screens on the server for {days} days (up to {mb} MB), starred ones until unstarred. Clear them with Clear history in the menu": "답과 화면을 서버에 {days}일(최대 {mb} MB), 별표한 답은 별표를 풀 때까지 남김. 지우기는 메뉴의 기록 지우기",
- "Saves each sentence heard, with its time, on this PC only, for {days} days (up to {mb} MB), other voices and playback included. Clear it with Clear history in the menu": "들린 문장을 시각과 함께 이 PC에만 {days}일(최대 {mb} MB) 저장함. 다른 사람 말과 재생 소리도 들어감. 지우기는 메뉴의 기록 지우기"
+ "Saves each sentence heard, with its time, on this PC only, for {days} days (up to {mb} MB), other voices and playback included. Clear it with Clear history in the menu": "들린 문장을 시각과 함께 이 PC에만 {days}일(최대 {mb} MB) 저장함. 다른 사람 말과 재생 소리도 들어감. 지우기는 메뉴의 기록 지우기",
+ "The local model could not answer ({why}) · the agent solves": "이 PC의 모델이 답하지 못함 ({why}) · {agent}가 풂",
+ "Neither could answer: the local model ({local}), the agent ({agent_why})": "둘 다 답하지 못함: 이 PC의 모델 ({local}), {agent} ({agent_why})"
 }

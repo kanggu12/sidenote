@@ -1164,7 +1164,7 @@ async def test_server_fixes():
         app_mod.ENGINES, app_mod.PIPELINE = eng, Pipeline(eng, hooks)
         SETTINGS.values.update(local_llm=True, autocheck=True, run_button=True, extract=True, agent_mode="off")
 
-        async def rewritten(image_b64, transcript, on_delta, extra=(), voice=False, followup=None):
+        async def rewritten(image_b64, transcript, on_delta, extra=(), voice=False, followup=None, **_):
             return AnalysisResult(text=MOCK_ALGO, model="mock-local")   # the retry's answer, with code in it
         plain_analyze, eng.local.analyze = eng.local.analyze, rewritten
 
@@ -1316,7 +1316,7 @@ async def test_server_fixes():
             return fast
 
         def deep_with(region):
-            async def deep(images, text, on_delta, prior=None, think=True, on_thought=None):
+            async def deep(images, text, on_delta, prior=None, think=True, on_thought=None, **_):
                 return AnalysisResult(text="TYPE: algorithm\nANSWER: x\n" + (f"REGION: {region}\n" if region else "")
                                       + "본문", model="m")
             return deep
@@ -1482,7 +1482,7 @@ async def test_local_zoom():
     got = {}
     deep0 = eng.local.deep
 
-    async def deep(images, text, on_delta, prior=None, think=True, on_thought=None):
+    async def deep(images, text, on_delta, prior=None, think=True, on_thought=None, **_):
         got.update(images=list(images), text=text)
         return await deep0(images, text, on_delta, prior=prior, think=think)
     eng.local.deep = deep
@@ -1579,7 +1579,7 @@ async def test_local_zoom():
 
     # what may go out later is cut from the fast pass's box, not from the thinking pass's REGION (the thinking
     # pass writes it y first at times, or for the wrong image, and that can place another window)
-    async def deep_elsewhere(images, text, on_delta, prior=None, think=True, on_thought=None):
+    async def deep_elsewhere(images, text, on_delta, prior=None, think=True, on_thought=None, **_):
         got.update(images=list(images), text=text)
         return type("R", (), {"text": "TYPE: algorithm\nANSWER: x\nREGION: 50 100 300 900\n풀이", "model": "m (think)",
                               "usage": None, "searches": []})()
@@ -3009,7 +3009,7 @@ async def test_continuation_check():
         SETTINGS.values.update(local_llm=True, autocheck=True, run_button=True, extract=True, agent_mode="off")
         written = {"text": ""}
 
-        async def cont_answer(image_b64, transcript, on_delta, extra=(), voice=False, followup=None):
+        async def cont_answer(image_b64, transcript, on_delta, extra=(), voice=False, followup=None, **_):
             return AnalysisResult(text=written["text"], model="mock-local")
         eng.local.analyze = cont_answer
         pages = FakeFrame()

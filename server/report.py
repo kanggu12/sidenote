@@ -293,7 +293,8 @@ CANCEL_NAMES = {"superseded": "new screen", "voice": "spoken problem", "reanalyz
                 "gpu_busy": "GPU busy", "not_sent": "not sent", "unknown": "no reason recorded"}
 # why the agent was given a problem (pipeline.solve, stages["why"])
 VIA_NAMES = {"handoff": "first pass slow", "unknown": "type not read", "slow": "local model slow",
-             "kind": "type handed over", "all": "all handed over", "only": "agent only", "none": "not recorded"}
+             "kind": "type handed over", "all": "all handed over", "only": "agent only",
+             "local_failed": "local model could not answer", "none": "not recorded"}
 
 
 def _shape(sent, trigger) -> str:

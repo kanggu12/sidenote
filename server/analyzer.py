@@ -707,6 +707,9 @@ class _RouteGate:
 # the stream need nothing new.
 _FIRST_TOKEN: contextvars.ContextVar = contextvars.ContextVar("sidenote_first_token", default=None)
 _THOUGHT: contextvars.ContextVar = contextvars.ContextVar("sidenote_thought", default=None)
+# How long a stream may bring nothing before it is given up, when the pass that waits on it has somewhere else to go (the
+# agent): local_timeout otherwise (deep's `stall`)
+_STALL: contextvars.ContextVar = contextvars.ContextVar("sidenote_stall", default=None)
 THOUGHT_EVERY = 1.5
 THOUGHT_TAIL = 600     # characters of the latest thinking handed on with each note, for the card's last line
 
@@ -838,6 +841,11 @@ class LocalServerError(RuntimeError):
 
 class ToolsRefused(RuntimeError):
     """The model's server turned a request down for its tools: vLLM does unless it was started with tool calling on."""
+
+
+class NoFirstToken(TimeoutError):
+    """A thinking pass that brought no token by its deadline, given only when the agent can take the problem (deep's
+    `first_deadline`): the pipeline hands the problem over."""
 
 
 class GpuPace:
@@ -1011,6 +1019,7 @@ class LocalLlmAnalyzer:
         self.cfg = cfg
         # No read timeout per chunk beyond local_timeout; connecting must be quick.
         self._client = httpx2.AsyncClient(timeout=httpx2.Timeout(cfg.local_timeout, connect=5.0))
+        self._timeout = httpx2.Timeout   # a request's own read timeout, where it waits less than local_timeout (_attempt)
         self._timeouts = (httpx2.TimeoutException,)
         # Everything else the client can raise for a server that is there but not answering properly.
         self._transport = (httpx2.TransportError, httpx2.HTTPStatusError, httpx2.RemoteProtocolError, LocalServerError)
@@ -1171,6 +1180,7 @@ class LocalLlmAnalyzer:
         first = None   # when the first generated token (answer, thinking or tool call) arrived
         heading_marks = _HeadingMarks()   # no emoji in what it writes as headings
         alive, note = _FIRST_TOKEN.get(), _THOUGHT.get()
+        stall = _STALL.get()   # a shorter wait for each token where the agent can take the problem over (deep's `stall`)
         thought_chars, noted = 0, time.time()
         self._streams += 1
         self._started += 1           # one more stream begun (read by the first-token deadline in fast)
@@ -1179,7 +1189,8 @@ class LocalLlmAnalyzer:
         watch = asyncio.ensure_future(self._watch(body["model"], time.time(), got))
         try:
             got["sent"] = True   # past the load: what fails from here failed at the model's server (read by _stream)
-            async with self._client.stream("POST", url, json=body) as r:
+            async with (self._client.stream("POST", url, json=body, timeout=self._timeout(stall, connect=5.0)) if stall
+                        else self._client.stream("POST", url, json=body)) as r:
                 if r.status_code != 200:
                     detail = (await r.aread()).decode("utf-8", "replace")[:400]
                     if r.status_code == 400 and body.get("tools") and re.search(r"(?i)\btool", detail):
@@ -1240,7 +1251,7 @@ class LocalLlmAnalyzer:
         except self._timeouts as exc:   # httpx's own carries no message, and is no TimeoutError for the panel
             if isinstance(exc, self._connect_timeout):
                 raise TimeoutError("local LLM: could not connect to the model's server within 5 s") from exc
-            raise TimeoutError(f"local LLM: nothing came for {self.cfg.local_timeout:.0f} s") from exc
+            raise TimeoutError(f"local LLM: nothing came for {stall or self.cfg.local_timeout:.0f} s") from exc
         finally:
             watch.cancel()
             self._streams -= 1
@@ -1652,17 +1663,26 @@ class LocalLlmAnalyzer:
                           searches=trace, model=model)
 
     async def deep(self, images, text: str, on_delta: OnDelta, prior: list | None = None,
-                   think: bool = True, on_thought=None) -> AnalysisResult:
+                   think: bool = True, on_thought=None, first_deadline: float | None = None,
+                   stall: float | None = None) -> AnalysisResult:
         """Solve with thinking. `prior`: the fast pass's conversation, whose search results are kept.
         `on_thought(chars, tail)`: told every THOUGHT_EVERY seconds how much the model has thought so far, and the
-        last THOUGHT_TAIL characters of it."""
+        last THOUGHT_TAIL characters of it. `first_deadline` and `stall`, given when the agent can take the problem
+        over: how long to wait for the first token of any kind (NoFirstToken after it), and for each token after
+        that (TimeoutError), in place of local_timeout."""
         fresh = self._messages(images, text, route=False)
         messages = fresh[:2] + (prior[2:] if prior else [])
         trace: list = []
         mark = _THOUGHT.set(on_thought) if on_thought is not None else None
+        held = _STALL.set(stall) if stall else None
         try:
-            out, usage, model, end = await self._run(messages, think, on_delta, lambda: False, trace)
+            if first_deadline:
+                out, usage, model, end = await self._run_or_give_up(messages, think, on_delta, trace, first_deadline)
+            else:
+                out, usage, model, end = await self._run(messages, think, on_delta, lambda: False, trace)
         finally:
+            if held is not None:
+                _STALL.reset(held)
             if mark is not None:
                 _THOUGHT.reset(mark)
         # Cut by max_tokens while the thinking had used most of it: a long answer cut at its end stays as it is
@@ -1674,6 +1694,53 @@ class LocalLlmAnalyzer:
         res = AnalysisResult(text=out, usage=usage, cost_usd=None, model=self._label(model, think, trace, cut))
         res.searches = trace   # type: ignore[attr-defined]
         return res
+
+    async def _run_or_give_up(self, messages: list[dict], think: bool, on_delta, trace: list,
+                              first_deadline: float) -> tuple[str, dict | None, str, dict]:
+        """_run, given up when no token of any kind has come within first_deadline of the request going out (the load
+        of the model before it is not counted), as the first pass is (fast). A model just loaded has none of the prompt
+        in its cache and is given local_cold_first_token_sec. Seen on a GPU a video call held: the thinking pass's
+        prompt was read at 60 to 300 tokens a second, where 500 is usual, and a request the runtime had been told to
+        drop kept the next one waiting behind it for minutes, until local_timeout ended it in an error. The GPU is
+        counted busy then (GpuPace), unless another request of this server was streaming, which the silence may have
+        been the wait behind."""
+        model = self.model
+        await self._ready(model)
+        alive = asyncio.Event()
+        others, begun, over = self._streams, self._started, self._ended
+        mark = _FIRST_TOKEN.set(alive)   # the request below runs in a task that copies this context
+        try:
+            run = asyncio.ensure_future(self._run(messages, think, on_delta, lambda: False, trace))
+        finally:
+            _FIRST_TOKEN.reset(mark)
+        limit = first_deadline if model in self._warm else max(first_deadline, self.cfg.local_cold_first_token_sec)
+        waiting = asyncio.ensure_future(alive.wait())
+        try:
+            await asyncio.wait({run, waiting}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            run.cancel()                 # the analysis was cancelled while this waited: the request goes with it
+            raise
+        finally:
+            waiting.cancel()
+        if alive.is_set():
+            self._warm.add(model)
+        elif not run.done():
+            shared = others > 0 or self._started - begun > 1 or self._ended != over
+            run.cancel()
+            await asyncio.gather(run, return_exceptions=True)
+            if not shared:
+                self.pace.timed_out(model)
+                telemetry.event("gpu_busy", model=model, rate=0.0, usual=self.pace.last.get("usual"),
+                                switch_to=self.model if self.model != model else None, after="think_first_token",
+                                hold=round(self.pace.held))
+            log.info("local LLM: the thinking pass brought no token in %.0f s%s; it is given up", limit,
+                     " behind another request of this server" if shared else "")
+            raise NoFirstToken(f"local LLM: the thinking pass brought nothing in {limit:.0f} s")
+        try:
+            return await run
+        except asyncio.CancelledError:
+            run.cancel()
+            raise
 
     # Written again only when the answer is under this share of the characters written: the thinking is mostly
     # English, about three times as many characters a token as a Korean answer, so this is about a quarter of the
@@ -1811,21 +1878,29 @@ class LocalLlmAnalyzer:
         return d
 
     async def analyze(self, image_b64: str | None, transcript: str, on_delta: OnDelta, extra=(),
-                      voice: bool = False, followup: dict | None = None) -> AnalysisResult:
-        """One question end to end (follow-ups, the probe): fast pass, then the thinking pass if needed."""
+                      voice: bool = False, followup: dict | None = None, first_deadline: float | None = None,
+                      stall: float | None = None) -> AnalysisResult:
+        """One question end to end (follow-ups, the probe): fast pass, then the thinking pass if needed.
+        `first_deadline` and `stall`, given when the agent can take the question: the thinking pass's (deep), and the
+        first pass then has local_first_token_sec for its first token, a pass that brought none being given up
+        (NoFirstToken), as on a screen."""
         images = [b for b in (image_b64, *extra) if b]
         text = build_user_text(transcript, len(extra), voice, bool(image_b64), followup)
         mode = SETTINGS.get("local_think")
         if mode != "auto":
-            return await self.deep(images, text, on_delta, think=mode == "always")
-        f = await self.fast(images, text, on_delta)
+            return await self.deep(images, text, on_delta, think=mode == "always", first_deadline=first_deadline,
+                                   stall=stall)
+        f = await self.fast(images, text, on_delta,
+                            first_deadline=self.cfg.local_first_token_sec if first_deadline else None)
+        if f.slow:
+            raise NoFirstToken(f"local LLM: the first pass brought nothing in {self.cfg.local_first_token_sec:.0f} s")
         if f.text is not None:
             if not f.text.strip():
                 raise RuntimeError("local LLM: empty answer")
             res = AnalysisResult(text=f.text, usage=f.usage, cost_usd=None, model=self._label(f.model, False, f.searches))
             res.searches = f.searches   # type: ignore[attr-defined]
             return res
-        return await self.deep(images, text, on_delta, prior=f.messages)
+        return await self.deep(images, text, on_delta, prior=f.messages, first_deadline=first_deadline, stall=stall)
 
     @property
     def native_url(self) -> str:
@@ -1919,7 +1994,8 @@ class MockLocal:
         return FastResult(text=None, head=head, type="algorithm", route="deep")
 
     async def deep(self, images, text: str, on_delta: OnDelta, prior: list | None = None,
-                   think: bool = True, on_thought=None) -> AnalysisResult:
+                   think: bool = True, on_thought=None, first_deadline: float | None = None,
+                   stall: float | None = None) -> AnalysisResult:
         self._use("deep", len(images), text)
         out = await _stream_words(MOCK_ALGO.replace("REGION: 0 0 100 100", "REGION: 100 120 600 700"), on_delta)
         res = AnalysisResult(text=out, model="mock-local (think)" if think else "mock-local")
@@ -1950,7 +2026,8 @@ class MockLocal:
         return dict(self.made)
 
     async def analyze(self, image_b64, transcript: str, on_delta: OnDelta, extra=(), voice: bool = False,
-                      followup: dict | None = None) -> AnalysisResult:
+                      followup: dict | None = None, first_deadline: float | None = None,
+                      stall: float | None = None) -> AnalysisResult:
         self._use("analyze", 0, transcript)
         sample = _mock_followup(followup.get("question", "")) if followup else MOCK_ALGO
         return AnalysisResult(text=await _stream_words(sample, on_delta), model="mock-local")

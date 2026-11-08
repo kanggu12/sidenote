@@ -1962,7 +1962,7 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
                          "trigger": "retry" if retry else "continue" if cont else "ask", "about": last.get("id")})
         telemetry.event("followup_start", id=seq, question=question[:200], retry=bool(retry) or None)
         result = await followup(PIPELINE, last, question, context, on_delta, seq=seq,
-                                pages=cont["frame"] if cont else None)
+                                pages=cont["frame"] if cont else None, by_user=not (retry or cont))
     except asyncio.CancelledError:   # pause, or the screen it sends was switched off
         reason = (STATE.followups.get(task) or {}).get("reason") or "superseded"
         telemetry.event("followup_cancelled", id=seq, reason=reason, after=round(time.time() - start, 2))

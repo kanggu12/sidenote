@@ -126,6 +126,11 @@ class Config:
     local_first_token_sec: float = env_float("SIDENOTE_LOCAL_FIRST_TOKEN_SEC", 6)
     # The same for a model that has not answered since it was loaded: its prompt cache is empty (design note 94)
     local_cold_first_token_sec: float = env_float("SIDENOTE_LOCAL_COLD_FIRST_TOKEN_SEC", 45)
+    # When the agent can take the problem, the thinking pass gets this long for its first token of any kind (thinking
+    # counts), and local_stuck_sec for each one after, before the problem goes to the agent (design note 117). On a GPU
+    # a video call held, its prompt was read at 60 to 300 tokens a second and the next request waited minutes behind one
+    # the runtime had been told to drop; without the agent the pass waits as before.
+    local_think_first_token_sec: float = env_float("SIDENOTE_LOCAL_THINK_FIRST_TOKEN_SEC", 30)
     # A request that has brought no token for this long, while the model's server streamed nothing to any other
     # request of this server either, is checked with a one-token request given local_probe_sec to answer. A runtime
     # stuck inside an image answers nothing, and the model is taken off the GPU, which makes Ollama
