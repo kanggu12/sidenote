@@ -45,6 +45,9 @@
 #   help names the start commands, setup-capture, the capture options and the CI switch;
 # - the server's user: up passes this user to compose and 0 under rootless Docker, makes the folders Docker would make as
 #   root, and compose.yaml uses it (tests/nonroot_check.sh runs that for real);
+# - with the Windows folders off WSL's PATH ([interop] appendWindowsPath=false) cmd.exe and powershell.exe are found on
+#   the Windows drive the mount table names, and capture starts; with interop off, or no Windows drive, that is what is
+#   said (not "no Windows Python"), and nothing is run;
 # - the time zone comes from the PC, .env first; what PowerShell prints is read as UTF-8; no python3 is said;
 # - a first install ends well with what is left to do, and uninstall takes the images it pulled.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
@@ -1054,6 +1057,46 @@ else bad "...a token the server rejected is made again, and the server is starte
          "compose up calls $renew_up, .env: $(tr '\n' '|' <<<"$renewed_env"); $(tail -2 <<<"$renewed" | tr '\n' '|')"; fi
 if grep -qF "signed in (claude.ai), and the server uses this login" <<<"$linux_claude"; then ok "...and on Linux the PC's own Claude Code login is the server's, as before"
 else bad "...and on Linux the PC's own Claude Code login is the server's, as before" "$(grep -F "Claude Code" <<<"$linux_claude")"; fi
+
+# --- Windows off WSL's PATH ([interop] appendWindowsPath=false), interop off, no Windows drive -----------------------
+# The stand-ins move from the PATH to a Windows drive the mount table names, as on a WSL whose wsl.conf leaves the Windows
+# folders off the PATH: the launcher finds cmd.exe and powershell.exe there by their full paths (it said "no Windows
+# Python" and capture did not start). With a real cmd.exe (a PE file) and no WSLInterop entry, and with no Windows drive
+# at all, it says why Windows is out of reach, ends with a failing status and asks nothing of it.
+mkdir -p "$work/nowin" "$work/drive/Windows/System32/WindowsPowerShell/v1.0" "$work/pe/Windows/System32" "$work/binfmt"
+for f in "$work/bin/"*; do case "$(basename "$f")" in cmd.exe|powershell.exe) ;; *) ln -sf "$f" "$work/nowin/" ;; esac; done
+cp "$work/bin/cmd.exe" "$work/drive/Windows/System32/cmd.exe"
+cp "$work/bin/powershell.exe" "$work/drive/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+printf 'MZ\220\0' > "$work/pe/Windows/System32/cmd.exe"                         # a Windows program's first bytes
+printf 'C:\\134 %s 9p rw,aname=drvfs 0 0\n' "$work/drive" > "$work/mounts"     # as /proc/mounts lists a WSL drive
+printf 'C:\\134 %s 9p rw,aname=drvfs 0 0\n' "$work/pe" > "$work/mounts-pe"
+nowin="PATH=$work/nowin:/usr/bin:/bin SIDENOTE_BINFMT=$work/binfmt"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts" run doctor; nowin_doctor="$(cat "$work/out")"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts" run capture --console --list-monitors; last_call cmd --list-monitors
+nowin_list="${CALL[*]-}"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts" run capture --monitor 2; wait_started; nowin_start="$(cat "$work/rc")"
+if grep -qF "Windows Python: Python 3.14.0" <<<"$nowin_doctor" && [ -n "$nowin_list" ] && [ "$nowin_start" = 0 ] \
+   && [ -f "$work/state/running" ]; then
+  ok "Windows off WSL's PATH: cmd.exe and powershell.exe are found on the Windows drive, and capture starts"
+else bad "Windows off WSL's PATH: cmd.exe and powershell.exe are found on the Windows drive, and capture starts" \
+         "$(grep -F "Python" <<<"$nowin_doctor" | head -2 | tr '\n' '|') list call: ${nowin_list:-none}, capture rc $nowin_start"; fi
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture; off="$(cat "$work/out")"; off_rc="$(cat "$work/rc")"
+off_calls="$(calls_of cmd | wc -l)"
+echo enabled > "$work/binfmt/WSLInterop"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run doctor; on_doctor="$(cat "$work/out")"
+rm -f "$work/binfmt/WSLInterop"
+if grep -qF "[interop] enabled=false in /etc/wsl.conf" <<<"$off" && grep -qF -- '--server ws://127.0.0.1:' <<<"$off" \
+   && [ "$off_rc" != 0 ] && [ "$off_calls" = 0 ] && ! grep -qF "[interop]" <<<"$on_doctor"; then
+  ok "...interop off: said with what to change and how to start the capture in Windows, nothing run, and not said when on"
+else bad "...interop off: said with what to change and how to start the capture in Windows, nothing run, and not said when on" \
+         "rc $off_rc, cmd calls $off_calls: $(tail -1 <<<"$off")"; fi
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=/dev/null SIDENOTE_LANG=en" run setup-capture; gone="$(cat "$work/out")"; gone_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=/dev/null SIDENOTE_LANG=en" run doctor; gone_doctor="$(cat "$work/out")"
+if grep -qF "Windows cannot be found from WSL" <<<"$gone" && [ "$gone_rc" != 0 ] && grep -qF "Windows cannot be found from WSL" <<<"$gone_doctor" \
+   && ! grep -qF "No Windows Python" <<<"$gone_doctor"; then
+  ok "...no Windows drive: setup-capture and doctor say Windows cannot be found, not that Python is missing"
+else bad "...no Windows drive: setup-capture and doctor say Windows cannot be found, not that Python is missing" \
+         "rc $gone_rc: $(tail -1 <<<"$gone") | $(grep -F "Windows" <<<"$gone_doctor" | head -1)"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]
