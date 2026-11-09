@@ -181,14 +181,58 @@ fi
 # An empty name puts the terminal's own title back. With no terminal (the shortcut now) it does nothing.
 term_title() { [ -t 1 ] && printf '\033]0;%s\007' "$1"; return 0; }
 
-# Windows side, through interop. cmd.exe complains when started from a WSL directory, so
-# windows commands run with a Windows working directory.
-win()  { (cd /mnt/c && cmd.exe /c "$@" 2>/dev/null | tr -d '\r'); }
+# Windows' own programs, by their full path when the PATH does not have them. With [interop] appendWindowsPath=false in
+# /etc/wsl.conf the Windows folders are left off WSL's PATH, and `cmd.exe` by name was "command not found": capture did
+# not start, and install and doctor said Windows Python was missing when it was there. Interop still runs a Windows
+# program named by its path, and cmd.exe finds py on Windows' own PATH. The drive that holds Windows is read from the
+# mount table, wherever [automount] root puts it (/mnt/c by default). SIDENOTE_MOUNTS and SIDENOTE_BINFMT stand in for
+# the two /proc files in tests/launcher_args.sh.
+WIN_DRIVE=""                                     # the WSL folder of the drive with Windows on it, such as /mnt/c
+if [ "$ON_WSL" = 1 ]; then
+  while read -r _ mnt fstype _; do
+    case "$fstype" in 9p|drvfs) ;; *) continue ;; esac   # Windows drives only: no Linux file system is looked into
+    mnt="$(printf '%b' "$mnt")"                            # the table writes a space in a folder name as \040
+    if [ -f "$mnt/Windows/System32/cmd.exe" ]; then WIN_DRIVE="$mnt"; break; fi
+  done 2>/dev/null < "${SIDENOTE_MOUNTS:-/proc/mounts}"
+fi
+# cmd.exe complains when started from a WSL directory, so Windows commands run with a Windows working directory
+WIN_CWD="${WIN_DRIVE:-/mnt/c}"
+# The program from the PATH when it is there (the tests' stand-ins are), else from the Windows drive, else its bare name
+# (which then fails as it always did, and win_problem says why before that matters)
+win_exe() {
+  command -v "$1" 2>/dev/null && return 0
+  if [ -n "$WIN_DRIVE" ] && [ -f "$WIN_DRIVE/$2" ]; then printf '%s\n' "$WIN_DRIVE/$2"; else printf '%s\n' "$1"; fi
+}
+CMD_EXE="$(win_exe cmd.exe Windows/System32/cmd.exe)"
+PS_EXE="$(win_exe powershell.exe Windows/System32/WindowsPowerShell/v1.0/powershell.exe)"
+# Why Windows cannot be reached from here, or nothing when it can: what is said instead of cmd.exe's "command not found",
+# or of "no Windows Python" when Python is there. [interop] enabled=false takes away the entry that starts Windows
+# programs (WSLInterop, WSLInterop-late on newer WSL), and then no path helps; the capture program can still be started
+# from Windows itself, by the path printed. Only a real Windows program is held to that (a PE file starts with MZ): the
+# tests' stand-ins are scripts.
+win_problem() {
+  [ "$ON_WSL" = 1 ] || return 0
+  if [ ! -f "$CMD_EXE" ]; then
+    L "Windows cannot be found from WSL: cmd.exe is neither on the PATH nor in Windows\\System32 on a drive WSL mounted. Check [automount] in /etc/wsl.conf (enabled must not be false)." \
+      "WSL에서 Windows를 찾지 못했습니다: cmd.exe가 PATH에도, WSL이 붙인 드라이브의 Windows\\System32에도 없습니다. /etc/wsl.conf의 [automount]를 확인하세요 (enabled=false가 아니어야 합니다)."
+    return 0
+  fi
+  [ "$(head -c 2 "$CMD_EXE" 2>/dev/null)" = MZ ] || return 0
+  local f
+  for f in "${SIDENOTE_BINFMT:-/proc/sys/fs/binfmt_misc}"/WSLInterop*; do
+    [ -f "$f" ] && [ "$(head -1 "$f" 2>/dev/null)" = enabled ] && return 0
+  done
+  L "WSL cannot start Windows programs here: [interop] enabled=false in /etc/wsl.conf. Set it to true (or remove the line), run wsl --shutdown in Windows and open WSL again. Or start the capture program in Windows: py -3 \"${CLIENT_WIN}\" --server ws://127.0.0.1:${PORT}/ingest" \
+    "여기서는 WSL이 Windows 프로그램을 실행할 수 없습니다: /etc/wsl.conf에 [interop] enabled=false. true로 바꾸거나 그 줄을 지우고, Windows에서 wsl --shutdown 뒤 WSL을 다시 여세요. 또는 Windows에서 캡처 프로그램을 직접 시작하세요: py -3 \"${CLIENT_WIN}\" --server ws://127.0.0.1:${PORT}/ingest"
+}
+# A command that cannot go on without Windows stops with the reason
+need_win() { local p; p="$(win_problem)"; [ -z "$p" ] || die "$p"; }
+win()  { (cd "$WIN_CWD" && "$CMD_EXE" /c "$@" 2>/dev/null | tr -d '\r'); }
 # PowerShell 5.1 writes a pipe in the console's code page (cp949 on Korean Windows, '?' for what the page lacks), so a path
 # read here with Korean in it (a user folder, OneDrive's 바탕 화면) came back as bytes that are no longer that path once
 # they are handed to PowerShell again. Asked for UTF-8 first, what it prints is what this script speaks. With no console to
 # set, that one statement fails on stderr and the command still runs.
-winps() { (cd /mnt/c && powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $1" 2>/dev/null | tr -d '\r'); }
+winps() { (cd "$WIN_CWD" && "$PS_EXE" -NoProfile -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $1" 2>/dev/null | tr -d '\r'); }
 # A single quote inside a PowerShell single-quoted string has to be written twice. Paths come from
 # Windows and can hold one (a user folder under a name with an apostrophe), and it ended the string.
 ps_quote() { printf '%s' "${1//\'/\'\'}"; }
@@ -947,6 +991,7 @@ capture_started() {
 cmd_capture() {
   if [ "$ON_WSL" = 0 ]; then cmd_capture_here "$@"; return; fi
   [ -n "$CLIENT_WIN" ] || die "$(L "Could not find the Windows path (wslpath)." "Windows 경로를 찾지 못했습니다 (wslpath).")"
+  need_win   # Windows out of reach is said as such, before anything is asked of it (not as a missing Python)
   # The options for capture.py, each one exactly the word that was typed, kept in an array so that a value
   # with spaces in it ("Realtek USB2.0 Audio", the way Windows names a sound device) stays one argument and
   # no quote character is added to any of them. The windowless start used to wrap every option
@@ -969,7 +1014,7 @@ cmd_capture() {
   # Only listing the monitors, or the options: capture.py answers and ends, so it runs here and now.
   for a in ${opts[@]+"${opts[@]}"}; do
     case "$a" in --list-monitors|--help|-h)
-      (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
+      (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
       return 0 ;;
     esac
   done
@@ -1038,7 +1083,7 @@ cmd_capture() {
     # ${opts[@]+"${opts[@]}"}: every option one argument, as typed (see the top of this function). WSL puts a value
     # with spaces in quotes for the Windows command line, and cmd.exe and start pass it on whole
     # (measured with a script that only writes down its arguments).
-    (cd /mnt/c && setsid --fork cmd.exe /c start "" /b pyw -3 -X utf8 "$CLIENT_WIN" \
+    (cd "$WIN_CWD" && setsid --fork "$CMD_EXE" /c start "" /b pyw -3 -X utf8 "$CLIENT_WIN" \
         --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null) || true
     local n=0
     while [ "$n" -lt 20 ]; do          # about ten seconds at most
@@ -1070,7 +1115,7 @@ cmd_capture() {
   # sed -u, not tr: tr holds about 4 KB before passing anything on, so lines showed up late and
   # Ctrl+C threw away what it held (also from capture.log).
   # ${opts[@]+"${opts[@]}"}: the options as typed, without --console (see the top of this function).
-  (cd /mnt/c && cmd.exe /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
+  (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
     | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture) || true
 }
 
@@ -1200,7 +1245,7 @@ cmd_open() {
   local opened=1
   if [ "$ON_MAC" = 1 ]; then open "$URL" >/dev/null 2>&1 || opened=0
   elif [ "$ON_WSL" = 0 ]; then xdg-open "$URL" >/dev/null 2>&1 || opened=0
-  else (cd /mnt/c && cmd.exe /c start "" "$URL" >/dev/null 2>&1) || opened=0; fi
+  else (cd "$WIN_CWD" && "$CMD_EXE" /c start "" "$URL" >/dev/null 2>&1) || opened=0; fi
   if [ "$opened" = 1 ]; then ok "$(L "Opened in the browser: $URL" "브라우저에서 열었습니다: $URL")"
   else warn "$(L "Could not open the browser. Open it yourself: $URL" "브라우저를 열지 못했습니다. 직접 여세요: $URL")"; fi
 }
@@ -1224,11 +1269,14 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   # installs what is missing and leaves what is there as it is.
   # A step that cannot be done is said and the others still run, so doctor at the end lists all that is left: without
   # Windows Python, cmd.exe's "'py' is not recognized" used to end the install here, with no word of python.org.
-  local packages="" winpy=1
-  if [ "$ON_WSL" = 1 ] && ! win py -3 --version >/dev/null; then winpy=0; fi
+  local packages="" winpy=1 winp=""
+  if [ "$ON_WSL" = 1 ]; then winp="$(win_problem)"; fi   # Windows out of reach: said instead of "no Python"
+  if [ "$ON_WSL" = 1 ] && { [ -n "$winp" ] || ! win py -3 --version >/dev/null; }; then winpy=0; fi
   if [ "$ON_WSL" = 0 ]; then packages="$(here_packages)" || packages=""
   elif [ "$winpy" = 1 ]; then packages="$(win_packages 2>/dev/null)" || packages=""; fi
-  if [ "$winpy" = 0 ]; then
+  if [ -n "$winp" ]; then
+    bad "$winp"
+  elif [ "$winpy" = 0 ]; then
     bad "$(L "No Python for Windows (py). Install it from python.org, then ./sidenote setup-capture" \
              "Windows용 Python(py) 없음: python.org에서 설치한 뒤 ./sidenote setup-capture")"
   elif [ "$packages" = tray ]; then
@@ -1426,6 +1474,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   # the last lines the launcher printed, and says so when a second click comes while a start is still going.
   # --up starts the server first when it is not running: after a reboot nothing is.
   # pyw.exe by its full path: the shortcut runs with Explorer's PATH, which need not be the one seen here.
+  need_win
   local pyw; pyw="$(winps "(Get-Command pyw.exe -ErrorAction SilentlyContinue).Source" | head -1)"
   # Without it the shortcut would have nothing to run, and a double click would do nothing at all.
   [ -n "$pyw" ] || die "$(L "No Python launcher (pyw.exe) on Windows, so no shortcut can be made. Install Python for Windows from python.org, then ./sidenote setup-capture and ./sidenote shortcut" \
@@ -1477,13 +1526,14 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
 cmd_setup_capture() {
   if [ "$ON_WSL" = 0 ]; then setup_capture_here; return; fi
   # Asked first, as capture does: without it cmd.exe's own "'py' is not recognized" was all that was said
+  need_win
   win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
                                               "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   local req; req="$(wslpath -w "$PWD/client/requirements.txt")"
   echo "${B}$(L "Installing the capture packages into Windows Python" "Windows Python에 캡처 패키지를 설치합니다")${N} ($req)"
   local source=()
   if [ -n "$(setting SIDENOTE_WHEELS "")" ]; then source=(--no-index --find-links "$(wslpath -w "$(setting SIDENOTE_WHEELS "")")"); fi   # no internet here: docs/air-gapped.md
-  (cd /mnt/c && cmd.exe /c py -3 -m pip install --user ${source[@]+"${source[@]}"} -r "$req" 2>&1 | tr -d '\r' | tail -3)
+  (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -m pip install --user ${source[@]+"${source[@]}"} -r "$req" 2>&1 | tr -d '\r' | tail -3)
 }
 
 cmd_doctor() {
@@ -1547,6 +1597,8 @@ PY
       *) bad "$(L "Capture packages missing (./sidenote setup-capture)" "캡처 패키지 없음 (./sidenote setup-capture)")" ;;
     esac
     [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에 X11 화면 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작")"
+  elif [ -n "$(win_problem)" ]; then
+    bad "$(win_problem)"
   elif win py -3 --version >/dev/null; then
     ok "Windows Python: $(win py -3 --version | tail -1)"
     local packages; packages="$(win_packages)" || packages=""   # "tray", "notray", or nothing when one is missing
