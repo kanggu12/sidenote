@@ -6,6 +6,19 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The panel shows its version beside the name in the top bar, where a version is looked for, as a link to that
+  release's notes. It was only at the foot of the gear menu.
+
+### Fixed
+
+- On a WSL whose `/etc/wsl.conf` leaves the Windows folders off the PATH (`[interop] appendWindowsPath=false`),
+  `./sidenote capture` did not start, and `install` and `doctor` said Windows Python was missing when it was there:
+  `cmd.exe` and `powershell.exe` were called by name. They are found on the Windows drive by their paths, wherever
+  `[automount] root` puts it. With interop off, or no Windows drive, `capture`, `setup-capture`, `shortcut`, `install`
+  and `doctor` say so and what to change, and the capture program can be started in Windows with the command shown.
+
 ## [0.5.2] - 2026-11-08
 
 ### Changed

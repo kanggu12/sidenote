@@ -2815,7 +2815,7 @@ function placeBands() {
 addEventListener("resize", placeBands);
 addEventListener("scroll", () => schedule("bands", placeBands), { passive: true });
 // ---------- the version, and a newer release ----------
-// The server's release (status.version) stands at the foot of the gear menu. A newer one, found by the server's check of
+// The server's release (status.version) stands beside the name in the bar and at the foot of the gear menu. A newer one, found by the server's check of
 // GitHub (server/updates.py, status.update), is one line in the band: its number, a link to its release notes, and a key
 // that hides it for that version in this browser. The link is used only when it is one of this repository's releases.
 const NOTES_PREFIX = "https://github.com/kanggu12/sidenote/releases/";
@@ -2854,6 +2854,13 @@ function renderVersion() {
   const v = typeof status.version === "string" && /^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/.test(status.version) ? status.version : "";
   $("menu-about").hidden = !v;
   $("menu-ver").textContent = v ? t("Version {version}", { version: v }) : "";
+  // and beside the name in the bar, where a product's version is looked for, opening that release's notes
+  const tag = $("brand-ver");
+  tag.hidden = !v;
+  tag.textContent = v ? `v${v}` : "";
+  tag.title = v ? t("Version {version}", { version: v }) + " · " + t("Release notes") : "";
+  const notes = v ? releaseLink(NOTES_PREFIX + "tag/v" + v) : "";
+  if (notes) tag.href = notes; else tag.removeAttribute("href");
 }
 function renderAlerts() {
   const out = [];
