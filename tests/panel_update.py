@@ -1,4 +1,5 @@
-"""The version and a newer release in the panel: the version at the foot of the gear menu; the notice as one line in the
+"""The version and a newer release in the panel: the version beside the name in the bar, linking to its release notes, and
+at the foot of the gear menu; the notice as one line in the
 band, with its link to the release's page in a new tab; a link outside the repository's releases left out, and a version
 that is not three numbers not shown; the close key hiding it for that version in this browser, and a newer one shown
 again, with the browser's storage refused too; the switch off hiding it at once; the switch with nothing to do when the
@@ -51,9 +52,23 @@ def group_menu(br, s):
     check("then its foot says it: '버전 0.1.0'", got["shown"] and got["text"] == "버전 0.1.0" and got["last"] == "menu-about" and got["inside"], got)
     # the items drawn: one that is hidden (What was heard, with nothing kept) has no column to be on
     check("...its words on the items' words' column", {got["at"]} == set(got["items"]), got)
+    # beside the name in the bar too, where a product's version is looked for, opening that release's notes in a new tab, at
+    # every width 12 px after the name's highlighter and on its middle
+    for w in (1440, 700):
+        p.page.set_viewport_size({"width": w, "height": 900})
+        p.wait(150)
+        tag = p.js("""() => { const t = document.getElementById('brand-ver'), r = t.getBoundingClientRect(), n = document.querySelector('.brand').getBoundingClientRect();
+            return { shown: !t.hidden && !!t.offsetParent, text: t.textContent, href: t.getAttribute('href'), target: t.target, rel: t.rel, title: t.title,
+                     gap: Math.round(r.left - n.right), mid: Math.round((r.top + r.bottom) / 2 - (n.top + n.bottom) / 2) }; }""")
+        check(f"{w}: beside the name 'v0.1.0', linking to its release notes in a new tab, 12 px after it and on its middle",
+              tag["shown"] and tag["text"] == "v0.1.0" and tag["href"] == "https://github.com/kanggu12/sidenote/releases/tag/v0.1.0"
+              and tag["target"] == "_blank" and "noopener" in tag["rel"] and tag["title"] == "버전 0.1.0 · 릴리스 노트"
+              and tag["gap"] == 12 and abs(tag["mid"]) <= 1, tag)
+    p.page.set_viewport_size({"width": 1440, "height": 900})
     p.send({"type": "status", "version": "<img src=x onerror=alert(1)>"})
     p.wait(100)
     check("a version that is not one is not shown, nor drawn as markup", p.js("() => document.getElementById('menu-about').hidden && !document.querySelector('#menu img')"))
+    check("...nor beside the name", p.js("() => document.getElementById('brand-ver').hidden && !document.querySelector('.bar img')"))
     check("the page threw nothing", not p.errors, p.errors[:2])
     p.close()
 

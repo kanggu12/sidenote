@@ -1271,6 +1271,8 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | `up` says it cannot connect to Docker | Start Docker and run `./sidenote up` again |
 | `up` says the server stopped while starting | The last line of the log shown with it is the cause. Check the `.env` value you changed last |
 | `up` says another program is using port 8777 | Stop that program, or put another port in `.env`, such as `SIDENOTE_PORT=8778`, and run `./sidenote up` |
+| On WSL, `capture`, `install` or `doctor` says Windows cannot be found from WSL | WSL has not mounted the drive Windows is on: `[automount]` in `/etc/wsl.conf` must not say `enabled=false`. Change it, run `wsl --shutdown` in Windows and open WSL again. `[interop] appendWindowsPath=false` is fine: `./sidenote` finds `cmd.exe` and `powershell.exe` on the Windows drive by their paths |
+| On WSL, `capture`, `install` or `doctor` says WSL cannot start Windows programs | `[interop] enabled=false` in `/etc/wsl.conf`: set it to `true` or remove the line, run `wsl --shutdown` in Windows and open WSL again. Or start the capture program in Windows with the `py -3 ...` command the message gives |
 | A solution says "Stopped: connection lost" | It was cut off while the server restarted. Solve it again with **Reanalyze** |
 | The panel says "Model … missing" | `./sidenote llm pull` (the default model), or `./sidenote llm pull <model>` for the one the panel names. The server notices it within 20 seconds |
 | The panel says "The local model does not respond" | `./sidenote llm logs`. `./sidenote up` starts it again |
@@ -1587,7 +1589,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 어둡게 | Dark | **Settings** menu |
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
 | 기록 지우기 | Clear history | **Settings** menu |
-| 버전 … | Version … | **Settings** menu, at its foot |
+| 버전 … | Version … | **Settings** menu, at its foot; and as v… beside the name in the top bar, a link to that release's notes |
 | 새로고침 | Reload | alert bar, when a new version of the panel is ready |
 | Sidenote … 출시 | Sidenote … is out | alert bar, when a newer release is out |
 | 릴리스 노트 | Release notes | alert bar: the link to that release's page |
