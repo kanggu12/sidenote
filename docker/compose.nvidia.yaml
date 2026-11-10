@@ -4,7 +4,8 @@ services:
   llm:
     # Ollama, and beside it one line of nvidia-smi every two seconds: used and total memory (MiB), load (%),
     # temperature (C) and power (W). One file rewritten whole, so it never grows; a failed reading leaves the old
-    # file to go stale, and the server shows no stale reading.
+    # file to go stale, and the server shows no stale reading. Ollama runs in the loop that starts it again when it
+    # ends by itself (docker/keep-running.sh, which compose.yaml mounts), as compose.yaml's own entrypoint does.
     entrypoint:
       - /bin/sh
       - -c
@@ -13,7 +14,7 @@ services:
           nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits -i 0 > /gpu/now.tmp 2>/dev/null && mv -f /gpu/now.tmp /gpu/now.csv
           sleep 2
         done &
-        exec /bin/ollama serve
+        exec /bin/sh /keep-running.sh /bin/ollama serve
     deploy:
       resources:
         reservations:

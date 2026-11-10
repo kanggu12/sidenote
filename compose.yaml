@@ -163,6 +163,9 @@ services:
     image: sidenote-runner:local
     container_name: sidenote-runner
     restart: "no"
+    # The image's own command, run in the loop that starts it again when it ends by itself (docker/keep-running.sh,
+    # mounted below): up to 5 times in 10 minutes, and never at Docker's own start, which restart "no" keeps.
+    command: ["/bin/sh", "/keep-running.sh", "python3", "-I", "/app/runner.py"]
     # An init process reaps the processes a run forks and leaves (a fork() exam question): without
     # it they stay as zombies and use up the process limit until C/C++ cannot compile any more.
     init: true
@@ -175,6 +178,7 @@ services:
       RUNNER_SOCKET_GID: ${SIDENOTE_GID:-0}
     volumes:
       - runner-sock:/sock
+      - ./docker/keep-running.sh:/keep-running.sh:ro   # the loop its command runs in
     # Root of the container with four capabilities, for the runner alone: it starts each compile and
     # each run of an input as a user of its own (SETUID, SETGID), hands it its folder (CHOWN) and
     # stops what it leaves (KILL). The runs are those users, with none.
@@ -213,7 +217,9 @@ services:
   llm:
     image: ollama/ollama:${SIDENOTE_OLLAMA_VERSION:-0.40.5}
     container_name: sidenote-llm
-    entrypoint: ["/bin/ollama", "serve"]
+    # Started again inside the container when it ends by itself, up to 5 times in 10 minutes (docker/keep-running.sh,
+    # mounted below; restart stays "no", so Docker's own start brings nothing back). The GPU files run it the same way.
+    entrypoint: ["/bin/sh", "/keep-running.sh", "/bin/ollama", "serve"]
     profiles: [local]
     restart: "no"
     networks:
@@ -246,6 +252,7 @@ services:
     volumes:
       - llm-models:/root/.ollama
       - gpu-stat:/gpu
+      - ./docker/keep-running.sh:/keep-running.sh:ro   # the loop the entrypoint runs Ollama in
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

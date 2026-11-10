@@ -90,7 +90,10 @@ server:
     port: 8777
 
   # One volume for the server's logs, the panel's saved settings (.settings.json, kept beside the
-  # logs) and the speech model it downloads on its first start (about 0.5 GB for the default "small").
+  # logs) and the speech model it downloads on its first start (about 0.5 GB for the default "small";
+  # choosing "medium" in the panel downloads 1.5 GB more, and the small one stays). With the history
+  # (up to 200 MB) and the logs, 2Gi ran out after a change to medium, and then the history and the
+  # logs were no longer written: 4Gi leaves room for both models.
   # enabled: false uses an emptyDir instead, and all of that starts over whenever the pod is replaced.
   # helm uninstall leaves the claim in place; delete it with kubectl when you no longer want it.
   persistence:
@@ -101,7 +104,7 @@ server:
     storageClass: ""
     accessModes:
       - ReadWriteOnce
-    size: 2Gi
+    size: 4Gi
 
   # compose.yaml caps the server at 8 CPUs and 8 GB of memory. The memory-backed scratch folders
   # (/tmp 512 MiB, /root 256 MiB) count against the memory limit, as tmpfs does in compose.
@@ -118,7 +121,8 @@ server:
   # localhost that come from its own pod (the chart sets SIDENOTE_TRUST_GATEWAY=0), which a kubelet
   # probe over the pod network is not.
   probes:
-    # The first start downloads the speech model before /health answers: up to 10 minutes here.
+    # Up to 10 minutes for the server to answer at all. /health answers as soon as it listens: the speech
+    # model is downloaded and loaded in the background after that (server/app.py, load_speech).
     startup:
       periodSeconds: 10
       timeoutSeconds: 5

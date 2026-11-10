@@ -73,6 +73,8 @@ RUN set -eu; \
 COPY server /app/server
 COPY panel /app/panel
 COPY --chmod=755 docker/entrypoint.sh /app/entrypoint.sh
+# The loop that starts the server again when it ends by itself (entrypoint.sh runs it)
+COPY --chmod=755 docker/keep-running.sh /app/keep-running.sh
 
 WORKDIR /app
 # Inside the container the server listens on all interfaces; compose publishes it on the host's

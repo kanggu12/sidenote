@@ -172,6 +172,8 @@ sidenote.validate). Rendered as a list for "env:".
 node's bridge, which anything on the node can come from (a NetworkPolicy cannot stop the node). */ -}}
 {{- $_ := set $env "SIDENOTE_TRUST_GATEWAY" "0" -}}
 {{- $_ := set $env "HF_HOME" "/data/hf" -}}
+{{- /* Kubernetes starts a container that ended again itself (with its back-off, and the liveness probe): the image's own loop, which does that under compose (docker/keep-running.sh), stands aside so a pod's restarts stay the cluster's to count. */ -}}
+{{- $_ := set $env "SIDENOTE_SELF_RESTART" "0" -}}
 {{- $_ := set $env "SIDENOTE_AGENT" (toString .Values.agent.provider) -}}
 {{- with .Values.agent.model -}}
 {{- $_ := set $env "SIDENOTE_AGENT_MODEL" (toString .) -}}

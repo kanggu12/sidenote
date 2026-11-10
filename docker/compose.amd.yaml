@@ -7,11 +7,17 @@ services:
     devices:
       - /dev/kfd
       - /dev/dri
+    # The device nodes belong to the host's video and render groups. video is a name the image has. render is not, and
+    # Docker does not start a container given a group name its image lacks; its number also differs from one
+    # distribution to the next. So it comes as a number: ./sidenote reads it from /dev/kfd, and by hand it is
+    # SIDENOTE_RENDER_GID=$(stat -c %g /dev/kfd). Without one the default is 0, root's own group, which the container
+    # has already (it runs as root, and opens the devices as their owner).
     group_add:
       - video
-      - ${SIDENOTE_RENDER_GID:-render}
+      - ${SIDENOTE_RENDER_GID:-0}
     # Ollama, and beside it the first AMD card's readings from the amdgpu driver's own files every two seconds, in the
-    # line nvidia-smi gives on NVIDIA: used and total memory (MiB), load (%), temperature (C) and power (W).
+    # line nvidia-smi gives on NVIDIA: used and total memory (MiB), load (%), temperature (C) and power (W). Ollama
+    # runs in the loop that starts it again when it ends by itself (docker/keep-running.sh, which compose.yaml mounts).
     entrypoint:
       - /bin/sh
       - -c
@@ -27,4 +33,4 @@ services:
           done
           sleep 2
         done &
-        exec /bin/ollama serve
+        exec /bin/sh /keep-running.sh /bin/ollama serve
