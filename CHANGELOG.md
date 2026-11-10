@@ -6,6 +6,12 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- The desktop shortcut's start window on Windows had a taskbar button, took the focus when clicked, and drew no
+  shadow: its fade-in had Tk write the window's style over the ones it set. It keeps them through the fade, and asks for
+  its rounded corners once it is on screen, which brings its shadow as the tray menu has it.
+
 ## [0.6.1] - 2026-11-10
 
 ### Fixed
