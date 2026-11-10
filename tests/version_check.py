@@ -154,6 +154,41 @@ check("no list item in the documents starts with a second marker", not doubled, 
 capture_doc = doc("docs", "capture-client.md")
 pictures = re.findall(r'src="(assets/[^"]+)"', capture_doc)
 check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/sidenote-capture/assets/" in release for p in pictures), pictures)
+# ...and what the capture program reads beside itself, its version found there: 0.6.0's zip left out client/logo.png and
+# the version, and unpacked from it the windows wrote their name in words where the logo stands and showed no version.
+# The zip's folder is made here by the release step itself (its shell lines up to the zip), in a folder of its own whose
+# client, docs and server are this checkout's
+step = release[release.find("- name: The capture program on its own"):]
+step = step[step.find("run: |") + len("run: |"):step.find("- name:", 10)]
+lines = [ln.strip() for ln in step.splitlines() if ln.strip() and not ln.strip().startswith("#") and "zip -r" not in ln]
+made = WORK / "capture-zip"
+made.mkdir()
+for part in ("client", "docs", "server"):
+    (made / part).symlink_to(ROOT / part)
+ran = subprocess.run(["bash", "-euc", "\n".join(lines)], cwd=made, capture_output=True, text=True, timeout=60)
+folder = made / "dist" / "sidenote-capture"
+beside = set()
+for prog in ("capture.py", "launch.pyw"):
+    # by the folder of __file__, or by `here`, which is that folder where a function names it so
+    beside |= set(re.findall(r'os\.path\.join\((?:os\.path\.dirname\(os\.path\.abspath\(__file__\)\)|here), "([^".]+\.[a-z]+)"\)',
+                             (ROOT / "client" / prog).read_text(encoding="utf-8")))
+beside |= {"version.py"}   # read through a list of places (code_version), past the pattern above
+check("the release step makes the capture zip's folder", ran.returncode == 0 and folder.is_dir(), ran.stderr[-300:])
+check("...with what the capture program reads beside itself", beside and all((folder / b).is_file() for b in beside),
+      sorted(b for b in beside if not (folder / b).is_file()))
+# Each program's code_version(), taken from its file and run in the zip's folder with no package of the server to import
+# (-I, from that folder): the version is the one in server/version.py
+want = re.search(r'^VERSION = "([0-9.]+)"', (ROOT / "server" / "version.py").read_text(encoding="utf-8"), re.M).group(1)
+probe = ("import ast, os, re, sys\n"
+         "path = sys.argv[1]\n"
+         "tree = ast.parse(open(path, encoding='utf-8').read())\n"
+         "fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'code_version')\n"
+         "space = {'os': os, 're': re, '__file__': path}\n"
+         "exec(compile(ast.Module(body=[fn], type_ignores=[]), path, 'exec'), space)\n"
+         "print(space['code_version']())\n")
+for prog in ("capture.py", "launch.pyw"):
+    got = subprocess.run([sys.executable, "-I", "-c", probe, str(folder / prog)], cwd=folder, capture_output=True, text=True, timeout=30)
+    check(f"...and {prog} unpacked from it finds its version, {want}", got.stdout.strip() == want, (got.stdout.strip(), got.stderr[-200:]))
 
 print("\n[./sidenote version]")
 # A copy of the launcher beside a version.py of its own (the launcher works from its own folder), and the programs it

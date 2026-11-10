@@ -89,12 +89,16 @@ def code_version() -> str:
         return found
     except Exception:
         pass
-    try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "version.py"), encoding="utf-8") as f:
-            m = re.search(r'^VERSION = "([0-9][0-9.]*)"', f.read(), re.M)
-        return m.group(1) if m else ""
-    except OSError:
-        return ""
+    # a checkout has the server's file beside this folder; the release's zip has it beside this file
+    for where in (("..", "server", "version.py"), ("version.py",)):
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), *where), encoding="utf-8") as f:
+                m = re.search(r'^VERSION = "([0-9][0-9.]*)"', f.read(), re.M)
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+    return ""
 
 
 VERSION = code_version()
