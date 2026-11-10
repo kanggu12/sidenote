@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-10
+
 ### Fixed
 
 - The desktop shortcut's start window on Windows had a taskbar button, took the focus when clicked, and drew no
@@ -644,7 +646,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/kanggu12/sidenote/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/kanggu12/sidenote/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kanggu12/sidenote/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/kanggu12/sidenote/compare/v0.5.1...v0.5.2
