@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -153,7 +154,12 @@ def group_contents(br, s):
     if not T.group("the contents"):
         return
     day = 86400
-    rows = [row(300 + i, "mcq" if i % 2 else "essay", f"서브넷 문제 {i}" if i == 3 else f"문제 {i}", f"답 {i}", "SYN 풀이" if i == 2 else "풀이", ago=(3 - i // 5) * day + i * 10)
+    # three days of five answers, each day's at its midday: counted back from now, a run in the first minutes after
+    # midnight put a day's first answers on the day before (CI's weekly run: two tabs, of 10 and 5)
+    lt = time.localtime()
+    noon = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 12, 0, 0, 0, 0, -1))
+    rows = [row(300 + i, "mcq" if i % 2 else "essay", f"서브넷 문제 {i}" if i == 3 else f"문제 {i}", f"답 {i}", "SYN 풀이" if i == 2 else "풀이",
+                ago=time.time() - (noon - (3 - i // 5) * day - i * 10))
             for i in range(15)]
     p = Page(br, s, rows, w=1600, h=1300)
     typed = lambda q: (p.page.fill("#hist-q", q), p.wait(120))   # noqa: E731
