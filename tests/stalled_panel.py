@@ -119,14 +119,24 @@ try:
     call("PUT", "/api/v1/language/panel", {"lang": "en"})
     time.sleep(0.5)
     check("the reading panel still gets every broadcast", got[0] > before and got[0] > 256 * 1024, f"{before} -> {got[0]} bytes")
-    # Its writer waits on the message it could not send for 5 s (PanelOut.WRITE_SEC), and then closes it
-    deadline, panels = time.time() + 9, None
+    # Its writer waits on the message it could not send for 5 s (PanelOut.WRITE_SEC), and then closes it. What the system
+    # buffers for the socket takes the messages first, and how much it takes is the system's: on CI's runners and in a
+    # container its send buffer grew past the 60 writes above (some 260 KB), the writer never waited, and the silent panel
+    # stayed for the 9 s this gave it. So the writes go on until it is closed, up to 8 MB past the first, more than a
+    # socket's send buffer holds at most (net.ipv4.tcp_wmem's last number, 4 MB), and none of them may wait on it
+    deadline, panels, base, longest = time.time() + 90, None, got[0], 0.0
     while time.time() < deadline:
         panels = (call("GET", "/stats")[2] or {}).get("panels")
         if panels == 1:
             break
-        time.sleep(0.25)
-    check("the silent one is closed within its time, and is no longer a panel the server sends to", panels == 1, panels)
+        if got[0] - base < 8 * 1024 * 1024:
+            for i in range(25):
+                longest = max(longest, call("PUT", "/api/v1/language/panel", {"lang": "ko" if i % 2 else "en"})[1])
+        else:
+            time.sleep(0.25)   # all of it sent: the writer's 5 s run out
+    check("the silent one is closed once the system holds no more for it, and is no longer a panel the server sends to",
+          panels == 1, (panels, f"{(got[0] - base) // 1024} KB more sent"))
+    check("...and none of the writes on the way waits on it", longest < 1.0, f"the longest took {longest:.2f}s")
     _, sec, _ = call("POST", "/api/v1/reanalyze", {})
     check("an analysis asked for now starts at once", sec < 1.0, f"{sec:.2f}s")
     print("\n[the server's end]")

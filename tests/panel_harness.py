@@ -158,6 +158,10 @@ class Page:
         if reduced:
             self.page.add_init_script("try { localStorage.setItem('sidenote-motion', 'system'); } catch (e) {}")
         self.page.goto(stand.url + query, wait_until="load")
+        # The panel's socket made, with its handler (SOCKET), before the first message: a fixed 120 ms after the load was too
+        # short on a loaded machine, and the first message found no socket to arrive on
+        if status:
+            self.page.wait_for_function("() => !!(window.__sock && window.__sock.onmessage)", timeout=8000)
         self.page.wait_for_timeout(120)
         if status:
             self.open_messages()

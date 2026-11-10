@@ -59,7 +59,12 @@ def texts(rows) -> list:
     return [r["text"] for r in rows]
 
 
-now = time.time()
+# The time the checks below place lines by, kept an hour or more from midnight: CI's weekly run reached them at 00:00:50
+# UTC, the size check's lines 50 minutes back fell on the day before, and its max() had nothing of today's to read. Up to an
+# hour off the real time; every check here that places a line by it reads it back by it
+_lt = time.localtime()
+_into = _lt.tm_hour * 3600 + _lt.tm_min * 60 + _lt.tm_sec          # seconds into the local day
+now = time.time() + max(0, 3600 - _into) - max(0, _into - (86400 - 3600))
 print("\n[one row a sentence]")
 h, f = fresh()
 today = time.strftime("%Y-%m-%d", time.localtime(now))
@@ -234,9 +239,15 @@ def wait_writes():
     A.HISTORY_WRITES.submit(lambda: None).result(timeout=10)
 
 
-def kept_now() -> list:
+def kept_all() -> list:
+    """Every line kept, oldest first, whatever day each fell on: the server writes them at its own time, and read by
+    today's date alone a run over midnight lost the ones just before it."""
     wait_writes()
-    return texts(A.HISTORY.heard_lines(time.strftime("%Y-%m-%d"), 1000))
+    return [r for d in reversed(A.HISTORY.heard_days()) for r in A.HISTORY.heard_lines(d["day"], 1000)]
+
+
+def kept_now() -> list:
+    return texts(kept_all())
 
 
 async def speech_pass():
@@ -254,7 +265,7 @@ async def speech_pass():
     kept = kept_now()
     check("switched on, every closed sentence is kept, a remark too short to solve as well",
           kept == ["So that took about two hours.", "Okay."], kept)
-    rows = A.HISTORY.heard_lines(time.strftime("%Y-%m-%d"), 1000)
+    rows = kept_all()
     check("...with its time, its length and its language", rows[0]["secs"] == 2.5 and rows[0]["lang"] == "en" and abs(rows[0]["ts"] - time.time()) < 30, rows[0])
     await hear(stub, tracker, [(17.0, 17.3)], {17.0: "A blip the VAD found."}, 22.0)
     check("a blip that is not transcribed is not kept", len(kept_now()) == 2, kept_now())
