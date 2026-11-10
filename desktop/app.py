@@ -28,7 +28,6 @@ What differs from the Docker setup (compose.yaml), as server_env() sets it; a SI
 from __future__ import annotations
 
 import argparse
-import functools
 import importlib
 import importlib.util
 import json
@@ -217,33 +216,11 @@ class CappedLog:
 
 
 def ui_lang() -> str:
-    """The language of the app's own message boxes, by the rule the capture program follows: SIDENOTE_LANG when it
-    names one, else Korean on a Korean Windows (its display language) or a Korean locale, else English."""
+    """The language of the app's own message boxes, by the rule the capture program follows (and is handed on to it):
+    SIDENOTE_LANG when it names one, else English. The system's language is not read: a Korean Windows or Mac gave an
+    app and a capture in Korean beside a guide and a launcher in English."""
     fixed = os.environ.get("SIDENOTE_LANG", "").strip().lower()
-    if fixed in ("en", "ko"):
-        return fixed
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            return "ko" if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x12 else "en"
-        except (AttributeError, OSError):
-            return "en"
-    locale = next((os.environ[k] for k in ("LC_ALL", "LC_MESSAGES", "LANG") if os.environ.get(k)), "")
-    if not locale and sys.platform == "darwin":   # an app opened from the Finder has no locale variables
-        locale = mac_language()
-    return "ko" if locale.lower().startswith("ko") else "en"
-
-
-@functools.lru_cache(maxsize=1)
-def mac_language() -> str:
-    """The first of macOS's preferred languages ("ko-KR"), or "" when it cannot be read."""
-    try:
-        out = subprocess.run(["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True,
-                             timeout=5).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    # printed as a list: (\n    "ko-KR",\n    "en-US"\n)
-    return next((w for w in (line.strip().strip('",') for line in out.splitlines()) if w and w not in "()"), "")
+    return fixed if fixed in ("en", "ko") else "en"
 
 
 # The message boxes in Korean, keyed by their English (the logs stay English)
@@ -391,12 +368,18 @@ class Child:
     """One child process, its output written to a CappedLog. `starts` keeps when it was started, so one that keeps
     stopping can be given up on instead of started for ever."""
 
-    def __init__(self, name: str, cmd: list[str], env: dict, log: CappedLog):
+    def __init__(self, name: str, cmd: list[str], env: dict, log: CappedLog, asked_code: int | None = None):
         self.name, self.cmd, self.env, self.log = name, cmd, env, log
         self.proc: subprocess.Popen | None = None
         self.starts: list[float] = []
+        # The exit code with which the child asks to be started again (the capture program's CAPTURE_RESTART), if any
+        self.asked_code = asked_code
 
     def start(self, *extra: str) -> None:
+        """Starts it, with `extra` after its command. A start after an end the child asked for (asked_code: the
+        capture program's tray Restart, or its restart after a deploy) is left out of `starts`: it says nothing about a
+        child that keeps stopping, and five of them within ten minutes ended the whole app as if it did."""
+        asked = self.asked_code is not None and self.proc is not None and self.proc.poll() == self.asked_code
         # A group of its own: Ctrl+C in this program's terminal reaches this program alone, which then stops each
         # child in order, instead of every child getting it at once.
         if sys.platform == "win32":
@@ -411,7 +394,8 @@ class Child:
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **group)
         if _JOIN_JOB is not None:
             _JOIN_JOB(self.proc)
-        self.starts.append(time.monotonic())
+        if not asked:   # what given_up counts: the starts after ends that were not asked for
+            self.starts.append(time.monotonic())
         threading.Thread(target=self._pump, args=(self.proc,), name=f"{self.name}-log", daemon=True).start()
 
     def _pump(self, proc: subprocess.Popen) -> None:
@@ -551,10 +535,18 @@ def ollama_binary(path: str | None = None) -> str | None:
     return None
 
 
+def analyzer_of(env: dict) -> str:
+    """SIDENOTE_ANALYZER read as the server reads it (server/config.py): spaces round it dropped, and a value it does not
+    know taken as local. Compared as typed, " local" or "Local" kept the app from starting Ollama for a server that ran
+    the local model."""
+    value = (env.get("SIDENOTE_ANALYZER") or "").strip().lower() or "local"
+    return value if value in ("local", "agent", "cli", "api", "claude", "mock") else "local"
+
+
 def ollama_needed(env: dict) -> bool:
     """True when the local model is meant to be this PC's Ollama on its own port and nothing answers there."""
     url = env.get("SIDENOTE_LOCAL_URL", "")
-    if env.get("SIDENOTE_ANALYZER", "local") != "local" or not url.startswith(("http://127.0.0.1:11434", "http://localhost:11434")):
+    if analyzer_of(env) != "local" or not url.startswith(("http://127.0.0.1:11434", "http://localhost:11434")):
         return False
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
@@ -672,6 +664,8 @@ def run(args) -> int:
         if opened:
             args.no_browser = True       # the panel opened on that copy connects to this one's server by itself
     elif health(port):                   # a Sidenote server that no copy of the app started (Docker's): its panel
+        say("a Sidenote server the app did not start answers on this port (Docker's?): "
+            + ("" if args.no_browser else "opened its panel, ") + "no capture program started", log)
         if not args.no_browser:
             webbrowser.open(url)
         log.close()
@@ -693,7 +687,7 @@ def run(args) -> int:
     try:
         needed = ollama_needed(env)
         binary = ollama_binary(env.get("PATH")) if needed else None
-        if not needed and env.get("SIDENOTE_ANALYZER", "local") == "local" \
+        if not needed and analyzer_of(env) == "local" \
                 and env.get("SIDENOTE_LOCAL_URL", "").startswith(("http://127.0.0.1:11434", "http://localhost:11434")):
             # Ollama's own installer starts it at sign-in, with its defaults: a shorter context and images cut to fewer
             # tokens than OLLAMA_ENV gives, which blurs small code text. The tuned model brings its context along.
@@ -723,7 +717,8 @@ def run(args) -> int:
                             # its tray speaks the language this program's messages do: on macOS from the Finder
                             # there is no locale for it to read
                             {**env, "SIDENOTE_SUPERVISED": "1", "SIDENOTE_LANG": env.get("SIDENOTE_LANG") or ui_lang()},
-                            CappedLog(logs / "capture.log"))
+                            CappedLog(logs / "capture.log"),
+                            asked_code=CAPTURE_RESTART)   # its own restarts (tray Restart) are not failures
             capture.start()
         if why and not args.no_capture:
             say(why, log)
@@ -776,14 +771,15 @@ def watch(server: Child, capture: Child | None, ollama: Child | None, log: Cappe
         if code == 0:                    # quit from its tray icon, or from the panel
             say("the capture program was quit; stopping", log)
             return 0
-        if capture.given_up():
+        asked = code == CAPTURE_RESTART  # a restart the person asked for: no sign of a program that keeps stopping
+        if not asked and capture.given_up():
             tell(t("The capture program keeps stopping. The end of its log:") + "\n\n" + tail(capture.log.path) + "\n\n"
                  + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
                      folder=folder), log)
             return 1
-        say(f"the capture program {'asked for a restart' if code == CAPTURE_RESTART else f'stopped (exit {code})'}; "
+        say(f"the capture program {'asked for a restart' if asked else f'stopped (exit {code})'}; "
             "starting it again", log)
-        capture.start("--resumed")
+        capture.start("--resumed")   # (one it asked for is not counted toward giving up: Child.start, asked_code)
 
 
 def ask_capture_to_quit(port: int) -> None:
@@ -812,9 +808,11 @@ def serve(port: int) -> int:
     import uvicorn
 
     from server import app as server
-    # 64 MiB per message: a 4K frame of a photo-like screen is over uvicorn's default 16 MiB (docker/entrypoint.sh)
+    # 64 MiB per message: a 4K frame of a photo-like screen is over uvicorn's default 16 MiB (docker/entrypoint.sh).
+    # A close-down waits 5 s at most for open connections: a panel's socket that stopped reading held it for good, and
+    # the close-down that keeps the remembered problems (.restart.npz) never ran (docker/entrypoint.sh says the same).
     config = uvicorn.Config(server.app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port,
-                            access_log=False, ws_max_size=64 * 1024 * 1024)
+                            access_log=False, ws_max_size=64 * 1024 * 1024, timeout_graceful_shutdown=5)
     if hasattr(config, "get_loop_factory"):      # the loop uvicorn.run would use (uvloop where it is there)
         loop = (config.get_loop_factory() or asyncio.new_event_loop)()
     else:                                        # an older uvicorn names it through the event loop policy

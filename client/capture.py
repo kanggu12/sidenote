@@ -39,30 +39,42 @@ import websocket  # websocket-client (sync)
 
 
 # ---------- the words it shows: its console lines, the tray menu, the notification ----------
-# Written in English; KO holds the Korean for each, character for character. The language is English unless
-# SIDENOTE_LANG says en or ko (./sidenote passes on the one it was given), or else the system's language is Korean:
-# the user's display language on Windows, the locale elsewhere (the first of LC_ALL, LC_MESSAGES and LANG that is set).
+# Written in English; KO holds the Korean for each, character for character. The language is English unless SIDENOTE_LANG
+# says ko (./sidenote passes on the one it was given, from .env or the environment). The system's language is not read: a
+# Korean Windows gave a capture in Korean beside a guide in English and a launcher that follows its terminal's locale.
 def ui_lang() -> str:
     fixed = os.environ.get("SIDENOTE_LANG", "").strip().lower()
-    if fixed in ("en", "ko"):
-        return fixed
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            return "ko" if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x12 else "en"   # LANG_KOREAN
-        except Exception:   # no answer from Windows: the default
-            return "en"
-    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
-        value = os.environ.get(name, "")
-        if value:
-            return "ko" if value.lower().startswith("ko") else "en"
-    return "en"
+    return fixed if fixed in ("en", "ko") else "en"
 
 
 LANG = ui_lang()
+
+
+def code_version() -> str:
+    """This code's release, from server/version.py, the one place it is kept: beside the name, as the panel has it beside
+    its own. The desktop app carries the server package; a checkout has the file beside this folder. "" when neither is
+    there."""
+    try:
+        from server.version import VERSION as found   # the desktop app: the server is in the same bundle
+        return found
+    except Exception:
+        pass
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server", "version.py"), encoding="utf-8") as f:
+            m = re.search(r'^VERSION = "([0-9][0-9.]*)"', f.read(), re.M)
+        return m.group(1) if m else ""
+    except OSError:
+        return ""
+
+
+VERSION = code_version()
+# The capture's logo beside this file: Sidenote's own wordmark and "capture" after it (scratch/panel-tools/make_capture_logo.py),
+# which the tray's menu and the shortcut's windows show at their top
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+
 KO = {
     "The server asked this program to quit (./sidenote capture-stop)": "서버가 종료를 요청했습니다 (./sidenote capture-stop)",
-    "New code was deployed: restarting at a quiet moment (./sidenote up)": "새 코드가 배포되어 쉬는 때에 다시 시작합니다 (./sidenote up)",
+    "New code was deployed: restarting at a quiet moment (./sidenote up)": "새 코드가 배포되어 한가할 때 다시 시작합니다 (./sidenote up)",
     "The server asked this program to restart (./sidenote capture-restart)": "서버가 다시 시작을 요청했습니다 (./sidenote capture-restart)",
     "Not connected to the server, so nothing can be sent (--once)": "서버에 연결되지 않아 보낼 수 없습니다 (--once)",
     "Not taking the screen until the server is connected": "서버에 연결될 때까지 화면을 받지 않습니다",
@@ -78,15 +90,22 @@ KO = {
     "Using the Windows menu from now on": "이제 Windows 기본 메뉴를 씁니다",
     "Could not show the tray menu, using the Windows menu ({error})": "트레이 메뉴를 띄우지 못해 Windows 기본 메뉴를 씁니다 ({error})",
     "No tray icon ({error}). To install it: ./sidenote setup-capture": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-capture",
-    "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up 을 실행하세요.",
-    "Quit from the tray.": "트레이에서 종료했습니다.",
+    "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up을 실행하세요.",
+    "Quit from the tray.": "트레이에서 끝냈습니다.",
     "Restarting from the tray.": "트레이에서 다시 시작합니다.",
     "Sidenote was opened again: opening the panel": "Sidenote를 다시 열어 패널을 엽니다",
     "Could not show the tray icon ({error})": "트레이 아이콘을 띄우지 못했습니다 ({error})",
     "Could not make the tray icon ({error}); going on without it": "트레이 아이콘을 만들지 못했습니다 ({error}); 그대로 계속합니다",
-    "To end it: Quit in the tray icon, or ./sidenote capture-stop on the server.": "끝내려면 트레이 아이콘의 끝내기, 또는 서버에서 ./sidenote capture-stop.",
+    "To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal.":
+        "끝내려면 트레이 아이콘의 끝내기, 또는 서버 터미널에서 ./sidenote capture-stop.",
+    "To end it: ./sidenote capture-stop in the server's terminal.": "끝내려면 서버 터미널에서 ./sidenote capture-stop.",
     "The tray icon opens the panel and switches the screen and the sound on and off.": "트레이 아이콘에서 패널을 열고 화면과 소리를 켜고 끌 수 있습니다.",
     "Could not start again: {error}": "다시 시작하지 못했습니다: {error}",
+    # a second start for a server that has its capture program already (OneCapture)
+    "Another capture program is already running for this server, so this one ends.":
+        "이 서버로 보내는 캡처 프로그램이 이미 실행 중이어서 이 프로그램은 끝납니다.",
+    "To end the one that runs: Quit in its tray icon, or ./sidenote capture-stop in the server's terminal.":
+        "실행 중인 프로그램을 끝내려면 그 트레이 아이콘의 끝내기, 또는 서버 터미널에서 ./sidenote capture-stop.",
     # Skip windows: the tray's state line while one is on screen, and what the console says of it (never which window)
     "Skipped window": "창 건너뜀",
     "A window to skip is on screen: no screen is sent while it is": "건너뛸 창이 화면에 보여 그동안 화면을 보내지 않습니다",
@@ -2212,13 +2231,18 @@ TRAY_MENU = r"""
 import base64, ctypes, io, json, sys, time
 from ctypes import wintypes
 import tkinter as tk
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageTk
 
 spec = json.loads(sys.argv[1])
 rows, (cursor_x, cursor_y) = spec["rows"], spec["at"]
 # The panel's dark Classic: its glass, its words, the highlighter, and its switch (green on, the capture's red off) and pills
-BG, EDGE, TOP, INK, INK2, MUTED, DIM, HOVER, MARK, RULE = ("#26272b", "#4a4c53", "#8a8c93", "#e3e4e5", "#cbccce", "#b0b1b4", "#6f7177",
-                                                           "#36373d", "#f2c744", "#3c3d43")
+BG, EDGE, TOP, INK, INK2, MUTED, DIM, HOVER, MARK = ("#26272b", "#4a4c53", "#8a8c93", "#e3e4e5", "#cbccce", "#b0b1b4", "#6f7177",
+                                                     "#36373d", "#f2c744")
+# The frosted glass, as the start window's (client/launch.pyw, Glass: tests/launch_window.py holds the two together): the
+# blur in pixels at 100%, the glass's colour laid over what is behind, how far its colours are brought up again; and the
+# face of a key, lighter under the pointer
+BLUR, TINT, VIVID = 7, 0.8, 1.6
+KEY_FACE, KEY_LIT = 18, 36
 OK, LIT, BAD, TRACK_ON, TRACK_OFF, KNOB = "#2eb67d", "#4cc08e", "#ff6b6b", "#1a8a5a", "#4d2528", "#f1f1f3"
 WARN = "#ffb066"                                            # the right column's warning in the dark Classic (Skipped window)
 # The marks a row can wear, the panel's own: the screen and the sound as on its capture card, the turn as on its Reanalyze key.
@@ -2237,9 +2261,9 @@ root.withdraw()                                             # nothing on screen 
 root.title("sidenote menu")
 scale = root.winfo_fpixels("1i") / 96.0                     # 1.0 at 100%, 2.0 at 200%
 p = lambda n: round(n * scale)
-SANS, HANGUL = "Segoe UI", "Malgun Gothic"                  # Segoe UI has no Korean, and left to itself Windows picks a fallback of its own
+SANS, HANGUL, MONO = "Segoe UI", "Malgun Gothic", "Consolas"   # Segoe UI has no Korean, and left to itself Windows picks a fallback of its own
 WORDS = HANGUL if spec.get("lang") == "ko" else SANS        # the rows' font, for the language they are in
-HEAD, SEP, ROW, STATE = p(46), p(11), p(38), p(36)
+HEAD, SEP, ROW, STATE = p(50), p(11), p(38), p(38)
 
 
 def tall(row):
@@ -2269,9 +2293,42 @@ if screen and user32.GetMonitorInfoW(screen, ctypes.byref(info)):
 x = max(left, min(cursor_x, right) - width)
 y = max(top, min(cursor_y, bottom) - height - p(6))
 root.overrideredirect(True)                                 # no title bar
-root.attributes("-topmost", True)
-root.attributes("-alpha", 0.98)
+root.attributes("-topmost", True)                           # opaque: its glass is drawn over what is behind it (glass)
 root.geometry(f"{width}x{height}+{x}+{y}")
+
+
+def grab():
+    # What the screen shows where the menu is to stand and a little round it, read once before it is shown, on whichever
+    # screen it opens (all of them, in the screens' own coordinates): its glass is drawn over it, frosted as the start
+    # window's is (client/launch.pyw, Glass.frost). None where the screen cannot be read: the glass is then its own colour
+    try:
+        from PIL import ImageGrab
+        margin = p(BLUR * 3)                                # past three times the blur, what is there no longer counts
+        box = (max(whole[0], x - margin), max(whole[1], y - margin), min(whole[2], x + width + margin), min(whole[3], y + height + margin))
+        shot = ImageGrab.grab(bbox=box, all_screens=True)
+        if shot.size != (box[2] - box[0], box[3] - box[1]):
+            return None
+        return shot.convert("RGB").filter(ImageFilter.GaussianBlur(p(BLUR))).crop((x - box[0], y - box[1], x - box[0] + width, y - box[1] + height))
+    except Exception:
+        return None
+
+
+whole = (left, top, right, bottom)
+if screen and user32.GetMonitorInfoW(screen, ctypes.byref(info)):
+    whole = (info.whole.left, info.whole.top, info.whole.right, info.whole.bottom)   # the whole screen, the taskbar's part too
+behind = grab()
+glass = Image.new("RGB", (width, height), BG)
+if behind is not None:                                      # tinted 80% with the glass's colour, its colours brought up 1.6 times
+    glass = ImageEnhance.Color(Image.blend(behind, Image.new("RGB", behind.size, BG), TINT)).enhance(VIVID)
+grain = Image.effect_noise((width, height), 26).convert("RGB")   # a fine grain, as frosted glass has: a pixel a grain
+glass = Image.blend(glass, grain, 0.03)
+logo = None
+try:                                                        # the capture's logo, with where its baseline and its letters start
+    with Image.open(spec.get("logo") or "") as found:
+        found.load()
+        logo = (found.convert("RGBA"), int(found.text.get("baseline", "0")) or round(found.height * 0.7), int(found.text.get("left", "0")))
+except Exception:
+    pass
 c = tk.Canvas(root, width=width, height=height, bg=BG, highlightthickness=0, bd=0)
 c.pack()
 hover = [None]                                              # the row under the pointer or the keys
@@ -2341,37 +2398,63 @@ def switch(d, x1, mid, on, enabled):
     d.rounded_rectangle([x0, mid - h / 2, x1, mid + h / 2], radius=h / 2, fill=track, outline=rim, width=SS)
     knob = h - 6 * SS
     kx = x1 - 3 * SS - knob if on else x0 + 3 * SS
-    d.ellipse([kx, mid - knob / 2 + SS, kx + knob, mid + knob / 2 + SS], fill=mix("#000000", track, 0.35))   # its shadow
-    d.ellipse([kx, mid - knob / 2, kx + knob, mid + knob / 2], fill=KNOB if enabled else mix(KNOB, BG, 0.5))
+    d.ellipse([kx, mid - knob / 2, kx + knob, mid + knob / 2], fill=KNOB if enabled else mix(KNOB, BG, 0.5))   # flat, as the panel's
 
 
-def shapes(title, pills):
-    # Everything but the words, smooth: the glass and its edges, the highlighter, the rules, the row under the pointer, the state's pill,
-    # the marks and the switches. One picture under the words
+def lamp(d, cx, cy, colour):
+    # The panel's status light: a dot of the colour, lighter at its middle, its glow round it
+    r, g, b = (int(colour[k:k + 2], 16) for k in (1, 3, 5))
+    for radius, alpha in ((p(5), 16), (p(4), 30), (p(3.2), 56)):
+        d.ellipse([(cx - radius) * SS, (cy - radius) * SS, (cx + radius) * SS, (cy + radius) * SS], fill=(r, g, b, alpha))
+    d.ellipse([(cx - p(2.5)) * SS, (cy - p(2.5)) * SS, (cx + p(2.5)) * SS, (cy + p(2.5)) * SS], fill=colour)
+    d.ellipse([(cx - p(1)) * SS, (cy - p(1)) * SS, (cx + p(1)) * SS, (cy + p(1)) * SS], fill=mix("#ffffff", colour, 0.5))
+
+
+base = []                                                   # the glass three times over with the logo on it, made once: the same for every row
+
+
+def shapes(title, pills, tag):
+    # Everything but the words, smooth: the frosted glass and its edges, the logo, the release's tag, the hairlines, the key,
+    # the row under the pointer, the state's pill with its light, the marks and the switches. One picture under the words,
+    # drawn again for each row the pointer or the keys come to: what does not change with the row is made once (base), and
+    # the picture goes to Tk as it is. Made whole each time and passed as a PNG, a row took 118 ms at 200%
     d_w, d_h = width * SS, height * SS
-    im = Image.new("RGB", (d_w, d_h), BG)
-    d = ImageDraw.Draw(im)
     S = lambda v: v * SS
     pad = p(14)
+    if not base:
+        first = glass.resize((d_w, d_h), Image.BICUBIC)
+        if logo is not None and title is None:              # the logo, brought down from its own four times
+            lx, ly, lw, lh = logo_at
+            big = logo[0].resize((round(lw * SS), round(lh * SS)), Image.LANCZOS)
+            first.paste(big.convert("RGB"), (round(lx * SS), round(ly * SS)), big.getchannel("A"))
+        base.append(first)
+    im = base[0].copy()
+    d = ImageDraw.Draw(im, "RGBA")                          # a colour with an alpha is laid over the glass
+    if title is not None:                                   # no logo: the highlighter under the written name, as on the panel's bar
+        x0, _, x1, y1 = title
+        d.polygon([(S(x0 - p(1)), S(y1 - p(4))), (S(x1 + p(3)), S(y1 - p(5))), (S(x1 + p(1)), S(y1 - p(1))), (S(x0 - p(3)), S(y1))], fill=MARK)
+    if tag is not None:                                     # the release's tag: a fine line round it, square as the panel's
+        d.rectangle([S(tag[0]), S(tag[1]), S(tag[2]) - 1, S(tag[3]) - 1], outline=(255, 255, 255, 44), width=SS)
     d.rectangle([0, 0, d_w - 1, d_h - 1], outline=EDGE, width=SS)                 # the glass's edge
     d.line([(SS, SS // 2), (d_w - SS, SS // 2)], fill=TOP, width=SS)             # its lit top
-    x0, _, x1, y1 = title                                                         # the highlighter under the name, as on the panel's bar
-    d.polygon([(S(x0 - p(1)), S(y1 - p(4))), (S(x1 + p(3)), S(y1 - p(5))), (S(x1 + p(1)), S(y1 - p(1))), (S(x0 - p(3)), S(y1))], fill=MARK)
-    d.line([(S(pad), S(HEAD)), (S(width - pad), S(HEAD))], fill=RULE, width=SS)
+    d.line([(S(pad), S(HEAD)), (S(width - pad), S(HEAD))], fill=(255, 255, 255, 24), width=SS)   # a hairline under the logo
     for i, row in enumerate(rows):
         y0, h = tops[i], tall(row)
         if row["sep"]:
-            d.line([(S(pad), S(y0 + h // 2)), (S(width - pad), S(y0 + h // 2))], fill=RULE, width=SS)
+            d.line([(S(pad), S(y0 + h // 2)), (S(width - pad), S(y0 + h // 2))], fill=(255, 255, 255, 24), width=SS)
             continue
         mid, under = y0 + h / 2, BG
-        if hover[0] == i:                                   # the row under the pointer or the keys, rounded as the panel's
+        if row["default"]:                                  # the menu's first word, Open the panel: a key, flat, its face lighter under the pointer
+            d.rounded_rectangle([S(p(8)), S(y0 + p(3)), S(width - p(8)), S(y0 + h - p(3))], radius=S(p(4)),
+                                fill=(255, 255, 255, KEY_LIT if hover[0] == i else KEY_FACE), outline=(255, 255, 255, 46), width=SS)
             under = HOVER
-            d.rounded_rectangle([S(p(6)), S(y0 + p(2)), S(width - p(6)), S(y0 + h - p(2))], radius=S(p(6)), fill=HOVER)
-        if i in pills:                                      # the state: a pill with its dot
+        elif hover[0] == i:                                 # the row under the pointer or the keys, rounded as the panel's
+            under = HOVER
+            d.rounded_rectangle([S(p(8)), S(y0 + p(2)), S(width - p(8)), S(y0 + h - p(2))], radius=S(p(4)), fill=(255, 255, 255, 22))
+        if i in pills:                                      # the state: the panel's pill with its light, dark whatever the glass shows
             t, (_, _, bx1, _) = pills[i]
             d.rounded_rectangle([S(pad), S(mid - p(12)), S(bx1 + p(11)), S(mid + p(12))], radius=S(p(12)), fill=PILL[t])
-            r, cx = p(3.5), pad + p(11)
-            d.ellipse([S(cx - r), S(mid - r), S(cx + r), S(mid + r)], fill=TONE[t])
+            lamp(d, pad + p(11), mid, TONE[t])
             continue
         kind = row.get("mark")
         if kind in MARKS:                                   # a switch's mark is lit while it is on, as on the panel's capture card
@@ -2379,20 +2462,39 @@ def shapes(title, pills):
             icon(d, kind, pad, mid, colour if row["enabled"] else DIM, under)
         if row["checked"] is not None:
             switch(d, width - pad, mid, row["checked"], row["enabled"])
-    im = im.resize((width, height), Image.LANCZOS)
-    buf = io.BytesIO()
-    im.save(buf, "PNG")
-    images[:] = [tk.PhotoImage(data=base64.b64encode(buf.getvalue()))]
+    images[:] = [ImageTk.PhotoImage(im.resize((width, height), Image.LANCZOS), master=root)]   # the menu's own Tk, whatever else runs here
     return images[0]
 
 
+logo_at = None                                              # where the logo stands: left, top, width, height
+fonts = []                                                  # the tag's font, held
+
+
 def draw():
+    global logo_at
     c.delete("all")
     pad = p(14)
-    # The words first, where they stand, so the picture under them knows where they are
-    title = c.create_text(pad, HEAD // 2, anchor="w", text="sidenote", fill=INK, font=(SANS, 11, "bold"))
-    name = c.bbox(title)
-    c.create_text(name[2] + p(9), HEAD // 2 + p(1), anchor="w", text="capture", fill=MUTED, font=(SANS, 9))
+    # The words first, where they stand, so the picture under them knows where they are. The logo is in the picture, its
+    # letters on the margin and its baseline in the head's middle; with no logo the name is written, as before
+    if logo is not None:
+        picture, line, start = logo
+        lw, lh = picture.width * scale / 4, picture.height * scale / 4
+        lx, ly = pad - start * scale / 4, HEAD / 2 + p(4) - line * scale / 4
+        logo_at, name, right = (lx, ly, lw, lh), None, lx + lw
+        baseline = ly + line * scale / 4
+    else:
+        title = c.create_text(pad, HEAD // 2, anchor="w", text="sidenote", fill=INK, font=(SANS, 11, "bold"))
+        name = c.bbox(title)
+        word = c.create_text(name[2] + p(9), HEAD // 2 + p(1), anchor="w", text="capture", fill=INK, font=(SANS, 9))
+        right, baseline = c.bbox(word)[2], c.bbox(word)[3] - p(3)
+    tag = None
+    if spec.get("version"):                                 # the release beside the logo, in the panel's tag, on its baseline
+        import tkinter.font
+        mono = tkinter.font.Font(root=root, family=MONO, size=8)
+        fonts[:] = [mono]                                   # a font nothing holds on to goes, and its words with it
+        word = c.create_text(right + p(6), baseline - mono.metrics("ascent"), anchor="nw", text="v" + spec["version"], fill=INK2, font=mono)
+        x0, y0, x1, y1 = c.bbox(word)
+        tag = (x0 - p(5), y0 - p(2), x1 + p(5), y1 + p(2))
     pills = {}
     for i, row in enumerate(rows):
         if row["sep"]:
@@ -2405,7 +2507,7 @@ def draw():
         x = pad + p(17) + p(11) if row.get("mark") in MARKS else pad
         c.create_text(x, mid, anchor="w", text=row["text"], fill=INK if row["enabled"] else DIM,
                       font=(WORDS, 10, "bold" if row["default"] else "normal"))
-    c.tag_lower(c.create_image(0, 0, anchor="nw", image=shapes(name, pills)))
+    c.tag_lower(c.create_image(0, 0, anchor="nw", image=shapes(name, pills, tag)))
 
 
 def row_at(py):
@@ -2469,14 +2571,34 @@ root.bind("<Down>", lambda _e: step(1))
 root.bind("<Return>", press)
 draw()
 root.update_idletasks()
+root.attributes("-alpha", 0.0)                              # in from clear, as the start's window comes (fade below)
 root.deiconify()
 root.update()
+
+
+def fade(k=0):
+    # Clear to opaque over a tenth of a second, quick at first: a menu answers the click at once. Opaque at the end (alpha 1,
+    # no longer layered), its glass drawn
+    try:
+        root.attributes("-alpha", 1 - (1 - (k + 1) / 6) ** 2)
+    except Exception:
+        return
+    if k < 5:
+        root.after(16, lambda: fade(k + 1))
+
+
+fade()
 hwnd = user32.GetParent(root.winfo_id()) or root.winfo_id()
 try:
     style = user32.GetWindowLongW(hwnd, -20)
     user32.SetWindowLongW(hwnd, -20, style | 0x80)          # WS_EX_TOOLWINDOW: no button on the taskbar
     corner = ctypes.c_int(3)                                # DWMWCP_ROUNDSMALL: this design is nearly square
     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))
+    edge = ctypes.c_uint(int(EDGE[1:3], 16) | int(EDGE[3:5], 16) << 8 | int(EDGE[5:7], 16) << 16)   # DWMWA_BORDER_COLOR, 0x00BBGGRR
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(edge), ctypes.sizeof(edge))
+    get = getattr(user32, "GetClassLongPtrW", user32.GetClassLongW)   # a shadow under it, as the start window has (CS_DROPSHADOW)
+    put = getattr(user32, "SetClassLongPtrW", user32.SetClassLongW)
+    put(hwnd, -26, get(hwnd, -26) | 0x00020000)
 except Exception:
     pass
 user32.SetForegroundWindow(hwnd)
@@ -2583,7 +2705,8 @@ def own_tray_menu(icon) -> bool:
             rows = tray_rows(icon.menu)
             shown = [{k: r[k] for k in ("sep", "text", "enabled", "checked", "default", "mark", "tone")} for r in rows]
             user32.SetForegroundWindow(icon._hwnd)   # this click is what lets this program hand the front of the screen to the menu
-            proc = subprocess.Popen([python, "-c", TRAY_MENU, json.dumps({"rows": shown, "at": [at.x, at.y], "parent": os.getpid(), "lang": LANG})],
+            proc = subprocess.Popen([python, "-c", TRAY_MENU, json.dumps({"rows": shown, "at": [at.x, at.y], "parent": os.getpid(), "lang": LANG,
+                                                                          "version": VERSION, "logo": LOGO})],
                                     creationflags=subprocess.CREATE_NO_WINDOW, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             user32.AllowSetForegroundWindow(proc.pid)
@@ -2805,6 +2928,131 @@ def start_tray(sender, stop: threading.Event, args):
 # The exit code that asks the desktop app to start this program again (desktop/app.py, CAPTURE_RESTART).
 SUPERVISED_RESTART = 75
 
+# ---------- one capture program for a server ----------
+# The exit code of a start that found another capture program running for the same server and ended (OneCapture).
+# client/launch.pyw reads it: the program it started is not the one that runs, and the one that runs is no failure.
+CAPTURE_BUSY = 76
+ERROR_ALREADY_EXISTS = 183    # what GetLastError says after CreateMutexW opened a mutex another process had made
+START_WAIT = 0.5              # seconds a start keeps asking: a starter looking whether one runs holds the guard for a moment
+RESUME_WAIT = 5.0             # seconds one that restarted itself keeps asking: the program before it may still be ending
+
+
+def instance_name(server: str) -> str:
+    """The server a capture program sends to, as the short name two programs for one server share: its host and port
+    (127.0.0.1 for every name of this PC, the scheme's own port where none is written), hashed, because a mutex's
+    name and a file's cannot hold an address as it is written. client/launch.pyw has the same function for the same
+    name (tests/capture_single.py holds the two together)."""
+    import hashlib
+    from urllib.parse import urlsplit
+    text = server.strip()
+    try:
+        parts = urlsplit(text)
+        host = (parts.hostname or "").lower()
+        port = parts.port or (443 if parts.scheme in ("wss", "https") else 80)
+    except ValueError:            # a port that is no number, a bracket left open: the text itself is the name's source
+        host, port = "", 0
+    if host in ("localhost", "::1", "0.0.0.0", "::"):   # this PC under its other names: one server, one name
+        host = "127.0.0.1"
+    key = f"{host}:{port}" if host else text
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]   # a name, not a secret: 16 digits keep it short
+
+
+class OneCapture:
+    """One capture program at a time for a server. Two send every screen and every sound twice, and the launcher
+    cannot always see the first: a WSL that cannot start Windows programs cannot read Windows' process list, and a
+    program that is connecting again (the server came up a moment ago) is not in the server's count.
+
+    The guard is one the system lets go of when the process ends, however it ends: a named mutex on Windows, a lock
+    on an open file elsewhere. Not a file holding a process id, which a crash leaves behind to refuse every start
+    after it. Only another program holding the guard refuses a start. Whatever else keeps it from being taken (no
+    folder for the file, a file that is another user's, a Windows that makes no mutex) leaves this program running
+    unguarded, as it ran before there was a guard: a start refused wrongly is worse than no guard."""
+
+    def __init__(self, server: str):
+        self.name = instance_name(server)
+        self.handle = None        # Windows: the mutex, for as long as it is held
+        self.fd = None            # elsewhere: the open file whose lock is held
+        self._close = None        # Windows: CloseHandle, kept from the take for the release
+
+    def lock_path(self) -> str:
+        """The file locked off Windows: in the user's own runtime folder (gone at log out) or else the temporary
+        folder, named for the user, since that folder is shared, and for the server. It holds nothing and is not
+        deleted: taking away a file that a program has locked would let the next start lock a new one beside it."""
+        import tempfile
+        folder = os.environ.get("XDG_RUNTIME_DIR", "")
+        if not os.path.isdir(folder):                         # not set, or set to what is not there
+            folder = tempfile.gettempdir()
+        return os.path.join(folder, f"sidenote-capture-{os.getuid()}-{self.name}.lock")
+
+    def _try(self):
+        """True: the guard is held now. False: another program holds it. None: there is no guard to be had."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)     # use_last_error: see below
+                kernel32.CreateMutexW.restype = ctypes.c_void_p               # a HANDLE, pointer sized
+                kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+                kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+                ctypes.set_last_error(0)                                      # what an earlier call left is not this one's
+                # "Local\": this Windows session's own names. No security attributes: the handle is not passed on
+                # to a program this one starts (the tray menu, the next one at a restart), which would hold the
+                # guard in its place.
+                handle = kernel32.CreateMutexW(None, False, f"Local\\Sidenote.Capture.{self.name}")
+                # CreateMutexW also succeeds when the mutex is there already, and only GetLastError tells the two
+                # apart: ctypes' own copy of it, since anything Python calls in between can overwrite the real one.
+                error = ctypes.get_last_error()
+            except Exception:     # no ctypes, no kernel32 as expected: no guard
+                return None
+            if not handle:        # Windows made no mutex and opened none: no guard
+                return None
+            if error == ERROR_ALREADY_EXISTS:
+                kernel32.CloseHandle(handle)                                  # this handle would keep the name alive
+                return False
+            self.handle, self._close = handle, kernel32.CloseHandle
+            return True
+        try:
+            import fcntl
+            # O_NOFOLLOW: a link put where the file goes is not followed. 0600, and never truncated: it holds nothing.
+            fd = os.open(self.lock_path(), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except (ImportError, OSError):   # no folder to make it in, a link in its place, a file this user cannot open
+            return None
+        try:
+            if os.fstat(fd).st_uid != os.getuid():   # another user's file under this name: its lock says nothing here
+                os.close(fd)
+                return None
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)   # held by the open file, so the system drops it with the process
+        except BlockingIOError:   # the one error that means another program holds the lock
+            os.close(fd)
+            return False
+        except OSError:           # a file system that does not lock: no guard
+            os.close(fd)
+            return None
+        self.fd = fd              # not inheritable (Python opens files that way): a program started here does not hold it
+        return True
+
+    def take(self, wait: float = 0.0) -> bool:
+        """False when another capture program held the guard for the whole of `wait` seconds; True otherwise, with the
+        guard held, or with none to be had."""
+        end = time.monotonic() + wait
+        while True:
+            if self._try() is not False:
+                return True
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.1)
+
+    def release(self) -> None:
+        """Lets the guard go while this program still runs: before it starts the program that takes its place."""
+        if self.handle:
+            self._close(self.handle)
+            self.handle = None
+        if self.fd is not None:
+            try:
+                os.close(self.fd)   # closing the file drops its lock
+            except OSError:
+                pass
+            self.fd = None
+
 
 def hold_main_thread(icon, wait_until_done, stop: threading.Event) -> None:
     """macOS: the tray icon's loop on this thread, the main one, as AppKit needs, and the waiting beside it; returns once
@@ -2880,6 +3128,19 @@ def main() -> None:
         list_monitors()
         return
 
+    # One capture program for a server (OneCapture), asked before anything is connected or captured. --once sends one
+    # screen beside whatever runs and ends, so it neither takes the guard nor is refused by it. One that restarted
+    # itself was started by the program before it, which lets the guard go first and may still be ending: it asks
+    # for longer. Under the desktop app (SIDENOTE_SUPERVISED) the guard is taken when it is free and never refuses: the
+    # app starts this program again whenever it ends, and an end here would only be the first of a row of them.
+    guard = OneCapture(args.server)
+    if not args.once and not guard.take(RESUME_WAIT if args.resumed else START_WAIT) \
+            and os.environ.get("SIDENOTE_SUPERVISED") != "1":
+        print("[main] " + t("Another capture program is already running for this server, so this one ends."))
+        print("[main] " + t("To end the one that runs: Quit in its tray icon, or ./sidenote capture-stop in the server's terminal."))
+        sys.stdout.flush()
+        sys.exit(CAPTURE_BUSY)   # nothing is started yet, so a plain exit: the starter reads the code (client/launch.pyw)
+
     set_dpi_aware()
     sender = Sender(args.server)
     # Options given on this start win over the panel's last settings (they are the latest choice);
@@ -2909,8 +3170,10 @@ def main() -> None:
         worker.start()
     tray = None if (args.once or args.no_tray) else start_tray(sender, stop, args)
     # Started without a window (--log, as ./sidenote capture does) there is no console for Ctrl+C to reach.
+    # with no tray icon (--no-tray, or no pystray) there is no Quit in it to name
     print("[main] capturing. " + ("Ctrl+C to stop." if not args.log else
-                                  t("To end it: Quit in the tray icon, or ./sidenote capture-stop on the server."))
+                                  t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
+                                  t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
           + ("" if tray is None else " " + t("The tray icon opens the panel and switches the screen and the sound on and off.")))
     updater = None if (args.once or args.no_auto_update) else Updater(os.path.abspath(__file__), args.server)
 
@@ -2957,6 +3220,9 @@ def main() -> None:
         cmd = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
         if "--resumed" not in cmd:
             cmd.append("--resumed")
+        # The guard goes before the next one starts: held until this process ends, the next would find it taken and
+        # end as a second capture program (it also asks for a few seconds, for a program slow to end: RESUME_WAIT).
+        guard.release()
         try:
             subprocess.Popen(cmd, close_fds=True)
         except Exception as exc:

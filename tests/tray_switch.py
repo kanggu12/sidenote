@@ -201,14 +201,14 @@ check("the menu is built again when the state it shows changes elsewhere", Icon.
 stop.set()
 
 # ---------------------------------------------------------------- the same menu in English
-# Which language a program starts in (off Windows: SIDENOTE_LANG, else the locale, else English)
+# Which language a program starts in: SIDENOTE_LANG, else English, whatever the system's language (as ./sidenote's)
 if sys.platform != "win32":
     NAMES = ("SIDENOTE_LANG", "LC_ALL", "LC_MESSAGES", "LANG")
     saved = {k: os.environ.get(k) for k in NAMES}
     picked = []
     for env, want in (({"SIDENOTE_LANG": "en", "LANG": "ko_KR.UTF-8"}, "en"), ({"SIDENOTE_LANG": "ko", "LANG": "en_US.UTF-8"}, "ko"),
-                      ({"LANG": "ko_KR.UTF-8"}, "ko"), ({"LANG": "en_US.UTF-8"}, "en"), ({"LANG": "C.UTF-8"}, "en"),
-                      ({"LC_ALL": "ko_KR.UTF-8", "LANG": "en_US.UTF-8"}, "ko"), ({"LC_MESSAGES": "en_US.UTF-8", "LANG": "ko_KR.UTF-8"}, "en"),
+                      ({"LANG": "ko_KR.UTF-8"}, "en"), ({"LANG": "en_US.UTF-8"}, "en"), ({"LANG": "C.UTF-8"}, "en"),
+                      ({"LC_ALL": "ko_KR.UTF-8", "LANG": "en_US.UTF-8"}, "en"), ({"SIDENOTE_LANG": " KO "}, "ko"),
                       ({}, "en")):
         for k in NAMES:
             os.environ.pop(k, None)
@@ -218,7 +218,7 @@ if sys.platform != "win32":
         os.environ.pop(k, None)
         if v is not None:
             os.environ[k] = v
-    check("the language: SIDENOTE_LANG, else a Korean locale (LC_ALL, LC_MESSAGES, LANG in that order), else English",
+    check("the language: SIDENOTE_LANG, else English: a Korean locale alone does not make it Korean",
           all(got == want for _, got, want in picked), str([p for p in picked if p[1] != p[2]]))
 # The language is read once, when the program starts; switched here for a second menu, as a program started in English has it
 cap.LANG = "en"
