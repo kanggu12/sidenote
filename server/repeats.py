@@ -20,6 +20,7 @@ import io              # decoded in memory
 import json            # what is kept over a restart, beside its pictures
 import os              # the kept file replaced whole
 import re              # a problem's words and numbers
+import threading       # add and match come from threads of their own
 import time            # when each problem was answered, so old ones are forgotten
 from dataclasses import dataclass
 
@@ -294,8 +295,13 @@ class Recent:
         self.keep, self.ttl = keep, ttl
         self.items: list[Seen] = []
         self.words: list[tuple] = []   # (card, the problem as words, when), as they went to the agent
+        # add and match run in threads of their own (app.keep_picture, the pipeline's look): each rebuilt the list, and one
+        # rebuilt from what it had read before the other's append lost the problem just added. The pictures are compared
+        # outside it
+        self._lock = threading.Lock()
 
     def _fresh(self, now: float) -> list[Seen]:
+        """The items not outlived, the newest `keep`. Called with the lock held."""
         self.items = [s for s in self.items if now - s.ts < self.ttl][-self.keep:]
         return self.items
 
@@ -308,8 +314,10 @@ class Recent:
         if x1 - x0 < 24 or y1 - y0 < 24:
             return                        # too small to tell anything by
         now = time.time() if now is None else now
-        self.items.append(Seen(card, img[y0:y1, x0:x1].copy(), img[cy0:cy1, cx0:cx1].copy(), now))
-        self._fresh(now)                  # the oldest go, so no more than `keep` are held
+        seen = Seen(card, img[y0:y1, x0:x1].copy(), img[cy0:cy1, cx0:cx1].copy(), now)
+        with self._lock:
+            self.items.append(seen)
+            self._fresh(now)              # the oldest go, so no more than `keep` are held
 
     def match(self, model_b64: str, view, box, kind: str, now: float | None = None) -> tuple[int, float] | None:
         """The card of a problem answered lately that is the one at `box` now, with the score; None for a new one. What
@@ -317,7 +325,9 @@ class Recent:
         the problem was solved again. A box's picture alone tells them apart: of 1,560 pairs of different problems
         none passes, of whatever kinds (design 88)."""
         now = time.time() if now is None else now
-        if not self._fresh(now):
+        with self._lock:
+            items = list(self._fresh(now))   # a copy to compare against, the lock not held for the comparing
+        if not items:
             return None
         img = screen_image(model_b64)
         x0, y0, x1, y1 = _pixels(box, view, img.shape)
@@ -325,7 +335,7 @@ class Recent:
         if x1 - x0 < 24 or y1 - y0 < 24:
             return None
         picture, context = img[y0:y1, x0:x1], img[cy0:cy1, cx0:cx1]
-        for seen in reversed(self.items):          # the latest first: the one most likely seen again
+        for seen in reversed(items):               # the latest first: the one most likely seen again
             ok, score = same_picture(seen.picture, context)
             if not ok:
                 ok, score = same_picture(picture, seen.context)
@@ -333,7 +343,7 @@ class Recent:
                 return seen.card, score
         # The window dragged across the screen, and the model's box landing elsewhere on it, leave neither box inside the other's margin
         # (one problem solved twice, the window a tenth of the screen to the left). So the whole screen is searched too, for the latest.
-        for seen in list(reversed(self.items))[:WHOLE_LATEST]:
+        for seen in list(reversed(items))[:WHOLE_LATEST]:
             ok, score = same_picture(seen.picture, img)
             if ok:
                 return seen.card, score
@@ -342,7 +352,8 @@ class Recent:
     def add_words(self, card: int, words: str, now: float | None = None) -> None:
         """Remember the problem of `card` as the words it went out in."""
         now = time.time() if now is None else now
-        self.words = [w for w in self.words if now - w[2] < self.ttl][-(self.keep - 1):] + [(card, words, now)]
+        with self._lock:
+            self.words = [w for w in self.words if now - w[2] < self.ttl][-(self.keep - 1):] + [(card, words, now)]
 
     def match_words(self, words: str, now: float | None = None) -> tuple[int, float] | None:
         """The card of the problem answered lately that these words are, with how close; None for a new one."""
@@ -358,11 +369,12 @@ class Recent:
     def save(self, path, extra: dict | None = None) -> None:
         """Keep what is remembered for the server's next start: `./sidenote up` restarts it, and the same problem still on
         the screen was solved again, at an agent's price (seen twice). `extra` goes with it (app.keep_for_restart)."""
-        seen = self._fresh(time.time())
+        with self._lock:
+            seen, words = list(self._fresh(time.time())), list(self.words)
         arrays = {}
         for i, s in enumerate(seen):
             arrays[f"p{i}"], arrays[f"c{i}"] = s.picture, s.context
-        head = {"seen": [{"card": s.card, "ts": s.ts} for s in seen], "words": [list(w) for w in self.words], "extra": extra or {}}
+        head = {"seen": [{"card": s.card, "ts": s.ts} for s in seen], "words": [list(w) for w in words], "extra": extra or {}}
         tmp = f"{path}.tmp.npz"
         np.savez_compressed(tmp, head=np.array(json.dumps(head)), **arrays)
         os.replace(tmp, path)
@@ -388,5 +400,14 @@ class Recent:
                 pass
 
     def forget(self) -> None:
-        self.items.clear()
-        self.words.clear()
+        with self._lock:
+            self.items.clear()
+            self.words.clear()
+
+    def forget_cards(self, cards) -> None:
+        """Drop what is remembered of these answers alone: they were deleted for good, and a piece of the screen or the
+        problem's words is not kept of an answer that is gone. Their problems, seen again, are new ones."""
+        cards = set(cards)
+        with self._lock:
+            self.items = [s for s in self.items if s.card not in cards]
+            self.words = [w for w in self.words if w[0] not in cards]

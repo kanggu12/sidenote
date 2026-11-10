@@ -298,11 +298,18 @@ async def worker_cuts_for_the_switch():
         A.STATE.push_audio(b"\0\0" * int(SR * 0.2), SR)
         await asyncio.sleep(0.22)
     check("both off, the loop keeps nothing", kept_now() == [], kept_now())
-    SETTINGS.values["speech_keep"] = True
-    for _ in range(6):
+    # Turned on as the panel turns it on (apply_setting), the loop cuts from that moment: the sentence said before it, still in
+    # the buffer (2.0-4.5 s), is not kept (it was), and one begun at once after it is (a tracker made on the loop's next pass
+    # and started from that pass would drop it)
+    await A.apply_setting(app, "speech_keep", True)
+    t0 = A.STATE.audio_total // 2 / SR
+    stub.spans = [(2.0, 4.5), (t0 + 0.1, t0 + 1.3)]
+    stub.said = {2.0: "Said before the switch.", t0 + 0.1: "Heard with nothing asking for it."}
+    for _ in range(18):   # 3.6 s: the sentence, then the 1.5 s of quiet that closes it
         A.STATE.push_audio(b"\0\0" * int(SR * 0.2), SR)
         await asyncio.sleep(0.22)
-    check("the switch alone sets the loop cutting sentences", kept_now() == ["Heard with nothing asking for it."], kept_now())
+    check("the switch alone sets the loop cutting sentences, from the moment it is turned on",
+          kept_now() == ["Heard with nothing asking for it."], kept_now())
     task.cancel()
     try:
         await task

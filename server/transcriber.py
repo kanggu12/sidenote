@@ -283,7 +283,11 @@ class FasterWhisperTranscriber:
                 if not live and self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS \
                         and (seconds < HOLD_SEC or probs.get(pick, 0.0) < HOLD_SURE):
                     pick = self.voted
-                self._count(probs, seconds)   # counted after, so it never votes on itself
+                # Counted after, so it never votes on itself; an utterance only (DECISIONS note 12). The live line reads the same
+                # 15 s window every 2 s, so it counted that sound about seven times, and one short remark misread as English
+                # turned a Korean vote
+                if not live:
+                    self._count(probs, seconds)
                 # Asked again in the language picked, or with that language's hint: nothing has been decoded yet, and
                 # a call with the language given detects nothing, so the second call adds no decode and no detection
                 if pick != info.language or self.prompt(pick) != self.prompt(first):

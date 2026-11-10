@@ -25,12 +25,13 @@ one thread is quick enough here. Measured numbers are in the design notes (docs/
 """
 from __future__ import annotations
 
+import functools    # the name's font, made once for each size
 import logging      # a finder that cannot load says so once and the screens go on uncovered
 import threading    # one session for the whole server, loaded on first use from whichever thread gets there
 from pathlib import Path
 
 import numpy as np                 # the image as numbers in, the boxes decoded out
-from PIL import Image, ImageDraw   # the screen is a PIL image in prepare_frame; the cover is drawn on it
+from PIL import Image, ImageDraw, ImageFont   # the screen is a PIL image in prepare_frame; the cover is drawn on it
 
 log = logging.getLogger("sidenote.faces")
 
@@ -43,7 +44,12 @@ GRID_AT = 2600        # a screen with a longer side than this is read in 3 x 3 t
 # The face's box grown to the head, as fractions of its own width and height: the finder boxes the face from brow to
 # chin, and hair, ears and the jaw's line are the likeness too.
 GROW = (0.25, 0.45, 0.25, 0.2)
-FILL = (128, 128, 128)   # the grey that other windows in front of a crop are painted with (pipeline.crop_image)
+# The cover looks as the capture program covers this tool's own window (client/capture.py, hide_own and _name_own): the
+# dark grey, and the name with its highlighter stroke in its middle, so a covered face reads as covered by Sidenote rather
+# than as a grey window
+FILL = (34, 34, 34)
+NAME = (150, 150, 150)   # the name's grey
+MARK = (200, 165, 50)    # the highlighter under it
 # What the middle of a found face must show to be taken for one (photo_like, design note 85): this share of its pixels
 # in skin's chroma (YCbCr Cb 77 to 127 and Cr 133 to 173, the range of Chai and Ngan, 1999), and this many distinct
 # colours at 16 levels a channel.
@@ -160,13 +166,52 @@ def find(img: Image.Image, score: float = SCORE) -> list:
             if photo_like(rgb, (a, b, c, d))]
 
 
+def cover_box(face, size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """A face's box (screen fractions, as find gives it) grown out to the head (GROW), in the pixels of an image of `size`."""
+    w, h = size
+    x0, y0, x1, y1 = face[:4]
+    fw, fh = x1 - x0, y1 - y0
+    return (round(max(0.0, x0 - fw * GROW[0]) * w), round(max(0.0, y0 - fh * GROW[1]) * h),
+            round(min(1.0, x1 + fw * GROW[2]) * w), round(min(1.0, y1 + fh * GROW[3]) * h))
+
+
 def cover(img: Image.Image, faces: list) -> Image.Image:
-    """`img` with every face in `faces` (screen fractions) painted over, out to the head (GROW); drawn on `img` itself."""
-    w, h = img.size
+    """`img` with every face in `faces` (screen fractions) painted over, out to the head (GROW), the name on each cover
+    that has room for it; drawn on `img` itself."""
     draw = ImageDraw.Draw(img)
-    for x0, y0, x1, y1, *_ in faces:
-        fw, fh = x1 - x0, y1 - y0
-        box = (max(0.0, x0 - fw * GROW[0]) * w, max(0.0, y0 - fh * GROW[1]) * h,
-               min(1.0, x1 + fw * GROW[2]) * w, min(1.0, y1 + fh * GROW[3]) * h)
+    for face in faces:
+        box = cover_box(face, img.size)
         draw.rectangle(box, fill=FILL)
+        try:
+            _name(draw, box)
+        except Exception:   # the name is a mark on the cover: what fails in drawing it leaves the cover plain, the screen kept
+            pass
     return img
+
+
+@functools.lru_cache(maxsize=32)
+def _font(size: int):
+    """Pillow's own scalable font at `size` (Pillow 10.1 on: no font file is needed in the image), or None for an older
+    Pillow, and the cover stays plain."""
+    try:
+        return ImageFont.load_default(size=size)
+    # Any failure, not only an older Pillow's: one built without FreeType raises ImportError here, and the whole screen was
+    # dropped for a name on its cover. The cover is what keeps the face out, and it stays, plain
+    except Exception:
+        return None
+
+
+def _name(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int]) -> None:
+    """The name, with its highlighter stroke under it, in the middle of a cover, sized to it as the capture program sizes
+    it (client/capture.py, _name_own). A cover with no room for it stays plain: ink outside would fall on the screen."""
+    x0, y0, x1, y1 = box
+    font = _font(max(14, (x1 - x0) // 14))
+    if font is None:
+        return
+    l, t, r, b = draw.textbbox((0, 0), "sidenote", font=font, stroke_width=1)   # one pixel of stroke: bold, as the capture's
+    stroke = max(2, (b - t) // 6)                                                 # the highlighter's thickness
+    if r - l + 8 > x1 - x0 or b - t + 2 + stroke + 8 > y1 - y0:
+        return
+    x, y = x0 + (x1 - x0 - (r - l)) // 2, y0 + (y1 - y0 - (b - t)) // 2
+    draw.rectangle([x, y + (b - t) + 2, x + (r - l), y + (b - t) + 2 + stroke], fill=MARK)
+    draw.text((x - l, y - t), "sidenote", font=font, fill=NAME, stroke_width=1, stroke_fill=NAME)

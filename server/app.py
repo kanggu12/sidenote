@@ -30,6 +30,7 @@ import hmac
 import pathlib
 import json
 import logging
+import math
 import os
 import re
 try:
@@ -52,7 +53,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image
@@ -259,11 +260,11 @@ class Frame:
 @dataclass
 class AppState:
     latest_frame: Frame | None = None
-    last_analyze_ts: float = 0.0
+    last_analyze_ts: float = 0.0   # time.monotonic(): a clock set back stopped the watching for as long as it went back
     paused: bool = False
     audio_buffer: bytearray = field(default_factory=bytearray)
     audio_sr: int = 16000
-    panel_clients: set[WebSocket] = field(default_factory=set)
+    panel_clients: set = field(default_factory=set)   # each panel's PanelOut (a stand-in of the checks: its own object)
     analysis_seq: int = 0
     analyses_done: int = 0
     transcript: str = ""          # latest rolling transcript (continuous transcription loop)
@@ -271,6 +272,9 @@ class AppState:
     # Total audio bytes ever received. The rolling buffer stops growing once it hits its
     # window, so its length can't tell the transcriber that new audio arrived; this can.
     audio_total: int = 0
+    # Where in that stream (samples) the loop began cutting sentences, when Solve spoken problems or Keep what is heard was
+    # turned on with the other off (apply_setting): what was said before the switch is not cut out of the buffer for either
+    voice_from: int = 0
     last_audio_ts: float = 0.0
     # Problems spoken aloud: finished utterances {start, end (abs samples), text, ts}, and
     # a flag telling the analysis worker a new one arrived.
@@ -294,6 +298,9 @@ class AppState:
     runner_ok: bool = False       # the code runner answered its last health check
     runs_active: int = 0          # code runs waiting on the runner right now
     analyses_running: int = 0     # analyses started and not yet ended (activity(): the server is in use)
+    # The analysis the worker runs, with what it runs on: a worker started again after an error takes it over (analysis_worker)
+    analysis_now: dict | None = None
+    force_seq: int = 0            # the id the analysis Reanalyze asked for takes, given when it is asked (0: none waits)
     # Set (and replaced) when an analysis begins or ends: what reads with this PC's model only between analyses waits on
     # it (between_analyses)
     analysis_turn: asyncio.Event = field(default_factory=asyncio.Event)
@@ -302,6 +309,17 @@ class AppState:
     # user's "why?" is answered against the same problem.
     last_result: dict | None = None
     thread: list = field(default_factory=list)
+    # The last answer as it was when it was deleted (answer_delete), with the follow-ups asked about it: {"last", "thread"}.
+    # Put back with it (answer_restore) while nothing newer was answered, so a question after Undo is about that problem
+    # again. The next answer drops it, as Clear history does, and it loses its screen as the last answer does (set_capture)
+    deleted_last: dict | None = None
+    # The ids of the answers deleted: True for one Recently deleted holds, False for one the history never held (an
+    # error's card, an answer written with Keep answers off), which only a panel that showed it can put back. A problem
+    # seen again does not point back to one of these, and a server that starts takes Recently deleted's from the file.
+    # The oldest go past DELETED_CARDS_MAX
+    deleted_cards: dict = field(default_factory=dict)
+    # The ids deleted for good, the newest last (bounded as deleted_cards): one is no answer to delete or put back again
+    purged: dict = field(default_factory=dict)
     supersede_streak: int = 0     # analyses cancelled by screen changes in a row
     gpu_loading: asyncio.Task | None = None   # the panel's Load onto the GPU, while it runs
     repeat_said: int = 0          # the answer the panel was last told is being seen again (said once per answer)
@@ -374,6 +392,10 @@ class AppState:
     # Bumped whenever heard speech is thrown away (sound switched off, pause, resume): a speech
     # pass still transcribing in the executor drops what it finds instead of bringing it back.
     speech_epoch: int = 0
+    # How many times the sound was switched off: an answer to a problem heard that ends after it keeps no words and starts
+    # no check. Not speech_epoch, which a pause and a resume move too: an answer asked for while paused (Reanalyze on what
+    # was heard) that ended after the resume lost its words and its checks as if the sound had gone off
+    sound_off_epoch: int = 0
     # The running analysis has written its first words: a newer spoken problem then waits for its answer instead of
     # stopping it (analysis_worker). Set by its first delta, cleared when the next one starts.
     analysis_wrote: bool = False
@@ -390,7 +412,7 @@ class AppState:
     # Failed analyses in a row and when automatic analysis may try again (a usage limit or a
     # broken CLI must not re-run every min_interval, piling error cards over the answers).
     error_streak: int = 0
-    retry_after: float = 0.0
+    retry_after: float = 0.0       # time.monotonic(), as last_analyze_ts
 
     def reset_speech(self) -> None:
         """Forget what was heard: audio, utterances, the live transcript, a voice problem waiting."""
@@ -723,18 +745,109 @@ def note_live(message: dict) -> None:
             LIVE.pop(key, None)
 
 
+class PanelOut:
+    """One panel's way out: what is sent to it waits here, and a writer of its own sends it, in order. A broadcast only puts
+    a message here and never waits on a panel: one that stopped reading (a frozen tab, a socket half gone) held every
+    broadcast, every API write that sends one, the analysis worker at its next, and the server's own shutdown. A panel that
+    falls MAX behind, holds MAX_BYTES, or takes WRITE_SEC over one message is closed with 1013, try again later: the page
+    connects again and is sent the state afresh (opening)."""
+
+    MAX = 1000                # messages waiting at most: a stream's words come dozens a second, so some 30 s of not reading
+    MAX_BYTES = 16 * 1024 * 1024   # and bytes: a screen's picture is tens of KB
+    WRITE_SEC = 5.0           # one message to a panel on this PC takes milliseconds; this long and it is not reading
+
+    def __init__(self, ws):
+        self.ws = ws
+        self.items: collections.deque = collections.deque()
+        self.size = 0                    # the bytes of what waits
+        self.ready = asyncio.Event()     # set when something waits, or when it is closed
+        self.gone = False                # closed: nothing more is put or sent
+        self.stalled = False             # the writer was stopped for taking too long (_stuck)
+        self.writer = asyncio.get_running_loop().create_task(self._write())
+
+    def put(self, text: str) -> bool:
+        """Something for this panel; False when it is closed, or is closed now for falling behind."""
+        if self.gone:
+            return False
+        if len(self.items) >= self.MAX or self.size + len(text) > self.MAX_BYTES:
+            self.close(1013, f"{len(self.items)} messages waiting")
+            return False
+        self.items.append(text)
+        self.size += len(text)
+        self.ready.set()
+        return True
+
+    async def _write(self) -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            while not self.gone:
+                if not self.items:
+                    self.ready.clear()   # no await between the look and this: put() runs on this same loop
+                    await self.ready.wait()
+                    continue
+                text = self.items.popleft()
+                self.size -= len(text)
+                # A watch on the send, in place of wait_for: that made a task of every message to every panel
+                watch = loop.call_later(self.WRITE_SEC, self._stuck)
+                try:
+                    await self.ws.send_text(text)
+                finally:
+                    watch.cancel()
+        except asyncio.CancelledError:
+            if not self.stalled:   # ended with its socket (stop), or the server's shutdown
+                raise
+            self.close(1013, f"a message took over {self.WRITE_SEC:.0f} s")
+        except Exception:   # the socket closed under it: it goes from the panels, nothing more to say
+            self.close(None, "")
+
+    def _stuck(self) -> None:
+        self.stalled = True
+        self.writer.cancel()
+
+    def close(self, code: int | None, why: str) -> None:
+        """Out of the panels, what waited dropped; with `code`, the socket closed too, on a task of its own and for a second at
+        most (closing waits on the same socket that would not take a message; the server's shutdown no longer waits on it,
+        its --timeout-graceful-shutdown)."""
+        if self.gone:
+            return
+        self.gone = True
+        STATE.panel_clients.discard(self)
+        self.items.clear()
+        self.size = 0
+        self.ready.set()   # the writer, waiting for more, ends
+        if code is None:
+            return
+        log.warning("a panel is not reading (%s): its connection is closed, and it connects again", why)
+
+        async def shut() -> None:
+            try:
+                await asyncio.wait_for(self.ws.close(code=code), 1.0)
+            except Exception:   # it would not take the close either
+                pass
+        asyncio.get_running_loop().create_task(shut())
+
+    def stop(self) -> None:
+        """Its socket ended: the writer goes with it."""
+        self.close(None, "")
+        if not self.writer.done():
+            self.writer.cancel()
+
+
 async def broadcast(message: dict) -> None:
     note_live(message)
     for stream in list(API_STREAMS):   # the API's readers of /api/v1/events: the same message, as it is
         stream.put(message)
-    dead = []
-    for ws in list(STATE.panel_clients):
-        try:
-            await ws.send_text(json.dumps(message))
+    if not STATE.panel_clients:
+        return
+    text = json.dumps(message)
+    for panel in list(STATE.panel_clients):
+        if isinstance(panel, PanelOut):
+            panel.put(text)   # never waits on the panel (PanelOut)
+            continue
+        try:   # a panel object that sends at once (a stand-in of the checks): sent to as before
+            await panel.send_text(text)
         except Exception:
-            dead.append(ws)
-    for ws in dead:
-        STATE.panel_clients.discard(ws)
+            STATE.panel_clients.discard(panel)
 
 
 def capture_status() -> dict:
@@ -870,7 +983,7 @@ async def run_code(seq, lang: str, code: str, stdin: str, reply=None) -> None:
             telemetry.event("run_error", id=seq, lang=lang or None, reason=why)
         await send({"type": "run_result", "id": seq, "lang": lang, "error": text})
 
-    if not CONFIG.runner_url:
+    if not CONFIG.runner_url or not SETTINGS.get("run_button"):   # the switch holds for the API too (docs/API.md: 422)
         await fail(t("Code runs are off"))
         return
     if lang not in RUN_LANGS:
@@ -1015,17 +1128,23 @@ async def set_capture(screen: bool | None = None, audio: bool | None = None) -> 
             cancel_verify("image")            # and the agent's check of an answer, if it sends the screen
             if PIPELINE is not None:          # and the pictures of answered problems (design 88)
                 PIPELINE.recent.forget()
-            if STATE.last_result:             # and later follow-ups do not send that screen either
-                STATE.last_result["frame"] = None
-                STATE.last_result.pop("screen", None)         # nor is a later screen of it kept for comparing
-                STATE.last_result.pop("problem_text", None)   # nor is what was read off it kept
-                STATE.last_result.pop("words", None)          # nor what went to the agent in words
+            # and later follow-ups do not send that screen either; nor does the last answer held while it is deleted,
+            # which Undo puts back as the last answer
+            for last in (STATE.last_result, (STATE.deleted_last or {}).get("last")):
+                if last:
+                    last["frame"] = None
+                    last.pop("screen", None)         # nor is a later screen of it kept for comparing
+                    last.pop("problem_text", None)   # nor is what was read off it kept
+                    last.pop("words", None)          # nor what went to the agent in words
     if audio is not None:
         STATE.audio_on = audio
         if not audio:   # nothing heard before switching off may start an analysis later
+            STATE.sound_off_epoch += 1
             STATE.reset_speech()
-            if STATE.last_result:   # nor go out again with a follow-up, when it was a question heard
-                STATE.last_result.pop("words", None)
+            # nor go out again with a follow-up, when it was a question heard (the one held while deleted too)
+            for last in (STATE.last_result, (STATE.deleted_last or {}).get("last")):
+                if last:
+                    last.pop("words", None)
             request_stop("sound_off")         # and a spoken problem being answered is dropped
             cancel_verify("voice")            # as is the agent's check of one
             await broadcast({"type": "transcript", "text": "", "lang": ""})
@@ -1167,7 +1286,7 @@ def analysis_age(seq: int, since: float) -> float:
     Send now counts as new: the prompt is the old screen's, and a screen that moved on meanwhile takes over, as before supersede_keep_sec."""
     if seq in STATE.confirm_open:
         return 0.0
-    return max(0.0, time.time() - since - STATE.confirm_held.get(seq, 0.0))
+    return max(0.0, time.monotonic() - since - STATE.confirm_held.get(seq, 0.0))
 
 
 def supersede_now(stitched: bool, moved_on: bool, streak: int, age: float) -> bool:
@@ -1188,8 +1307,8 @@ async def report_error(seq: int, exc: Exception, kind: str = "analysis", **field
     failure)."""
     timed_out = isinstance(exc, (asyncio.TimeoutError, TimeoutError))
     engine = getattr(exc, "engine", None)
-    limit = CONFIG.cli_timeout if engine == "agent" else CONFIG.local_timeout
-    text = f"{type(exc).__name__}: {str(exc) or ('no answer within %.0f s' % limit if timed_out else '')}"
+    # no number: the limit is not one (an agent that thinks without a word is given its turn's budget, not cli_timeout)
+    text = f"{type(exc).__name__}: {str(exc) or ('no answer in time' if timed_out else '')}"
     hint = "nosolver" if isinstance(exc, NoSolver) else "timeout" if timed_out else error_hint(str(exc))
     telemetry.event(f"{kind}_error", id=seq, hint=hint, engine=engine, error=text[:400], **fields)
     await broadcast({"type": "error", "id": seq, "text": text, "hint": hint})
@@ -1210,7 +1329,7 @@ async def report_error(seq: int, exc: Exception, kind: str = "analysis", **field
     if kind == "analysis":
         STATE.error_streak += 1
         wait = 60.0 if hint == "limit" else min(60.0, 5.0 * 2 ** (STATE.error_streak - 1))
-        STATE.retry_after = time.time() + wait
+        STATE.retry_after = time.monotonic() + wait
         if wait >= 20:
             await broadcast({"type": "notice", "level": "warn",
                              "text": t("Errors in a row: automatic analysis rests {s} s · Reanalyze solves at once",
@@ -1378,10 +1497,19 @@ def pull_allowed() -> bool:
             and getattr(ENGINES.local, "native", None) is not False)
 
 
+def pull_names() -> set:
+    """The models a download may be asked for: the profiles' names and what each pulls."""
+    return {n for p in models.PROFILES for n in (p.name, p.pull) if n}
+
+
 async def pull_model(name: str) -> None:
-    """Download `name` (one of the profiles' names) through the local server, one download at a time."""
-    known = {n for p in models.PROFILES for n in (p.name, p.pull) if n}
-    if not pull_allowed() or name not in known or PULL:
+    """Download `name` (one of the profiles' names) through the local server, one download at a time. The llm_pull command
+    takes PULL for it before this task first runs; called by itself, it takes it here."""
+    if not pull_allowed() or name not in pull_names():
+        if PULL.get("model") == name:   # taken for this one, which cannot go on: let go
+            PULL.clear()
+        return
+    if PULL and PULL.get("model") != name:   # another one under way
         return
     import httpx2
     profile = models.profile_for(name)
@@ -1439,6 +1567,20 @@ async def look_at_local() -> None:
         log.info("local engine: %s", STATE.local)
         await broadcast_engines()
         await broadcast({"type": "settings", "values": {}, "options": {k: SETTINGS.options(k) for k in ("local_model", "local_busy_model")}})
+
+
+async def engine_watch_kept() -> None:
+    """engine_watch, started again after a failure: it ran as a bare task, so one unexpected exception ended the GPU's
+    idle release and the sign-in rechecks for the rest of the server's life, with no word but Python's own at exit."""
+    while True:
+        try:
+            await engine_watch()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("engine watch failed; starting it again in 10 s")
+            await asyncio.sleep(10)
 
 
 async def engine_watch() -> None:
@@ -1860,6 +2002,10 @@ async def transcription_worker(app: FastAPI) -> None:
             if voice:
                 if tracker is None or tracker_epoch != STATE.speech_epoch:   # speech thrown away: start over
                     tracker = UtteranceTracker(STATE.audio_sr, CONFIG.utter_end_silence, CONFIG.utter_max_sec)
+                    # From the moment the switch was turned on (STATE.voice_from), not from the ~20 s already buffered: a new
+                    # tracker closed a sentence said before the switch and sent it as a spoken problem. Not from this pass
+                    # either, which comes up to transcribe_interval later and would drop a sentence begun meanwhile
+                    tracker.closed_at = STATE.voice_from
                     tracker_epoch = STATE.speech_epoch
                 await _voice_pass(transcriber, tracker, loop, fresh)
             if fresh:
@@ -1916,7 +2062,8 @@ CONTINUE_QUESTION = (
 CONTINUE_LABEL = "Solution filled out from the scrolled problem"   # the panel's words for it, through t()
 
 
-async def run_followup(app: FastAPI, question: str, retry: dict | None = None, cont: dict | None = None) -> None:
+async def run_followup(app: FastAPI, question: str, retry: dict | None = None, cont: dict | None = None,
+                       seq: int | None = None) -> None:
     """Answer a user's follow-up about the last analysis (same screen, its answer and
     earlier follow-ups as context), by the engine that wrote that answer. Runs as its own task: a
     screen change does not cancel a question the user asked.
@@ -1926,7 +2073,8 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
     a user's question, a newer analysis stops it (cancel_retry).
     `cont`: the continuation ({"label", "frame": the screen carrying the problem scrolled together}): the answer
     filled out from the whole problem, under the same card. Started by the watching, like the retry: the brake
-    holds for it and a newer analysis stops it."""
+    holds for it and a newer analysis stops it.
+    `seq`: the id it was given when it was asked (the API answers with it); else it takes the next."""
     last = STATE.last_result
     if not last:
         await broadcast({"type": "notice", "level": "warn", "text": t("No problem analyzed yet to ask about")})
@@ -1940,13 +2088,18 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         if why:
             await PIPELINE.say_brake(why)
             return
-    STATE.analysis_seq += 1
+    if seq is None:
+        STATE.analysis_seq += 1
+        seq = STATE.analysis_seq
     if not retry and not cont:
         user_asked()                # a question comes from a person: no brake, and the rows start over
-    seq, frame, start = STATE.analysis_seq, last["frame"], time.time()
+    frame, start = last["frame"], time.time()
+    # As they were: the pause or a screen-off that comes while the end is being sent (`solved`, let end) starts no check
+    # after it, as either would have stopped that check had it been running
+    paused_before, epoch = STATE.paused, STATE.screen_epoch
     context = last["text"] + "".join(f"\n\n[앞선 추가 질문] {q}\n[답] {a}" for q, a in STATE.thread[-3:])
     task = asyncio.current_task()
-    STATE.followups[task] = {"image": frame is not None, "reason": None}
+    STATE.followups[task] = {"image": frame is not None, "reason": None, "about": last.get("id")}
     first: list[float] = []
 
     async def on_delta(text: str) -> None:
@@ -1963,7 +2116,7 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         telemetry.event("followup_start", id=seq, question=question[:200], retry=bool(retry) or None)
         result = await followup(PIPELINE, last, question, context, on_delta, seq=seq,
                                 pages=cont["frame"] if cont else None, by_user=not (retry or cont))
-    except asyncio.CancelledError:   # pause, or the screen it sends was switched off
+    except asyncio.CancelledError:   # pause, the screen it sends was switched off, or its answer was deleted
         reason = (STATE.followups.get(task) or {}).get("reason") or "superseded"
         telemetry.event("followup_cancelled", id=seq, reason=reason, after=round(time.time() - start, 2))
         await broadcast({"type": "analysis_cancelled", "id": seq, "reason": reason})
@@ -1978,6 +2131,9 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         return
     finally:
         STATE.followups.pop(task, None)
+    # The answer is done: until its card is told so, a newer analysis lets it end (stop_followup) rather than cancel it in
+    # one of the sends below, which left the card neither done nor stopped. No await since followup() came back
+    task.solved = True
     note_sent(seq, result.sent)
     telemetry.event("followup_done", id=seq, engine=result.engine, answer=head_of(result.text)[1],
                     elapsed=round(time.time() - start, 2), first_token=round(first[0] - start, 2) if first else None,
@@ -1992,15 +2148,23 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
     STATE.last_followup_ts = time.time()
     if STATE.last_result is last:      # a newer problem started meanwhile: keep its thread clean
         STATE.thread.append((question, result.text))
+    elif STATE.deleted_last is not None and STATE.deleted_last["last"] is last:
+        # its answer was deleted as this one ended: with the thread held for Undo, which the next question then carries
+        STATE.deleted_last["thread"].append((question, result.text))
     STATE.analyses_done += 1
     await broadcast({"type": "analysis_done", "id": seq, "text": result.text, "usage": result.usage,
                      "cost_usd": result.cost_usd, "model": result.model, "engine": result.engine,
                      "sent": result.sent, "elapsed": round(time.time() - start, 2)})
+    task.solved = False   # the retry's code check below is stopped by a newer analysis again, as the first check is
+    if getattr(task, "superseded", False):   # a newer analysis came while the end was being sent: nothing after it
+        return
+    if STATE.paused and not paused_before:    # so did the pause
+        return
     if retry and STATE.last_result is last and frame is not None:   # the fixed code, on the same examples
         result.crop_box, result.local_view = last.get("crop_box"), last.get("local_view")
         # Back on the list of follow-ups for as long as the code runs, so the pause stops it as it stops the first
         # check; it had left that list with the answer and ran on through a pause.
-        STATE.followups[task] = {"image": False, "reason": None}
+        STATE.followups[task] = {"image": False, "reason": None, "about": last.get("id")}
         await broadcast({"type": "check", "id": seq, "running": True})
         try:
             res = await check_code(PIPELINE, frame, result, runner_exec, cases=retry.get("cases"), any_type=True)
@@ -2024,7 +2188,7 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         telemetry.event("check", id=seq, retry=True, **{k: v for k, v in res.items() if k not in ("fails", "rows")})
         await broadcast({"type": "check", "id": seq, **res})
         keep_later(last.get("id"), turn_check=(seq, res))   # or a reload shows the first check failing and not that the retry passed
-    if cont and STATE.last_result is last and frame is not None:
+    if cont and STATE.last_result is last and frame is not None and STATE.screen_epoch == epoch:   # it reads that screen
         await check_continuation(app, seq, task, last, cont["frame"], result)
 
 
@@ -2043,7 +2207,7 @@ async def check_continuation(app: FastAPI, seq: int, task, last: dict, pages, re
         return
     # The pause stops it, as it stops the first check, and so does screen-off: it reads that screen's examples, and the
     # first check stops for that (marked as sending no screen, it read on after screen-off)
-    STATE.followups[task] = {"image": True, "reason": None}
+    STATE.followups[task] = {"image": True, "reason": None, "about": last.get("id")}
     await broadcast({"type": "check", "id": seq, "running": True})
     reading: dict = {}   # how its reading went (check_code), for the record
     try:
@@ -2080,7 +2244,7 @@ def note_sent(seq: int, sent: list) -> None:
 async def confirm_send(seq: int, preview: dict) -> bool:
     """"Confirm before sending": show the payload on the panel and wait for Send / Do not send.
     No panel open, or no answer in CONFIRM_TIMEOUT: not sent."""
-    if not STATE.panel_clients:
+    if not STATE.panel_clients and not API_STREAMS:   # a program on /api/v1/events can answer it too
         await broadcast({"type": "notice", "level": "warn",
                          "text": t("Confirm before sending is on and no panel is open: not sent to the agent",
                                    agent=agent_name())})
@@ -2089,7 +2253,7 @@ async def confirm_send(seq: int, preview: dict) -> bool:
     fut = asyncio.get_running_loop().create_future()
     msg = {"type": "agent_confirm", "id": seq, "cid": cid, **preview, "timeout": CONFIRM_TIMEOUT, "ts": time.time()}
     STATE.confirms[cid] = (fut, msg)
-    STATE.confirm_open[seq] = time.time()   # the wait on the panel is no work of the analysis (analysis_age)
+    STATE.confirm_open[seq] = time.monotonic()   # the wait on the panel is no work of the analysis (analysis_age)
     await broadcast(msg)
     try:
         return bool(await asyncio.wait_for(fut, CONFIRM_TIMEOUT))
@@ -2099,7 +2263,10 @@ async def confirm_send(seq: int, preview: dict) -> bool:
         STATE.confirms.pop(cid, None)
         began = STATE.confirm_open.pop(seq, None)
         if began is not None:
-            STATE.confirm_held[seq] = STATE.confirm_held.get(seq, 0.0) + time.time() - began
+            STATE.confirm_held[seq] = STATE.confirm_held.get(seq, 0.0) + time.monotonic() - began
+            # A follow-up's or a check's wait is never cleared by an analysis's end: the oldest go, so it does not grow
+            while len(STATE.confirm_held) > 200:
+                STATE.confirm_held.pop(next(iter(STATE.confirm_held)))
         await broadcast({"type": "agent_confirm_done", "id": seq, "cid": cid})
 
 
@@ -2283,7 +2450,26 @@ def cancel_check() -> None:
 
 # The answers kept for looking back (server/history.py)
 HISTORY = answers_log.History(pathlib.Path(telemetry.LOG_DIR) / "history.sqlite" if telemetry.LOG_DIR else None,
-                              CONFIG.history_days, CONFIG.history_mb, CONFIG.heard_mb)
+                              CONFIG.history_days, CONFIG.history_mb, CONFIG.heard_mb, CONFIG.deleted_days)
+# The ids remembered as deleted (STATE.deleted_cards). A person's deleting never reaches it, and a program's cannot grow it
+# for ever
+DELETED_CARDS_MAX = 500
+
+
+def note_deleted(seq: int, kept: bool) -> None:
+    """Remember an answer's id as deleted, the oldest going past the bound. `kept`: Recently deleted holds it."""
+    STATE.deleted_cards.pop(seq, None)   # said again, it counts as the newest
+    STATE.deleted_cards[seq] = kept
+    while len(STATE.deleted_cards) > DELETED_CARDS_MAX:
+        STATE.deleted_cards.pop(next(iter(STATE.deleted_cards)))
+
+
+try:
+    # What Recently deleted holds is still deleted after a restart: a problem of one of them seen again points back to nothing
+    for _seq in HISTORY.deleted_ids()[-DELETED_CARDS_MAX:]:
+        note_deleted(_seq, True)
+except Exception as _exc:   # a file that cannot be read: the server starts all the same, as it does with no history
+    log.warning("history: Recently deleted not read at the start (%s)", _exc)
 
 
 # One thread takes the writes, in order, and nobody waits on them. Awaited, each was a place a cancel could land: a
@@ -2337,6 +2523,69 @@ def clear_history() -> bool:
         return False
 
 
+def delete_answer(seq: int) -> tuple[bool, dict | None, int]:
+    """Move one answer to Recently deleted, on the history's thread: whether the file took the write, what it says of the
+    answer ({"deleted", "until"}, or None for one it does not hold), and how many Recently deleted holds now."""
+    try:
+        return True, HISTORY.delete(seq), HISTORY.deleted_count()
+    except Exception as exc:   # a file that cannot be written: said to the one who asked, and nothing changes
+        log.warning("analysis #%s: not deleted (%s)", seq, exc)
+        return False, None, 0
+
+
+def restore_answer(seq: int) -> tuple[bool, dict | None, int]:
+    """Put one deleted answer back: whether the file took the write, the answer as the history gives it (None for one
+    Recently deleted does not hold), and how many it holds now."""
+    try:
+        return True, HISTORY.restore(seq), HISTORY.deleted_count()
+    except Exception as exc:
+        log.warning("analysis #%s: not put back (%s)", seq, exc)
+        return False, None, 0
+
+
+def purge_answers(seq: int | None) -> tuple[bool, list, int]:
+    """Delete for good one answer of Recently deleted, or with no id all of it: whether the file took the write, the ids
+    that went, and how many it holds now."""
+    try:
+        return True, HISTORY.purge(seq), HISTORY.deleted_count()
+    except Exception as exc:
+        log.warning("Recently deleted: not deleted for good (%s)", exc)
+        return False, [], 0
+
+
+def forget_purged(ids) -> None:
+    """Nothing is held of an answer deleted for good: not its text for a problem seen again to point back to, not the
+    piece of the screen and the words its problem is known by (a restart would write those to the log folder,
+    keep_for_restart), not its id among the deleted, and not the last answer held for Undo when it is one of them."""
+    for seq in ids:
+        STATE.answers.pop(seq, None)
+        STATE.deleted_cards.pop(seq, None)
+        STATE.purged.pop(seq, None)
+        STATE.purged[seq] = None
+        while len(STATE.purged) > DELETED_CARDS_MAX:
+            STATE.purged.pop(next(iter(STATE.purged)))
+        if held_deleted(seq) is not None:
+            STATE.deleted_last = None
+    if PIPELINE is not None and ids:
+        PIPELINE.recent.forget_cards(ids)
+
+
+def held_deleted(seq: int) -> dict | None:
+    """The last answer held while it is deleted (STATE.deleted_last), when it is answer `seq`."""
+    held = STATE.deleted_last
+    return held if held is not None and held["last"].get("id") == seq else None
+
+
+def stop_followups_about(seq: int) -> None:
+    """Stop what is still answering, or checking, a follow-up about answer `seq`, which was deleted: its card is gone, and
+    the answer would cost the agent's quota or the GPU for nobody to read. One whose answer is done and only being sent
+    is no longer on this list (run_followup) and ends by itself."""
+    for task, info in list(STATE.followups.items()):
+        if info.get("about") == seq and not task.done():
+            info["reason"] = "deleted"   # what its card would be told (the panels have dropped it with its answer)
+            task.cancel()
+
+
 def star_answer(seq: int, on: bool) -> tuple[bool, int]:
     """Star or unstar a kept answer: whether the history holds it, and how many are starred now."""
     try:
@@ -2347,6 +2596,40 @@ def star_answer(seq: int, on: bool) -> tuple[bool, int]:
 
 
 PICTURES: set = set()   # the tasks keeping answers' pictures, held so that none is collected while it runs
+
+
+async def say_nothing_to_reanalyze() -> None:
+    """Reanalyze with no screen and nothing heard: every panel is told why nothing started."""
+    await broadcast({"type": "notice", "level": "warn",
+                     "text": t("No screen or speech to reanalyze") if STATE.screen_on
+                     else t("Screen capture is off: no screen to reanalyze")})
+
+
+async def stop_analysis(task: asyncio.Task | None, reason: str) -> bool:
+    """Stop an analysis for `reason` (a newer screen, a spoken problem, Reanalyze, a pause), or let it finish when its
+    answer is already done (`solved`, set by _run_analysis once solve returned): what is left then is the card's end,
+    the record and the checks, and a cancel landing there (a slow panel taking a broadcast) left the card in neither
+    state, the reason set for the next one, and a spoken problem answered already asked again. True when it stopped."""
+    if task is None or task.done():
+        return False
+    if getattr(task, "solved", False):
+        try:
+            await task
+        except Exception:   # its own failure is its own to report; this only waits
+            pass
+        return False
+    STATE.cancel_reason = reason
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:   # it failed on its own meanwhile: its card says so
+        pass
+    if not task.cancelled():   # the cancel came as it ended (a read that swallowed it): it ended as it was
+        STATE.cancel_reason = None
+        return False
+    return True
 
 
 def keep_picture(seq: int, frame, box, kind: str, epoch: int) -> None:
@@ -2385,7 +2668,11 @@ def remembered(result, frame, seq: int, voice: bool = False) -> dict:
 
 
 def stop_followup(t) -> None:
-    """Stop one follow-up task the watching started (a retry, a continuation) if it still runs, as superseded."""
+    """Stop one follow-up task the watching started (a retry, a continuation) if it still runs, as superseded. One whose
+    answer is done and being sent (`solved`, run_followup) is let end: cancelled there, its card stayed half done."""
+    if t is not None and not t.done() and getattr(t, "solved", False):
+        t.superseded = True               # its end is sent, and nothing after it runs (run_followup)
+        return
     if t is not None and not t.done():
         if t in STATE.followups:          # what its card is told when it stops
             STATE.followups[t]["reason"] = "superseded"
@@ -2524,7 +2811,11 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
     # An unknown key (a panel newer or older than this server) is refused by SETTINGS.set below; reading its old value
     # first raised KeyError, which ended that panel's socket.
     old = SETTINGS.get(key) if key in SETTINGS.defs else None
+    was_cutting = SETTINGS.on("voice_auto") or bool(SETTINGS.get("speech_keep"))   # the loop cutting sentences before this
     ok, err = SETTINGS.set(key, value)
+    if ok and key in ("voice_auto", "speech_keep") and not was_cutting \
+            and (SETTINGS.on("voice_auto") or SETTINGS.get("speech_keep")):
+        STATE.voice_from = STATE.audio_total // 2   # it begins now: from the sound that comes after this moment
     if not ok:
         # The panel shows a change before the server has it, so a refused one stayed on its control while the
         # old value held: the stored value goes back to every panel.
@@ -2686,10 +2977,19 @@ async def analysis_worker(app: FastAPI) -> None:
     inflight_speech = ""     # its words, so a screen that stops it can have it asked again
     inflight_retake = False  # it is that second asking, which a screen change ends for good
     inflight_upto = 0        # where in the sound its words end
+    # A worker before this one stopped on an error (worker_ended starts this one) with an analysis running: taken over, so a
+    # newer screen, a pause or a switch turned off reach it. Left alone it ran beside the next one, and the pause stopped neither
+    held = STATE.analysis_now
+    if held is not None and not held["task"].done():
+        inflight, inflight_frame = held["task"], held["frame"]
+        inflight_voice, inflight_speech, inflight_upto = bool(held["voice"]), held["voice"], held["upto"]
+        log.info("the analysis worker took over the analysis running")
 
     async def run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False, upto: int = 0) -> None:
         """_run_analysis, counted while it runs: a deploy waits for the server to be idle (activity())."""
         STATE.analyses_running += 1
+        me = asyncio.current_task()
+        STATE.analysis_now = {"task": me, "frame": frame, "voice": voice, "upto": upto}
         STATE.screen_seq = seq   # whose age a screen change weighs (analysis_age): a follow-up takes an id of its own meanwhile
         STATE.analysis_wrote = False   # nothing on the card yet: a newer spoken problem may still replace this one
         analysis_turn()   # a code check reading with this PC's model gives way (between_analyses)
@@ -2702,6 +3002,8 @@ async def analysis_worker(app: FastAPI) -> None:
         finally:
             STATE.analyses_running -= 1
             STATE.confirm_held.pop(seq, None)
+            if (STATE.analysis_now or {}).get("task") is me:   # a newer one may hold it already
+                STATE.analysis_now = None
             analysis_turn()   # and goes on when none runs
 
     async def _run_analysis(frame: Frame | None, seq: int, voice: str = "", manual: bool = False, upto: int = 0) -> None:
@@ -2717,6 +3019,9 @@ async def analysis_worker(app: FastAPI) -> None:
         asked = start if (voice or manual or frame is None) else frame.ts
         first: list[float] = []
         epoch = STATE.screen_epoch   # a screen-off from here on means this frame may not be used afterwards
+        # The pause and the sound switch as they were: an answer let end (stop_analysis) after the pause or the sound went
+        # off starts no code check or agent's check, which those stopped before they could exist
+        paused_before, heard_epoch = STATE.paused, STATE.sound_off_epoch
         # The last answer's example check, its the agent check and its retry or continuation are about that answer, and
         # an analysis that starts has not replaced it yet: most automatic ones find nothing (a screen changing while
         # someone works on it), and stopping them here made every code answer say its check was stopped "for the next
@@ -2769,10 +3074,18 @@ async def analysis_worker(app: FastAPI) -> None:
             result = await PIPELINE.solve(seq, frame, voice, bool(voice), on_delta, by_user=manual)
             if frame is not None and result.region and result.region_placed:   # before the answer counts as done: a cancel here loses nothing
                 result.shown = await asyncio.to_thread(shown_box, frame, result.region)
+            # The answer is done: from here a newer screen or a pause lets this finish rather than cancel it (stop_analysis).
+            # No await between this and the line above, so no cancel can fall in between
+            asyncio.current_task().solved = True
         except asyncio.CancelledError:
             # pause / screen_off / sound_off keep a half-written answer on the panel with a note;
             # reanalyze / voice / superseded mean a newer analysis replaces it.
             reason, STATE.cancel_reason = STATE.cancel_reason or "superseded", None
+            # Replaced, and its screen switched off while it was stopping: nothing may replace it now (Reanalyze reads what
+            # it runs on afterwards and finds no screen), so it is said as the screen-off it then is, and the panel keeps
+            # its half answer with that note rather than dropping it for an answer that never comes
+            if reason in ("reanalyze", "superseded") and frame is not None and STATE.screen_epoch != epoch:
+                reason = "screen_off"
             telemetry.event("analysis_cancelled", id=seq, trigger=trigger, reason=reason,
                             after=round(time.time() - start, 2))
             await broadcast({"type": "analysis_cancelled", "id": seq, "reason": reason})
@@ -2789,7 +3102,7 @@ async def analysis_worker(app: FastAPI) -> None:
             STATE.supersede_streak = 0
             STATE.error_streak += 1
             wait = min(60.0, 15.0 * 2 ** (STATE.error_streak - 1))   # 15 s, 30 s, then a minute
-            STATE.retry_after = time.time() + wait
+            STATE.retry_after = time.monotonic() + wait
             telemetry.event("analysis_gpu_busy", id=seq, trigger=trigger, wait=wait)
             await broadcast({"type": "analysis_cancelled", "id": seq, "reason": "gpu_busy"})
             if STATE.error_streak == 1:
@@ -2809,7 +3122,11 @@ async def analysis_worker(app: FastAPI) -> None:
             telemetry.event("analysis_repeat", id=seq, trigger=trigger, of=again.card, score=round(again.score, 3))
             # The problem on the screen is that answer's now: a question is about it, and a problem scrolled together
             # continues it (screen_started), with this screen, where the problem stands now, to read it from
-            was = STATE.answers.get(again.card)
+            # That answer was deleted since: there is no card to point back to and no answer for a question to be about.
+            # Its problem is not solved again by itself all the same, or deleting an answer whose problem is still on
+            # the screen would bring the same answer straight back; Reanalyze solves it again, as the notice says
+            gone = again.card in STATE.deleted_cards
+            was = None if gone else STATE.answers.get(again.card)
             # A screen switched off in the moment before this may not come back through here: the next question would send it
             if was is not None and frame is not None and STATE.screen_epoch == epoch and (STATE.last_result or {}).get("id") != again.card:
                 cancel_check()
@@ -2817,14 +3134,19 @@ async def analysis_worker(app: FastAPI) -> None:
                 cancel_retry()
                 STATE.last_result = {**was, "frame": frame, "crop_box": again.box or was.get("crop_box"), "local_view": None}
                 STATE.thread = []
+                STATE.deleted_last = None   # another answer is the last now: Undo no longer makes the deleted one that
             if frame is not None:
                 STATE.screen_started = again.card
-            await broadcast({"type": "analysis_cancelled", "id": seq, "reason": "repeat", "of": again.card})
+            await broadcast({"type": "analysis_cancelled", "id": seq, "reason": "repeat", **({} if gone else {"of": again.card})})
             if STATE.repeat_said != again.card:
                 STATE.repeat_said = again.card
-                # `of`: the panel's toast leads to that answer when pressed
-                await broadcast({"type": "notice", "of": again.card, "level": "info",
-                                 "text": t("Already solved, not solved again · Reanalyze to solve it again")})
+                if gone:   # no `of`: there is no answer for the toast to lead to
+                    await broadcast({"type": "notice", "level": "info",
+                                     "text": t("Solved before, and that answer was deleted · Reanalyze to solve it again")})
+                else:
+                    # `of`: the panel's toast leads to that answer when pressed
+                    await broadcast({"type": "notice", "of": again.card, "level": "info",
+                                     "text": t("Already solved, not solved again · Reanalyze to solve it again")})
             return
         except NotSent:   # The agent alone, and the user chose not to send it
             STATE.supersede_streak = 0
@@ -2873,19 +3195,41 @@ async def analysis_worker(app: FastAPI) -> None:
             cancel_retry()
             # what follow-ups refer to, and which engine answers them
             STATE.last_result = remembered(result, frame if STATE.screen_epoch == epoch else None, seq, bool(voice))
+            # The sound switched off while this was finishing (note_success and note_capture above wait on the panels):
+            # set_capture took the words from the answer kept before, and these ones go too, or the next question sent them
+            if voice and STATE.sound_off_epoch != heard_epoch:
+                STATE.last_result.pop("words", None)
+            STATE.deleted_last = None   # the last answer deleted before this one is not the last any more, put back or not
             # its picture, to know the problem when it is seen again (design 88); a spoken one has none
             seen_box = result.seen or result.region
-            if (frame is not None and not voice and seen_box is not None and PIPELINE is not None
-                    and STATE.screen_epoch == epoch):
+            if (kind and frame is not None and not voice and seen_box is not None and PIPELINE is not None
+                    and STATE.screen_epoch == epoch):   # kind: as for the words below, a decline's card is no problem solved
                 # On a task of its own: awaited here it was a place a cancel could land after the answer was done, and
                 # the card then never finished
                 keep_picture(seq, frame, seen_box, kind, epoch)
+            # and the words it went out to the agent in (pipeline._agent_solve), only now that the card is done, on the same
+            # screen: kept in solve, a card cancelled before this point stood for its problem for 30 minutes
+            if (result.words and kind and frame is not None and not voice and PIPELINE is not None
+                    and STATE.screen_epoch == epoch):   # kind: a reply with no head (a decline) stands for no problem
+                PIPELINE.recent.add_words(seq, result.words)
             remember_answer(STATE.last_result)
             STATE.repeat_said = 0     # a new answer: coming back to an earlier one is news again, and is said
             STATE.thread = []
             note_left(detector, STATE.latest_frame)   # the screen may have moved on while this was being written
         note_sent(seq, result.sent)
         STATE.analyses_done += 1
+        # Into the history before its card is told it is done: the writes go in order on one thread, and a star or a delete
+        # pressed the moment the card ends then finds the row. Sent first, the delete found nothing, said the answer was not
+        # kept, and the row written after it brought the answer back at the next reload
+        if not is_none:
+            keep_answer(seq, kind, {
+                "ts": asked, "trigger": trigger, "transcript": voice or "", "text": result.text,
+                "model": result.model, "engine": result.engine, "sent": result.sent, "stages": result.stages,
+                "usage": result.usage, "cost_usd": result.cost_usd, "elapsed": round(time.time() - start, 2),
+                "first_token": round(first[0] - start, 2) if first else None,
+                "region": list(result.shown or region) if region and result.region_placed else None,
+                "region_shown": bool(result.shown),   # what the crop took, not the model's first guess
+                "thumb": frame.thumb_url if frame is not None and STATE.screen_epoch == epoch else None})
         await broadcast(
             {
                 "type": "analysis_done",
@@ -2916,19 +3260,14 @@ async def analysis_worker(app: FastAPI) -> None:
                         # "nothing to solve" turns down by these (in one day's use they were stitched pages and crops)
                         sent=next((x.get("what") for x in result.sent or () if x.get("to") == "agent"), None),
                         via=(result.stages or {}).get("why"), **usage_fields(result))
-        if not is_none:
-            keep_answer(seq, kind, {
-                "ts": asked, "trigger": trigger, "transcript": voice or "", "text": result.text,
-                "model": result.model, "engine": result.engine, "sent": result.sent, "stages": result.stages,
-                "usage": result.usage, "cost_usd": result.cost_usd, "elapsed": round(time.time() - start, 2),
-                "first_token": round(first[0] - start, 2) if first else None,
-                "region": list(result.shown or region) if region and result.region_placed else None,
-                "region_shown": bool(result.shown),   # what the crop took, not the model's first guess
-                "thumb": frame.thumb_url if frame is not None and STATE.screen_epoch == epoch else None})
         await broadcast(usage_message())
         log.info("analysis #%d done by %s (%d chars, %.2fs, region %s)", seq, result.engine, len(result.text),
                  time.time() - start, "none" if region is None else "%.2f %.2f %.2f %.2f" % region)
         if frame is not None and STATE.screen_epoch != epoch:   # switched off while this was finishing
+            return
+        if STATE.paused and not paused_before:                    # paused while this was finishing
+            return
+        if voice and STATE.sound_off_epoch != heard_epoch:        # the sound switched off meanwhile (a pause: above)
             return
         if not is_none and runner_here() and checkable(PIPELINE, frame, result):
             STATE.check_task = asyncio.create_task(run_check(app, seq, frame, result))
@@ -2959,12 +3298,7 @@ async def analysis_worker(app: FastAPI) -> None:
                    else "sound_off" if "sound_off" in reasons and inflight_voice
                    else None)
             if why and inflight and not inflight.done():
-                STATE.cancel_reason = why
-                inflight.cancel()
-                try:
-                    await inflight
-                except asyncio.CancelledError:
-                    pass
+                await stop_analysis(inflight, why)
                 inflight = None
                 inflight_frame = None
                 inflight_voice = False
@@ -2979,25 +3313,29 @@ async def analysis_worker(app: FastAPI) -> None:
         # paused too: pause stops the automatic triggers, not an explicit request.
         if STATE.force_analyze:
             STATE.force_analyze = False
+            # Nothing to run on: said, and the analysis running is left as it is
+            if STATE.latest_frame is None and not STATE.recent_speech():
+                STATE.force_seq = 0   # the id it was given goes with it: left, the next analysis asked for took it
+                await say_nothing_to_reanalyze()
+                continue
+            await stop_analysis(inflight, "reanalyze")
+            inflight = None
+            # What it runs on is read again once the analysis it replaces has stopped: the screen switched off during that
+            # wait left it starting with no screen and no words, and an agent alone was then sent an empty question
             voice = "" if STATE.latest_frame is not None else STATE.recent_speech()
             if STATE.latest_frame is None and not voice:
-                await broadcast({"type": "notice", "level": "warn",
-                                 "text": t("No screen or speech to reanalyze") if STATE.screen_on
-                                 else t("Screen capture is off: no screen to reanalyze")})
+                STATE.force_seq = 0
+                await say_nothing_to_reanalyze()
                 continue
-            if inflight and not inflight.done():
-                STATE.cancel_reason = "reanalyze"
-                inflight.cancel()
-                try:
-                    await inflight
-                except asyncio.CancelledError:
-                    pass
-            STATE.last_analyze_ts = time.time()
-            STATE.analysis_seq += 1
+            STATE.last_analyze_ts = time.monotonic()
+            seq, STATE.force_seq = STATE.force_seq, 0   # the id it was given when it was asked
+            if not seq:                                  # set by hand, with none given (the checks): the next
+                STATE.analysis_seq += 1
+                seq = STATE.analysis_seq
             inflight_frame, inflight_voice = STATE.latest_frame, bool(voice)
             inflight_speech, inflight_retake = voice, False
             inflight_upto = STATE.utterances[-1]["end"] if voice and STATE.utterances else 0
-            inflight = asyncio.create_task(run_analysis(inflight_frame, STATE.analysis_seq, voice=voice,
+            inflight = asyncio.create_task(run_analysis(inflight_frame, seq, voice=voice,
                                                         manual=True, upto=inflight_upto))
             continue
 
@@ -3022,9 +3360,9 @@ async def analysis_worker(app: FastAPI) -> None:
         # Held back for any of these, its words stop aging until its turn (recent_group); no flag, nothing is held for it
         if not STATE.voice_pending:
             STATE.voice_held_at = 0.0
-        elif STATE.paused or screen_busy or writing or time.time() < STATE.retry_after:
+        elif STATE.paused or screen_busy or writing or time.monotonic() < STATE.retry_after:
             STATE.voice_held_at = STATE.voice_held_at or time.time()
-        if STATE.voice_pending and not STATE.paused and not screen_busy and not writing and time.time() >= STATE.retry_after:
+        if STATE.voice_pending and not STATE.paused and not screen_busy and not writing and time.monotonic() >= STATE.retry_after:
             STATE.voice_pending = False
             # Read first, with the age still held: nothing to ask leaves whatever runs alone, and starts nothing. An empty
             # voice would start a screen analysis from here, past the checks a screen goes through below.
@@ -3036,14 +3374,8 @@ async def analysis_worker(app: FastAPI) -> None:
             speech = after_the_answer(group, STATE.voice_answered_to)
             if not speech:
                 continue
-            if inflight and not inflight.done():   # only ever an earlier spoken problem (screen_busy above)
-                STATE.cancel_reason = "voice"
-                inflight.cancel()
-                try:
-                    await inflight
-                except asyncio.CancelledError:
-                    pass
-            STATE.last_analyze_ts = time.time()
+            await stop_analysis(inflight, "voice")   # only ever an earlier spoken problem (screen_busy above)
+            STATE.last_analyze_ts = time.monotonic()
             STATE.analysis_seq += 1
             inflight_frame, inflight_voice = STATE.latest_frame, True
             inflight_speech, inflight_retake = speech, False
@@ -3061,7 +3393,7 @@ async def analysis_worker(app: FastAPI) -> None:
         if STATE.voice_retake and (not PIPELINE.ready() or not SETTINGS.on("voice_auto")):
             STATE.voice_retake = ""       # nothing can answer it, or spoken problems were switched off
         if (STATE.voice_retake and not STATE.paused and not (inflight and not inflight.done())
-                and time.time() >= STATE.retry_after):
+                and time.monotonic() >= STATE.retry_after):
             shown = STATE.latest_frame
             behind = (shown is not None and STATE.screen_started == STATE.voice_retake_mark
                       and time.time() - STATE.voice_retake_at
@@ -3069,7 +3401,7 @@ async def analysis_worker(app: FastAPI) -> None:
                       and detector.is_new(shown))
             if not behind:
                 speech, STATE.voice_retake = STATE.voice_retake, ""
-                STATE.last_analyze_ts = time.time()
+                STATE.last_analyze_ts = time.monotonic()
                 STATE.analysis_seq += 1
                 inflight_frame, inflight_voice = shown, True
                 inflight_speech, inflight_retake = speech, True
@@ -3113,16 +3445,13 @@ async def analysis_worker(app: FastAPI) -> None:
                 STATE.kept_said = STATE.screen_seq
                 telemetry.event("analysis_kept", id=STATE.screen_seq, after=round(age, 1))
             if supersede_now(stitched, moved_on, STATE.supersede_streak, age):
-                STATE.supersede_streak += 1
-                STATE.cancel_reason = "superseded"
-                inflight.cancel()
                 heard = STATE.speech_epoch   # sound off or pause during the wait below: those words are gone
-                try:
-                    await inflight
-                except asyncio.CancelledError:
-                    pass
-                # A spoken problem stopped here is asked again after this screen (the retake above), once
-                if inflight_voice and inflight_speech and not inflight_retake and STATE.speech_epoch == heard:
+                stopped = await stop_analysis(inflight, "superseded")
+                if stopped:                  # one let end is no screen stopped half done
+                    STATE.supersede_streak += 1
+                # A spoken problem stopped here is asked again after this screen (the retake above), once; one whose
+                # answer was done is not stopped, and not asked again
+                if stopped and inflight_voice and inflight_speech and not inflight_retake and STATE.speech_epoch == heard:
                     STATE.voice_retake, STATE.voice_retake_at, STATE.voice_retake_to = inflight_speech, time.time(), inflight_upto
                     STATE.voice_retake_mark = STATE.screen_started
                 inflight = None
@@ -3133,7 +3462,7 @@ async def analysis_worker(app: FastAPI) -> None:
 
         # Nothing running: start an analysis if this frame is new and the interval passed
         # (and no run of errors is being waited out).
-        if time.time() < STATE.retry_after or not detector.is_new(frame):
+        if time.monotonic() < STATE.retry_after or not detector.is_new(frame):
             STATE.settle_since = 0.0        # nothing is waiting for the screen to come to rest
             continue
         # The screen has to have come to rest. A screen still being driven is not the one an answer
@@ -3162,10 +3491,10 @@ async def analysis_worker(app: FastAPI) -> None:
         if (CONFIG.quiet_after > 0 and STATE.empty_run >= CONFIG.quiet_after
                 and detector.jumped(frame) < CONFIG.change_threshold * CONFIG.quiet_jump_ratio):
             wait = max(wait, CONFIG.quiet_sec)
-        if time.time() - STATE.last_analyze_ts < wait:
+        if time.monotonic() - STATE.last_analyze_ts < wait:
             continue
         STATE.settle_since = 0.0
-        STATE.last_analyze_ts = time.time()
+        STATE.last_analyze_ts = time.monotonic()
         # A problem the capture program scrolled together shortly after its answer: it is being read on, so the
         # answer is filled out from the whole of it under the same card instead of solved again as a new one. Like
         # the retry it is the watching's own (a newer answer stops it) and it never holds the screen back. Which
@@ -3213,7 +3542,8 @@ def no_core_dumps() -> None:
 # two together, and holds panel/app.js to sending none but these)
 PANEL_COMMANDS = ("capture_set", "pause", "resume", "reanalyze", "ask", "problem_text", "run", "setting",
                   "agent_confirm_reply", "thumb", "gpu_release", "history_clear", "star", "gpu_load", "gpu_load_cancel",
-                  "settings_reset", "llm_pull", "ui_lang", "set_lang")
+                  "settings_reset", "llm_pull", "ui_lang", "set_lang", "answer_delete", "answer_restore", "answer_purge",
+                  "deleted_clear")
 API_VERSION = 1                # /api/v1: a change that breaks a caller goes to /api/v2, beside it
 
 
@@ -3281,16 +3611,45 @@ def api_refused(request: Request, write: bool) -> JSONResponse | None:
     return None
 
 
+def _not_json(token: str):
+    """json.loads takes NaN and Infinity, which are not JSON: refused (api_body)."""
+    raise ValueError(f"{token} is not JSON")
+
+
+def _finite(value) -> bool:
+    """Whether every number in `value` is finite: 1e999 reads as infinity, which no answer can carry back (allow_nan=False)."""
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, dict):
+        return all(_finite(v) for v in value.values())
+    if isinstance(value, list):
+        return all(_finite(v) for v in value)
+    return True
+
+
 async def api_body(request: Request) -> dict | JSONResponse:
-    """A write's JSON object ({} for an empty body), or the error that answers it."""
+    """A write's JSON object ({} for an empty body), or the error that answers it. What JSON allows and nothing past it:
+    NaN, Infinity and a number too large for a float were taken, and answering them ended in a 500; a lone surrogate
+    ("\ud800") was taken too, and a setting holding one could not be saved or sent, so every answer showing it was a 500
+    and an event holding one ended every events stream."""
     raw = await request.body()
     if not raw.strip():
         return {}
     try:
-        data = json.loads(raw)
-    except ValueError:
+        data = json.loads(raw, parse_constant=_not_json)
+    except (ValueError, RecursionError):   # nested past what Python reads (a thousand levels) is no body either
         return api_error(400, "the body is not JSON")
-    return data if isinstance(data, dict) else api_error(400, "the body is a JSON object")
+    if not isinstance(data, dict):
+        return api_error(400, "the body is a JSON object")
+    try:
+        if not _finite(data):
+            return api_error(400, "a number in the body is too large")
+        json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except RecursionError:   # read, but nested deeper than the checks walk (some 450 levels): no route takes such a body
+        return api_error(400, "the body is nested too deeply")
+    except UnicodeEncodeError:
+        return api_error(400, "the body holds text that is not valid Unicode")
+    return data
 
 
 class Replies:
@@ -3326,8 +3685,14 @@ def waiting_confirms() -> list:
 
 
 def sse(n: int, message: dict) -> str:
-    """One message as a Server-Sent Event: its number, then the message as one line of JSON."""
-    return f"id: {n}\ndata: {json.dumps(message, ensure_ascii=False)}\n\n"
+    """One message as a Server-Sent Event: its number, then the message as one line of JSON. Text that cannot be written as
+    UTF-8 (a lone surrogate) goes escaped, as JSON allows, and not as the end of the stream it broke."""
+    try:
+        line = json.dumps(message, ensure_ascii=False)
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        line = json.dumps(message)
+    return f"id: {n}\ndata: {line}\n\n"
 
 
 def create_app() -> FastAPI:
@@ -3372,7 +3737,10 @@ def create_app() -> FastAPI:
         app.state.detector = make_detector(CONFIG, app.state.ocr)
         watch_region(app.state.detector, None)
         take_up_after_restart(app.state.detector)
-        telemetry.take_up_today()
+        try:
+            telemetry.take_up_today()   # the day's figures, read back from the event log
+        except Exception as exc:        # a log edited by hand, a disk error: the figures start from nothing, the server starts
+            log.warning("the day's figures could not be read back from the event log (%s): they start from now", exc)
         def worker_ended(task: asyncio.Task) -> None:   # the worker is the panel's whole automatic half: it does not stay down
             if task.cancelled() or task.exception() is None:
                 return
@@ -3409,7 +3777,7 @@ def create_app() -> FastAPI:
                 await asyncio.sleep(6 * 3600)
 
         app.state.prune_task = asyncio.create_task(prune_loop())
-        app.state.auth_task = asyncio.create_task(engine_watch())
+        app.state.auth_task = asyncio.create_task(engine_watch_kept())
         app.state.gpu_task = asyncio.create_task(gpu_watch())
         app.state.cli_task = asyncio.create_task(learn_agent_cli())
         app.state.runner_task = asyncio.create_task(runner_watch())
@@ -3520,8 +3888,10 @@ def create_app() -> FastAPI:
     async def ask_captures(request: Request, what: str, path: str, extra: dict | None = None) -> JSONResponse:
         """Send every capture program connected `{"type": what, **extra}`, for a request from this PC."""
         origin = request.headers.get("origin")
-        if origin and not any(origin == f"http://{h}:{CONFIG.port}" or origin == f"http://{h}"
-                              for h in LOCAL_HOSTS):
+        # the page's own address, as the request reached it: under compose SIDENOTE_PORT moves the port on the PC's side only,
+        # and comparing with CONFIG.port refused the panel's own request
+        if origin and not origin_ok(origin, request.headers.get("host")) and not any(
+                origin == f"http://{h}:{CONFIG.port}" or origin == f"http://{h}" for h in LOCAL_HOSTS):
             telemetry.event("refused", path=path, origin=origin[:120])
             return JSONResponse({"error": "not allowed"}, status_code=403)
         asked = 0
@@ -3555,7 +3925,20 @@ def create_app() -> FastAPI:
         # heard is kept (the keys to it)
         return JSONResponse({"days": await asyncio.to_thread(HISTORY.days_list),
                              "starred": await asyncio.to_thread(HISTORY.starred_count),
-                             "heard": await asyncio.to_thread(HISTORY.heard_any)})
+                             "heard": await asyncio.to_thread(HISTORY.heard_any),
+                             # how many answers Recently deleted holds (the key to it), and for how many days it holds one
+                             "deleted": await asyncio.to_thread(HISTORY.deleted_count),
+                             "deleted_days": CONFIG.deleted_days})
+
+    @app.get("/history/deleted")
+    async def history_deleted(brief: int = 0):
+        """Recently deleted, the latest deleted first, for the panel's sheet: each answer with when it was deleted and when
+        it goes by itself. brief=1 (the panel's sheet, and its look for ids after a reconnect) leaves out what the sheet
+        does not show: the screen's thumbnail and the follow-ups, near 4 MB at the list's 200 answers with them."""
+        rows = await asyncio.to_thread(HISTORY.deleted_list)
+        if brief:
+            rows = [{k: v for k, v in r.items() if k not in ("thumb", "turns")} for r in rows]
+        return JSONResponse({"answers": rows, "days": CONFIG.deleted_days})
 
     @app.get("/stats")
     async def stats() -> JSONResponse:
@@ -3755,13 +4138,23 @@ def create_app() -> FastAPI:
             await set_paused(kind == "pause")
             return True
         elif kind == "reanalyze":
+            # The id its analysis takes, given now: a program is told it (the API's 202) and finds its answer by it. Asked
+            # again before it starts, the one analysis takes the later id
+            STATE.analysis_seq += 1
+            STATE.force_seq = STATE.analysis_seq
             STATE.force_analyze = True
             user_asked()                 # Reanalyze is pressed by hand: no brake
+            if isinstance(reply, Replies):
+                await reply({"type": "accepted", "id": STATE.force_seq})
             return True
         elif kind == "ask":
             question = str(data.get("text") or "").strip()[:2000]
             if question:
-                spawn(run_followup(app, question), "followup")
+                STATE.analysis_seq += 1   # its id, given now, as for Reanalyze
+                seq = STATE.analysis_seq
+                spawn(run_followup(app, question, seq=seq), "followup")
+                if isinstance(reply, Replies):
+                    await reply({"type": "accepted", "id": seq})
             return True
         elif kind == "problem_text":   # Problem text: the last problem as text, to copy (this panel only)
             work = reply_later(reply, problem_text(data.get("id")))
@@ -3797,7 +4190,7 @@ def create_app() -> FastAPI:
                          "ts": STATE.last_seen_ts if frame else None,
                          "live": bool(frame and STATE.captures and STATE.screen_on),
                          "text": None if frame else (t("Screen capture is off") if not STATE.screen_on
-                                                     else t("No screen received")
+                                                     else t("No capture program connected")
                                                      if not STATE.captures else t("No screen received"))})
             return True
         elif kind == "gpu_release":
@@ -3823,6 +4216,9 @@ def create_app() -> FastAPI:
                 PIPELINE.recent.forget()
             STATE.answers.clear()
             STATE.repeat_said = 0
+            if cleared:   # Recently deleted went with the rest: nothing is held of it for Undo either
+                STATE.deleted_cards.clear()
+                STATE.deleted_last = None
             telemetry.event("history_clear", ok=cleared)
             if cleared:   # every panel open clears what it shows: one told nothing kept the answers that went
                 await broadcast({"type": "history_cleared"})
@@ -3847,6 +4243,118 @@ def create_app() -> FastAPI:
             telemetry.event("star", id=seq, starred=on)
             # every panel shows it, with how many are starred for the contents' Starred choice
             await broadcast({"type": "star", "id": seq, "starred": on, "n": count})
+            return True
+        elif kind == "answer_delete":   # the delete key on an answer's head: to Recently deleted, where it can be put back
+            seq = data.get("id")
+            if not isinstance(seq, int) or isinstance(seq, bool):   # an answer's id is a number, as for the star
+                return True
+            if (seq > STATE.analysis_seq or seq in STATE.purged) and not await asyncio.to_thread(HISTORY.holds, seq):
+                # No answer has had this id yet (an id to come would be drawn by no panel), or it was deleted for good:
+                # nothing to delete. A program is told; a panel never sends one. The history holding it decides first: a
+                # clock set back across a restart gives out ids under those of answers already kept
+                if isinstance(reply, Replies):
+                    await reply({"type": "notice", "level": "warn", "text": t("Not deleted: no answer has this id")})
+                return True
+            if seq in LIVE:   # its card has no delete key yet; a program is told why
+                await reply({"type": "notice", "level": "warn", "text": t("Not deleted: this answer is still being written")})
+                return True
+            # On the history's own thread, after the write that keeps the answer: a delete pressed as it ends finds its row
+            done, was, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, delete_answer, seq)
+            if not done:
+                await reply({"type": "notice", "level": "bad", "text": t("Not deleted: the saved history could not be written")})
+                return True
+            if was is None and seq in STATE.deleted_cards:
+                # Deleted already (pressed in two panels at once, or asked twice by a program): it stays as it is and no
+                # panel is told again. A program gets what holds now
+                if isinstance(reply, Replies):
+                    row = await asyncio.to_thread(HISTORY.deleted_get, seq)
+                    await reply({"type": "answer_deleted", "id": seq, "kept": row is not None, "until": (row or {}).get("until"),
+                                 "n": count, "can_ask": STATE.last_result is not None})
+                return True
+            last = STATE.last_result
+            if last is not None and last.get("id") == seq:
+                # The last answer: what was still checking it or filling it out stops, and a question is no longer about
+                # it. Held with its follow-ups, for Undo
+                cancel_check()
+                cancel_verify()
+                cancel_retry()
+                STATE.deleted_last = {"last": last, "thread": STATE.thread}
+                STATE.last_result, STATE.thread = None, []
+            stop_followups_about(seq)            # and a question about it still being answered
+            note_deleted(seq, was is not None)   # a problem seen again does not point back to it
+            if STATE.repeat_said == seq:         # and says so the next time, where it had said "already solved"
+                STATE.repeat_said = 0
+            telemetry.event("answer_delete", id=seq, kept=was is not None)
+            # Every panel drops the card. `kept`: Recently deleted holds it (else only a panel that showed it can put it
+            # back), `until`: when it goes from there by itself, `n`: how many are there now
+            said = {"type": "answer_deleted", "id": seq, "kept": was is not None, "until": (was or {}).get("until"),
+                    "n": count, "can_ask": STATE.last_result is not None}
+            await broadcast(said)
+            if isinstance(reply, Replies):   # a program through the API is told too (a panel has it from the broadcast)
+                await reply(said)
+            return True
+        elif kind == "answer_restore":   # Undo on the toast, or Restore in Recently deleted: the answer back as it was
+            seq = data.get("id")
+            if not isinstance(seq, int) or isinstance(seq, bool):
+                return True
+            done, row, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, restore_answer, seq)
+            if not done:
+                await reply({"type": "notice", "level": "bad", "text": t("Not put back: the saved history could not be written")})
+                return True
+            # An answer the history never held comes back from the panels that showed it (deleted_cards says False of
+            # it). Any other id with no row is one Recently deleted no longer holds: past its days, deleted for good
+            if row is None and STATE.deleted_cards.get(seq) is not False:
+                await reply({"type": "notice", "level": "warn",
+                             "text": t("Not put back: Recently deleted does not hold this answer")})
+                return True
+            STATE.deleted_cards.pop(seq, None)
+            if STATE.repeat_said == seq:   # its problem seen again points back to it once more, and says so once
+                STATE.repeat_said = 0
+            held = held_deleted(seq)
+            if held is not None:
+                STATE.deleted_last = None
+                if STATE.last_result is None:   # nothing newer was answered since: a question is about it again
+                    STATE.last_result, STATE.thread = held["last"], held["thread"]
+            telemetry.event("answer_restore", id=seq, kept=row is not None)
+            # `answer`: the answer as the history gives it, for a panel that did not show it (None for one never kept)
+            said = {"type": "answer_restored", "id": seq, "answer": row, "n": count, "can_ask": STATE.last_result is not None}
+            await broadcast(said)
+            if isinstance(reply, Replies):
+                await reply(said)
+            return True
+        elif kind == "answer_purge":   # Delete for good, in Recently deleted: gone now, with no way back
+            seq = data.get("id")
+            if not isinstance(seq, int) or isinstance(seq, bool):
+                return True
+            done, gone, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, purge_answers, seq)
+            if not done or not gone:
+                await reply({"type": "notice", "level": "warn" if done else "bad",
+                             "text": t("Not deleted: Recently deleted does not hold this answer") if done
+                             else t("Not deleted: the saved history could not be written")})
+                return True
+            forget_purged(gone)   # nothing of it is held in memory either, for Undo or for its problem seen again
+            telemetry.event("answer_purge", id=seq)
+            said = {"type": "deleted_cleared", "id": seq, "gone": len(gone), "n": count}
+            await broadcast(said)   # every panel: its list and its count
+            await reply({"type": "notice", "level": "done", "text": t("Deleted for good")})
+            if isinstance(reply, Replies):
+                await reply(said)
+            return True
+        elif kind == "deleted_clear":   # Empty, in Recently deleted: all of it gone now
+            done, gone, count = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, purge_answers, None)
+            if not done:
+                await reply({"type": "notice", "level": "bad", "text": t("Not deleted: the saved history could not be written")})
+                return True
+            # What the server still held of each went with it; the last answer held for Undo too, when Recently deleted
+            # held it (one the history never kept is not in the file, and stays the panels' own to put back)
+            forget_purged(gone)
+            telemetry.event("deleted_clear", n=len(gone))
+            said = {"type": "deleted_cleared", "id": None, "gone": len(gone), "n": count}
+            await broadcast(said)
+            await reply({"type": "notice", "level": "done" if gone else "info",
+                         "text": t("Recently deleted emptied") if gone else t("Recently deleted is empty")})
+            if isinstance(reply, Replies):
+                await reply(said)
             return True
         elif kind == "gpu_load":   # Load onto the GPU: the model on the GPU now, not at the next problem
             local = ENGINES.local if ENGINES is not None else None
@@ -3886,15 +4394,21 @@ def create_app() -> FastAPI:
                 ok, _ = await apply_setting(app, k, v)
                 done += bool(ok)       # a default outside the live options (a model that is
             left = len(back) - done    # no longer there) is refused, and is not counted
-            await broadcast({"type": "notice", "level": "warn" if left else "done" if back else "info", "text":
-                             t("Already all defaults") if not back else
-                             t("Settings back to default: {n}", n=done)
-                             + (t(", failed: {n}", n=left) if left else "")})
+            note = {"type": "notice", "level": "warn" if left else "done" if back else "info", "text":
+                    t("Already all defaults") if not back else
+                    t("Settings back to default: {n}", n=done) + (t(", failed: {n}", n=left) if left else "")}
+            await broadcast(note)
+            if isinstance(reply, Replies):   # a program through the API is told too (a panel has it from the broadcast)
+                await reply(note)
             return True
         elif kind == "llm_pull":
             # the local model's card offered a download (engines.local.pull): one at a time, of a known model
-            if pull_allowed() and not PULL:
-                spawn(pull_model(str(data.get("model") or "")), "llm pull")   # held, as every background task is
+            # One at a time, of a known model: taken here, before the download's task first runs. Taken by the task, two asks
+            # at once were both accepted and the second was dropped when its task found the first one's
+            name = str(data.get("model") or "")
+            if pull_allowed() and not PULL and name in pull_names():
+                PULL.update(model=name, status="pulling", completed=0, total=0)
+                spawn(pull_model(name), "llm pull")   # held, as every background task is
             return True
         elif kind == "ui_lang":
             # The panel's own language, said once it connects: the server's words follow the last panel to
@@ -3906,13 +4420,20 @@ def create_app() -> FastAPI:
                 await broadcast_engines()
             return True
         elif kind == "set_lang":
-            tr = app.state.transcriber
+            # The speech language setting itself: setting the decoder alone left the setting as it was, and the next load of
+            # the speech model (or a restart) put the old language back
+            # Kept whether or not the speech model is up yet: while it loads (minutes on a first start) the stand-in has no
+            # language, and the change was dropped with an ok; the model takes the setting when it comes (apply_setting)
             lang = data.get("lang")
-            if lang not in ("auto", "ko", "en") or not hasattr(tr, "language"):
+            if lang not in ("auto", "ko", "en"):
                 return True
-            tr.language = lang     # the worker re-transcribes the buffer in it
+            # Speech off for good here: nothing would ever write down in that language. Refused as PUT /language/speech
+            # refuses it (a 409), where this said ok to a program through /commands
+            if not CONFIG.audio_enabled or CONFIG.transcriber == "null":
+                await reply({"type": "notice", "level": "warn", "text": t("Speech is off on this server: no language to set")})
+                return True
+            await apply_setting(app, "speech_lang", lang)
             log.info("speech language -> %s", lang)
-            await broadcast({"type": "status", "lang": lang})
             return True
         return False
 
@@ -3923,18 +4444,18 @@ def create_app() -> FastAPI:
             await ws.close(code=1008)
             return
         await ws.accept()
-        STATE.panel_clients.add(ws)
-        async for message in opening():
-            await ws.send_text(json.dumps(message))
+        out = PanelOut(ws)   # what goes to this panel, in order, through one writer (PanelOut)
+        STATE.panel_clients.add(out)
 
-        async def reply(m: dict) -> None:   # to this panel only (a code run's result)
-            try:
-                await ws.send_text(json.dumps(m))
-            except Exception:
-                pass
+        async def reply(m: dict) -> None:   # to this panel only (a code run's result), in its order with the rest
+            out.put(json.dumps(m))
         try:
+            async for message in opening():
+                out.put(json.dumps(message))
             while True:
                 raw = await ws.receive_text()
+                if out.gone:   # closed for not reading while its close waits: what it sends is not run
+                    break
                 try:
                     data = json.loads(raw)
                 except Exception:
@@ -3945,7 +4466,7 @@ def create_app() -> FastAPI:
         except Exception:   # a message the loop could not handle ends this panel's socket: it reconnects, and the log says why
             log.exception("a panel's connection ended on an error")
         finally:
-            STATE.panel_clients.discard(ws)
+            out.stop()
 
     # ------------------------------------------------------------------------------------------------------------------
     # The API (docs/API.md). Each route that changes something runs one of the panel's messages through panel_command,
@@ -4018,6 +4539,14 @@ def create_app() -> FastAPI:
         rows = await asyncio.to_thread(HISTORY.query, day, q[:200], kind, limit, starred)   # as the panel's /history
         return JSONResponse({"ok": True, "answers": rows})
 
+    @api("GET", "/api/v1/answers/deleted", "Recently deleted, the latest deleted first: each answer with when it was deleted "
+                                           "(deleted) and when it goes by itself (until), and the days one is held")
+    async def api_deleted(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        return JSONResponse({"ok": True, "answers": await asyncio.to_thread(HISTORY.deleted_list),
+                             "days": CONFIG.deleted_days})
+
     @api("GET", "/api/v1/answers/{seq}", "one answer kept, by its id")
     async def api_answer(request: Request, seq: int):
         if (no := api_refused(request, write=False)) is not None:
@@ -4025,13 +4554,16 @@ def create_app() -> FastAPI:
         row = await asyncio.to_thread(HISTORY.get, seq)
         return JSONResponse({"ok": True, "answer": row}) if row else api_error(404, f"no answer {seq} is kept")
 
-    @api("GET", "/api/v1/days", "the days that have answers, how many are starred, and whether anything heard is kept")
+    @api("GET", "/api/v1/days", "the days that have answers, how many are starred, whether anything heard is kept, and how "
+                                "many answers Recently deleted holds")
     async def api_days(request: Request):
         if (no := api_refused(request, write=False)) is not None:
             return no
         return JSONResponse({"ok": True, "days": await asyncio.to_thread(HISTORY.days_list),
                              "starred": await asyncio.to_thread(HISTORY.starred_count),
-                             "heard": await asyncio.to_thread(HISTORY.heard_any)})
+                             "heard": await asyncio.to_thread(HISTORY.heard_any),
+                             "deleted": await asyncio.to_thread(HISTORY.deleted_count),
+                             "deleted_days": CONFIG.deleted_days})
 
     @api("GET", "/api/v1/heard", "what was heard and kept: the days that hold any, and one day's lines (?day=YYYY-MM-DD, "
                                  "the newest by default)")
@@ -4118,8 +4650,11 @@ def create_app() -> FastAPI:
     async def api_reanalyze(request: Request):
         if isinstance(body := await write_body(request), JSONResponse):
             return body
-        await run({"type": "reanalyze"})
-        return JSONResponse({"ok": True, "accepted": True}, status_code=202)
+        said = (await run({"type": "reanalyze"})).messages
+        # the id its answer takes in the events (analysis_start, delta, analysis_done); a notice comes instead when there is
+        # no screen and nothing heard to run on
+        return JSONResponse({"ok": True, "accepted": True, "id": next((m["id"] for m in said if m.get("type") == "accepted"), None)},
+                            status_code=202)
 
     @api("POST", "/api/v1/ask", 'ask about the latest problem, {"text": "..."}; the answer comes as events', "ask")
     async def api_ask(request: Request):
@@ -4130,8 +4665,9 @@ def create_app() -> FastAPI:
             return api_error(400, 'send {"text": "the question"}')
         if STATE.last_result is None:
             return api_error(409, t("No problem analyzed yet to ask about"))
-        await run({"type": "ask", "text": text})
-        return JSONResponse({"ok": True, "accepted": True}, status_code=202)
+        said = (await run({"type": "ask", "text": text})).messages
+        return JSONResponse({"ok": True, "accepted": True, "id": next((m["id"] for m in said if m.get("type") == "accepted"), None)},
+                            status_code=202)   # the id its answer takes in the events
 
     @api("PUT", "/api/v1/capture", 'switch the screen or the sound capture, {"screen": true, "audio": false}', "capture_set")
     async def api_capture(request: Request):
@@ -4161,8 +4697,12 @@ def create_app() -> FastAPI:
     async def api_settings_reset(request: Request):
         if isinstance(body := await write_body(request), JSONResponse):
             return body
-        await run({"type": "settings_reset"})
-        return JSONResponse({"ok": True, "values": SETTINGS.snapshot()})
+        replies = await run({"type": "settings_reset"})
+        failed = replies.refusal()   # some could not go back (a default no longer among the options)
+        out = {"ok": not failed, "values": SETTINGS.snapshot(), "notices": replies.notices()}
+        if failed:                   # an error has `error`, as every answer of the API does (docs/API.md)
+            out["error"] = failed
+        return JSONResponse(out, status_code=409 if failed else 200)
 
     @api("PUT", "/api/v1/answers/{seq}/star", 'star or unstar an answer kept, {"starred": true}', "star")
     async def api_star(request: Request, seq: int):
@@ -4200,6 +4740,66 @@ def create_app() -> FastAPI:
         if said.get("error") or "text" not in said:
             return api_error(409, said.get("error") or "nothing was written out")
         return JSONResponse({"ok": True, "id": seq, "text": said["text"]})
+
+    def refused(replies: Replies) -> JSONResponse | None:
+        """The answer to a command that said it was not done: 500 when the history could not be written, 409 otherwise."""
+        why = replies.refusal()
+        if not why:
+            return None
+        return api_error(500 if any(n["level"] == "bad" for n in replies.notices()) else 409, why)
+
+    # Recently deleted's own routes before the ones that take an id in that place
+    @api("DELETE", "/api/v1/answers/deleted", "empty Recently deleted: every answer in it gone for good", "deleted_clear")
+    async def api_deleted_clear(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        replies = await run({"type": "deleted_clear"})
+        if (no := refused(replies)) is not None:
+            return no
+        said = replies.first("deleted_cleared") or {}
+        # with the panel's note ("Recently deleted emptied"), as every change that answers the panel with one does
+        return JSONResponse({"ok": True, "gone": said.get("gone", 0), "count": said.get("n", 0), "notices": replies.notices()})
+
+    @api("DELETE", "/api/v1/answers/deleted/{seq}", "delete one answer of Recently deleted for good", "answer_purge")
+    async def api_answer_purge(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if await asyncio.to_thread(HISTORY.deleted_get, seq) is None:
+            return api_error(404, f"no answer {seq} is in Recently deleted: GET /api/v1/answers/deleted lists them")
+        replies = await run({"type": "answer_purge", "id": seq})
+        if (no := refused(replies)) is not None:
+            return no
+        return JSONResponse({"ok": True, "id": seq, "count": (replies.first("deleted_cleared") or {}).get("n", 0),
+                             "notices": replies.notices()})   # "Deleted for good", as the panel is told
+
+    @api("DELETE", "/api/v1/answers/{seq}", "delete one answer: it goes to Recently deleted, where it can be put back until "
+                                            "its days there are over", "answer_delete")
+    async def api_answer_delete(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if (seq > STATE.analysis_seq or seq in STATE.purged) and not await asyncio.to_thread(HISTORY.holds, seq):
+            return api_error(404, f"no answer {seq}: GET /api/v1/answers lists them")   # none has had it, or it went for good
+        replies = await run({"type": "answer_delete", "id": seq})
+        if (no := refused(replies)) is not None:
+            return no
+        said = replies.first("answer_deleted") or {}
+        # `kept`: Recently deleted holds it. False for an answer the history never held (written with Keep answers off, an
+        # error's card): the panels drop its card, and only a panel that showed it can put it back
+        return JSONResponse({"ok": True, "id": seq, "kept": bool(said.get("kept")), "until": said.get("until"),
+                             "count": said.get("n", 0)})
+
+    @api("POST", "/api/v1/answers/{seq}/restore", "put a deleted answer back as it was, its star and follow-ups with it",
+         "answer_restore")
+    async def api_answer_restore(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        if await asyncio.to_thread(HISTORY.deleted_get, seq) is None and STATE.deleted_cards.get(seq) is not False:
+            return api_error(404, f"no answer {seq} is in Recently deleted: GET /api/v1/answers/deleted lists them")
+        replies = await run({"type": "answer_restore", "id": seq})
+        if (no := refused(replies)) is not None:
+            return no
+        said = replies.first("answer_restored") or {}
+        return JSONResponse({"ok": True, "id": seq, "answer": said.get("answer"), "count": said.get("n", 0)})
 
     @api("DELETE", "/api/v1/answers", "clear the history: every answer kept, starred ones too, and what was heard",
          "history_clear")
@@ -4256,7 +4856,7 @@ def create_app() -> FastAPI:
         if isinstance(body := await write_body(request), JSONResponse):
             return body
         name = body.get("model")
-        known = sorted({n for prof in models.PROFILES for n in (prof.name, prof.pull) if n})
+        known = sorted(pull_names())
         if not isinstance(name, str) or name not in known:
             return api_error(400, "send {\"model\": ...}, one of the models offered", models=known)
         if not pull_allowed():
@@ -4264,6 +4864,8 @@ def create_app() -> FastAPI:
         if PULL:
             return api_error(409, "a download is under way", pull=PULL)
         await run({"type": "llm_pull", "model": name})
+        if PULL.get("model") != name:   # another ask took it meanwhile: this one is not under way
+            return api_error(409, "a download is under way", pull=PULL)
         return JSONResponse({"ok": True, "accepted": True}, status_code=202)
 
     @api("PUT", "/api/v1/language/panel", 'the language of the server\'s words, as the panel\'s own, {"lang": "en"}',
@@ -4287,10 +4889,12 @@ def create_app() -> FastAPI:
         lang = body.get("lang")
         if lang not in ("auto", "ko", "en"):
             return api_error(400, 'send {"lang": "auto"}, "ko" or "en"')
-        if not hasattr(app.state.transcriber, "language"):
-            return api_error(409, "nothing writes down speech here (SIDENOTE_TRANSCRIBER)")
+        # Refused only where speech is off for good: while the speech model loads it is the setting that changes, and the
+        # model takes it when it comes (this said "nothing writes down speech here" then)
+        if not CONFIG.audio_enabled or CONFIG.transcriber == "null":
+            return api_error(409, "speech is off here (SIDENOTE_TRANSCRIBER=null or SIDENOTE_AUDIO=0)")
         await run({"type": "set_lang", "lang": lang})
-        return JSONResponse({"ok": True, "lang": app.state.transcriber.language})
+        return JSONResponse({"ok": True, "lang": SETTINGS.get("speech_lang")})
 
     @api("POST", "/api/v1/capture/restart", 'restart the capture program, as its tray\'s Restart; {"quiet": true} waits '
                                             'for a moment when nothing runs')
@@ -4299,14 +4903,14 @@ def create_app() -> FastAPI:
             return body
         answer = await ask_captures(request, "restart", "/api/v1/capture/restart",
                                     {"quiet": True} if body.get("quiet") is True else {})
-        return JSONResponse({"ok": True, **json.loads(answer.body)}, status_code=answer.status_code)
+        return JSONResponse({"ok": answer.status_code < 400, **json.loads(answer.body)}, status_code=answer.status_code)
 
     @api("POST", "/api/v1/capture/quit", "end the capture program, as its tray's Quit")
     async def api_capture_quit(request: Request):
         if isinstance(body := await write_body(request), JSONResponse):
             return body
         answer = await ask_captures(request, "quit", "/api/v1/capture/quit")
-        return JSONResponse({"ok": True, **json.loads(answer.body)}, status_code=answer.status_code)
+        return JSONResponse({"ok": answer.status_code < 400, **json.loads(answer.body)}, status_code=answer.status_code)
 
     @api("POST", "/api/v1/commands", 'any of the panel\'s messages as the panel sends it, {"type": "pause"}: what it sent '
                                      'back to the one who asked')
@@ -4331,7 +4935,8 @@ def create_app() -> FastAPI:
             return api_error(405, f"{path} takes {', '.join(takes)}", methods=takes)
         return api_error(404, f"no route {path}: GET /api/v1 lists them")
 
-    app.add_api_route("/api/{rest:path}", api_unknown, methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    # OPTIONS and HEAD too: they fell through to the framework's own 405 and an empty 404, in neither of the API's shapes
+    app.add_api_route("/api/{rest:path}", api_unknown, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
                       include_in_schema=False)
 
     @app.exception_handler(RequestValidationError)
@@ -4340,6 +4945,14 @@ def create_app() -> FastAPI:
         if request.url.path.startswith("/api/"):
             return api_error(400, "; ".join(f"{e.get('loc', ['?'])[-1]}: {e.get('msg')}" for e in exc.errors()))
         return await request_validation_exception_handler(request, exc)
+
+    @app.exception_handler(Exception)
+    async def api_failed(request: Request, exc: Exception):
+        """What a route did not see coming, under /api/: said in the API's own shape, a JSON 500 a program can read, where it
+        was the framework's plain text. The log has the trace as before (the error goes on to it after this answer)."""
+        if request.url.path.startswith("/api/"):
+            return api_error(500, f"the server could not answer this ({type(exc).__name__}): its log says why")
+        return PlainTextResponse("Internal Server Error", status_code=500)
 
     # The panel and its files (index.html, app.js, theme.js, fonts.css, new.css, vendor/), after the routes above.
     app.mount("/", StaticFiles(directory=PANEL_DIR, html=True), name="panel")

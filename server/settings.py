@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -83,7 +84,8 @@ class Setting:
         if self.kind == "box":
             if v is None:
                 return True
-            return (isinstance(v, list) and len(v) == 4 and all(isinstance(x, (int, float)) for x in v)
+            # numbers, not true and false: bool is an int to Python, and [false, false, true, true] was kept as a box
+            return (isinstance(v, list) and len(v) == 4 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
                     and 0 <= v[0] < v[2] <= 1 and 0 <= v[1] < v[3] <= 1
                     and v[2] - v[0] >= 0.02 and v[3] - v[1] >= 0.02)
         if self.kind == "int":
@@ -92,6 +94,27 @@ class Setting:
             return (isinstance(v, list) and len(v) <= WORDS_MAX
                     and all(isinstance(x, str) and 0 < len(x) <= WORD_MAX and x == x.strip() for x in v))
         return False
+
+
+def _encodable(value: Any) -> bool:
+    """Whether `value` can be written out as JSON in UTF-8: a lone surrogate in a string cannot."""
+    try:
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def with_default(options: list, default: Any, label: str) -> list:
+    """The options, with the environment's own value among them when it is not one of them (SIDENOTE_AGENT_HOURLY_USD=3,
+    SIDENOTE_LOCAL_IDLE_MIN=15): otherwise the panel showed no option chosen, the value could not be chosen again once
+    moved, and Reset failed on it. Placed in order among the numbers (the negative ones, such as Keep loaded, stay last)."""
+    if any(default == o[0] for o in options):
+        return options
+    keep, below = [o for o in options if o[0] >= 0], [o for o in options if o[0] < 0]
+    if default < 0:   # a negative one is of the kind the negatives are (Keep loaded): after the numbers, with them
+        return keep + sorted(below + [(default, label)], key=lambda o: o[0])
+    return sorted(keep + [(default, label)], key=lambda o: o[0]) + below
 
 
 def _defs() -> list[Setting]:
@@ -186,7 +209,8 @@ def _defs() -> list[Setting]:
                 t("Higher is stronger on hard problems, slower and dearer"), efforts),
         Setting("agent_hourly_usd", "choice", CONFIG.agent_hourly_usd, "agent", t("Hourly cost limit"),
                 t("When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still go. Codex signed in with ChatGPT is not counted"),
-                [(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]),
+                with_default([(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")],
+                             CONFIG.agent_hourly_usd, f"${CONFIG.agent_hourly_usd:g}")),
         # The rule: with the agent at a limit, the answers come from this PC's model where they
         # can, not from another agent. With that model switched on it answers then already; this is for one switched off.
         Setting("local_fallback", "bool", True, "agent", t("The local model stands in at a limit"),
@@ -272,8 +296,9 @@ def _defs() -> list[Setting]:
         Setting("gpu_idle_min", "int", CONFIG.local_idle_min, "resource", t("Free the GPU when idle"),
                 t("Takes the model off the GPU this long after its last use. Loading it again takes some tens of "
                   "seconds"),
-                [(0, t("At once")), (5, t("{n} min", n=5)), (10, t("{n} min", n=10)), (30, t("{n} min", n=30)),
-                 (-1, t("Keep loaded"))], ["local_llm"]),
+                with_default([(0, t("At once")), (5, t("{n} min", n=5)), (10, t("{n} min", n=10)), (30, t("{n} min", n=30)),
+                              (-1, t("Keep loaded"))], CONFIG.local_idle_min,
+                             t("Keep loaded") if CONFIG.local_idle_min < 0 else t("{n} min", n=CONFIG.local_idle_min)), ["local_llm"]),
     ]
 
 
@@ -283,6 +308,23 @@ def sections() -> list[tuple[str, str]]:
     return [("solve", t("Solving")), ("agent", agent_name()),
             ("screen", t("Screen")), ("capture", t("Capture")),
             ("speech", t("Speech")), ("code", t("Code")), ("resource", "GPU")]
+
+
+# Settings whose choices are known only once the server runs (the local models there are, the monitors the capture program
+# reports): a saved value of theirs cannot be checked against its choices when the file is read, so it is checked for its
+# shape. A model's name as Ollama writes it (letters, digits and . _ : / @ + -, as in hf.co/user/model:Q4_K_M), or none;
+# a monitor's number. The file can come from elsewhere (./sidenote restore), and these values are printed: in a terminal
+# (./sidenote status, which the desktop shortcut's starter reads for its marked lines) a carriage return or an escape
+# code in one was a line of its own, or the terminal's own command
+RUNTIME_CHOICES = ("local_model", "local_busy_model", "monitor")
+MODEL_NAME = re.compile(r"[A-Za-z0-9._:/@+-]{1,200}")
+
+
+def runtime_shaped(key: str, value: Any) -> bool:
+    """Whether a saved value of a setting whose choices are filled at runtime has its kind's shape."""
+    if key == "monitor":
+        return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 64
+    return isinstance(value, str) and (value == "" or bool(MODEL_NAME.fullmatch(value)))
 
 
 class Settings:
@@ -316,7 +358,9 @@ class Settings:
             if k in NOT_KEPT:   # written by an older server: not brought back
                 continue
             v = s.clean(v) if s else v   # a file edited by hand: its words trimmed as the panel's are
-            if s and (s.valid(v) or (s.kind in ("choice", "int") and k in ("local_model", "local_busy_model", "monitor"))):
+            if s and isinstance(v, bool) and s.kind in ("choice", "int") and not any(isinstance(o[0], bool) for o in s.options):
+                continue                 # true kept by an older server for a number ($1, monitor 1) is not one
+            if s and (s.valid(v) or (s.kind in ("choice", "int") and k in RUNTIME_CHOICES and runtime_shaped(k, v))):
                 self.values[k] = v
         log.info("settings restored: %s", {k: v for k, v in self.values.items() if v != self.defs[k].default})
 
@@ -328,7 +372,7 @@ class Settings:
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, self.path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:   # ValueError: text that cannot be written as UTF-8
             log.warning("settings not saved (%s)", exc)
 
     def get(self, key: str) -> Any:
@@ -351,8 +395,15 @@ class Settings:
         if s is None:
             return False, t("Unknown setting")
         value = s.clean(value)   # free words trimmed and the empty ones dropped, before they are judged
-        if s.kind in ("choice", "int") and key in self.dynamic_options:
-            ok = any(value == o[0] for o in self.dynamic_options[key])
+        options = self.dynamic_options.get(key, s.options) if s.kind in ("choice", "int") else []
+        if isinstance(value, bool) and options and not any(isinstance(o[0], bool) for o in options):
+            ok = False   # true is 1 to Python: it passed as $1 or as monitor 1, and was kept as true
+        elif not _encodable(value):
+            ok = False   # a lone surrogate (JSON can carry one) could not be saved, and broke every answer that showed it
+        elif s.kind in ("choice", "int") and key in self.dynamic_options:
+            # of the kind the options are as well as equal to one: 2.0 equals monitor 2, and was kept as 2.0
+            ok = (any(value == o[0] for o in self.dynamic_options[key])
+                  and (s.kind != "int" or (isinstance(value, int) and not isinstance(value, bool))))
         else:
             ok = s.valid(value)
         if not ok:

@@ -141,6 +141,9 @@ def knobs(**kw):
     return was
 
 
+REAL_CANCEL_CHECK, REAL_CANCEL_VERIFY = A.cancel_check, A.cancel_verify   # before patch() stands them in
+
+
 def patch():
     """Everything the worker talks to besides the pipeline and the detector."""
     A.broadcast = lambda msg: asyncio.sleep(0)       # awaitable, and says nothing to anybody
@@ -698,6 +701,288 @@ async def case_after_nothing_to_solve_it_is_all_still_to_read():
     A.broadcast = lambda msg: asyncio.sleep(0)
 
 
+async def case_an_answer_done_is_let_end_not_cut():
+    """A spoken problem answered while a slow panel takes its end is let end: a newer screen then neither cancels it nor asks it again."""
+    pipe, det = Pipe(), Detector()
+    sent, real = [], A.broadcast
+
+    async def slow_end(msg):            # a send that waits on the end of the card: a panel's socket full, or closing
+        sent.append(msg)
+        if msg.get("type") == "analysis_done":
+            await asyncio.sleep(0.6)
+    A.broadcast = slow_end
+    pipe.release.set()
+    task = await start_worker(pipe, det)
+    push(b"a")
+    det.committed.append(A.STATE.latest_frame)   # the screen is answered already: the spoken problem alone runs
+    speak("이 문제 좀 풀어 줘 두 수의 합은?")
+    A.STATE.voice_pending = True
+    await asyncio.sleep(0.3)            # its answer is done, and the worker is in the broadcast of its end
+    det.moved = True
+    push(b"b")                          # a clearly different screen comes meanwhile
+    await asyncio.sleep(2.5)
+    voice_runs = [s for s in pipe.started if s[1]]
+    cancelled = [m for m in sent if m.get("type") == "analysis_cancelled"]
+    done = [m.get("id") for m in sent if m.get("type") == "analysis_done"]
+    check("the spoken problem's card ends as done, not cancelled", 1 in done and not cancelled, f"done {done}, cancelled {cancelled}")
+    check("...it is not asked again", len(voice_runs) == 1 and A.STATE.voice_retake == "", f"{pipe.started} retake {A.STATE.voice_retake!r}")
+    check("...and no reason to cancel is left for the next one", A.STATE.cancel_reason is None, A.STATE.cancel_reason)
+    await stop(task)
+    A.broadcast = real
+
+
+async def case_a_pause_during_a_done_answers_end_starts_nothing_after_it():
+    """A pause pressed while a done answer's end goes to a slow panel: the answer is let end, and the code check and the
+    agent's check its end would start are not started (the pause had stopped them before they existed, and they ran on
+    after it, the agent's one sending the screen while paused)."""
+    started, real = [], dict(broadcast=A.broadcast, cancel_check=A.cancel_check, cancel_verify=A.cancel_verify,
+                             runner_here=A.runner_here, checkable=A.checkable, run_check=A.run_check,
+                             run_verify=A.run_verify, save_switches=A.save_switches)
+
+    async def fake_check(app, seq, frame, outcome):
+        started.append(("check", seq))
+        await asyncio.sleep(30)
+
+    async def fake_verify(seq, frame, transcript, voice, outcome, by_user=False):
+        started.append(("verify", seq))
+        await asyncio.sleep(30)
+    sent = []
+
+    async def slow_end(msg):            # a panel slow to take the answer's end
+        sent.append(msg.get("type"))
+        if msg.get("type") == "analysis_done":
+            await asyncio.sleep(0.8)
+    A.broadcast, A.runner_here, A.checkable = slow_end, (lambda: True), (lambda *a, **k: True)
+    A.run_check, A.run_verify, A.save_switches = fake_check, fake_verify, (lambda: None)
+    A.cancel_check, A.cancel_verify = REAL_CANCEL_CHECK, REAL_CANCEL_VERIFY   # the real ones: the pause's own stop
+    pipe, det = Pipe(), Detector()
+    pipe.verifying = lambda result: True     # Check answers: the agent checks this PC's answer
+    pipe.answer = "TYPE: coding\n```python\nprint(1)\n```"
+    pipe.release.set()
+    task = await start_worker(pipe, det)
+    push(b"a")
+    for _ in range(100):                     # until the worker is inside the slow end
+        await asyncio.sleep(0.02)
+        if "analysis_done" in sent:
+            break
+    await asyncio.sleep(0.1)
+    await A.set_paused(True)
+    await asyncio.sleep(1.6)
+    check("a pause during a done answer's end starts no code check and no agent's check after it",
+          "analysis_done" in sent and "analysis_cancelled" not in sent and started == [], f"sent {sent}, started {started}")
+    for t in (A.STATE.check_task, A.STATE.verify_task):
+        if t is not None and not t.done():
+            t.cancel()
+    await stop(task)
+    for k, v in real.items():
+        setattr(A, k, v)
+    A.STATE.paused = False
+
+
+async def case_words_are_kept_once_the_card_is_done():
+    """The words a problem went out to the agent in are kept when its card is done, and not when it is stopped before that."""
+    real_shown, real = A.shown_box, A.broadcast
+    for pause in (False, True):
+        pipe, det = Pipe(), Detector()
+        kept, sent = [], []
+        pipe.recent = types.SimpleNamespace(add=lambda *a, **k: None, forget=lambda: None,
+                                            add_words=lambda seq, words: kept.append((seq, words)))
+
+        async def listen(msg):
+            sent.append(msg)
+        A.broadcast = listen
+        # placing the box on the screen takes a moment: a pause landing there stops the card before it is done
+        A.shown_box = lambda frame, region: time.sleep(0.6) or region
+
+        async def solve(seq, frame, transcript, voice, on_delta, by_user=False):
+            pipe.started.append((seq, bool(voice)))
+            await on_delta("TYPE: math\n")
+            return Outcome(text="TYPE: math\nANSWER: 3", model="m", usage=None, cost_usd=None, engine="agent",
+                           region=(0.1, 0.1, 0.5, 0.5), region_placed=True, words="두 수의 합은?")
+        pipe.solve = solve
+        task = await start_worker(pipe, det)
+        push(b"a")
+        if pause:
+            await asyncio.sleep(0.35)   # solve came back; the worker is placing the box
+            A.request_stop("pause")
+            A.STATE.paused = True
+        await asyncio.sleep(1.2)
+        reasons = [m.get("reason") for m in sent if m.get("type") == "analysis_cancelled"]
+        if pause:
+            check("...a pause before the card is done stops it, and its words are not kept", reasons == ["pause"] and kept == [],
+                  f"cancelled {reasons}, kept {kept}")
+        else:
+            check("a card done keeps the words it went out in", kept == [(1, "두 수의 합은?")], f"kept {kept}")
+        await stop(task)
+    A.shown_box, A.broadcast = real_shown, real
+
+
+async def case_a_decline_keeps_no_words():
+    """A reply with no head (the agent declined, or gave no answer) stands for no problem: its words are not kept, and the
+    same problem seen again is asked again (it was "already solved", pointing at the decline)."""
+    real = A.broadcast
+    pipe, det = Pipe(), Detector()
+    kept = []
+    pipe.recent = types.SimpleNamespace(add=lambda *a, **k: None, forget=lambda: None,
+                                        add_words=lambda seq, words: kept.append((seq, words)))
+
+    async def solve(seq, frame, transcript, voice, on_delta, by_user=False):
+        pipe.started.append((seq, bool(voice)))
+        return Outcome(text="I can't help with this one.", model="m", usage=None, cost_usd=None, engine="agent",
+                       region=(0.1, 0.1, 0.5, 0.5), region_placed=True, words="두 수의 합은?")
+    pipe.solve = solve
+    A.broadcast = lambda msg: asyncio.sleep(0)
+    task = await start_worker(pipe, det)
+    push(b"a")
+    await asyncio.sleep(0.8)
+    check("a decline's card (no head) keeps no words", pipe.started and kept == [], f"started {pipe.started}, kept {kept}")
+    await stop(task)
+    A.broadcast = real
+
+
+async def case_a_worker_started_again_takes_over_its_analysis():
+    """A worker that stops on an error is started again (worker_ended): the analysis it left running is the new one's."""
+    pipe, det = Pipe(), Detector()
+    task = await start_worker(pipe, det)
+    push(b"one")
+    await until(lambda: pipe.started)
+    check("(an analysis of the screen runs)", pipe.started == [(1, False)], f"{pipe.started}")
+    broken = {"n": 0}
+
+    def ready():   # one look of the worker's loop raises: what a bug in it does
+        broken["n"] += 1
+        if broken["n"] == 1:
+            raise RuntimeError("a bug in the worker's loop")
+        return True
+    pipe.ready = ready
+    await asyncio.sleep(0.3)
+    check("(the worker stopped on it)", task.done() and task.exception() is not None, f"{task}")
+    app = types.SimpleNamespace(state=types.SimpleNamespace(transcriber=None, detector=det))
+    again = asyncio.create_task(A.analysis_worker(app))   # as worker_ended starts it: the state as it was
+    await asyncio.sleep(0.25)
+    push(b"two")   # a newer screen, not a clearly different one: the analysis running is let finish
+    await asyncio.sleep(0.5)
+    check("the analysis left running is the new worker's: a newer screen starts none beside it", len(pipe.started) == 1, f"{pipe.started}")
+    await A.set_paused(True)
+    await asyncio.sleep(0.4)
+    check("...and the pause stops it", pipe.cancelled == [(1, False)], f"{pipe.cancelled}")
+    await A.set_paused(False)
+    await stop(again)
+
+
+async def case_reanalyze_reads_the_screen_once_the_old_one_stopped():
+    """Reanalyze reads what it runs on once the analysis it replaces has stopped: a screen switched off meanwhile starts none."""
+    pipe, det = Pipe(), Detector()
+    msgs = said_to_panel()
+    real = pipe.solve
+
+    async def solve(seq, frame, transcript, voice, on_delta, by_user=False):
+        try:
+            return await real(seq, frame, transcript, voice, on_delta, by_user)
+        except asyncio.CancelledError:
+            A.STATE.latest_frame, A.STATE.screen_on = None, False   # the screen switched off while it was stopping,
+            A.STATE.screen_epoch += 1                               # as set_capture switches it off
+            raise
+    pipe.solve = solve
+    task = await start_worker(pipe, det)
+    push(b"one")
+    await until(lambda: pipe.started)
+    A.STATE.force_analyze = True
+    await asyncio.sleep(0.6)
+    check("Reanalyze stops the analysis running", pipe.cancelled == [(1, False)], f"{pipe.cancelled}")
+    check("...and with no screen left by then, and nothing heard, it starts none: an empty question went to the agent",
+          len(pipe.started) == 1, f"{pipe.started} {pipe.words}")
+    check("...and says why", any(m.get("type") == "notice" and m.get("level") == "warn" for m in msgs), f"{msgs}")
+    stopped = [m for m in msgs if m.get("type") == "analysis_cancelled"]
+    check("...the one it stopped is said stopped by the screen-off, its half answer kept with that note, not dropped",
+          [m.get("reason") for m in stopped] == ["screen_off"], f"{stopped}")
+    check("...and the id Reanalyze was given goes with it, for no later analysis to take", A.STATE.force_seq == 0, A.STATE.force_seq)
+    A.STATE.screen_on = True
+    await stop(task)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
+async def case_words_heard_go_when_the_sound_goes_off_as_the_answer_ends():
+    """The sound switched off while a spoken problem's answer ends: what was heard is not kept with it for the next question."""
+    pipe, det = Pipe(), Detector()
+    pipe.answer = "TYPE: essay\nANSWER: 답\n\n풀이"
+    msgs = said_to_panel()
+    task = await start_worker(pipe, det)
+    speak("What does a write ahead log do?"); A.STATE.voice_pending = True
+    await until(lambda: pipe.started)
+    slow = A.note_success
+
+    async def note_success(*a, **k):   # a panel slow to take the message: the sound is switched off meanwhile
+        A.STATE.sound_off_epoch += 1    # what set_capture(audio=False) does to what was heard (its saving and its
+        A.STATE.reset_speech()          # messages to the capture program are not this harness's)
+    A.note_success = note_success
+    real_remembered = A.remembered
+    A.remembered = lambda result, frame, seq, voice=False: {**real_remembered(result, frame, seq, voice), "words": "what was heard"}
+    try:
+        await next_answer(pipe, msgs, 1)
+        await asyncio.sleep(0.2)
+    finally:
+        A.note_success, A.remembered = slow, real_remembered
+    last = A.STATE.last_result or {}
+    check("(the answer is the last one, for questions about it)", last.get("id") == 1, f"{last}")
+    check("...without the words heard before the sound went off", not last.get("words"), f"{last.get('words')!r}")
+    await stop(task)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
+async def case_a_clock_set_back_does_not_stop_the_watching():
+    """The PC's clock set back an hour: a new screen is still looked at, the gap between looks is on a clock that does not go back."""
+    pipe, det = Pipe(), Detector()
+    was = knobs(min_analyze_interval=0.0)   # no gap at all: on the wall clock the last look was still an hour ahead
+    task = await start_worker(pipe, det)
+    real_time = A.time.time
+    push(b"one")
+    await until(lambda: pipe.started)
+    pipe.release.set()
+    await asyncio.sleep(0.3)
+    pipe.release.clear()
+    A.time.time = lambda: real_time() - 3600   # the clock goes back
+    try:
+        push(b"two")
+        await asyncio.sleep(1.0)
+        check("a new screen is looked at with the clock an hour back", len(pipe.started) == 2, f"{pipe.started}")
+    finally:
+        A.time.time = real_time
+        knobs(**was)
+    await stop(task)
+
+
+async def case_a_resume_is_no_sound_off():
+    """An answer to what was heard, asked for while paused (Reanalyze), that ends after the resume keeps what was heard."""
+    pipe, det = Pipe(), Detector()
+    pipe.answer = "TYPE: essay\nANSWER: 답\n\n풀이"
+    msgs = said_to_panel()
+    task = await start_worker(pipe, det)
+    A.STATE.latest_frame = None
+    await A.set_paused(True)
+    speak("What does a write ahead log do?")
+    A.STATE.force_analyze = True   # Reanalyze, while paused: it runs on what was heard
+    await until(lambda: pipe.started)
+    slow = A.note_success
+
+    async def note_success(*a, **k):   # the resume comes while the answer ends
+        await A.set_paused(False)
+    A.note_success = note_success
+    real_remembered = A.remembered
+    A.remembered = lambda result, frame, seq, voice=False: {**real_remembered(result, frame, seq, voice), "words": "what was heard"}
+    try:
+        await next_answer(pipe, msgs, 1)
+        await asyncio.sleep(0.2)
+    finally:
+        A.note_success, A.remembered = slow, real_remembered
+    last = A.STATE.last_result or {}
+    check("(the answer to what was heard is the last one)", last.get("id") == pipe.started[0][0] and pipe.started[0][1], f"{pipe.started} {last}")
+    check("...and the resume during its end is no sound switched off: it keeps what was heard", last.get("words") == "what was heard",
+          f"{last.get('words')!r}")
+    await stop(task)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
 async def main():
     patch()
     for case in (case_voice_does_not_cancel_screen, case_screen_takes_over_from_voice,
@@ -709,7 +994,11 @@ async def main():
                  case_an_answer_being_written_is_let_finish, case_a_quizs_options_go_with_their_question, case_a_place_in_the_sound_not_its_words,
                  case_a_newer_problem_takes_the_place_of_the_one_waiting, case_what_waits_does_not_age_out,
                  case_nothing_to_ask_stops_nothing, case_first_words_end_the_asking,
-                 case_after_nothing_to_solve_it_is_all_still_to_read):
+                 case_after_nothing_to_solve_it_is_all_still_to_read, case_an_answer_done_is_let_end_not_cut,
+                 case_a_pause_during_a_done_answers_end_starts_nothing_after_it, case_a_decline_keeps_no_words,
+                 case_words_are_kept_once_the_card_is_done, case_a_worker_started_again_takes_over_its_analysis,
+                 case_reanalyze_reads_the_screen_once_the_old_one_stopped, case_words_heard_go_when_the_sound_goes_off_as_the_answer_ends,
+                 case_a_clock_set_back_does_not_stop_the_watching, case_a_resume_is_no_sound_off):
         print(case.__doc__.splitlines()[0])
         await case()
     print(f"\n  ==== {len(PASS)} of {len(PASS) + len(FAIL)} as expected")

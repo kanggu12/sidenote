@@ -801,8 +801,8 @@ def gpu():
             errs = [m for m in p.msgs[n:] if m.get("type") == "error"]
             notes = [m for m in p.msgs[n:] if m.get("type") == "notice" and "GPU" in m.get("text", "")]
             check("a screen the watching asked about leaves no card when the busy GPU could not read it: one note, "
-                  "and the watching backs off", bool(gone) and not errs and len(notes) == 1 and A.STATE.retry_after > time.time(),
-                  f"cancelled={gone} errors={errs} notes={len(notes)} retry_in={A.STATE.retry_after - time.time():.0f}s")
+                  "and the watching backs off", bool(gone) and not errs and len(notes) == 1 and A.STATE.retry_after > time.monotonic(),
+                  f"cancelled={gone} errors={errs} notes={len(notes)} retry_in={A.STATE.retry_after - time.monotonic():.0f}s")
             A.STATE.retry_after = 0.0
             n = len(p.msgs)
             pws.send_text(json.dumps({"type": "reanalyze"}))

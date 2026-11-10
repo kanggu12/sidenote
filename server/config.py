@@ -5,6 +5,7 @@ key, no heavy deps) and in the real setup with a cloud agent and audio. Prefix: 
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from dataclasses import dataclass, field
@@ -26,17 +27,20 @@ def env_str(name: str, default: str) -> str:
 def env_float(name: str, default: float) -> float:
     raw = os.environ.get(name, "").strip()
     try:
-        return float(raw) if raw else default
+        value = float(raw) if raw else default
     except ValueError:
+        value = None
+    if value is None or not math.isfinite(value):   # inf and nan too: a stray value never stops the start
         _ignored(name, raw, default)
         return default
+    return value
 
 
 def env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, "").strip()
     try:
         return int(float(raw)) if raw else default   # "2.0" is 2
-    except ValueError:
+    except (ValueError, OverflowError):              # "inf" overflowed, "nan" is not a number either
         _ignored(name, raw, default)
         return default
 
@@ -349,6 +353,9 @@ class Config:
     # the answers kept for looking back (server/history.py): how long and how much
     history_days: float = env_float("SIDENOTE_HISTORY_DAYS", 90)
     history_mb: float = env_float("SIDENOTE_HISTORY_MB", 200)
+    # An answer deleted by itself stays in Recently deleted this many days, where it can be put back, and then goes; 0 keeps
+    # it until Recently deleted is emptied by hand. Past SIDENOTE_HISTORY_MB what was deleted goes before any answer shown.
+    deleted_days: float = env_float("SIDENOTE_DELETED_DAYS", 7)
     # What was heard, with Keep what is heard on, has a limit of its own beside the answers': a day of steady speech
     # is about a megabyte, in Korean, so this holds some twenty such days. The oldest lines go first.
     heard_mb: float = env_float("SIDENOTE_HEARD_MB", 20)

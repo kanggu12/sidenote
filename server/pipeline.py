@@ -1280,7 +1280,10 @@ class Spend:
         now = time.time()
         if self.limit_left():
             # which model answers meanwhile is the caller's to say (Pipeline.auto_blocked): with this PC's model off and
-            # not standing in, nothing does, and this said it would
+            # not standing in, nothing does, and this said it would. A rate limit is not a used-up plan: said as itself
+            if self.limit_kind != "plan":
+                return t("The agent has had too many requests: not sent for a while, until {until}{who}",
+                         agent=agent_name(), until=self.limit_left(), who="")
             return t("The agent's usage limit: not sent until {until}", agent=agent_name(), until=self.limit_left())
         if now < self.cool_until:
             # Round up to the next whole minute, so "1 min" never means "a second or two".
@@ -1416,8 +1419,10 @@ class Pipeline:
             return ""
         if self.engines.agent is not None and self.spend.limit_left():   # resting on its limit: say until when
             # this PC's model is off (or not answering) and does not stand in: say what would have it answer meanwhile
+            # the stand-in covers a used-up plan only (standing_in): during a two-minute rate limit it does nothing
             how = ("" if self.engines.local is None or not self.hooks.local_ok()
                    else t(" · switch the local model on to solve meanwhile") if SETTINGS.get("local_fallback")
+                   or not self.spend.plan_left()
                    else t(" · switch the local model (or 'This PC's model stands in at a limit') on to solve meanwhile"))
             return self.spend.blocked() + how
         if self._agent() is None:               # neither engine, which `ready()` already covers
@@ -2028,8 +2033,9 @@ class Pipeline:
         # with no head left it reads as declined, and this PC's model answers
         text_out = lift_head(strip_tool_markup(res.text))
         self.spend.note(res.cost_usd, head_of(text_out)[0] in ("none", ""))
-        if words and frame is not None and not voice and head_of(text_out)[0] not in ("none", ""):
-            self.recent.add_words(seq, words)
+        # The words it went out in are kept by the worker once the card is done (Outcome.words, beside its picture): kept
+        # here, a card cancelled after this point (a pause, a newer screen) still stood for its problem, and the same
+        # problem was "already solved" for 30 minutes, pointing at a card with no answer
         target = box or (tuple(SETTINGS.get("roi_box")) if SETTINGS.get("roi_box") and frame is not None else None)
         # What this PC's model reads the problem from afterwards (the code check, Problem text): the box the words were read
         # from on a large screen (box_first), as after the thinking pass, not the whole screen it cannot read

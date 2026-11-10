@@ -83,7 +83,7 @@ check("the loop asks it and says when it let one finish", "supersede_now(stitche
       and '"analysis_kept"' in (ROOT / "server" / "app.py").read_text(encoding="utf-8"))
 # The wait on Send is no work of the analysis: a prompt left alone while the screen moved on gave way to the new screen before
 # supersede_keep_sec, and must still (the age once counted from the start, the wait included)
-_now = time.time()
+_now = time.monotonic()   # an analysis's start is on the monotonic clock (STATE.last_analyze_ts)
 A.STATE.confirm_open, A.STATE.confirm_held = {41: _now - 30}, {}
 check("an analysis waiting for Send counts as new, however long it has waited", A.analysis_age(41, _now - 60) == 0.0)
 A.STATE.confirm_open, A.STATE.confirm_held = {}, {41: 50.0}

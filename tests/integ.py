@@ -415,6 +415,20 @@ async def test_claude_knobs():
         check("an older settings file's version name and claude_ keys are read under the new names",
               old.get("agent_model_name") == "opus" and old.get("agent_mode") == "all",
               str((old.get("agent_model_name"), old.get("agent_mode"))))
+        # A file from elsewhere (./sidenote restore): the settings whose choices are known only at runtime come back only in
+        # their shape. A carriage return in a model's name was a line of its own where ./sidenote status printed it, and the
+        # shortcut's starter acts on marked lines; an escape code was the terminal's own command
+        f.write_text(_json.dumps({"local_model": "gemma\rSIDENOTE-START\t-c\tx", "local_busy_model": "\u001b]52;c;eA==\u0007",
+                                  "monitor": True}))
+        forged = Settings(f)
+        forged.load()
+        f.write_text(_json.dumps({"local_model": "hf.co/user/model:Q4_K_M", "monitor": 2}))
+        fine = Settings(f)
+        fine.load()
+        check("a restored file's model names and monitor come back only in their shape: no control character, no true for 1",
+              all(forged.get(k) == forged.defs[k].default for k in ("local_model", "local_busy_model", "monitor"))
+              and fine.get("local_model") == "hf.co/user/model:Q4_K_M" and fine.get("monitor") == 2,
+              str([(k, forged.get(k), fine.get(k)) for k in ("local_model", "local_busy_model", "monitor")]))
     bad, _ = SETTINGS.set("agent_model_name", "gpt-made-up")
     check("a model not on the list is refused", not bad, "accepted")
     pipe, _ = make_pipeline()
@@ -1200,6 +1214,36 @@ async def test_server_fixes():
             check(f"the retry's code check stopped by {how} ends, and its card says so",
                   rid is not None and stopped and bool(mine) and mine[-1].get("cancelled") is True,
                   f"stopped={stopped} {mine}")
+        # 1b. A retry whose answer is done, still sending its end when a newer analysis comes, is let end and its card
+        #     told it is done: the cancel landed in one of its last sends and the card stayed half done for good
+        panel.msgs.clear()
+        st.last_result = {"text": MOCK_ALGO, "frame": None, "id": 101, "engine": "local", "crop_box": None,
+                          "local_view": None}
+        sending_end = asyncio.Event()
+        plain_send = panel.send_text
+
+        async def slow_send(text):
+            await plain_send(text)
+            if json.loads(text).get("type") == "usage":   # the first of the sends after the answer: a panel slow to take it
+                sending_end.set()
+                await asyncio.sleep(0.5)
+        panel.send_text = slow_send
+        task = st.retry_task = asyncio.create_task(app_mod.run_followup(
+            None, "[예제 실패] ...", retry={"label": "예제가 맞지 않아 다시 풉니다", "cases": {}}))
+        try:
+            await asyncio.wait_for(sending_end.wait(), 5.0)
+            app_mod.cancel_retry()                   # a newer analysis, while the answer's end is being sent
+            await asyncio.wait_for(asyncio.shield(task), 3.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        finally:
+            panel.send_text = plain_send
+        ended = task.done() and not task.cancelled()
+        if not task.done():
+            task.cancel()
+        kinds = [m.get("type") for m in panel.msgs if m.get("type") in ("analysis_done", "analysis_cancelled")]
+        check("a retry whose answer is done is let end by a newer analysis, its card told it is done",
+              ended and kinds == ["analysis_done"], f"ended={ended} {kinds}")
         st.retry_task = None
         app_mod.runner_exec = saved_globals[2]
         eng.local.analyze = plain_analyze        # the mock's own, which records the call checked below
@@ -3176,6 +3220,7 @@ def test_face_mask():
     (SIDENOTE_FACES), and the figures are the corpus's own (SIDENOTE_CORPUS). None of them is in the repository:
     without the page or the photo every check here is skipped, without a figure only the check of that figure."""
     print("\n[faces on the screen are covered]")
+    import numpy as np          # the cover's pixels looked through at once
     import server.faces as faces
     from server.app import prepare_frame
     from server.settings import SETTINGS
@@ -3202,11 +3247,17 @@ def test_face_mask():
         fr = prepare_frame(raw, 1280, None)
         full = Image.open(io.BytesIO(fr.full_png)).convert("RGB")
         check("a face pasted beside a problem is covered, once", fr.faces == 1, str(fr.faces))
-        check("...in the screen the crops are cut from: the face's middle is the cover's grey",
-              full.getpixel((1400 + 130, 560 + 140)) == faces.FILL, str(full.getpixel((1530, 700))))
+        # The cover is the capture program's for this tool's own window: its grey, and the name with its highlighter
+        # stroke in the middle. A point inside it clear of the name, and the stroke somewhere in it
+        box = faces.cover_box(faces.find(screen.copy())[0], screen.size)
+        inner = (box[0] + 4, box[1] + 4)
+        pixels = np.asarray(full.crop(box))
+        named = bool((pixels == np.array(faces.MARK, dtype=pixels.dtype)).all(axis=-1).any())
+        check("...in the screen the crops are cut from: the cover's grey, and the name on it with its stroke",
+              full.getpixel(inner) == faces.FILL and named, f"{full.getpixel(inner)} named={named}")
         model = Image.open(io.BytesIO(base64.b64decode(fr.model_b64))).convert("RGB")
         k = model.width / 1920
-        m = model.getpixel((round(1530 * k), round(700 * k)))
+        m = model.getpixel((round(inner[0] * k), round(inner[1] * k)))
         check("...in the model's picture too", all(abs(a - b) <= 6 for a, b in zip(m, faces.FILL)), str(m))
         same = all(full.getpixel((x, y)) == base.getpixel((x, y)) for x in range(40, 900, 37) for y in range(120, 520, 23))
         check("the problem's text is left as it was", same)
