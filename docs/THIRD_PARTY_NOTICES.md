@@ -16,7 +16,7 @@ fetches them into `panel/vendor/`, served by the panel itself so that it needs n
 | Mermaid | 11.17.2 | MIT | https://github.com/mermaid-js/mermaid |
 | Pretendard | 1.3.9 | SIL Open Font License 1.1 | https://github.com/orioncactus/pretendard |
 | JetBrains Mono | 5.0.20 (Fontsource) | SIL Open Font License 1.1 | https://github.com/JetBrains/JetBrainsMono |
-| Bricolage Grotesque | Google Fonts v9 | SIL Open Font License 1.1 | https://github.com/ateliertriay/bricolage |
+| Bricolage Grotesque (the panel's wordmark, and the letters drawn into `client/logo.png`) | Google Fonts v9 | SIL Open Font License 1.1 | https://github.com/ateliertriay/bricolage |
 | Instrument Sans | 5.2.8 (Fontsource) | SIL Open Font License 1.1 | https://github.com/Instrument/instrument-sans |
 
 ## In this repository

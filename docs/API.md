@@ -24,8 +24,11 @@ reached the way the panel is:
 - Not from another site's page. A browser says which page a request comes from, and one from any page but the panel's
   own is refused (`403`).
 - Every request that changes something sends a JSON body with `Content-Type: application/json`, and `{}` when there is
-  nothing to send. A page of another site cannot send one without asking the server first, which this server never
-  answers.
+  nothing to send. A page of another site cannot send one without asking the server first, which this server refuses
+  (a `403`, with no CORS headers). A body that is not JSON, or holds what JSON does not (`NaN`, `Infinity`, a number past a float, a lone
+  surrogate), is a `400`, and so is one nested deeper than any request is (some 450 levels).
+- At `127.0.0.1` or `localhost` only: any other Host, `[::1]` and this PC's name included, is refused with a plain-text
+  `400 Invalid host header` before the API sees it.
 
 There is no key: what runs on this PC can use the API, as it can open the panel. Switch the server off, or stop the
 container, to keep a program on this PC from it.
@@ -52,12 +55,12 @@ Every answer is a JSON object with `ok`. On an error it has `error` too, in word
 | `400` | The request is not what the route takes: a missing or wrong value, a body that is not a JSON object |
 | `403` | Sent from another site's page |
 | `404` | No such route, answer, setting or waiting problem |
-| `405` | The route takes another method; `methods` says which |
+| `405` | The route takes another method; `methods` says which (`OPTIONS` and `HEAD` too) |
 | `409` | Not possible now, and `error` says why (nothing answered yet to ask about, downloads off) |
 | `415` | A change sent without a JSON body |
 | `422` | A code run that did not run: code runs are off, the sandbox is out of reach, or the code did not build (`error`) |
 | `429` | 32 readers of events are open already |
-| `500`, `502` | The server, or the model server it asked, failed at it |
+| `500`, `502` | The server, or the model server it asked, failed at it: `error` names what failed, and the server's log has why |
 
 The words in `error` and in a change's `notices` are the panel's own, in the panel's language.
 
@@ -70,12 +73,13 @@ The words in `error` and in a change's `notices` are the panel's own, in the pan
 | `GET /api/v1/settings` | Every setting's value (`values`), and what the settings sheet shows of each (`meta`: its words, its options, its default) |
 | `GET /api/v1/settings/{key}` | One setting: `value` and `meta` |
 | `GET /api/v1/answers` | The answers kept, the newest first. `?day=YYYY-MM-DD`, `?q=words` (every word in the answer, the question or the follow-ups), `?kind=essay`, `?starred=true`, `?limit=60` (at most 200) |
-| `GET /api/v1/answers/{seq}` | One answer kept, by its id |
-| `GET /api/v1/days` | The days that have answers, how many answers are starred, and whether anything heard is kept |
+| `GET /api/v1/answers/{seq}` | One answer kept, by its id (`404` for one in **Recently deleted**) |
+| `GET /api/v1/answers/deleted` | **Recently deleted**, the latest deleted first, at most 200: each answer whole, with when it was deleted (`deleted`) and when it goes by itself (`until`, `null` when it is held until emptied), and the days one is held (`days`) |
+| `GET /api/v1/days` | The days that have answers, how many answers are starred, whether anything heard is kept, how many answers **Recently deleted** holds (`deleted`), and the days it holds one (`deleted_days`) |
 | `GET /api/v1/heard` | What was heard and kept (**Keep what is heard**): the days, and one day's lines, `?day=YYYY-MM-DD` or the newest |
 | `GET /api/v1/stats` | The counters, recent times and costs, the last error, and the settings changed from their defaults, as `./sidenote stats` shows them |
 | `GET /api/v1/screen` | The latest screen as a small JPEG data URL (`url`), when it came (`ts`), and whether screens are coming now (`live`) |
-| `GET /api/v1/confirms` | The problems waiting for a yes or no before they go to the agent (**Confirm before sending**), each with the seconds it has left (`timeout`) |
+| `GET /api/v1/confirms` | The problems waiting for a yes or no before they go to the agent (**Confirm before sending**), each with the seconds it has left (`timeout`). A program following the [events](#following-events) can answer them with no panel open |
 | `GET /api/v1/events` | What the panels are sent, as it happens: [Following](#following-events) |
 
 An answer kept holds what the panel draws from it: `id`, `ts`, `kind`, `text` (the whole answer as written), `transcript`
@@ -90,28 +94,36 @@ Each of these runs one of the panel's controls. The body is a JSON object, `{}` 
 |:---|:---|:---|
 | `POST /api/v1/pause` | | The pause key: no screen or speech is analyzed until resumed |
 | `POST /api/v1/resume` | | The pause key again |
-| `POST /api/v1/reanalyze` | | **Reanalyze**: the screen now, even unchanged (`202`) |
-| `POST /api/v1/ask` | `{"text": "why not a heap?"}` | The question box under the latest answer (`202`, `409` with nothing answered yet) |
+| `POST /api/v1/reanalyze` | | **Reanalyze**: the screen now, even unchanged (`202` with the `id` its answer takes) |
+| `POST /api/v1/ask` | `{"text": "why not a heap?"}` | The question box under the latest answer (`202` with the `id` its answer takes, `409` with nothing answered yet) |
 | `PUT /api/v1/capture` | `{"screen": false}`, `{"audio": true}`, or both | The capture card's switches |
 | `PUT /api/v1/settings/{key}` | `{"value": ...}` | One control of the settings sheet. A value outside its options is refused with the panel's words (`400`) |
-| `POST /api/v1/settings/reset` | | **Reset to defaults** |
+| `POST /api/v1/settings/reset` | | **Reset to defaults**: the values after it and what it did as `notices` (`409` when a setting could not go back) |
 | `PUT /api/v1/answers/{seq}/star` | `{"starred": true}` | The star on an answer's head (`409` for an answer not kept) |
 | `POST /api/v1/answers/{seq}/run` | `{"lang": "python", "code": "...", "stdin": "..."}` | **Run** under an answer's code: the program's output, its `exit` code and its time from the sandbox, a failing program included (`422` when it did not run) |
 | `POST /api/v1/answers/{seq}/problem` | | **Problem text**: the latest problem written out by the local model (`409` for any other) |
-| `DELETE /api/v1/answers` | | **Clear history**: every answer kept, starred ones too, and what was heard |
+| `DELETE /api/v1/answers/{seq}` | | The delete key on an answer's head: the answer leaves the panel and the history's lists and goes to **Recently deleted**, with its star and its follow-ups. `kept` says whether it is held there (`false` for an answer the history never held, which only a panel that showed it can put back), `until` when it goes by itself (`409` while the answer is still being written) |
+| `POST /api/v1/answers/{seq}/restore` | | **Undo**, and **Restore** in **Recently deleted**: the answer back as it was, given as `answer` (`404` for one not held there) |
+| `DELETE /api/v1/answers/deleted/{seq}` | | **Delete for good** in **Recently deleted**: that answer gone from the history file now (`404` for one not held there, an answer still shown among them: delete it first) |
+| `DELETE /api/v1/answers/deleted` | | **Empty** in **Recently deleted**: every answer in it gone for good, `gone` saying how many |
+| `DELETE /api/v1/answers` | | **Clear history**: every answer kept, starred ones too, what was heard, and **Recently deleted** with them |
 | `POST /api/v1/confirms/{cid}` | `{"send": true}` | The confirm card: `true` sends the problem to the agent, `false` keeps it on this PC |
 | `POST /api/v1/gpu/release` | | **Free GPU**: the local model leaves the GPU, and loads again for the next problem |
 | `POST /api/v1/gpu/load` | | **Load to GPU**: the model on the GPU now (`202`; the engines' status says when) |
 | `POST /api/v1/gpu/load/cancel` | | Stopping a load, unless a problem waits on it |
 | `POST /api/v1/models/pull` | `{"model": "sidenote-gemma4:26b"}` | The local model card's download (`202`; how far it is comes as `llm_pull` events) |
 | `PUT /api/v1/language/panel` | `{"lang": "en"}` | The panel's language, which the server's words follow (`409` when `SIDENOTE_LANG` holds one) |
-| `PUT /api/v1/language/speech` | `{"lang": "auto"}`, `"ko"` or `"en"` | The language speech is written down in |
+| `PUT /api/v1/language/speech` | `{"lang": "auto"}`, `"ko"` or `"en"` | The language speech is written down in (`409` when speech is off here: `SIDENOTE_TRANSCRIBER=null` or `SIDENOTE_AUDIO=0`) |
 | `POST /api/v1/capture/restart` | `{}`, or `{"quiet": true}` to wait for a moment when nothing runs | The capture program's tray: **Restart capture** |
 | `POST /api/v1/capture/quit` | | The capture program's tray: **Quit** |
 | `POST /api/v1/commands` | One of the panel's messages | Anything the panel sends, as it sends it: [The panel's messages](#the-panels-messages) |
 
 A change answers with how things stand after it: `paused`, the setting's `value`, the capture's switches, the number of
-starred answers. A change the panel would have answered with a note gives that note in `notices`.
+starred answers, the number of answers in **Recently deleted** (`count`). A change the panel would have answered with a
+note gives that note in `notices`.
+
+A deleted answer is held in **Recently deleted** for 7 days (`SIDENOTE_DELETED_DAYS`; `0` holds it until emptied), and
+leaves it earlier when the history reaches its size limit, the deleted going before any answer still shown.
 
 ## Following: events
 
@@ -144,19 +156,23 @@ with urllib.request.urlopen("http://127.0.0.1:8777/api/v1/events") as stream:
 | `stage` | Where that answer stands: the step (`stage`), and the thinking pass's last line (`thought`) |
 | `delta` | The next words of that answer (`text`) |
 | `analysis_done` | The answer whole (`text`), with the `engine`, `model`, `usage`, `cost_usd` and time (`elapsed`) |
-| `analysis_cancelled` | It stopped: a newer screen came, it was not sent, or a person stopped it (`reason`) |
+| `analysis_cancelled` | It stopped: a newer screen came, it was not sent, a person stopped it, or the answer it asked about was deleted (`reason`) |
 | `error` | It failed, in words, with what to do (`hint`) |
 | `check`, `verify` | The code check of an answer's examples, and the agent's check of an answer, under way and done |
 | `transcript`, `utterance` | What is being heard now, and a sentence closed |
 | `agent_confirm`, `agent_confirm_done` | A problem waits for a yes or no before it goes to the agent ([`POST /api/v1/confirms/{cid}`](#changing)), and it no longer does |
 | `notice` | A note the panel shows (`level`, `text`) |
 | `star`, `history_cleared` | An answer starred or unstarred (`n`: how many are now), and the history cleared |
+| `answer_deleted`, `answer_restored` | An answer deleted (`kept`, `until`) and one put back (`answer`: the answer as the history gives it), each with how many **Recently deleted** holds now (`n`) and whether there is an answer to ask about (`can_ask`) |
+| `deleted_cleared` | Answers gone from **Recently deleted** for good: one (`id`) or all of them (`id` is `null`), how many went (`gone`) and how many are left (`n`) |
 | `gpu`, `llm_pull` | The GPU's reading, and a model download's progress |
 | `lagged` | This stream fell 2,000 messages behind and lost the oldest (`lost`): read `GET /api/v1/status` again |
 
 The answer to a question asked with [`POST /api/v1/ask`](#changing), or to a screen after
 [`POST /api/v1/reanalyze`](#changing), comes this way: an `analysis_start`, its `delta`s, then `analysis_done` or
-`analysis_cancelled` or `error` for the same `id`. Once done it is kept, and `GET /api/v1/answers/{seq}` gives it, `{seq}` being that `id`.
+`analysis_cancelled` or `error` for the same `id`, the one their `202` named. Once done it is kept, and
+`GET /api/v1/answers/{seq}` gives it, `{seq}` being that `id`. A Reanalyze with no screen and nothing heard to run on
+starts none, and a `notice` says so instead.
 
 ## The panel's messages
 
@@ -174,6 +190,8 @@ any of them as the panel sends it, and answers with what the server sent back to
 | `star` | `PUT /api/v1/answers/{seq}/star` |
 | `run` | `POST /api/v1/answers/{seq}/run` |
 | `problem_text` | `POST /api/v1/answers/{seq}/problem` |
+| `answer_delete`, `answer_restore` | `DELETE /api/v1/answers/{seq}`, `POST /api/v1/answers/{seq}/restore` |
+| `answer_purge`, `deleted_clear` | `DELETE /api/v1/answers/deleted/{seq}`, `DELETE /api/v1/answers/deleted` |
 | `history_clear` | `DELETE /api/v1/answers` |
 | `agent_confirm_reply` | `POST /api/v1/confirms/{cid}` |
 | `thumb` | `GET /api/v1/screen` |
@@ -185,6 +203,9 @@ any of them as the panel sends it, and answers with what the server sent back to
 ```sh
 curl -s -X POST http://127.0.0.1:8777/api/v1/commands -H 'Content-Type: application/json' -d '{"type": "thumb"}'
 ```
+
+A message refused through `/commands` is answered `200` with the refusal among its `replies`, a notice of level `warn`
+(`bad` when it failed), as the panel is told: `set_lang` where speech is off here, for one, where its own route answers `409`.
 
 The tests hold the two together: a message the panel sends with no route here, or a route missing from this page, fails
 them (`tests/api_check.py`).

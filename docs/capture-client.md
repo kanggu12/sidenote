@@ -47,13 +47,13 @@ has no login of its own, so keep the server off public networks.
 ## The tray icon
 
 The icon in the notification area has **Open the panel**, **Screen capture**, **Sound capture**, **Restart capture**
-and **Quit**, in Korean on a Korean system
+and **Quit**, in Korean with `SIDENOTE_LANG=ko`
 ([section 18 of the user guide](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#18-panel-labels) lists
 each label). The line under **Open the panel** says what is being sent. On Linux the icon appears where the desktop
 shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu.
 
-<img alt="The tray menu: Open the panel; the state, Capturing: Screen · Sound; the Screen capture and Sound capture
-  switches, both on; Restart capture; Quit" src="assets/tray-menu.png" width="272">
+<img alt="The tray menu under sidenote capture v0.6.0: Open the panel; the state, Capturing: Screen · Sound; the Screen
+  capture and Sound capture switches, both on; Restart capture; Quit" src="assets/tray-menu.png" width="272">
 
 The program sends each frame as it is; the server covers the faces on it before anything reads it
 ([Security and privacy](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#14-security-and-privacy)).
