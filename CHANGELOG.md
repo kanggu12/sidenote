@@ -169,10 +169,23 @@ that only fixes raises the patch number. Each release's section here is its rele
   true statements and not the answer; on a window 481 to 1000 px wide the answers' dates stood at as many places as
   there were types; the **Free GPU** key was short of 4.5:1 in the dark theme; the Solver settings choices gave no sign
   of the pointer.
-- `./sidenote status` and `up` printed values the server keeps as they were, a terminal's escape codes included, and a
-  settings file from elsewhere brought back any text as the local model's name. The values are printed without their
-  control characters, a model's name and the monitor come back only in their own shape, and an answer's id is always
-  the number the history keeps it under.
+
+### Security
+
+- A settings file from elsewhere (one restored, or written by hand) brought back any text as the local model's name or
+  the monitor, and `./sidenote status` and `up` printed it with a terminal's escape codes, which in a terminal that
+  allows them can set the clipboard. Those settings come back only in their own shape, the launcher prints the values
+  the server keeps without their control characters, and an answer's id is always the number the history keeps it
+  under, so a history file from elsewhere puts no markup in the panel.
+- The desktop shortcut's starter, new in this release, acts only on the launcher's own last lines in their fixed shape:
+  it starts only the capture program beside it and opens only this PC's panel address, so text that reaches the
+  launcher's output (a model's name, above) runs no program and opens no other address. It was closed before the
+  release.
+- `./sidenote backup` refuses a symbolic link in the log folder and follows none, so a link put there (the server's
+  container can write to that folder) carries no other file of this PC into the backup. `./sidenote restore` checks the
+  files again once the server is stopped, and a later restore removes none of the earlier `before-restore` folders.
+- Helm: the copy of Claude Code kept on the server's volume is checked against the release's manifest whenever that can
+  be read, as a checksum kept beside it on the same volume could be changed with it.
 
 ## [0.5.2] - 2026-11-08
 
