@@ -1,7 +1,7 @@
 """The API (/api/v1, docs/API.md): what the panel does, for a program. Every message the panel sends has a route, listed in
 the index and on docs/API.md, and runs there as it runs from the panel: the same replies, the same messages to a panel
-that is open. The reads give what the panel is shown; an answer is followed from its screen to its follow-up, its star
-and the cleared history; a page of another site, a write that is not JSON and a Host not of this PC are refused; and the
+that is open. The reads give what the panel is shown; an answer is followed from its screen to its follow-up, its star,
+its delete (put back, and deleted for good) and the cleared history; a page of another site, a write that is not JSON and a Host not of this PC are refused; and the
 events stream what the panels are sent, read from a real server on a port of its own, with the page's own examples run
 against it.
 
@@ -154,14 +154,19 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
     check("an id that is not a number is a 400 in the API's own shape", r.status_code == 400
           and r.json()["ok"] is False and "seq" in r.json()["error"], r.json())
     d = c.get("/api/v1/days").json()
-    check("days: none, nothing starred, nothing heard", d == {"ok": True, "days": [], "starred": 0, "heard": False}, d)
+    check("days: none, nothing starred, nothing heard, nothing deleted, and the days a deleted answer is held",
+          d == {"ok": True, "days": [], "starred": 0, "heard": False, "deleted": 0, "deleted_days": A.CONFIG.deleted_days}
+          and A.CONFIG.deleted_days == 7, d)
+    gone = c.get("/api/v1/answers/deleted").json()
+    check("Recently deleted: empty, with the same days", gone == {"ok": True, "answers": [], "days": A.CONFIG.deleted_days}, gone)
     h = c.get("/api/v1/heard").json()
     check("heard: no day and no line", h == {"ok": True, "days": [], "day": "", "lines": []}, h)
     stats = c.get("/api/v1/stats").json()
     check("stats: what ./sidenote stats shows", stats["ok"] and "analyzer" in stats and "capture" in stats, sorted(stats))
     sc = c.get("/api/v1/screen").json()
-    check("screen: none came, and it says so in the panel's words",
-          sc == {"ok": True, "url": None, "ts": None, "live": False, "text": t("No screen received")}, sc)
+    # with no capture program connected that is what it says (both cases said "No screen received")
+    check("screen: none came, with no capture program connected, and it says so in the panel's words",
+          sc == {"ok": True, "url": None, "ts": None, "live": False, "text": t("No capture program connected")}, sc)
     check("confirms: none waiting", c.get("/api/v1/confirms").json() == {"ok": True, "confirms": []})
 
     print("\n[changing, as the panel changes it]")
@@ -242,8 +247,14 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             time.sleep(0.2)
             check("with downloads on, it starts the panel's download of that model (202)",
                   r.status_code == 202 and pulled == ["sidenote-gemma4:e4b"], [r.json(), pulled])
+            # a second ask while the first is under way is refused, not accepted and then dropped
+            r = c.post("/api/v1/models/pull", json={"model": "sidenote-gemma4:26b"})
+            check("...and a second one meanwhile is a 409 that names the one under way",
+                  r.status_code == 409 and r.json()["pull"]["model"] == "sidenote-gemma4:e4b" and pulled == ["sidenote-gemma4:e4b"],
+                  [r.status_code, r.json(), pulled])
         finally:
             A.pull_allowed, A.pull_model = real_allowed, real_pull
+            A.PULL.clear()   # the stand-in download never ends on its own
         r = c.put("/api/v1/language/panel", json={"lang": "ko"})
         check("the panel's language: Korean words from here on, and the panel's sheet is sent in them",
               r.json() == {"ok": True, "lang": "ko"} and i18n.LANG == "ko"
@@ -266,18 +277,33 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             i18n._fixed, i18n.LANG = fixed, was
         tr = A.app.state.transcriber
         r = c.put("/api/v1/language/speech", json={"lang": "ko"})
-        check("the speech language with nothing writing speech down is a 409", r.status_code == 409, r.json())
-        tr.language = "auto"   # as a transcriber that writes speech down has it
+        check("the speech language with speech off here (SIDENOTE_TRANSCRIBER=null) is a 409 that says so",
+              r.status_code == 409 and "SIDENOTE_TRANSCRIBER=null" in r.json()["error"], r.json())
+        # A server whose speech model is still coming (a first start downloads it): the stand-in has no language, and the
+        # change is the setting, which the model takes when it comes. It was a 409 saying nothing writes speech down, and
+        # the panel's set_lang said ok and dropped it
+        was_tr, A.CONFIG.transcriber = A.CONFIG.transcriber, "auto"
         try:
-            n = len(p.msgs)
-            r = c.put("/api/v1/language/speech", json={"lang": "ko"})
-            check("...and with one, it is set, and the panel is told",
-                  r.json() == {"ok": True, "lang": "ko"} and p.wait(lambda m: m.get("type") == "status"
-                                                                     and m.get("lang") == "ko", after=n) is not None, r.json())
-            r = c.put("/api/v1/language/speech", json={"lang": "de"})
-            check("...a language it does not write is a 400", r.status_code == 400)
+            r = c.put("/api/v1/language/speech", json={"lang": "en"})
+            check("...while the speech model loads, the setting changes and is said back",
+                  r.json() == {"ok": True, "lang": "en"} and SETTINGS.get("speech_lang") == "en", r.json())
+            run_cmd = c.post("/api/v1/commands", json={"type": "set_lang", "lang": "ko"})
+            check("...and the command set_lang changes it too", run_cmd.status_code == 200 and SETTINGS.get("speech_lang") == "ko",
+                  (run_cmd.status_code, SETTINGS.get("speech_lang")))
+            tr.language = "auto"   # as a transcriber that writes speech down has it
+            try:
+                n = len(p.msgs)
+                r = c.put("/api/v1/language/speech", json={"lang": "ko"})
+                check("...and with one up, it is set, and the panel is told",
+                      r.json() == {"ok": True, "lang": "ko"} and p.wait(lambda m: m.get("type") == "status"
+                                                                         and m.get("lang") == "ko", after=n) is not None, r.json())
+                r = c.put("/api/v1/language/speech", json={"lang": "de"})
+                check("...a language it does not write is a 400", r.status_code == 400)
+            finally:
+                del tr.language
         finally:
-            del tr.language
+            A.CONFIG.transcriber = was_tr
+            SETTINGS.values.pop("speech_lang", None)
         r = c.post("/api/v1/capture/restart", json={})
         check("restart capture: no capture program connected, none asked", r.json() == {"ok": True, "asked": 0}, r.json())
         r = c.post("/api/v1/capture/quit", json={})
@@ -371,6 +397,8 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   r.status_code == 202 and start is not None and start.get("about") == seq
                   and start.get("transcript") == "why this way?" and fin is not None and fin["type"] == "analysis_done",
                   [r.json(), start, fin and fin.get("type")])
+            check("...its 202 names the id its answer takes in the events", start is not None and r.json().get("id") == start["id"],
+                  [r.json(), start and start["id"]])
             time.sleep(0.3)
             turns = c.get(f"/api/v1/answers/{seq}").json()["answer"].get("turns") or []
             check("...and the follow-up is kept with the answer", [x.get("q") for x in turns] == ["why this way?"], turns)
@@ -381,8 +409,162 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             again = p.wait(lambda m: m.get("type") == "analysis_start" and m.get("trigger") != "ask", timeout=20, after=n)
             check("reanalyze: started (202), and the same screen is answered again", r.status_code == 202
                   and again is not None, [r.json(), [m.get("type") for m in p.msgs[n:]][-6:]])
-            p.wait(lambda m: m.get("type") in ("analysis_done", "analysis_cancelled", "error") and again
-                   and m.get("id") == again["id"], timeout=30, after=n)
+            check("...its 202 names the id its answer takes, told from an analysis the watching started by itself",
+                  again is not None and r.json().get("id") == again["id"], [r.json(), again and again["id"]])
+            fin2 = p.wait(lambda m: m.get("type") in ("analysis_done", "analysis_cancelled", "error") and again
+                          and m.get("id") == again["id"], timeout=30, after=n)
+
+            print("\n[one answer deleted, put back, and deleted for good]")
+            seq2 = again["id"] if again else -2
+            check("(the second answer is done, and is the one a question is about)", fin2 is not None
+                  and fin2["type"] == "analysis_done" and (A.STATE.last_result or {}).get("id") == seq2, fin2 and fin2.get("type"))
+            deleted_ = lambda i: (lambda m: m.get("type") == "answer_deleted" and m.get("id") == i)    # noqa: E731
+            restored_ = lambda i: (lambda m: m.get("type") == "answer_restored" and m.get("id") == i)  # noqa: E731
+            n = len(p.msgs)
+            asked = time.time()
+            r = c.request("DELETE", f"/api/v1/answers/{seq}", json={})
+            d = r.json()
+            told = p.wait(deleted_(seq), after=n)
+            check("delete: the answer goes to Recently deleted, said with when it leaves it and how many are there",
+                  r.status_code == 200 and {k: d.get(k) for k in ("ok", "id", "kept", "count")}
+                  == {"ok": True, "id": seq, "kept": True, "count": 1} and sorted(d) == ["count", "id", "kept", "ok", "until"]
+                  and abs(d["until"] - (asked + A.CONFIG.deleted_days * 86400)) < 30, d)
+            check("...and the panel is told the same, and that the answer a question is about is still there", told is not None
+                  and told.get("kept") is True and told.get("until") == d.get("until") and told.get("n") == 1
+                  and told.get("can_ask") is True, told)
+            check("it is no longer among the answers, the starred ones, or given by its id",
+                  [a["id"] for a in c.get("/api/v1/answers").json()["answers"]] == [seq2]
+                  and c.get("/api/v1/answers", params={"starred": "true"}).json()["answers"] == []
+                  and c.get(f"/api/v1/answers/{seq}").status_code == 404, c.get("/api/v1/answers").json())
+            held = c.get("/api/v1/answers/deleted").json()
+            one = (held.get("answers") or [{}])[0]
+            check("GET /api/v1/answers/deleted gives it whole: its star, its follow-up, when it was deleted and when it goes",
+                  held["ok"] is True and held["days"] == A.CONFIG.deleted_days and len(held["answers"]) == 1
+                  and one.get("id") == seq and one.get("starred") is True and one.get("text") == done["text"]
+                  and [x.get("q") for x in one.get("turns") or []] == ["why this way?"]
+                  and one.get("until") == d.get("until") and abs(one.get("deleted", 0) - asked) < 30, held)
+            days = c.get("/api/v1/days").json()
+            check("the days count it out, and into Recently deleted", days["deleted"] == 1 and days["starred"] == 0
+                  and sum(x["n"] for x in days["days"]) == 1, days)
+            n = len(p.msgs)
+            r = c.request("DELETE", f"/api/v1/answers/{seq}", json={})
+            time.sleep(0.3)
+            check("deleted twice, it says what holds, and no panel is told again", r.status_code == 200 and r.json() == d
+                  and not any(m.get("type") == "answer_deleted" for m in p.msgs[n:]), r.json())
+            r = c.put(f"/api/v1/answers/{seq}/star", json={"starred": False})
+            check("a deleted answer's star is not changed (409)", r.status_code == 409
+                  and c.get("/api/v1/answers/deleted").json()["answers"][0]["starred"] is True, r.json())
+            n = len(p.msgs)
+            r = c.post(f"/api/v1/answers/{seq}/restore", json={})
+            back = r.json()
+            row = back.get("answer") or {}   # an answer missing from the reply fails the check below, not the suite
+            told = p.wait(restored_(seq), after=n)
+            check("restore: the answer back as it was, its star and its follow-up with it, and Recently deleted empty",
+                  r.status_code == 200 and sorted(back) == ["answer", "count", "id", "ok"] and back["ok"] is True
+                  and back["id"] == seq and back["count"] == 0 and row.get("id") == seq
+                  and row.get("starred") is True and "deleted" not in row
+                  and [x.get("q") for x in row.get("turns") or []] == ["why this way?"], back)
+            check("...the panel is told, with the answer for a panel that did not show it", told is not None
+                  and told.get("answer") == back.get("answer") and told.get("n") == 0 and told.get("can_ask") is True, told)
+            check("...and it is among the answers again, starred",
+                  sorted(a["id"] for a in c.get("/api/v1/answers").json()["answers"]) == sorted([seq, seq2])
+                  and [a["id"] for a in c.get("/api/v1/answers", params={"starred": "true"}).json()["answers"]] == [seq]
+                  and c.get("/api/v1/answers/deleted").json()["answers"] == [])
+            r = c.post(f"/api/v1/answers/{seq}/restore", json={})
+            check("restored twice, it is a 404 that says where the deleted ones are listed", r.status_code == 404
+                  and r.json()["error"] == f"no answer {seq} is in Recently deleted: GET /api/v1/answers/deleted lists them", r.json())
+            n = len(p.msgs)
+            r = c.request("DELETE", f"/api/v1/answers/{seq2}", json={})
+            told = p.wait(deleted_(seq2), after=n)
+            check("the last answer deleted: the panel is told there is none to ask about", r.status_code == 200
+                  and r.json()["kept"] is True and told is not None and told.get("can_ask") is False, [r.json(), told])
+            r = c.post("/api/v1/ask", json={"text": "and now?"})
+            check("...and a question is a 409 in the panel's words", r.status_code == 409
+                  and r.json()["error"] == t("No problem analyzed yet to ask about"), r.json())
+            n = len(p.msgs)
+            r = c.post(f"/api/v1/answers/{seq2}/restore", json={})
+            told = p.wait(restored_(seq2), after=n)
+            check("put back, it is the one a question is about again", r.status_code == 200 and told is not None
+                  and told.get("can_ask") is True and (A.STATE.last_result or {}).get("id") == seq2, [r.json(), told])
+            n = len(p.msgs)
+            r = c.post("/api/v1/ask", json={"text": "and now?"})
+            start = p.wait(lambda m: m.get("type") == "analysis_start" and m.get("trigger") == "ask", timeout=20, after=n)
+            fin = start and p.wait(lambda m: m.get("type") in ("analysis_done", "error", "analysis_cancelled")
+                                   and m.get("id") == start["id"], timeout=30, after=n)
+            check("...and the question is answered about it", r.status_code == 202 and start is not None
+                  and start.get("about") == seq2 and fin is not None and fin["type"] == "analysis_done",
+                  [r.status_code, start, fin and fin.get("type")])
+            r = c.request("DELETE", f"/api/v1/answers/deleted/{seq}", json={})
+            check("an answer still shown is not deleted for good: a 404 that says where the deleted ones are listed",
+                  r.status_code == 404 and "GET /api/v1/answers/deleted" in r.json()["error"]
+                  and c.get(f"/api/v1/answers/{seq}").status_code == 200, r.json())
+            c.request("DELETE", f"/api/v1/answers/{seq}", json={})
+            n = len(p.msgs)
+            r = c.request("DELETE", f"/api/v1/answers/deleted/{seq}", json={})
+            told = p.wait(lambda m: m.get("type") == "deleted_cleared" and m.get("id") == seq, after=n)
+            check("delete for good: gone from Recently deleted, how many are left, and the panel is told",
+                  r.status_code == 200 and r.json() == {"ok": True, "id": seq, "count": 0, "notices": [{"level": "done", "text": t("Deleted for good")}]}
+                  and told is not None
+                  and told.get("gone") == 1 and told.get("n") == 0, [r.json(), told])
+            check("...asked again it is a 404, and so is a restore",
+                  c.request("DELETE", f"/api/v1/answers/deleted/{seq}", json={}).status_code == 404
+                  and c.post(f"/api/v1/answers/{seq}/restore", json={}).status_code == 404
+                  and c.get(f"/api/v1/answers/{seq}").status_code == 404)
+            n = len(p.msgs)
+            again = c.request("DELETE", f"/api/v1/answers/{seq}", json={})
+            future = c.request("DELETE", f"/api/v1/answers/{A.STATE.analysis_seq + 10**6}", json={})
+            time.sleep(0.3)
+            check("...and so is deleting it again, or an id no answer has had yet: no panel is told of either",
+                  again.status_code == 404 and future.status_code == 404
+                  and not [m for m in p.msgs[n:] if m.get("type") == "answer_deleted"], [again.json(), future.json()])
+            # A clock set back across a restart gives out ids under those already kept: the history holding one decides
+            given, A.STATE.analysis_seq = A.STATE.analysis_seq, seq2 - 1000
+            try:
+                r = c.request("DELETE", f"/api/v1/answers/{seq2}", json={})
+                ok = r.status_code == 200 and r.json()["kept"] is True
+            finally:
+                A.STATE.analysis_seq = given
+            c.post(f"/api/v1/answers/{seq2}/restore", json={})
+            check("...but an answer the history holds is deleted whatever the ids given out since", ok, r.json())
+            c.request("DELETE", f"/api/v1/answers/{seq2}", json={})
+            n = len(p.msgs)
+            r = c.request("DELETE", "/api/v1/answers/deleted", json={})
+            told = p.wait(lambda m: m.get("type") == "deleted_cleared" and m.get("id") is None, after=n)
+            check("Recently deleted emptied: how many went, none left, and the panel is told",
+                  r.status_code == 200 and r.json() == {"ok": True, "gone": 1, "count": 0, "notices": [{"level": "done", "text": t("Recently deleted emptied")}]}
+                  and told is not None
+                  and told.get("gone") == 1 and told.get("n") == 0, [r.json(), told])
+            r = c.request("DELETE", "/api/v1/answers/deleted", json={})
+            check("...emptied again, nothing went", r.status_code == 200 and r.json() == {"ok": True, "gone": 0, "count": 0,
+                  "notices": [{"level": "info", "text": t("Recently deleted is empty")}]}, r.json())
+            A.STATE.analysis_seq += 1   # an answer being written: an id given out, as the worker gives one
+            live = A.STATE.analysis_seq
+            A.LIVE[live] = {"start": {"type": "analysis_start", "id": live}, "text": "", "stage": None, "at": time.time()}
+            try:
+                r = c.request("DELETE", f"/api/v1/answers/{live}", json={})
+                check("an answer still being written is not deleted (409), in the panel's words", r.status_code == 409
+                      and r.json()["error"] == t("Not deleted: this answer is still being written"), r.json())
+            finally:
+                A.LIVE.pop(live, None)
+            n = len(p.msgs)
+            r = c.request("DELETE", "/api/v1/answers/424242", json={})
+            told = p.wait(deleted_(424242), after=n)
+            check("an answer the history does not hold: the panels drop its card, and it is said to be held nowhere",
+                  r.status_code == 200 and r.json() == {"ok": True, "id": 424242, "kept": False, "until": None, "count": 0}
+                  and told is not None and told.get("kept") is False, [r.json(), told])
+            # two answers more, one of them left in Recently deleted for Clear history to take
+            n = len(p.msgs)
+            c.post("/api/v1/reanalyze", json={})
+            third = p.wait(lambda m: m.get("type") == "analysis_done", timeout=30, after=n)
+            n = len(p.msgs)
+            c.post("/api/v1/reanalyze", json={})
+            fourth = p.wait(lambda m: m.get("type") == "analysis_done", timeout=30, after=n)
+            r = c.request("DELETE", f"/api/v1/answers/{third['id'] if third else -3}", json={})
+            check("(two answers more: one kept, one in Recently deleted)", third is not None and fourth is not None
+                  and r.status_code == 200 and r.json().get("kept") is True and c.get("/api/v1/days").json()["deleted"] == 1
+                  and [a["id"] for a in c.get("/api/v1/answers").json()["answers"]] == [fourth["id"]], r.json())
+
+            print("\n[the history cleared]")
             n = len(p.msgs)
             r = c.request("DELETE", "/api/v1/answers", json={})
             check("clear history: cleared, in the panel's words, and every panel is told",
@@ -390,6 +572,9 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   and p.wait(lambda m: m.get("type") == "history_cleared", after=n) is not None, r.json())
             check("...and nothing is kept", c.get("/api/v1/answers").json()["answers"] == []
                   and c.get("/api/v1/days").json()["starred"] == 0)
+            check("...Recently deleted went with it, and what was in it cannot be put back",
+                  c.get("/api/v1/answers/deleted").json()["answers"] == [] and c.get("/api/v1/days").json()["deleted"] == 0
+                  and c.post(f"/api/v1/answers/{third['id'] if third else -3}/restore", json={}).status_code == 404)
 
         print("\n[a problem waiting for a yes or no]")
 
@@ -448,6 +633,16 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
     check("a body that is not JSON is a 400", r.status_code == 400 and r.json()["error"] == "the body is not JSON")
     r = c.post("/api/v1/ask", content=b"[1]", headers={"content-type": "application/json"})
     check("...and one that is not an object", r.status_code == 400 and "object" in r.json()["error"])
+    # What JSON allows and nothing past it: NaN and Infinity, a number past a float's range and a lone surrogate were taken.
+    # Answering them was a 500, and a setting holding a lone surrogate could not be saved or sent, so every answer showing
+    # the settings was a 500 after it
+    for raw, said in ((b'{"value": NaN}', "not JSON"), (b'{"value": -Infinity}', "not JSON"),
+                      (b'{"type": "problem_text", "id": 1e999}', "too large"), (b'{"value": ["ok", "\\ud800"]}', "not valid Unicode")):
+        r = c.put("/api/v1/settings/skip_windows", content=raw, headers={"content-type": "application/json"})
+        check(f"a body of {raw.decode()[:34]} is a 400 that says why", r.status_code == 400 and said in r.json()["error"],
+              (r.status_code, r.text[:120]))
+    r = c.get("/api/v1/settings")
+    check("...and the settings still answer after them", r.status_code == 200 and r.json()["ok"] is True, r.status_code)
     stop = c.post("/server/stop")
     check("the desktop app's stop is not part of the API, and still asks its token", stop.status_code == 403)
 
@@ -468,6 +663,179 @@ check("a reader 5 behind its limit loses the 5 oldest, and is told so first",
       first[0] == {"type": "lagged", "lost": 5} and first[1]["n"] == 5 and len(first) == A.EventStream.MAX + 1, first[:2])
 check("...and the next batch has no such line", second == [{"type": "notice"}])
 check("...nothing that came: an empty batch after the wait", empty == [])
+
+
+print("\n[what the API gets as the panel does, at the edges]")
+with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
+    J = {"content-type": "application/json", **ORIGIN}
+    # Reset says what it did to a program too (it only told the panels), and a value set through the API is the panel's
+    c.put("/api/v1/settings/agent_hourly_usd", headers=J, json={"value": 5.0})
+    r = c.post("/api/v1/settings/reset", headers=J, json={})
+    check("reset answers with what it did, as the panels are told", r.status_code == 200 and r.json()["ok"] is True
+          and any("default" in n["text"] for n in r.json().get("notices", [])), r.json().get("notices"))
+    # true is not a number of dollars, nor a monitor (Python's True == 1 let it through, and true was kept)
+    r1 = c.put("/api/v1/settings/agent_hourly_usd", headers=J, json={"value": True})
+    r2 = c.put("/api/v1/settings/monitor", headers=J, json={"value": True})
+    check("true is refused for a number's setting", r1.status_code == 400 and r2.status_code == 400
+          and SETTINGS.get("agent_hourly_usd") is not True, (r1.json(), r2.json()))
+    # an id SQLite cannot hold is no answer, not a 500 in plain text
+    r = c.get("/api/v1/answers/99999999999999999999999")
+    check("an id too large for the record is a 404 in the API's shape", r.status_code == 404 and r.json()["ok"] is False,
+          (r.status_code, r.text[:120]))
+    # the Run key's switch holds for the API as for the panel (docs/API.md: 422 when code runs are off)
+    runner, A.CONFIG.runner_url = A.CONFIG.runner_url, "http://127.0.0.1:9/run"
+    try:
+        c.put("/api/v1/settings/run_button", headers=J, json={"value": False})
+        r = c.post("/api/v1/answers/1/run", headers=J, json={"lang": "python", "code": "print(1)"})
+        check("with the Run key switched off a run through the API is a 422, 'code runs are off'",
+              r.status_code == 422 and r.json()["error"] == t("Code runs are off"), r.json())
+    finally:
+        A.CONFIG.runner_url = runner
+        c.put("/api/v1/settings/run_button", headers=J, json={"value": True})
+    # the panel's own page reached on another port (SIDENOTE_PORT moves the host's port under compose): its own origin
+    r = c.post("/api/v1/capture/restart", headers={"content-type": "application/json", "origin": "http://127.0.0.1:9000",
+                                                  "host": "127.0.0.1:9000"}, json={})
+    check("a capture restart from the panel's own page on another port is done", r.status_code == 200 and r.json()["ok"] is True,
+          (r.status_code, r.json()))
+    r = c.post("/api/v1/capture/restart", headers={"content-type": "application/json", "origin": "http://example.com"}, json={})
+    check("...and one from another site is a 403 whose ok says so", r.status_code == 403 and r.json()["ok"] is False, r.json())
+    # the speech language through the API is the setting: kept, and not put back by the next load of the speech model
+    if hasattr(A.app.state, "transcriber") and hasattr(A.app.state.transcriber, "language"):
+        c.put("/api/v1/language/speech", headers=J, json={"lang": "ko"})
+        check("the speech language set through the API is the setting itself", SETTINGS.get("speech_lang") == "ko",
+              SETTINGS.get("speech_lang"))
+        c.put("/api/v1/language/speech", headers=J, json={"lang": "auto"})
+
+print("\n[the server's own faults, said as the API says things]")
+import sqlite3  # noqa: E402
+
+
+class Locked:
+    """What the history's connection does while another program holds the file past its wait: every statement fails."""
+
+    def execute(self, *a, **k):
+        raise sqlite3.OperationalError("database is locked")
+
+    def rollback(self):
+        pass
+
+
+def nested(depth: int, kind: str = "pause") -> bytes:
+    """A message of the panel's with a list `depth` levels deep in it."""
+    return ('{"type": "%s", "x": %s%s}' % (kind, "[" * depth, "]" * depth)).encode()
+
+
+with TestClient(A.app, base_url="http://127.0.0.1:8777", raise_server_exceptions=False) as c:
+    J = {"content-type": "application/json", **ORIGIN}
+    # A body nested past what the checks walk (450 levels) or past what Python reads (1000) is no body a route takes: a 400
+    # in the API's shape, where it was a 500 in plain text
+    got = {d: c.post("/api/v1/commands", headers=J, content=nested(d, "thumb")) for d in (300, 600, 1200, 5000)}
+    check("a body nested 600, 1200 or 5000 levels deep is a 400 in the API's shape",
+          all(r.status_code == 400 and r.headers["content-type"].startswith("application/json") and r.json()["ok"] is False
+              for d, r in got.items() if d > 300), {d: (r.status_code, r.text[:60]) for d, r in got.items()})
+    check("...and one of 300 is read as any other body", got[300].status_code == 200 and got[300].json()["ok"] is True, got[300].text[:80])
+    r = c.put("/api/v1/settings/roi_box", headers=J, content=b'{"value": ' + b"[" * 700 + b"]" * 700 + b"}")
+    check("...on a route that reads a value too", r.status_code == 400 and r.json()["ok"] is False, (r.status_code, r.text[:80]))
+    # A method a route does not take is a 405 that names the ones it does, OPTIONS and HEAD as much as any (they were the
+    # framework's own 405 with no ok, and an empty 404)
+    r = c.options("/api/v1/pause", headers=ORIGIN)
+    check("OPTIONS on a route is a 405 in the API's shape, naming what it takes", r.status_code == 405 and r.json()["ok"] is False
+          and r.json()["methods"] == ["POST"], (r.status_code, r.text[:120]))
+    r = c.head("/api/v1/pause", headers=ORIGIN)
+    check("...and so is HEAD", r.status_code == 405, r.status_code)
+    # The speech language through /commands with speech off here: refused as PUT /language/speech refuses it, not an ok
+    before = SETTINGS.get("speech_lang")
+    r = c.post("/api/v1/commands", headers=J, json={"type": "set_lang", "lang": "ko" if before != "ko" else "en"})
+    said = [m for m in r.json().get("replies", []) if m.get("type") == "notice"]
+    check("set_lang with speech off here says why, and the setting stays as it was",
+          r.status_code == 200 and said and said[0]["level"] == "warn" and said[0]["text"] == t("Speech is off on this server: no language to set")
+          and SETTINGS.get("speech_lang") == before, (r.json(), SETTINGS.get("speech_lang")))
+    # A box of true and false is no box (bool is an int to Python), nor 2.0 a monitor once the capture program has said
+    # which there are
+    r1 = c.put("/api/v1/settings/roi_box", headers=J, json={"value": [False, False, True, True]})
+    held, SETTINGS.dynamic_options["monitor"] = SETTINGS.dynamic_options.get("monitor"), [(1, "1"), (2, "2")]
+    try:
+        r2 = c.put("/api/v1/settings/monitor", headers=J, json={"value": 2.0})
+        r3 = c.put("/api/v1/settings/monitor", headers=J, json={"value": 2})
+    finally:
+        if held is None:
+            SETTINGS.dynamic_options.pop("monitor", None)
+        else:
+            SETTINGS.dynamic_options["monitor"] = held
+        c.put("/api/v1/settings/monitor", headers=J, json={"value": 1})
+    check("a box of true and false is refused", r1.status_code == 400 and SETTINGS.get("roi_box") != [False, False, True, True], r1.json())
+    check("...and 2.0 for the monitor, where 2 is taken", r2.status_code == 400 and r3.status_code == 200, (r2.json(), r3.json()))
+    # The history's file locked by another program past its wait: each read gives what an empty store gives, the panel
+    # still opens, and the API answers; the log says it at most once a minute. Its socket and every read were a 500
+    db, A.HISTORY._db = A.HISTORY._db, Locked()
+    try:
+        reads = {path: c.get(path, headers=ORIGIN) for path in ("/api/v1/status", "/api/v1/answers", "/api/v1/answers/1",
+                                                               "/api/v1/days", "/api/v1/answers/deleted", "/api/v1/heard")}
+        check("with the history unreadable every API read answers, in its shape",
+              all(r.headers["content-type"].startswith("application/json") for r in reads.values())
+              and reads["/api/v1/status"].status_code == 200 and reads["/api/v1/answers"].json().get("answers") == []
+              and reads["/api/v1/days"].json().get("days") == [] and reads["/api/v1/answers/1"].status_code == 404,
+              {k: (r.status_code, r.text[:60]) for k, r in reads.items()})
+        with c.websocket_connect("ws://127.0.0.1:8777/panel", headers=ORIGIN) as ws:
+            first = ws.receive_json()
+        check("...and a panel opens, told the server's state first", first.get("type") == "status", first)
+    finally:
+        A.HISTORY._db = db
+    # A route that meets what it did not see coming answers in the API's shape, a JSON 500 that says the log has why
+    real = A.engines_status
+    A.engines_status = lambda: (_ for _ in ()).throw(RuntimeError("a bug"))
+    try:
+        r = c.get("/api/v1/status", headers=ORIGIN)
+    finally:
+        A.engines_status = real
+    check("an error a route did not expect is a JSON 500 under /api/", r.status_code == 500 and r.json()["ok"] is False
+          and "RuntimeError" in r.json()["error"], (r.status_code, r.text[:120]))
+
+print("\n[what the server draws and reads back, when part of it fails]")
+from server import faces, telemetry  # noqa: E402
+# A Pillow built without FreeType raises ImportError for its font: the cover stays, plain, and the screen is kept
+real_font = faces.ImageFont.load_default
+faces._font.cache_clear()
+faces.ImageFont.load_default = lambda *a, **k: (_ for _ in ()).throw(ImportError("The _imagingft C module is not installed"))
+try:
+    img = Image.new("RGB", (400, 300), (255, 255, 255))
+    out = faces.cover(img, [(0.3, 0.3, 0.6, 0.7, 0.9)])   # a face in screen fractions, as find gives it, with room for the name
+    covered = out.getpixel((180, 150)) != (255, 255, 255)
+except Exception as exc:   # what the frame was dropped for
+    covered, out = False, exc
+finally:
+    faces.ImageFont.load_default = real_font
+    faces._font.cache_clear()
+check("a face's cover with no font to name it is drawn plain, and the screen kept", covered, out)
+# A line of the event log with numbers written as text (a log edited by hand): left out of the figures, not a TypeError
+# in every status the panel asks for
+log_dir = Path(tempfile.mkdtemp(prefix="sidenote-events-"))
+now = time.time()
+(log_dir / "events.jsonl").write_text("\n".join(json.dumps(x) for x in [
+    {"ts": now - 60, "event": "analysis_done", "engine": "local", "elapsed": 3.0, "first_token": 1.0, "tokens_in": 10, "tokens_out": 50, "cost_usd": 0},
+    {"ts": now - 50, "event": "analysis_done", "engine": "local", "elapsed": "3", "first_token": "x", "tokens_in": "12", "tokens_out": True, "cost_usd": "0.5"},
+    {"ts": "yesterday", "event": "analysis_done", "engine": "agent", "elapsed": 9.0},
+]) + "\n", encoding="utf-8")
+kept_today = list(telemetry._today)
+try:
+    telemetry.take_up_today(log_dir / "events.jsonl")
+    try:
+        totals, err = telemetry.totals(), None
+    except Exception as exc:
+        totals, err = None, exc
+    local = (totals or {}).get("engines", {}).get("local", {})
+    check("numbers written as text in the event log are left out of the figures, which still add up",
+          err is None and local.get("tokens_in") == 10 and local.get("answers") == 2, err or local)
+finally:
+    telemetry._today[:] = kept_today
+
+
+# An environment's own value outside a choice's options is one of them (it could not be chosen again, and Reset failed on it)
+from server.settings import with_default  # noqa: E402
+opts = with_default([(0, "At once"), (5, "5"), (10, "10"), (30, "30"), (-1, "Keep loaded")], 15, "15")
+check("an environment's own value joins its setting's options, in order, Keep loaded last",
+      [o[0] for o in opts] == [0, 5, 10, 15, 30, -1], opts)
+check("...and one already there is not added twice", with_default(opts, 5, "5") == opts)
 
 
 print("\n[events, from a server on a port of its own]")

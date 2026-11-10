@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import math
 import os
 import time
 from collections import Counter, deque
@@ -34,7 +35,8 @@ LOG_DIR = os.environ.get("SIDENOTE_LOG_DIR", "")
 # SIDENOTE_LOG_FILES=0 or SIDENOTE_LOG_MAX_MB=0 would let a file grow without bound.
 MAX_BYTES = max(64 * 1024, int(env_float("SIDENOTE_LOG_MAX_MB", 5) * 1024 * 1024))
 BACKUPS = max(1, env_int("SIDENOTE_LOG_FILES", 4))      # rotated files kept besides the live one
-KEEP_DAYS = env_float("SIDENOTE_LOG_DAYS", 14)
+# A floor too: at 0 or less every start deleted the live logs (stale) and the capture program's while it wrote to it
+KEEP_DAYS = max(1.0, env_float("SIDENOTE_LOG_DAYS", 14))
 STARTED = time.time()
 
 LIVE = ("server.log", "events.jsonl", "capture.log")   # the files written to, not the .1 .2 copies
@@ -164,11 +166,23 @@ def event(kind: str, **fields) -> None:
 _today: list[dict] = []
 _TODAY_KEEP = 3000
 _TODAY_FIELDS = ("ts", "event", "engine", "elapsed", "first_token", "tokens_in", "tokens_out", "cost_usd", "type", "id")
+_TODAY_NUMBERS = ("ts", "elapsed", "first_token", "tokens_in", "tokens_out", "cost_usd")   # what the figures add up
 
 
 def _midnight(now: float | None = None) -> float:
     """Where the figures on the panel's cards start: the last 24 hours (older answers stand in when there are none, engines_today). From midnight they would stand empty at 00:01 for someone working through it, and they did."""
     return (now if now is not None else time.time()) - 86400
+
+
+def _number(v) -> bool:
+    """A number the figures can add: not a bool, nor text, nor one past a float (JSON reads 1e400 as an int that
+    math.isfinite could not even weigh, and the server did not start)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(v))
+    except OverflowError:
+        return False
 
 
 def _note_today(rec: dict) -> None:
@@ -181,7 +195,13 @@ def _note_today(rec: dict) -> None:
         pass
     else:
         return
-    _today.append({k: rec[k] for k in _TODAY_FIELDS if k in rec})
+    kept = {k: rec[k] for k in _TODAY_FIELDS if k in rec}
+    # Numbers only where the figures add them up: a line written by hand with "12" for 12 ended totals() in a TypeError, and
+    # with it every status the panel asks for. Such a field is left out, as one the line never had
+    for k in _TODAY_NUMBERS:
+        if k in kept and not _number(kept[k]):
+            del kept[k]
+    _today.append(kept)
     del _today[:-_TODAY_KEEP]
 
 
@@ -244,7 +264,7 @@ def engines_today(now: float | None = None) -> dict:
         errors = [r for r in rows if r.get("event") in ("analysis_error", "followup_error")]
         priced = [r for r in rows if not r.get("event", "").endswith("_error")]
         out[engine] = {"answers": len(done), "window": window, "last": done[-1].get("ts") if done else None,
-                       "errors": len(errors), "last_error": errors[-1]["ts"] if errors else None,
+                       "errors": len(errors), "last_error": errors[-1].get("ts") if errors else None,
                        "tokens_in": sum(r.get("tokens_in") or 0 for r in priced), "tokens_out": sum(r.get("tokens_out") or 0 for r in priced),
                        "cost_usd": round(sum(r.get("cost_usd") or 0.0 for r in priced), 4),
                        "elapsed_p50": _pct(elapsed, 50), "first_token_avg": round(sum(ttft) / len(ttft), 1) if ttft else None,

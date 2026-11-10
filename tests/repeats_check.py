@@ -288,7 +288,11 @@ async def seen_again_by_words():
             asked.append(text)
             return await real_run(images, text, on_delta)
         eng.agent.run = agent_run
-        await pipe.solve(71, Screen(page(6)), "", False, _none)
+        out = await pipe.solve(71, Screen(page(6)), "", False, _none)
+        # what the worker does once the card is done (app._run_analysis, beside its picture): the words it went out in come
+        # back on the Outcome and are kept then, so a card cancelled before its end stands for nothing
+        check("the words a problem went out in come back with its answer", out.words == words, out.words)
+        pipe.recent.add_words(71, out.words)
         try:
             await pipe.solve(72, Screen(page(7)), "", False, _none)
             raised = None

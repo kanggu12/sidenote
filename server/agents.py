@@ -660,7 +660,8 @@ async def read_codex_turn(stdout, on_delta: OnDelta, timeout: float, budget: flo
             return text(), codex_usage(ev.get("usage") or {}), ""
         elif kind == "turn.failed":
             err = ev.get("error")
-            return text(), None, str((err or {}).get("message") if isinstance(err, dict) else err or "the turn failed")
+            msg = err.get("message") if isinstance(err, dict) else err   # {} or {"code": ...} gave the words "None"
+            return text(), None, str(msg or error or "the turn failed")
         elif kind == "error":
             error = str(ev.get("message") or ev.get("error") or "")   # a turn.failed may follow
 

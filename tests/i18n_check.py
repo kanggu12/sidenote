@@ -144,6 +144,7 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         pws.send_text(json.dumps({"type": "thumb"}))
         thumb = p.wait(lambda m: m.get("type") == "thumb", after=n)
         check("the screen card's words come in English", thumb and thumb.get("text") in ("No screen received",
+                                                                                        "No capture program connected",
                                                                                         "Screen capture is off"),
               str(thumb))
 

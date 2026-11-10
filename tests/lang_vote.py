@@ -260,5 +260,19 @@ check("what Whisper itself does not call a loop stays", tr.unlooped(said), "í•˜í
 said = types.SimpleNamespace(text=" no compression ratio on this one")
 check("...and a segment that does not say", tr.unlooped(said), "no compression ratio on this one")
 
+print("[the live line does not vote (DECISIONS note 12: each utterance adds to it)]")
+# The live line reads the same 15 s window every 2 s: counted, one short remark misread as English moved a Korean vote
+# to English, and the next short Korean utterance was decoded as English
+t = make()
+for _ in range(4):
+    feed(t, 1.5, "ko", KO)
+before = dict(t._vote)
+for _ in range(6):
+    t._model.script.append(("en", EN_SURE))
+    t.transcribe_live(pcm(15), 16000)
+check("six live passes over a 15 s window leave the vote as it was", {k: round(v, 3) for k, v in t._vote.items()},
+      {k: round(v, 3) for k, v in before.items()})
+check("...and the session is still voted Korean", t.voted, "ko")
+
 print(f"\n==== {PASS} passed, {FAIL} failed ====")
 sys.exit(1 if FAIL else 0)

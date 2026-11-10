@@ -747,7 +747,21 @@ def main() -> None:
         port = int(os.environ.get("RUNNER_PORT", "8000"))
         srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
         print(f"sidenote runner on :{port}", flush=True)
+    threading.Thread(target=_end_when_dirty, daemon=True).start()
     srv.serve_forever()
+
+
+DIRTY_EXIT = 3   # the runner's code when it ends for leftovers it could not remove
+
+
+def _end_when_dirty() -> None:
+    """Dirty, a run's leftovers not removed: the runner ends in failure a second later, once the answer that says so has gone
+    out, and what starts it starts a clean one, which cleans up first (docker/keep-running.sh in compose.yaml, up to 5 times
+    in 10 minutes; the kubelet in a pod). It stayed up refusing every run until someone restarted it by hand."""
+    DIRTY.wait()
+    time.sleep(1.0)
+    print("leftovers of a run could not be removed: ending, to be started again clean", flush=True)
+    os._exit(DIRTY_EXIT)
 
 
 if __name__ == "__main__":
