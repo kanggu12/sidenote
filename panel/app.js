@@ -15,8 +15,8 @@ const ANSWER_LABEL = { mcq: t("Answer"), short: t("Answer"), math: t("Result"), 
 // The desktop app has no ./sidenote and no server's terminal: there a card says what to do in the app, with no command to copy.
 const HINT = {
   auth: { get title() { return t("{agent} sign-in needed", { agent: AG() }); },
-    get text() { return status.desktop ? t("Not signed in, or the sign-in expired. Open a terminal, type {cmd} and press Enter, then sign in · resumes within 20 seconds", { cmd: `<code class="cmd">${LOGIN()}</code>` })
-      : t("Not signed in, or the sign-in expired. Sign in from the server's terminal and it resumes within 20 seconds"); },
+    get text() { return status.desktop ? t("Not signed in, or the sign-in expired · open a terminal, type {cmd} and press Enter, then sign in · resumes within 20 seconds", { cmd: `<code class="cmd">${LOGIN()}</code>` })
+      : t("Not signed in, or the sign-in expired · sign in from the server's terminal and it resumes within 20 seconds"); },
     // in the app the command is in the sentence already, the CLI's own name: no chip of its own after it, only its copy key
     get cmd() { return status.desktop ? "" : LOGIN(); }, get copy() { return LOGIN(); } },
   // with the agent resting on its plan's limit, until when: "in a moment" under a band that says two days was wrong
@@ -29,12 +29,12 @@ const HINT = {
   // the desktop app's server is the app itself: it is up again when the app is
   interrupted: { title: t("Stopped: connection lost"), get text() { return status.desktop ? t("{redo} once Sidenote is running again", { redo: REDO_KEY() }) : t("{redo} once the server is up", { redo: REDO_KEY() }); } },
   nosolver: { title: t("No engine to solve"),
-    get text() { return status.desktop ? t("Neither the local model nor the agent can be used. Turn one on in Solver settings", { agent: AG() })
-      : t("Neither the local model nor the agent can be used. Turn one on in Solver settings, or check the server's terminal", { agent: AG() }); },
+    get text() { return status.desktop ? t("Neither the local model nor the agent can be used · turn one on in Solver settings", { agent: AG() })
+      : t("Neither the local model nor the agent can be used · turn one on in Solver settings, or check the server's terminal", { agent: AG() }); },
     get cmd() { return status.desktop ? "" : "./sidenote doctor"; } },
   // the command as a chip with its copy key, as the other failures give theirs
   "": { title: t("Analysis failed"),
-    get text() { return status.desktop ? t("Try again with {redo}", { redo: REDO_KEY() }) : t("Try again with {redo}. If it keeps failing, check the server's terminal", { redo: REDO_KEY() }); },
+    get text() { return status.desktop ? t("Try again with {redo}", { redo: REDO_KEY() }) : t("Try again with {redo} · if it keeps failing, check the server's terminal", { redo: REDO_KEY() }); },
     get cmd() { return status.desktop ? "" : "./sidenote events --errors"; } },
 };
 
@@ -92,7 +92,13 @@ const escapeHtml = (s) => {
 // Weekdays and times in the panel's language. en-GB for English: a 24-hour clock that starts the day at 00, as ko-KR does
 const LOCALE = LANG === "ko" ? "ko-KR" : "en-GB";
 // One way of writing a date everywhere: 11.02(월) 02:42 AM. A time alone does not say when: answers are kept for days
-const fmtDay = (ms) => { const d = new Date(ms); return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}(${d.toLocaleDateString(LOCALE, { weekday: "short" })})`; };
+// A day as the page's language writes it: 11.02(월) in Korean, Mon, Nov 2 in English, where 11.02 reads as the 11th of February
+// to much of the world
+const fmtDay = (ms) => {
+  const d = new Date(ms), weekday = d.toLocaleDateString(LOCALE, { weekday: "short" });
+  if (LANG === "en") return `${weekday}, ${d.toLocaleDateString(LOCALE, { month: "short" })} ${d.getDate()}`;
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}(${weekday})`;
+};
 const fmtClock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${String(h % 12 || 12).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
 const fmtWhen = (ms) => `${fmtDay(ms)} ${fmtClock(ms)}`;
 const fmtShort = (ms) => new Date(ms).toLocaleTimeString(LOCALE, { hour12: false, hour: "2-digit", minute: "2-digit" });
@@ -154,6 +160,18 @@ const PURIFY = { FORBID_TAGS: ["img", "picture", "source", "video", "audio", "sv
   "style", "link", "meta", "form", "input", "button", "textarea", "select"], FORBID_ATTR: ["style", "srcset", "id", "name"],
   ALLOW_DATA_ATTR: false };
 if (typeof window.DOMPurify !== "undefined") {
+  // What a picture and a task's box say stays as words where they stood: removed whole (they may not load or pose as
+  // controls), "![구성도: …](…)" left an empty paragraph and "- [x] 끝" lost whether it was done
+  window.DOMPurify.addHook("uponSanitizeElement", (node, data) => {
+    let words = null;
+    if (data.tagName === "img") {
+      const alt = (node.getAttribute("alt") || "").trim();
+      words = alt ? t("[Image: {alt}]", { alt }) : t("[Image]");
+    } else if (data.tagName === "input" && (node.getAttribute("type") || "").toLowerCase() === "checkbox") {
+      words = node.hasAttribute("checked") ? "☑" : "☐";
+    }
+    if (words != null && node.parentNode) node.parentNode.insertBefore(node.ownerDocument.createTextNode(words), node);
+  });
   window.DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
     if (data.attrName === "class" && !(node.nodeName === "CODE" && /^language-[\w+#.-]+$/.test(data.attrValue))) data.keepAttr = false;
   });
@@ -219,6 +237,8 @@ const STAR_MARK = mark(STAR_PATH);
 // The same star, small, before the words of a starred row of the contents; its word is for a screen reader
 const STAR_ROW = () => `<svg class="h-star" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round" aria-hidden="true">${STAR_PATH}</svg>`
   + `<span class="sr-only">${t("Starred answer")}</span>`;
+// A bin, for the delete key on an answer's head: the menu's Clear history wears the same (index.html, #clear)
+const TRASH_MARK = mark('<path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v5M14 11v5"/>');
 // The code block's own copy button: the mark changes with the word, so the state is visible from
 // across the page and not only to whoever is reading the label.
 async function copyCode(from, btn) {
@@ -272,10 +292,13 @@ async function copyTable(table, btn) {
 async function copyText(text, btn) {
   let done = false;
   try { await navigator.clipboard.writeText(text); done = true; } catch (_) {
+    // the old way, through a selected text box: it takes the focus, which goes back to the key pressed (it was left on the page)
+    const back = document.activeElement;
     const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
     document.body.appendChild(ta); ta.select();
     try { done = document.execCommand("copy"); } catch (_) {}
     ta.remove();
+    if (back && back !== document.body && back.isConnected) back.focus({ preventScroll: true });
   }
   if (btn) {
     // How the button looked before it was pressed, taken on the first press only. Taken on every press,
@@ -358,7 +381,7 @@ const readsStdin = (lang, code) => !!READS_STDIN[lang]?.test(code);
 const runsExamples = (lang, code) => readsStdin(lang, code) && /입출력\s*예|\bI\/O examples?\b|on\s+the\s+input\s+if\s+given/i.test(code);
 // What the input box asks for: the function's arguments, for such a runner; else the problem's input as written.
 const stdinHint = (lang, code) => (runsExamples(lang, code)
-  ? t("The function's arguments, one per line, as the I/O examples write them (e.g. \"aabbaccc\", [1, 2, 3] or nums = [1, 2], target = 3). Left empty, it runs the problem's I/O examples")
+  ? t("The function's arguments, one per line, as the I/O examples write them (e.g. \"aabbaccc\", [1, 2, 3] or nums = [1, 2], target = 3) · left empty, it runs the problem's I/O examples")
   : t("Paste an example input (it goes to standard input)"));
 // What a program that ran out of input says when it dies. C and C++ say nothing at all, which is
 // why the check above happens before the run and this one only tidies up after it.
@@ -393,7 +416,8 @@ const runTools = (box) => box.querySelector(":scope > .runbar .runtools");
 function paintRun(box, st) {
   const outEl = box.querySelector(".run-out"), stdinEl = box.querySelector(".stdin"), tools = runTools(box);
   const run = tools?.querySelector(".run"), toggle = tools?.querySelector(".stdin-toggle");
-  if (run) run.disabled = !!st.pending;
+  // held while it runs as a key at work, which keeps the keyboard's focus: disabled, the focus fell to the page
+  if (run) { if (st.pending) run.setAttribute("aria-disabled", "true"); else run.removeAttribute("aria-disabled"); }
   box.querySelector(".run-stat").textContent = st.pending ? t("Running…") : st.stat || "";
   outEl.hidden = !!st.pending || st.out == null;
   outEl.className = "run-out" + (st.cls ? " " + st.cls : "");
@@ -431,6 +455,7 @@ function addRunBox(code) {
   stdinEl.oninput = () => { st.stdin = stdinEl.value; };
   tools.querySelector(".stdin-toggle").onclick = () => { st.stdinOpen = !st.stdinOpen; paintRun(box, st); if (st.stdinOpen) stdinEl.focus(); };
   tools.querySelector(".run").onclick = () => {
+    if (st.pending) return;   // running already (paintRun holds the key)
     // Nothing to read and code that reads: open the box, say what it needs, and stop here. A second
     // press runs it anyway, for the time it was meant to run with no input.
     if (!st.stdin.trim() && st.stat !== NEED_STDIN && readsStdin(lang, codeText(code)) && !runsExamples(lang, codeText(code))) {
@@ -1677,11 +1702,25 @@ function vFlow(links, said) {
   });
   return box;
 }
+// The words that stand where a picture was ("[Image: 구성도: 사용자 → API → DB]", written by the sanitizer's hook at the top
+// of this file) are the picture's caption and not a chain the answer wrote: drawn as one, its boxes read "[Image: 구성도:
+// 사용자", "API", "DB]". Found by the brackets the hook writes, in the language it wrote them in (a change of language
+// loads the page again, so the pattern is made once)
+const V_PICTURE = (() => {
+  const [open, close] = t("[Image: {alt}]", { alt: "\u0000" }).split("\u0000").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`${open}[^\\]]*${close}`, "g");
+})();
+const vOwnWords = (text) => text.replace(V_PICTURE, " ");   // a text's words with every picture's caption taken out
 function vFlows(md) {
   md.querySelectorAll("p, li").forEach((node) => {
     if (node.closest("table, pre, blockquote, .v-flow")) return;
-    const plain = node.tagName === "LI" ? [...node.childNodes].filter((c) => !["UL", "OL"].includes(c.nodeName)).map((c) => c.textContent).join("").trim() : node.textContent.trim();
-    const whole = node.childElementCount <= 1 && !node.querySelector("code, .math, a, ul, ol") ? vChain(plain) : null;
+    // An item whose words stand in paragraphs of its own: each paragraph is looked at by itself. Read whole as well, the
+    // item's words drew a second chain, cut short where a link has a space in it ("명시적 Deny → Allow → 기본 Deny")
+    if (node.tagName === "LI" && node.querySelector(":scope > p")) return;
+    const said = node.tagName === "LI" ? [...node.childNodes].filter((c) => !["UL", "OL"].includes(c.nodeName)).map((c) => c.textContent).join("").trim() : node.textContent.trim();
+    const plain = vOwnWords(said).trim();
+    // With a picture's caption beside it the chain is drawn under the words, never in their place: the caption is words too
+    const whole = plain === said && node.childElementCount <= 1 && !node.querySelector("code, .math, a, ul, ol") ? vChain(plain) : null;
     if (whole) { node.textContent = ""; node.classList.add("v-flow-line"); node.append(vFlow(whole, plain)); return; }
     // A chain in bold or code inside a sentence, or written with no spaces in its links: the sentence stays and the chain is drawn under it
     const run = [...node.children].find((c) => ["STRONG", "EM"].includes(c.tagName) && vChain(c.textContent));
@@ -1689,7 +1728,7 @@ function vFlows(md) {
     if (!links) {
       const prose = node.cloneNode(true);
       prose.querySelectorAll("code, pre, ul, ol").forEach((x) => x.remove());   // what is in code stays code: `a -> b -> c` may be a type, or a pointer's path
-      const own = prose.textContent.match(/(?:[^\s→>]+\s*(?:→|->|=>|⇒)\s*){2,8}[^\s→>]+/)?.[0];
+      const own = vOwnWords(prose.textContent).match(/(?:[^\s→>]+\s*(?:→|->|=>|⇒)\s*){2,8}[^\s→>]+/)?.[0];
       links = own ? vChain(own.replace(/([A-Za-z0-9)\]])(?:의|로|를|을|가|이|은|는|와|과|에|로서|까지|부터)$/, "$1")) : null;
       if (links && links.some((x) => x.length > 22)) links = null;
     }
@@ -1751,7 +1790,43 @@ function vBigO(md, answer, whole) {
 }
 // A table: its figures as bars under them, its verdicts in their colours, and the columns of a comparison told apart
 const V_YES = /^(맞음|정답|옳음|참|가능|지원|있음|예|O|○|◯|✓|✔|✅|Yes|True|Correct|Supported)$/i, V_NO = /^(틀림|오답|그름|거짓|불가|불가능|미지원|없음|아니오|아니요|X|×|✗|✘|❌|No|False|Wrong|Incorrect|Unsupported)$/i;
-function vTables(md) {
+// A choice's label as a number: "④", "4", "(4)", "4번", "B", "b)" -> 4 or 2; "" when it is not one
+function choiceKey(text) {
+  // ...with the particle a sentence hangs on it ("D가 정답", "B입니다"), where the particle ends its word: "C언어" and "3의 배수" name no choice
+  const m = String(text || "").trim().match(/^\(?\s*([\u2460-\u2473]|\d{1,2}|[A-Ea-e])(?=\s*번|(?:이|가|은|는|을|를|도|만|입니다|이다)(?![가-힣])|[^0-9A-Za-z가-힣]|$)/);
+  if (!m) return "";
+  const c = m[1];
+  if (/[\u2460-\u2473]/.test(c)) return String(c.charCodeAt(0) - 0x2460 + 1);
+  if (/[A-Ea-e]/.test(c)) return String(c.toUpperCase().charCodeAt(0) - 64);
+  return String(Number(c));
+}
+// The choices an answer names: "④" or "4번 ..." -> ["4"], "③, ④" -> ["3", "4"]. None for the answers to several
+// questions ("1) ③  2) ②", "(1) ③ (2) 42"): which table belongs to which question cannot be told, and the first of them
+// marked row ① in each
+// A list written with a word between its choices ("B와 D", "2번과 4번", "A and C", "1, 3 & 4") is read as one written with
+// commas: "B와 D" marked no row and "A and C" only A. Only where a choice and nothing else stands before the word, from
+// the head of the answer on: "③ 1과 2 모두" names one choice, and its words are not read for more
+const CHOICE_LIST = /^(?:\(?\s*(?:[\u2460-\u2473]|\d{1,2}|[A-Ea-e])\)?(?:\s*번)?(?:\s*(?:[,，、&]|와|과|및)\s*|\s+and\s+))+/i;
+function choiceKeys(answer) {
+  let s = String(answer || "").trim();
+  if ((s.match(/(?:^|\s)\(?\d{1,2}\)\s*\S/g) || []).length > 1) return [];
+  s = s.replace(CHOICE_LIST, (list) => list.replace(/\s*(?:&|와|과|및)\s*|\s+and\s+/gi, ", "));
+  const keys = [];
+  for (const part of s.split(/\s*[,，、]\s*/)) {   // each choice of a list, up to the first part that names none
+    const k = choiceKey(part);
+    if (!k) break;
+    keys.push(k);
+  }
+  return keys;
+}
+// A table of the choices themselves: its first column is headed as one ("보기", "번호"), or each row starts with ①-⑳.
+// A table of steps (1, 2, 3) or of nodes (A, B, C) has labels a choice can be read in, and its row was marked
+const CHOICE_HEAD = /^(보기|선택지|선지|번호|choices?|options?)$/i;
+function choiceTable(heads, body) {
+  if (CHOICE_HEAD.test(heads[0]?.textContent.trim() || "")) return true;
+  return body.length >= 2 && body.every((r) => /^[\u2460-\u2473]/.test(r.cells[0]?.textContent.trim() || ""));
+}
+function vTables(md, answer = "") {
   md.querySelectorAll("table").forEach((table) => {
     if (table.closest(".check-runs, figure") || table.dataset.drawn) return;
     table.dataset.drawn = "1";
@@ -1784,8 +1859,21 @@ function vTables(md) {
     }
     for (const r of body) for (const c of r.cells) {
       const t = c.textContent.trim();
-      if (V_YES.test(t)) { c.classList.add("v-yes"); if (!compare && /^(맞음|정답|옳음|correct)$/i.test(t) && ![...r.cells].some((x) => V_NO.test(x.textContent.trim()))) r.classList.add("v-right"); }
+      if (V_YES.test(t)) c.classList.add("v-yes");
       else if (V_NO.test(t)) c.classList.add("v-no");
+    }
+    // An identifier in a cell (ap-northeast-2, a path, a package's name) stays on one line: broken at each hyphen it stood on three
+    // lines as three words, though the table scrolls sideways where it needs the room
+    for (const r of [...(table.tHead?.rows || []), ...body]) for (const c of r.cells) {
+      const t = c.textContent.trim();
+      if (t.length <= 40 && /[-_./:@]/.test(t) && /^[A-Za-z0-9][\w.\-/:@]*[A-Za-z0-9]$/.test(t)) c.classList.add("v-token");
+    }
+    // The answer's own row is the one marked: the row the answer names (its first cell, "④"), or one that says "정답". "맞음"
+    // alone marked every true statement, so on "which is NOT correct?" the three wrong picks were green and the answer was not
+    const keys = !compare && choiceTable(heads, body) ? choiceKeys(answer) : [];
+    if (!compare) for (const r of body) {
+      const said = [...r.cells].some((x) => /^(정답|answer)$/i.test(x.textContent.trim()));
+      if (said || (keys.length && keys.includes(choiceKey(r.cells[0]?.textContent)))) r.classList.add("v-right");
     }
   });
 }
@@ -1811,6 +1899,10 @@ function vGoTo(part) {
   stopFollowing();
   autoUntil = Date.now() + 900;
   part.scrollIntoView({ block: "start", behavior: motion() });
+  // and the keyboard with it, onto the part's heading: left on the strip, out of sight, the next Tab scrolled back up to it
+  const head = part.firstElementChild || part;
+  if (!head.hasAttribute("tabindex")) head.tabIndex = -1;
+  head.focus({ preventScroll: true });
 }
 // Several answers in one key line, each a tile that goes to the part of the working about it
 function vAnswerTiles(el, md) {
@@ -1828,7 +1920,7 @@ function infographics(el) {
   el.querySelectorAll(".md").forEach((md) => {
     if (md.closest(".ptext, .check-runs") || md.dataset.drawn === "1") return;
     md.dataset.drawn = "1";
-    vTerms(md); vStepLeads(md); vFlows(md); vNotes(md); vTables(md);
+    vTerms(md); vStepLeads(md); vFlows(md); vNotes(md); vTables(md, head?.type === "mcq" ? head.answer || "" : "");   // a choice's number names a row on a multiple-choice answer only
     const main = md.matches("[data-body]");
     const many = main ? vAnswerTiles(el, md) : 0;
     if (main) vMap(md, many);
@@ -2176,6 +2268,10 @@ const settingsValues = {};          // current values (the server confirms each 
 const confirms = new Map();         // cid -> what would go to the agent, waiting for Send / Do not send
 let drawing = null;                 // drawing a box on the screen thumbnail: { url, start, box }
 let gpuPending = false;             // a GPU key was pressed and the server has not said yet what became of it
+let bandsSaid = new Set();          // the bands' titles a screen reader was told of (renderAlerts)
+// A follow-up key's question -> until when it is held. Kept apart from the key: the turn's start draws the entry again,
+// the new key came without its busy state, and a second Enter on it asked the same question twice
+const askBusy = new Map();
 const GPU_WAIT_MS = 15000;
 const PAGE_ID = Math.random().toString(36).slice(2, 8);   // run ids differ between panels and reloads
 let runSeq = 0;
@@ -2190,6 +2286,16 @@ let usage = null;
 let buildAtLoad = null;   // which build this page came from; a later one means a reload is due
 let lastNone = null;          // { ts, voice }: when the screen (or what was heard) last had nothing to solve
 let demo = false;
+// Deleting an answer (its delete key, deleteAnswer): the server moves it to Recently deleted and tells every panel (answer_deleted),
+// and each takes the card away; Undo, or Restore in the Recently deleted sheet, puts it back in every panel (answer_restored)
+const goneIds = new Set();     // answers deleted and their follow-ups: a message about one still on its way draws no card
+const GONE_KEEP = 500;         // ids remembered at most, the oldest forgotten first (a Set keeps the order they came in)
+const goneCards = new Map();   // id -> { it, turns }: a card the history does not hold (an error, a stopped one), kept for Undo
+const GONE_CARDS_KEEP = 20;    // cards kept so at most: Undo is offered for the newest one only
+const deleting = new Map();    // id -> when its delete key was pressed here: this page is the one that offers the Undo
+const restoring = new Map();   // id -> "undo" or "sheet": how a put back asked for here was asked
+let deletedCount = 0;          // how many answers Recently deleted holds (/history/days, then each message's n): the menu's key
+let deletedDays = 7;           // for how many days it holds one, 0 for until emptied (the server's SIDENOTE_DELETED_DAYS)
 
 function newItem(m) {
   return { id: m.id, trigger: m.trigger || "screen", transcript: m.transcript || "", pages: m.pages || 0,
@@ -2309,7 +2415,7 @@ function screenState() {
   // that keeps asking, so the card says it while it holds and says what brings it back.
   if (capture.quiet_sec) {
     return card("ok", t("Watching quietly"), facts,
-      t("No problem {n} times in a row · small changes checked every {s} s. A window switch, a question or Reanalyze brings it back",
+      t("No problem {n} times in a row · small changes checked every {s} s · a window switch, a question or Reanalyze brings it back",
         { n: capture.empty_run, s: Math.round(capture.quiet_sec) }));
   }
   return card("ok", t("Receiving"), facts);
@@ -2401,8 +2507,8 @@ function pullOffer(L) {
   if (!name) return "";
   const size = L.want_gb ? t(", about {gb} GB to download", { gb: L.want_gb }) : "";
   const why = L.fits === false
-    ? (eng()?.agent?.ok ? t("No model fits this GPU's memory, so the agent answers every problem. This one also runs on the CPU, slowly", { agent: AG() })
-      : t("No model fits this GPU's memory. This one runs on the CPU, slowly")) + size
+    ? (eng()?.agent?.ok ? t("No model fits this GPU's memory, so the agent answers every problem · this one also runs on the CPU, slowly", { agent: AG() })
+      : t("No model fits this GPU's memory · this one runs on the CPU, slowly")) + size
     : (L.gpu_gb ? t("The model for this GPU ({gb} GB of memory)", { gb: Math.round(L.gpu_gb) }) : t("The model for this PC")) + size;
   return `${why} <button type="button" class="btn sm pull-model" data-model="${escapeHtml(name)}">${t("Download")}</button>`;
 }
@@ -2419,7 +2525,7 @@ function localState() {
   // stand-in (Pipeline.standing_in), which ends by itself and takes the model off the GPU again. One word for the pill: beside Free
   // the GPU it has some 78 px at 1366
   if (!L.on && L.stand_in && L.ok) return card("warn", t("Stand-in"), [[t("Model"), model]],
-    t("{why}, so this model solves for now though it is off. It leaves the GPU once sending works again", { why: STAND_IN_TEXT[L.stand_in] || t("The agent cannot be used", { agent: AG() }) }));
+    t("{why}, so this model solves for now though it is off · it leaves the GPU once sending works again", { why: STAND_IN_TEXT[L.stand_in] || t("The agent cannot be used", { agent: AG() }) }));
   if (!L.on) return card("off", t("Off"), [[t("Model"), model]], t("Turn it on to find problems on the GPU and answer the easy ones at once"));
   if (!L.ok) {
     // A missing model is pulled; a server that does not answer is looked at. L.missing is what the
@@ -2442,7 +2548,7 @@ function localState() {
   // the state lit and in words, what it means quieter beside it ("loaded · answers at once" read as faint). Loaded, the pill says
   // "On GPU" already: the lit words are what that means, so the card does not say the same state twice
   const gpu = !g ? `<span class="lit off">${t("Empty")}</span> <span class="sub gpu-says">· <mark class="key">${t("Loads by itself when a problem comes")}</mark></span>`
-    : g.unknown ? "" : `<span class="lit ok">${t("Solves at once")}</span> <span class="sub gpu-says">${[g.vram_gb ? `${g.vram_gb} GB` : "", g.params, g.quant, g.ctx ? t("Context {n}", { n: Number(g.ctx).toLocaleString() }) : ""].filter(Boolean).map((x, i) => `${i ? " · " : "· "}${escapeHtml(String(x))}`).join("")}</span>`;
+    : g.unknown ? "" : `<span class="lit ok">${t("Solves at once")}</span> <span class="sub gpu-says">${[g.vram_gb ? `${g.vram_gb} GB` : "", g.params, g.quant, g.ctx ? t("Context {n}", { n: Number(g.ctx).toLocaleString(LOCALE) }) : ""].filter(Boolean).map((x, i) => `${i ? " · " : "· "}${escapeHtml(String(x))}`).join("")}</span>`;
   if (L.busy) {   // another program keeps the GPU busy: a smaller model answers for a while
     // L.busy.until is the server's clock: read against this browser's, a clock some minutes apart
     // counted the hold down to nothing (or up to hours)
@@ -2482,7 +2588,7 @@ function agentModelLine(C) {
 // words of the setting that moves it (Solver settings, Thinking effort), these until the server's list has come. The CLI's own default
 // is marked with its one short word ("Medium · default" took the row's second half and more, and the row broke in two)
 const effortName = (e) => (settingItem("agent_effort")?.options || []).find(([v]) => v === e)?.[1] || EFFORT_TEXT[e] || e;
-const agentEffortLine = (C) => (C.effort ? `${escapeHtml(effortName(C.effort))}${C.effort_own ? ` <span class="sub" title="${t("The CLI's default; change it in Solver settings")}">· ${t("CLI")}</span>` : ""}` : t("Unknown"));
+const agentEffortLine = (C) => (C.effort ? `${escapeHtml(effortName(C.effort))}${C.effort_own ? ` <span class="sub" title="${t("The CLI's default; change it in Solver settings")}">· ${t("default")}</span>` : ""}` : t("Unknown"));
 // Where an agent's CLI is installed from, for a PC that has none: the agent is optional, and this is how to add it
 const AGENT_GET = { "claude-code": "https://docs.anthropic.com/en/docs/claude-code", codex: "https://github.com/openai/codex" };
 function agentGet(C) {
@@ -2491,7 +2597,7 @@ function agentGet(C) {
   return url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a>` : name;
 }
 // What the card and the setup say of an agent not installed: the pill or the step's state says it is optional, this what adding it gives
-const agentOptional = (C) => t("The local model answers on its own. To have the hard problems solved too, install {agent} and sign in once", { agent: agentGet(C) });
+const agentOptional = (C) => t("The local model answers on its own · to have the hard problems solved too, install {agent} and sign in once", { agent: agentGet(C) });
 function agentState() {
   const C = eng()?.agent;
   if (wsState !== "up" || !C) return card("idle", t("Checking"), [], wsState !== "up" ? t("Checked once the server is connected") : "");
@@ -2574,10 +2680,12 @@ function drawGpu(m) {
   $("gpu-viz").hidden = false;
   if (eng()?.local?.loading) renderSignals();   // the steps under Cancel go on with the readings
 }
-function setSignal(id, state, title) {
+function setSignal(id, state, title, said = title) {
   const el = $(id), plainTitle = title.replace(/<[^>]+>/g, "");
   el.dataset.state = state; el.title = plainTitle;
-  el.setAttribute("aria-label", plainTitle);   // the state is a colour and a tooltip otherwise: a screen reader heard only the name
+  // the state is a colour and a tooltip otherwise: a screen reader heard only the name. Its name says the state alone (`said`):
+  // with the card's facts in it, the ages in them ("5 s ago") changed it every second
+  el.setAttribute("aria-label", said.replace(/<[^>]+>/g, ""));
 }
 function setHtml(id, html) { const el = $(id); if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; if (el.querySelector(".fact")) fitFacts(el); } }
 function fitFacts(root = document) {
@@ -2608,14 +2716,14 @@ function renderSignals() {
   const server = { up: ["ok", t("Server connected")], down: ["bad", t("Server disconnected")], connecting: ["idle", t("Connecting to the server")] }[wsState];
   setSignal("sig-server", server[0], server[1]);
   const lo = localState(), c = agentState(), sc = screenState(), au = audioState();
-  setSignal("sig-local", lo.s, t("Local model: ") + plain(lo));
-  setSignal("sig-agent", c.s, `${AG()}: ` + plain(c));
+  setSignal("sig-local", lo.s, t("Local model: ") + plain(lo), t("Local model: ") + lo.pill);
+  setSignal("sig-agent", c.s, `${AG()}: ` + plain(c), `${AG()}: ` + c.pill);
   // the header's signal and the card are named after the agent the server uses
   const sig = document.querySelector("#sig-agent .name");
   if (sig && sig.textContent !== AGS()) sig.textContent = AGS();               // the header has room for the short name
   for (const el of document.querySelectorAll(".agent-name")) if (el.textContent !== AG()) el.textContent = AG();
-  setSignal("sig-screen", sc.s, t("Screen capture: ") + plain(sc));
-  setSignal("sig-audio", au.s, t("Sound capture: ") + plain(au));
+  setSignal("sig-screen", sc.s, t("Screen capture: ") + plain(sc), t("Screen capture: ") + sc.pill);
+  setSignal("sig-audio", au.s, t("Sound capture: ") + plain(au), t("Sound capture: ") + au.pill);
   // Every card is drawn the same way: its rows, then the word and the colour of its state.
   for (const [id, st] of [["screen", sc], ["audio", au], ["local", lo], ["agent", c]]) {
     setHtml(`st-${id}`, cardHtml(st));   // setHtml, so an unchanged card is not rebuilt
@@ -2634,11 +2742,15 @@ function renderSignals() {
   syncSrc();   // what can be folded goes with the state and the details just drawn
   const L = eng()?.local;
   // Ollama lists a model while it is still loading: the load, once begun, keeps its own button until it has ended
-  $("gpu-release").hidden = !(wsState === "up" && L && L.ok && L.loaded && !L.loaded.unknown && !L.loading);
-  $("gpu-release").disabled = gpuPending;            // pressed: held until the server has said what became of it
-  $("gpu-load").disabled = gpuPending;
+  const relBtn = $("gpu-release"), hadFocus = document.activeElement;
+  relBtn.hidden = !(wsState === "up" && L && L.ok && L.loaded && !L.loaded.unknown && !L.loading);
+  // pressed: held until the server has said what became of it, and holding the keyboard's focus (disabled, it dropped to the page)
+  for (const b of [relBtn, $("gpu-load")]) { if (gpuPending) b.setAttribute("aria-disabled", "true"); else b.removeAttribute("aria-disabled"); }
   // Put back on the GPU from here, not only by the next problem: a model taken off the GPU can be loaded again by hand
   $("gpu-load").hidden = !(wsState === "up" && L && L.present && L.on && L.ok && (L.loading || (!L.loaded && !L.busy)));
+  // the pressed key gone and the other come in its place: the focus goes to that one
+  if (hadFocus === relBtn && relBtn.hidden && !$("gpu-load").hidden) $("gpu-load").focus({ preventScroll: true });
+  else if (hadFocus === $("gpu-load") && $("gpu-load").hidden && !relBtn.hidden) relBtn.focus({ preventScroll: true });
   // While it loads the button says so, with a bar running through it, and a press stops it
   const loadBtn = $("gpu-load"), isLoading = !!L?.loading;
   loadBtn.classList.toggle("loading", isLoading);
@@ -2690,7 +2802,7 @@ function answerBars(recent) {
 function engineUsage(u, which) {
   if (!u || !u.answers) return `<p class="usage-none">${which === "agent" ? t("No answers from the agent yet", { agent: AG() }) : t("No answers from the local model yet")}</p>`;
   const money = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : v >= 100 ? `$${Math.round(v)}` : v >= 0.1 ? `$${v.toFixed(2)}` : `$${v.toFixed(3)}`);
-  const much = (v) => (v >= 1e7 ? `${(v / 1e6).toFixed(1)}M` : Number(v || 0).toLocaleString());
+  const much = (v) => (v >= 1e7 ? `${(v / 1e6).toFixed(1)}M` : Number(v || 0).toLocaleString(LOCALE));
   const stat = (v, k, tip = "") => `<span class="stat"${tip ? ` title="${escapeHtml(tip)}"` : ""}><b>${v}</b><span class="k">${k}</span></span>`;
   // Over the last day, or, with none in it, over the last answers it gave. The label says what it counts in the room a tile has (60 px:
   // "Answers, 24 h" ran into the next one), the tooltip over what
@@ -2704,7 +2816,7 @@ function engineUsage(u, which) {
   const tokens = t("In {a} · out {b} tokens", { a: much(u.tokens_in), b: much(u.tokens_out) });
   const cost = `<span class="cost" title="${t("Cost")}">${which !== "agent" ? t("No cost") : u.cost_usd ? money(u.cost_usd) : t("In the subscription")}</span>`;
   const err = u.errors ? `<p class="usage-err">${u.errors === 1 ? t("{n} error", { n: u.errors }) : t("{n} errors", { n: u.errors })}${u.last_error ? t(" · last {when}", { when: fmtClock(u.last_error * 1000) }) : ""}</p>` : "";
-  return `<div class="usage-top">${top.join("")}</div>${answerBars(u.recent)}<p class="usage-sub" title="${t("In {a} · out {b} tokens", { a: Number(u.tokens_in || 0).toLocaleString(), b: Number(u.tokens_out || 0).toLocaleString() })}"><span>${tokens}</span>${cost}</p>${err}`;
+  return `<div class="usage-top">${top.join("")}</div>${answerBars(u.recent)}<p class="usage-sub" title="${t("In {a} · out {b} tokens", { a: Number(u.tokens_in || 0).toLocaleString(LOCALE), b: Number(u.tokens_out || 0).toLocaleString(LOCALE) })}"><span>${tokens}</span>${cost}</p>${err}`;
 }
 // A figure's number run from `from` to the one drawn, in its own unit and decimals, over 0.7 s, easing out; it ends on the exact text drawn
 function countTo(b, from) {
@@ -2780,13 +2892,14 @@ function noticeMsg(text, cmd = "") {
 // take their room at the top and keep it scrolled. Floating there, they lay over the first answer and its keys.
 let bandsRoom = false;
 function placeBands() {
-  const shown = document.querySelector(".signals"), sig = (shown?.offsetParent ? shown : document.querySelector(".brand"))?.getBoundingClientRect(), act = document.querySelector(".actions")?.getBoundingClientRect();
+  // From the name's line, with the release tag beside it: from the name alone, the bands' box lay over the tag and took its clicks
+  const shown = document.querySelector(".signals"), sig = (shown?.offsetParent ? shown : document.querySelector(".brand-line"))?.getBoundingClientRect(), act = document.querySelector(".actions")?.getBoundingClientRect();
   if (!sig || !act) return;
   const left = sig.right + 16, right = window.innerWidth - act.left + 12;
-  // Only at the very top of the page: there a band would lie over the head of the thread. Scrolled, it floats under the bar as a toast does.
-  // Not in one column (1000 px and narrower), where the bands take their room over the thread (index.html): in the bar at the
-  // top and in the page once scrolled, they moved the thread by their height as it scrolled
-  let fits = !window.matchMedia("(max-width: 1000px)").matches && window.scrollY <= 4 && window.innerWidth - left - right >= 380 && sig.top < 40;
+  // In the bar wherever they fit, at the top of the page and scrolled: floating under the bar once scrolled, they lay over the
+  // cards. Not in one column (1000 px and narrower), where the bands take their room over the thread (index.html): in the bar
+  // at the top and in the page once scrolled, they moved the thread by their height as it scrolled
+  let fits = !window.matchMedia("(max-width: 1000px)").matches && window.innerWidth - left - right >= 380 && sig.top < 40;
   document.documentElement.classList.toggle("bands-in-bar", fits);
   document.documentElement.style.setProperty("--band-l", `${Math.round(left)}px`);
   document.documentElement.style.setProperty("--band-r", `${Math.round(right)}px`);
@@ -2796,21 +2909,11 @@ function placeBands() {
     fits = false;
     document.documentElement.classList.remove("bands-in-bar");
   }
-  if (window.matchMedia("(max-width: 1000px)").matches || window.scrollY <= 4) bandsRoom = !fits;
+  bandsRoom = !fits;   // out of the bar they are a strip of its, with their room at the top of the page (index.html)
   document.documentElement.classList.toggle("bands-room", bandsRoom && !!bands?.children.length);
-  // A passing notice stands over the thread's own column, wherever that is at this width
-  const col = document.getElementById("stage")?.getBoundingClientRect();
-  if (col?.width) {
-    document.documentElement.style.setProperty("--col-mid", `${Math.round(col.left + col.width / 2)}px`);
-    document.documentElement.style.setProperty("--col-w", `${Math.round(col.width)}px`);
-  }
   if (bands) document.documentElement.style.setProperty("--alerts-h", `${Math.ceil(bands.getBoundingClientRect().height)}px`);
   document.documentElement.classList.toggle("no-anchor", !!bands?.children.length && window.scrollY < 300);
-  // A passing notice under the bands that float, 8 px under their foot: their height alone left out the margin over them, and the
-  // notice lay 8 px into the last band. The notice's own top is the bar's foot and 18 px (index.html, .toast)
-  const barFoot = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 56;
-  document.documentElement.style.setProperty("--toast-off", !fits && bands?.children.length
-    ? `${Math.max(0, Math.round(bands.getBoundingClientRect().bottom - barFoot - 18 + 8))}px` : "0px");
+
 }
 addEventListener("resize", placeBands);
 addEventListener("scroll", () => schedule("bands", placeBands), { passive: true });
@@ -2852,9 +2955,8 @@ function updateBand() {
 function renderVersion() {
   // a release's number, with a pre-release or build part when the code carries one; anything else is not shown
   const v = typeof status.version === "string" && /^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/.test(status.version) ? status.version : "";
-  $("menu-about").hidden = !v;
-  $("menu-ver").textContent = v ? t("Version {version}", { version: v }) : "";
-  // and beside the name in the bar, where a product's version is looked for, opening that release's notes
+  // beside the name in the bar, where a product's version is looked for, opening that release's notes (the gear menu's foot
+  // said it too, a line on its own at the end of the menu)
   const tag = $("brand-ver");
   tag.hidden = !v;
   tag.textContent = v ? `v${v}` : "";
@@ -2945,6 +3047,12 @@ function renderAlerts() {
   out.push(updateBand());   // a newer release, last: only worth knowing ("" when there is none to show)
   setHtml("alerts", out.join(""));   // redrawn every few seconds: a diff keeps the focus where it was
   $("alerts").querySelectorAll(".msg").forEach((m) => { m.title = m.textContent.trim(); });   // cut to a line in the bar: all of it on the pointer
+  // A band that has just come is said once to a screen reader by its title, the bold words it starts with ("Server
+  // disconnected"): the bands are no live region, since they are drawn again every few seconds, and so none was ever said
+  const titles = [...$("alerts").querySelectorAll(".alert .msg")].map((m) => (m.querySelector("b") || m).textContent.trim()).filter(Boolean);
+  const fresh = titles.filter((x) => !bandsSaid.has(x));
+  bandsSaid = new Set(titles);       // one that went and comes back is said again
+  if (fresh.length) announce(fresh.join(" · "));
   placeBands();
 }
 
@@ -2972,6 +3080,12 @@ function stageText(it) {
 // two brackets in a row, and the head ", 5초째" for the same wait
 const pendingText = (it) => t("{what} · {n} s", { what: stageText(it) || (it.trigger === "voice" ? t("Looking at the problem heard") : t("Looking at the new screen")), n: liveSeconds(it) });
 const liveText = (it) => (stageText(it) ? t("{what} · {n} s", { what: stageText(it), n: liveSeconds(it) }) : t("Solving · {n} s", { n: liveSeconds(it) }));
+// ...written into an answer's head. On a narrow window it stands beside the date and what does not fit is cut (index.html,
+// [data-elapsed]): the whole of it is on the pointer then, as a row cut elsewhere has it
+function paintElapsed(el, it) {
+  el.textContent = liveText(it);
+  if (el.scrollWidth > el.clientWidth + 1) el.title = el.textContent; else el.removeAttribute("title");
+}
 // in the clock every other time on the page is written in ("04:53 AM"), not a 24-hour one with seconds
 const noneText = () => `${fmtClock(lastNone.ts)} ${lastNone.voice ? t("No problem to solve in what was heard") : t("No problem to solve")}`;
 const row = (mg, ct, cls = "", attrs = "") => `<div class="row ${cls}" ${attrs}><div class="mg">${mg}</div><div class="ct">${ct}</div></div>`;
@@ -3125,17 +3239,17 @@ function renderWelcome() {
       ${step(srv, t("Server"), status.desktop ? t("The Sidenote app runs it: start the app again if it is not running")
         : t("Run {cmd} in the server's terminal", { cmd: "<code class=\"cmd\">./sidenote up</code>" }), { true: t("Connected"), false: t("Not connected"), null: t("Checking") }[srv], srv === false)}
       ${L && L.present ? step(L.on && !(pullNow || L.pulling) ? L.ok : null, t("Local model"), L.pull && !L.ok && !L.missing
-        ? t("Finds problems on the GPU and answers what it can at once. First install Ollama from {link}", { link: OLLAMA_LINK })
-        : L.pull ? t("Finds problems on the GPU and answers what it can at once. With no model yet: the Download button on the Local model card")
-        : t("Finds problems on the GPU and answers what it can at once. With no model yet: {cmd}", { cmd: "<code class=\"cmd\">./sidenote llm pull</code>" }),
+        ? t("Finds problems on the GPU and answers what it can at once · first install Ollama from {link}", { link: OLLAMA_LINK })
+        : L.pull ? t("Finds problems on the GPU and answers what it can at once · with no model yet: the Download button on the Local model card")
+        : t("Finds problems on the GPU and answers what it can at once · with no model yet: {cmd}", { cmd: "<code class=\"cmd\">./sidenote llm pull</code>" }),
         // a download under way is the step being done, as the card's own pill says
         !L.on ? t("Off") : L.ok ? t("Connected") : pullNow || L.pulling ? t("Downloading") : t("Needed")) : ""}
       ${C && C.present ? step(C.mode === "off" || C.installed === false ? null : C.ok, `${AG()}`, C.mode === "off"
-        ? t("Off. Turned on in Solver settings, the agent solves the hard problems of the chosen types", { agent: AG() })
+        ? t("Off · turned on in Solver settings, the agent solves the hard problems of the chosen types", { agent: AG() })
         : C.installed === false ? agentOptional(C)
           // the sign-in to make, said as an instruction: where the command is typed is the app's terminal, or the server's
-          : t(status.desktop ? "{does}. It uses the sign-in this PC has; if there is none, open a terminal and run {cmd}"
-            : "{does}. It uses the sign-in this PC has; if there is none, run {cmd} in the server's terminal",
+          : t(status.desktop ? "{does} · it uses the sign-in this PC has; if there is none, open a terminal and run {cmd}"
+            : "{does} · it uses the sign-in this PC has; if there is none, run {cmd} in the server's terminal",
           { does: agentDoes(C.mode), agent: AG(), cmd: `<code class="cmd">${LOGIN()}</code>` }),
         C.mode === "off" ? t("Off") : C.installed === false ? t("Optional") : C.ok ? t("Connected") : t("Needed")) : ""}
       ${!L && !C ? step(null, t("Solving engines"), t("Checked once the server is connected"), t("Checking")) : ""}
@@ -3144,7 +3258,7 @@ function renderWelcome() {
     </ul>`)}
     ${row(t("Tips"), `<ul class="tips">
       <li>${t("The same problem is not solved twice; move on to the next one and it is solved at once")}</li>
-      <li>${t("Not happy with an answer: {redo} above. More to ask: the box below", { redo: REDO_KEY() })}</li>
+      <li>${t("Not happy with an answer: {redo} above · more to ask: the box below", { redo: REDO_KEY() })}</li>
       ${status.runEnabled ? `<li>${t("Run a code answer with {run} to see its output", { run: keyHint(RUN_MARK, t("Run")) })}</li>` : ""}
       <li>${t("For a long problem, turn on {setting} in Solver settings and scroll", { setting: `<b>${escapeHtml(settingItem("stitch")?.label || t("Scroll stitching"))}</b>` })}</li>
       <li>${t("{roi} on the screen card: only the place you draw is looked at and sent", { roi: keyHint(ROI_MARK, t("Draw a region")) })}</li>
@@ -3173,8 +3287,8 @@ function metaHtml(m) {
   if (Array.isArray(m.sent) && !m.sent.length) parts.push(`<span class="none-out">${t("Nothing sent out")}</span>`);
   if (m.usage) {
     const u = m.usage, cached = (u.cache_read || 0) + (u.cache_write || 0), input = (u.input_tokens || 0) + cached;
-    rest.push(`<span>${t("In {n} tokens", { n: `<b>${input.toLocaleString()}</b>` })}${cached ? t(" (cache {n})", { n: cached.toLocaleString() }) : ""}</span>`);
-    rest.push(`<span>${t("Out {n} tokens", { n: `<b>${(u.output_tokens || 0).toLocaleString()}</b>` })}</span>`);
+    rest.push(`<span>${t("In {n} tokens", { n: `<b>${input.toLocaleString(LOCALE)}</b>` })}${cached ? t(" (cache {n})", { n: cached.toLocaleString(LOCALE) }) : ""}</span>`);
+    rest.push(`<span>${t("Out {n} tokens", { n: `<b>${(u.output_tokens || 0).toLocaleString(LOCALE)}</b>` })}</span>`);
   }
   if (m.cost_usd != null) rest.push(`<span class="cost">${t("Cost {v}", { v: `<b>$${m.cost_usd.toFixed(4)}</b>` })}</span>`);
   // What left this PC, in the details: the search words and the pages read. What went to the agent is not written: "에이전트에 보냄
@@ -3248,7 +3362,8 @@ function lastAnsweredId() {
   }
   return null;
 }
-const ptextOffered = (it) => !it.ptext && it.thumb && it.trigger !== "voice" && it.id === lastAnsweredId()
+// Only while the server holds it (can_ask): a restarted server holds none, and none once that answer is deleted
+const ptextOffered = (it) => (!it.ptext || !!it.ptext.error) && it.thumb && it.trigger !== "voice" && it.id === lastAnsweredId() && status.canAsk
   && settingsValues.extract !== false && settingsValues.local_llm !== false && !!eng()?.local?.ok;
 
 // What to ask next, offered as buttons under the latest answer. An answer that is right but thin
@@ -3306,11 +3421,13 @@ function verifyHtml(v) {
     : `<b>${t("The agent's answer", { agent: AG() })}</b> ${t("(not in the format; shown as written)")}`;
   return `<p class="cap check bad">${lead}</p><div class="md" data-vbody></div>`;
 }
-function errorHtml(err, hint) {
+// `tools`: an entry's own keys (its delete key), on the title's line at its right; a follow-up's error has none
+function errorHtml(err, hint, tools = "") {
   const h = HINT[hint] || HINT[""];
   // the command's chip after the sentence, and its copy key; a sentence that names the command itself keeps only the key (h.copy)
   const copy = h.copy || h.cmd;
-  return `<div class="errbox"><h2>${h.title}</h2><p>${h.text}${h.cmd ? ` <code class="cmd">${h.cmd}</code>` : ""}${copy ? ` <button class="btn sm" data-copy="${copy}">${COPY_MARK}<span>${t("Copy command")}</span></button>` : ""}</p>
+  const title = tools ? `<div class="errtop"><h2>${h.title}</h2><span class="tools">${tools}</span></div>` : `<h2>${h.title}</h2>`;
+  return `<div class="errbox">${title}<p>${h.text}${h.cmd ? ` <code class="cmd">${h.cmd}</code>` : ""}${copy ? ` <button class="btn sm" data-copy="${copy}">${COPY_MARK}<span>${t("Copy command")}</span></button>` : ""}</p>
     <details><summary>${t("Error details")}</summary><pre>${escapeHtml(err)}</pre></details></div>`;
 }
 function turnHtml(turn) {
@@ -3378,13 +3495,13 @@ const PRACTICE_KEEP = 400;                              // answers remembered: d
 const OPENED = -1;                                      // "hints shown" of an answer opened in full: it stays open
 let practiceSince = null;                               // when Practice was turned on, or null while it is off
 const practiceCards = new Map();                        // String(id) -> hints shown, or OPENED
+// The cards as storage holds them, as [String(id), hints shown] pairs: a count of hints, or OPENED; nothing else is ours
+const cardsFrom = (stored) => JSON.parse(stored || "[]").filter(([, n]) => Number.isInteger(n) && n >= OPENED).map(([id, n]) => [String(id), n]);
 // Read once as the page opens, as the menu's other choices are; storage may be unavailable, and then nothing is kept
 try {
   const since = Number(localStorage.getItem(PRACTICE_KEY));   // a time, or 0 for nothing stored
   practiceSince = since > 0 ? since : null;                   // anything else is off
-  for (const [id, n] of JSON.parse(localStorage.getItem(PRACTICE_CARDS_KEY) || "[]")) {
-    if (Number.isInteger(n) && n >= OPENED) practiceCards.set(String(id), n);   // a count of hints, or OPENED; nothing else is ours
-  }
+  for (const [id, n] of cardsFrom(localStorage.getItem(PRACTICE_CARDS_KEY))) practiceCards.set(id, n);
 } catch (_) { practiceCards.clear(); }                        // unreadable: start with nothing kept back
 function keepCards() {
   // Over the limit the oldest go: a Map keeps the order its keys were first set in
@@ -3613,11 +3730,15 @@ function showAnswer(it, key = null) {
 }
 // After the entry is drawn again: a press under way draws it when the press ends (renderEntry, endPress), which is queued first
 function afterDraw(it, fn) { setTimeout(() => { const el = entryEl(it.id); if (el) fn(el); }, 0); }
-// Practice turned on or off in the menu; kept in this browser
-function setPractice(on) {
-  if (on === (practiceSince != null)) { syncPracticeSeg(); return; }   // already so
-  practiceSince = on ? Date.now() : null;                              // the answers from now on are kept back
-  try { if (on) localStorage.setItem(PRACTICE_KEY, String(practiceSince)); else localStorage.removeItem(PRACTICE_KEY); } catch (_) {}
+// Practice turned on or off in the menu; kept in this browser. `theirs` is the choice of another tab of this browser, in
+// storage already (the storage listener): the time it was turned on there, or 0 for off
+function setPractice(on, theirs) {
+  const since = on ? (theirs || Date.now()) : null;                    // the answers from then on are kept back
+  if (theirs === undefined ? on === (practiceSince != null) : since === practiceSince) { syncPracticeSeg(); return; }   // already so
+  practiceSince = since;
+  if (theirs === undefined) {                                          // this tab's own choice: kept for the next opening, and told to the others
+    try { if (on) localStorage.setItem(PRACTICE_KEY, String(practiceSince)); else localStorage.removeItem(PRACTICE_KEY); } catch (_) {}
+  }
   syncPracticeSeg();
   if (on) reviewStarred();   // turned on with Starred chosen: a review of them
   // Those kept back come and go with it: only the entries whose look changes are drawn again, the one read kept in its place
@@ -3640,17 +3761,48 @@ function reviewStarred() {
   keepPlace(() => thread.forEach((id) => { const it = items.get(id), el = entryEl(id); if (it && el && el.classList.contains("held") !== held(it)) renderEntry(it); }));
   renderIndex(); syncNextAsks();
 }
+// How far each answer was opened, as another tab of this browser left it (the storage listener): the answers whose card
+// changed are drawn again, the one read kept in its place
+function followCards(stored) {
+  let theirs = null;
+  try { theirs = new Map(cardsFrom(stored)); } catch (_) { return; }   // unreadable: what this tab has stays
+  const changed = [...new Set([...practiceCards.keys(), ...theirs.keys()])].filter((id) => practiceCards.get(id) !== theirs.get(id));
+  if (!changed.length) return;                                         // the same as here: nothing to draw
+  practiceCards.clear();
+  for (const [id, n] of theirs) practiceCards.set(id, n);              // in their order, which is the order they are dropped in
+  keepPlace(() => changed.forEach((id) => { const it = items.get(idOf(id)); if (it && entryEl(it.id)) renderEntry(it); }));
+  renderIndex(); syncNextAsks();
+}
 function syncPracticeSeg() {
   const on = practiceSince != null;
   document.querySelectorAll("#practice-seg button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.practice === "on") === on)));
 }
+// The day in a span of its own, marked when it is today: a phone's window leaves it out there (index.html, .day.today), the time
+// alone, so the kind, the time and an answer's four keys keep one line. The whole of it stays on the pointer
 function entryWhen(it) {
-  const d = new Date(it.ts);
-  return `<time class="stamped">${fmtWhen(d.getTime())}</time>`;
+  const day = dayOf(it.ts), today = day === dayOf(Date.now());
+  if (stampDay === null) stampDay = dayOf(Date.now());   // the day the first stamp is marked on
+  return `<time class="stamped" title="${escapeHtml(fmtWhen(it.ts))}"><span><span class="day${today ? " today" : ""}" data-day="${day}">${fmtDay(it.ts)} </span>${fmtClock(it.ts)}</span></time>`;
 }
+// The day the stamps were marked on: past midnight each stamp is marked again by its own day (the clock's tick below), so
+// yesterday's are dated again and one drawn in the second after midnight keeps its mark
+let stampDay = null;
 // An answer that can be starred: finished, not failed or stopped (the server keeps only those), and with the server's own id
 const starrable = (it) => !it.live && !it.error && !it.stopped && it.meta != null && typeof it.id === "number";
 const starTitle = (it) => (it.starred ? t("Starred · press to unstar") : t("Star: kept when old answers are deleted, and listed under Starred in the contents"));
+// Every finished card can be deleted, an error or a stopped one too: the server takes it from every panel, and only a panel's Undo
+// brings back one the history never held. Not while it is being written, nor a stand-in for an earlier problem (onStart) while a
+// follow-up under it is: that card is this page's alone, and the follow-up would end unseen
+const deletable = (it) => !it.live && (typeof it.id === "number" || !it.turns.some((tid) => turns.get(tid)?.live));
+function deleteKey(it) {
+  // What becomes of it, on the pointer: one the history keeps waits in Recently deleted for its days, any other only leaves the page
+  const n = deletedDays;
+  const title = !starrable(it) ? t("Remove from the page")
+    : n <= 0 ? t("Delete · it stays in Recently deleted until emptied, to put back")
+    : n === 1 ? t("Delete · it stays a day in Recently deleted, to put back")
+    : t("Delete · it stays {n} days in Recently deleted, to put back", { n });
+  return `<button class="btn sm ghost" data-delete="${escapeHtml(String(it.id))}" title="${escapeHtml(title)}">${TRASH_MARK}<span>${t("Delete")}</span></button>`;
+}
 // The star key drawn again on its own, for a star changed from this panel or another: the rest of the entry stays as it is
 function paintStar(it) {
   const key = entryEl(it.id)?.querySelector(`:scope > .row.head [data-star]`);
@@ -3665,25 +3817,30 @@ function entryHtml(it) {
   const via = [];
   if (it.trigger === "voice") via.push(`<span>${t("A problem heard by voice")}</span>`);
   if (it.pages) via.push(`<span>${t("A problem gathered by scrolling, {n} pages", { n: it.pages })}</span>`);
-  if (it.live) via.push(`<span data-elapsed>${liveText(it)}</span>`);
+  if (it.live) via.push(`<span data-elapsed>${escapeHtml(liveText(it))}</span>`);
   const asks = nextAsks(it);          // what can be asked next about this answer
   const hold = held(it);              // kept back by Practice: its question, and the keys that show more
   const tools = [];
   // Every one of these wears its mark, the same drawing as the copy button inside a code block.
   if (foldable(it)) tools.push(`<button class="btn sm ghost" data-fold="${it.id}" aria-expanded="${!folded(it)}">${folded(it) ? OPEN_MARK + `<span>${t("Show the solution")}</span>` : FOLD_MARK + `<span>${t("Fold")}</span>`}</button>`);
-  if (ptextOffered(it)) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}" title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}</span></button>`);
+  // While its text is being written out the key stays where it was, unpressable: gone, the keyboard's focus went to the next key
+  // in its place (the star, which the next Enter then pressed)
+  const ptextWait = !!it.ptext?.pending;
+  if (ptextOffered(it) || ptextWait) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}"${ptextWait ? ' aria-disabled="true"' : ""} title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}${ptextWait ? "…" : ""}</span></button>`);
   if (it.ptext?.text) tools.push(`<button class="btn sm ghost" data-copy-ptext="${it.id}" title="${t("Copy the problem text written out")}">${PTEXT_COPY_MARK}<span>${t("Copy problem text")}</span></button>`);
-  // The star and Copy all come last, so they keep their places from one answer to the next whatever comes before them.
+  // The star, Copy all and Delete come last, so they keep their places from one answer to the next whatever comes before them.
   // The star is on a whole answer the server keeps, by its id (a follow-up's stand-in parent has none)
   if (starrable(it)) tools.push(`<button class="btn sm ghost" data-star="${it.id}" aria-pressed="${!!it.starred}" title="${starTitle(it)}">${STAR_MARK}<span>${t("Star")}</span></button>`);
   if (!it.live && !it.error && !hold) tools.push(`<button class="btn sm ghost" data-copy-item="${it.id}" title="${t("Copy the whole solution as Markdown")}">${COPY_MARK}<span>${t("Copy all")}</span></button>`);
+  // Delete last of all, a little apart (index.html, [data-delete]): the key pressed most, Copy all, is not the one beside it
+  if (deletable(it)) tools.push(deleteKey(it));
   // An error says what went wrong on its first line, beside its label. Its head used to be the headline
   // row, which an error leaves empty (no buttons, and mostly nothing about how it came in), so the label
   // stood beside a blank line and the message began some 50 px further down. A half-written answer
   // under it follows the message, labelled as cut off. The class keeps a narrow window from setting the
   // message beside the label, where it would have a third of the width (index.html, .row.head).
   const head = it.error
-    ? row(`${kind}${entryWhen(it)}`, `${via.length ? `<div class="headline">${via.join("")}</div>` : ""}${errorHtml(it.error, it.hint)}`, "head err")
+    ? row(`${kind}${entryWhen(it)}`, `${via.length ? `<div class="headline">${via.join("")}</div>` : ""}${errorHtml(it.error, it.hint, deletable(it) ? deleteKey(it) : "")}`, "head err")
     : row(`${kind}${entryWhen(it)}`, `<div class="headline">${via.join("")}<span class="tools">${tools.join("")}</span></div>`, "head");
   // The follow-up buttons can be pressed only while the socket is up: syncNextAsks keeps them in step
   // after this, and takes the row away when the server says it cannot answer them.
@@ -3706,7 +3863,7 @@ function entryHtml(it) {
 ` : ""}
     <div data-thread class="fold-hide">${(hold ? it.turns.filter((tid) => !turns.get(tid)?.retry) : it.turns).map((tid) => turnHtml(turns.get(tid))).join("")}</div>
     ${asks.length ? row(t("More"), asks.map(([label, text]) =>
-        `<button class="btn sm" data-ask="${escapeHtml(text)}" title="${escapeHtml(text)}"${offline}>${ASK_MARK}<span>${escapeHtml(label)}</span></button>`).join(""),
+        `<button class="btn sm" data-ask="${escapeHtml(text)}" title="${escapeHtml(text)}"${offline}${Date.now() < (askBusy.get(text) || 0) ? ' aria-disabled="true"' : ''}>${ASK_MARK}<span>${escapeHtml(label)}</span></button>`).join(""),
       "fold-hide asks") : ""}`;
 }
 const entryEl = (id) => document.querySelector(`.entry[data-id="${id}"]`);
@@ -3735,7 +3892,10 @@ const endPress = () => {
 // after the click the press makes (it is dispatched after pointerup, in the same turn)
 document.addEventListener("pointerup", () => setTimeout(endPress, 0), true);
 document.addEventListener("pointercancel", endPress, true);
-// A control inside an entry, as a selector and its place among the entry's matches: found again after a rebuild
+// A control inside an entry, as a selector and its place among the entry's matches: found again after a rebuild. A key that
+// names what it acts on (its data-* attribute and value) is found by that first: by place alone, a key that came or went before
+// it moved the focus onto its neighbour
+const KEY_NAMES = ["fold", "ptext", "copyPtext", "star", "copyItem", "delete"];
 function focusKey(el, root) {
   const f = document.activeElement;
   if (!f || f === document.body || !root.contains(f)) return null;
@@ -3743,13 +3903,140 @@ function focusKey(el, root) {
     + (f.dataset.act ? `[data-act="${CSS.escape(f.dataset.act)}"]` : "");
   const at = [...root.querySelectorAll(sel)].indexOf(f);
   const caret = typeof f.selectionStart === "number" ? [f.selectionStart, f.selectionEnd] : null;
-  return at < 0 ? null : { sel, at, caret };
+  const name = KEY_NAMES.find((n) => f.dataset[n] !== undefined);
+  const exact = name ? `[data-${name.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}="${CSS.escape(f.dataset[name])}"]` : null;
+  return at < 0 ? null : { sel, at, caret, exact };
 }
 function refocus(key, root) {
-  const f = key && root.querySelectorAll(key.sel)[key.at];
+  if (!key) return;
+  let f = key.exact ? root.querySelector(key.exact) : null;
+  if (!f) {
+    f = root.querySelectorAll(key.sel)[key.at];
+    // A key that names what it acts on and is gone: the one in its place is another key (the star, where Problem text was),
+    // and the next Enter pressed that one. The focus is not handed to it
+    if (f && key.exact && KEY_NAMES.some((n) => f.dataset[n] !== undefined)) f = null;
+  }
   if (!f) return;
   f.focus({ preventScroll: true });
   if (key.caret && typeof f.setSelectionRange === "function") { try { f.setSelectionRange(...key.caret); } catch (_) {} }
+}
+// Where the reader is, kept across an answer drawn again as it ends: its scale, its strip of parts and its boxed sections come
+// in above what is being read, and the words read moved down by 144 px at once (172 on a narrow window). The words on the
+// line read are held, found again afterwards by those words, and the page moved back by what they moved. Nothing while
+// the end is followed
+const charTop = (node, at) => {
+  const r = document.createRange();
+  r.setStart(node, Math.min(at, node.nodeValue.length)); r.setEnd(node, Math.min(at + 1, node.nodeValue.length));
+  return r.getBoundingClientRect().top;
+};
+// The words are held as the block's own (a paragraph, an item, a heading): a text node alone is often a word or two in bold
+const SPOT_BLOCK = "p, li, h1, h2, h3, h4, pre, td, th, blockquote, dd, dt";
+// ...and without what a block of code holds beside its code: the bar's label and each line's number are part of a PRE's
+// text, and the bar becomes a caption as the answer ends, so words taken with them were never found again
+const SPOT_SKIP = ".codebar, .no";
+function spotNodes(block) {   // the block's text nodes that are its words, in order
+  const out = [], walk = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    const skip = n.parentElement.closest(SPOT_SKIP);
+    if (!skip || !block.contains(skip)) out.push(n);   // a bar or a number above the block is not the block's own
+  }
+  return out;
+}
+const spotText = (block) => spotNodes(block).map((n) => n.nodeValue).join("");
+function textAt(block, index) {   // the text node, and the place in it, of the `index`-th character of the block's words
+  for (const n of spotNodes(block)) { if (index < n.nodeValue.length) return [n, index]; index -= n.nodeValue.length; }
+  return null;
+}
+// The words as they are looked for again: without spaces, colons and dashes. A lead made a card's name (vSplitLead) loses
+// its colon and the space after it, and words held across the two were not found again
+const SPOT_LOOSE = /[\s:：\-–—]/, SPOT_LOOSE_ALL = new RegExp(SPOT_LOOSE, "g");
+const spotKey = (text) => text.replace(SPOT_LOOSE_ALL, "");
+function spotIndex(text, n) {   // where the `n`-th character of the text's key stands in the text itself
+  for (let i = 0, kept = 0; i < text.length; i++) {
+    if (!SPOT_LOOSE.test(text[i])) { if (kept === n) return i; kept++; }
+  }
+  return -1;
+}
+function readingSpot() {
+  if (stick) return null;
+  const box = $("thread")?.getBoundingClientRect();
+  if (!box || !box.width) return null;
+  const top = (document.querySelector("header.bar")?.getBoundingClientRect().bottom || 0) + 4, room = innerHeight - top;
+  // The line read is taken to be a third of the way down what is in sight, and the words held are the ones nearest it, over
+  // it or under it, down to two thirds: held by the first line under the bar, as scroll anchoring holds the first thing in
+  // sight, what came in between that line and the one read (a lead made a card's name, a caption over a block of code)
+  // still moved the words read by up to 84 px. An entry's head (its label, its question) is passed over, as it stays where
+  // it is, and so is a gap or a picture
+  const read = top + room * 0.3, high = top + 12, low = top + room * 0.65;
+  for (let off = 0; read - off >= high || read + off <= low; off += 8) {
+    for (const line of off ? [read - off, read + off] : [read]) {   // the line itself, then one step over it and one under it
+      const spot = line >= high && line <= low ? spotAt(box, line) : null;
+      if (spot) return spot;
+    }
+  }
+  return null;
+}
+function spotAt(box, line) {
+  for (const x of [box.left + box.width / 2, box.left + box.width / 4, box.left + 40]) {   // a gap or a picture at one: another
+    const pos = document.caretRangeFromPoint?.(x, line) ?? document.caretPositionFromPoint?.(x, line);
+    const node = pos?.startContainer ?? pos?.offsetNode, at = pos?.startOffset ?? pos?.offset ?? 0;
+    const block = node?.nodeType === 3 ? node.parentElement?.closest(SPOT_BLOCK) : null;
+    if (!block || !block.closest("#thread .md")) continue;
+    // ...and so is a block the line does not cross: in the gap between two blocks the caret is given in one of them, and it
+    // was the heading 25 px under the line when a paragraph ended 6 px over it, so the paragraph went up by 39 px as its
+    // section was boxed. The lines looked at next (readingSpot) come to the nearer of the two first
+    const on = block.getBoundingClientRect();
+    if (line < on.top - 2 || line > on.bottom + 2) continue;
+    const nodes = spotNodes(block), k = nodes.indexOf(node);
+    if (k < 0) continue;   // a line's number or the code bar's label: not the words
+    let index = at;        // the caret's place among the block's words
+    for (let i = 0; i < k; i++) index += nodes[i].nodeValue.length;
+    const text = nodes.map((n) => n.nodeValue).join("");
+    let from = Math.max(0, Math.min(index, text.length - 24)), words = text.slice(from, from + 24);
+    // from their first letter: found again by their key, they are found at its first letter, and with a line's end or its
+    // indent in front the place measured before was a line above the one measured after
+    const lead = words.search(/[^\s:：\-–—]/);
+    if (lead < 0) continue;   // nothing but spaces and marks: no words to find again
+    from += lead; words = words.slice(lead);
+    const hit = textAt(block, from);
+    if (!hit) continue;
+    return { block, tag: block.tagName, from, words, key: spotKey(words), entry: block.closest(".entry")?.dataset.id, y: charTop(...hit) };
+  }
+  return null;
+}
+function keepSpot(spot) {
+  if (!spot) return;
+  let mine = null;   // where the last correction left the page: moved from there, the reader moved it, and it is theirs
+  const fix = () => {
+    if (mine != null && Math.abs(window.scrollY - mine) > 1) return false;
+    const dy = spotMoved(spot);
+    if (dy != null && Math.abs(dy) > 1) { autoUntil = Date.now() + 120; window.scrollBy(0, dy); }   // the panel's own scroll, not one by hand
+    mine = window.scrollY;
+    return true;
+  };
+  fix();
+  // and again as what is drawn after it settles (the parts that come in, a formula set once its font is in), until the reader
+  // scrolls
+  requestAnimationFrame(() => { if (fix()) setTimeout(() => { if (fix()) setTimeout(fix, 500); }, 350); });
+}
+function spotMoved(spot) {   // how far the words held moved, or null when they are not found again
+  if (spot.block.isConnected && spotText(spot.block).slice(spot.from, spot.from + spot.words.length) === spot.words) {
+    return charTop(...textAt(spot.block, spot.from)) - spot.y;   // the block itself, as it was
+  }
+  // Drawn anew: the same words in a block of the same kind in the same answer, or else in any block of it (a lead taken out
+  // of its paragraph is the item's now). Words written more than once are the ones that moved least
+  const root = (spot.entry && entryEl(spot.entry)) || $("thread");
+  for (const blocks of [`.md ${spot.tag.toLowerCase()}`, SPOT_BLOCK.split(", ").map((b) => `.md ${b}`).join(", ")]) {
+    let best = null;
+    for (const b of root.querySelectorAll(blocks)) {
+      const text = spotText(b), i = spotKey(text).indexOf(spot.key);
+      const hit = i >= 0 ? textAt(b, spotIndex(text, i)) : null;
+      const dy = hit ? charTop(...hit) - spot.y : null;
+      if (dy != null && (best == null || Math.abs(dy) < Math.abs(best))) best = dy;
+    }
+    if (best != null) return best;
+  }
+  return null;
 }
 function renderEntry(it) {   // create or rebuild one entry in place
   let el = entryEl(it.id);
@@ -3920,9 +4207,14 @@ function fitText(el, texts) {
 function syncAsk() {
   const on = askEnabled();
   const ask = $("ask");
-  // Disabled while the connection is down, the box drops the keyboard's focus: it comes back with the connection
+  // Disabled with nothing to ask about, the box drops the keyboard's focus: it comes back when there is
   if (!on && document.activeElement === ask) askHadFocus = true;
-  ask.disabled = !on; $("askbtn").disabled = !on;
+  // With the connection down the box stays a text box, so the words typed stay words: disabled, it let the page's
+  // one-letter keys run on what was typed into it. Only Send waits for the server; with the server up and nothing to
+  // ask about, the box is disabled as before
+  ask.disabled = wsState === "up" && !status.canAsk;
+  ask.setAttribute("aria-disabled", String(!on));   // said to a screen reader either way: nothing typed is sent now
+  $("askbtn").disabled = !on;
   if (on && askHadFocus) { askHadFocus = false; if (document.activeElement === document.body) ask.focus({ preventScroll: true }); }
   ask.placeholder = fitText(ask, ASK_TEXT[on ? "on" : wsState !== "up" ? "down" : thread.length ? "stale" : "empty"]);
 }
@@ -4035,6 +4327,10 @@ function paintItem(it, final) {
   if (it.live && (body || "").length >= LIVE_FROM) { paintLive(bodyEl, body); return; }
   bodyEl.__live = null;
   renderInto(bodyEl, body || "");
+  // An answer that is its key line and nothing under it ("ANSWER: 4"): the row goes with its label, which stood beside
+  // nothing. While written the row stays, the cursor in it: the words may be on their way
+  const bodyRow = bodyEl.closest(".row");
+  if (bodyRow) bodyRow.hidden = !it.live && !(body || "").trim();
   const vb = el.querySelector("[data-vbody]");
   if (vb && it.verify?.text) {   // the agent's corrected solution (or its reply as it is) under the local one
     const v = splitHead(it.verify.text, true), va = el.querySelector("[data-vans]");
@@ -4241,7 +4537,7 @@ function renderShot() {
     ? t(" region {w}% wide · {h}% high", { w: Math.round((drawing.box[2] - drawing.box[0]) * 100), h: Math.round((drawing.box[3] - drawing.box[1]) * 100) })
     : "";
   $("shot-cap").textContent = drawing
-    ? (stale ? t("Capture off: not the screen now. The region holds from the next screen") + boxSize
+    ? (stale ? t("Capture off: not the screen now · the region holds from the next screen") + boxSize
              : t("Drag to draw a region · Esc cancels") + boxSize)
     : it && it.region && thumb ? t("Highlight: where the problem was seen")
         + `${cutTop || cutBottom ? (cutTop && cutBottom ? t(" · it goes on above and below; scroll and it reads on") : cutTop ? t(" · it goes on above; scroll and it reads on") : t(" · it goes on below; scroll and it reads on")) : ""}`
@@ -4404,6 +4700,8 @@ function restore(row) {
   }
   practiceArrived(it, true);   // answered while Practice was on, the panel closed or not: kept back like one that came here
   items.set(it.id, it); thread.push(it.id);
+  // Put back, here or in another panel: what comes about it from now on is drawn again
+  goneIds.delete(it.id); it.turns.forEach((tid) => goneIds.delete(tid)); goneCards.delete(it.id);
   return true;
 }
 async function loadHistory(params = {}) {
@@ -4416,6 +4714,10 @@ async function loadHistory(params = {}) {
     historyDays = days.days || [];
     historyStarred = days.starred || 0;
     heardAny = !!days.heard; syncHeardKeys();
+    // Recently deleted: how many it holds (its key in the menu), and for how long it holds one (the delete key's words)
+    if (typeof days.deleted === "number") deletedCount = days.deleted;
+    if (typeof days.deleted_days === "number") deletedDays = days.deleted_days;
+    syncDeleted();
     if (added) {
       thread.sort((a, b) => items.get(a).ts - items.get(b).ts);
       // Over the limit the oldest go, but not what this request just found: an old answer searched for was the first out
@@ -4485,6 +4787,11 @@ function fillChoices() {
   if (kind.dataset.html !== kindHtml) { kind.dataset.html = kindHtml; kind.innerHTML = kindHtml; kind.value = histKind; }
   syncPick(day); syncPick(kind);
 }
+// Words that name an answer, in a row of the contents or of Recently deleted: a bare mark ("④") names nothing
+function sayable(s, block = false) { const w = plainAnswer(s, block); return /[\p{L}\p{N}]{2,}/u.test(w) ? w : ""; }
+// The first sentence of a working that says something: a line of the body is read as a block, its heading's hashes and a
+// table row's bars are marks there
+function firstSayable(s) { return sayable(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => sayable(l, true)), true); }
 function renderIndex() {
   $("hist-none").hidden = thread.length > 0;
   $("hist-tools").hidden = thread.length === 0;
@@ -4519,9 +4826,7 @@ function renderIndex() {
     const label = it.error ? t("Error") : it.live && !it.head.type ? t("Analyzing") : (TYPE_LABEL[it.head.type] || it.head.type || t("Result"));
     // What was asked names a row: that is what the eye looks for. The answer stands in where no question was written out, unless it
     // is a bare mark ("④" names nothing), and then the first sentence of the working, and last the kind
-    const says = (s, block = false) => { const t = plainAnswer(s, block); return /[\p{L}\p{N}]{2,}/u.test(t) ? t : ""; };
-    // a line of the body is read as a block: its heading's hashes and a table row's bars are marks there
-    const firstLine = (s) => says(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => says(l, true)), true);
+    const says = sayable, firstLine = firstSayable;
     // One Practice keeps back is named by its question alone, or by what was heard: never its answer line or the first words of its working
     const hold = held(it);
     let text = it.error && !hold ? (HINT[it.hint] || HINT[""]).title
@@ -4878,8 +5183,12 @@ function syncNextAsks() {
   // The row comes or goes, and the end with it: followed, as an entry that grows is. On opening, the answers came before the
   // server's word that questions can be asked, and the keys that came then stood half under the question box
   if (!!row !== (nextAsks(it).length > 0)) { renderEntry(it); followEnd(); return; }
-  // a button just pressed keeps its own two seconds (the click handler's busy time) either way
-  if (row) row.querySelectorAll("[data-ask]").forEach((b) => { b.disabled = wsState !== "up" || Date.now() < (b._busyUntil || 0); });
+  // a question just asked keeps its own two seconds (the click handler's busy time) either way: by the question, as the key
+  // that was pressed may have been drawn again since
+  if (row) row.querySelectorAll("[data-ask]").forEach((b) => {
+    b.disabled = wsState !== "up";
+    if (Date.now() < (askBusy.get(b.dataset.ask) || 0)) b.setAttribute("aria-disabled", "true"); else b.removeAttribute("aria-disabled");
+  });
 }
 function renderAll() {
   renderSignals(); renderAlerts(); renderShot(); renderIndex(); syncAsk(); syncNextAsks(); renderSettings();
@@ -4934,6 +5243,8 @@ function dropItem(it) {   // cancelled, or nothing to solve: leave no trace
 const REVEAL_MS = 2000;   // how long an automatic analysis runs before the page says it is looking (onStart)
 let manualUntil = 0;      // Reanalyze was pressed: the analysis it starts is said at once (reanalyze)
 function onStart(m) {
+  // On its way when its answer was deleted, or about an answer deleted: it draws nothing
+  if (goneIds.has(idOf(m.id)) || (m.about != null && goneIds.has(idOf(m.about)))) return;
   // retry: the automatic one after a failed example; continue: the answer filled out from a problem scrolled together
   if (m.trigger === "ask" || m.trigger === "retry" || m.trigger === "continue") {
     // `about` is the analysis the server answers it against (not whatever is newest: an error, or
@@ -5010,6 +5321,7 @@ function clearVoiceState() {
 }
 function onDone(m) {
   if (endsVoice(m.id)) clearVoiceState();
+  if (goneIds.has(idOf(m.id))) return;   // its answer was deleted while it was written: no card comes of it
   const turn = turns.get(m.id);
   if (turn) {
     turn.raw = m.text || turn.raw; turn.live = false; turn.meta = m;
@@ -5022,7 +5334,9 @@ function onDone(m) {
     // or in view stays open, as an entry opened by hand does.
     const tEl = document.querySelector(`[data-turn="${turn.id}"]`);
     if (p && (followTurn === turn.id || (tEl && inView(tEl)))) unfolded.add(p.id);
+    const spot = followTurn === turn.id ? null : readingSpot();   // read above the end: kept where it is (keepSpot)
     if (p) renderEntry(p);
+    keepSpot(spot);
     if (followTurn === turn.id) { showTurn(turn); followTurn = null; readerMoved(); if (nearBottom()) stick = true; }
     else followEnd();
     // Not one the watching wrote under an answer Practice keeps back: it waits with that answer, and so do its words
@@ -5047,12 +5361,16 @@ function onDone(m) {
     return;
   }
   const wasShown = it.shown;   // on the page already while it was being written
+  // read above the end while it was written: kept where it is (keepSpot), taken before anything here is drawn again (the
+  // answer before it, which gives up its Problem text key, moved what is read by 46 px before this one was drawn)
+  const spot = wasShown ? readingSpot() : null;
   if (!wasShown) practiceArrived(it);   // all of it in one message: with Practice on, kept back as it comes
   addToThread(it); syncEmpty();
   if (before != null && before !== it.id && items.get(before) && entryEl(before)) renderEntry(items.get(before));
   status.canAsk = true; syncAsk();
   it.fresh = !wasShown;
   renderEntry(it); refold(); renderTail(); renderIndex();
+  keepSpot(spot);
   if (wasShown) { followEnd(); updateView(); } else afterGrow();   // finishing is not a new answer: no pull
   // Its kind for a screen reader, and its answer line unless Practice keeps it back
   announce(`${TYPE_LABEL[it.head.type] || t("Solution")}: ${(!held(it) && plainAnswer(it.head.answer)) || t("Solution done")}`);
@@ -5107,6 +5425,7 @@ function onCancelled(m) {
 }
 function onError(m) {
   clearVoiceState();   // it failed, so the card must stop saying it is being solved
+  if (goneIds.has(idOf(m.id))) return;   // about an answer deleted: nothing to say on a card that is gone
   const h = HINT[m.hint] || HINT[""];
   const turn = turns.get(m.id);
   if (turn) {
@@ -5163,6 +5482,10 @@ function handle(m) {
     }
     case "usage": usage = m; renderUsage(); break;
     case "history_cleared": clearShown(); break;   // cleared from this panel or another one: what is shown goes too
+    // an answer deleted, put back, or deleted for good, here, in another panel or by a program: every panel hears it
+    case "answer_deleted": onDeleted(m); break;
+    case "answer_restored": onRestored(m); break;
+    case "deleted_cleared": onDeletedCleared(m); break;
     // a notice that points at an answer above (a problem seen again: m.of) takes the view there when pressed
     case "gpu": drawGpu(m); break;
     // the model download the local model's card started: its progress, then done or why it failed
@@ -5197,7 +5520,7 @@ function handle(m) {
           it.raw = ""; it.head = splitHead("");
           if (it.shown) { paintItem(it, false); followEnd(); } else renderTail();
         }
-        if (it.shown) { const el = entryEl(it.id)?.querySelector("[data-elapsed]"); if (el) el.textContent = liveText(it); }
+        if (it.shown) { const el = entryEl(it.id)?.querySelector("[data-elapsed]"); if (el) paintElapsed(el, it); }
         else renderTail();
       }
       break;
@@ -5543,15 +5866,24 @@ onSheets("focusout", (e) => {
 });
 window.addEventListener("resize", () => { if (!$("settings-overlay").hidden) fitWords(); });   // the lines wrap at another width
 let settingsOpener = null;
+// The page behind an open sheet is out of reach (inert): the sheets say they are modal (aria-modal), and the page's keys and
+// answers still stood in what a screen reader reads. Called as a sheet opens and as it closes, before the focus goes back
+const SHEETS = ["settings-overlay", "setup-overlay", "keys-overlay", "heard-overlay", "deleted-overlay"];
+function pageInert() {
+  const open = SHEETS.some((o) => !$(o).hidden);
+  for (const el of [document.querySelector("header.bar"), document.querySelector("main.layout")]) if (el) el.inert = open;
+}
 function openSettings() {
   toggleMenu(false);
   settingsOpener = document.activeElement;
   $("settings-overlay").hidden = false;
+  pageInert();
   renderSettings();
   $("settings-close").focus({ preventScroll: true });
 }
 function closeSettings() {
   $("settings-overlay").hidden = true;
+  pageInert();
   resetArmed = 0;                      // armed, closed, reopened: one click would have sent it
   const rb = $("settings-reset");
   rb.textContent = t("Reset to defaults");
@@ -5564,6 +5896,22 @@ function closeSettings() {
   back.focus({ preventScroll: true });
 }
 const CAN_FOCUS = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex="0"]';
+// A sheet over its veil, as the keys', the heard, Recently deleted and the setup guide are: the keyboard stays inside it
+// (Tab from its last key goes to its first, Shift+Tab from its first to its last), and a press on the veil closes it only
+// when the press and the release are both on it (the settings sheet's rule: a drag out of a field ended there). One copy:
+// the four sheets had each their own of these lines
+function sheetPlumbing(sheetId, overlayId, close) {
+  $(sheetId).addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const f = [...$(sheetId).querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
+    if (!f.length) return;
+    const edge = e.shiftKey ? f[0] : f[f.length - 1];
+    if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
+  });
+  let pressed = false;   // the press began on the veil
+  $(overlayId).addEventListener("mousedown", (e) => { pressed = e.target === $(overlayId); });
+  $(overlayId).addEventListener("click", (e) => { if (pressed && e.target === $(overlayId)) close(); pressed = false; });
+}
 $("settings").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); closeSettings(); return; }
   if (e.key !== "Tab") return;
@@ -5574,9 +5922,22 @@ $("settings").addEventListener("keydown", (e) => {
   const edge = e.shiftKey ? f[0] : f[f.length - 1];
   if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
 });
+// The confirming press of a key that asks first is taken only once its question could have been read: a double click armed
+// it and pressed it at once, and reset every setting (or cleared every answer, below) with nothing asked at all
+const CONFIRM_AFTER = 600;
+// and never by a key held down: Enter's repeat pressed the key again past the wait above, and cleared the history unasked
+for (const id of ["clear", "settings-reset"]) {
+  $(id).addEventListener("keydown", (e) => { if (e.repeat && (e.key === "Enter" || e.key === " ")) e.preventDefault(); });
+}
+// nor a delete key held down: as a card goes the keyboard goes on to the next card's delete key (focusAfter), and the repeat
+// deleted that one too; nor Recently deleted's keys that ask twice
+document.addEventListener("keydown", (e) => {
+  if (e.repeat && (e.key === "Enter" || e.key === " ") && e.target.closest?.("[data-delete], [data-purge], #deleted-empty")) e.preventDefault();
+}, true);
 let resetArmed = 0;
 $("settings-reset").onclick = () => {
   const b = $("settings-reset");
+  if (resetArmed && Date.now() < resetArmed - 5000 + CONFIRM_AFTER) return;   // the second half of a double click
   if (Date.now() > resetArmed) {          // asked once, done on the second press
     resetArmed = Date.now() + 5000;
     b.textContent = t("Press again to reset");
@@ -5838,20 +6199,50 @@ addEventListener("scroll", () => {
 // `tone`: the bands' kinds: "info" (or "") something to know, "done" what was asked for went through, "warn" it was
 // not done, "bad" something broke. `cmd`: a command the words name, drawn as a chip
 const TOAST_TONES = new Set(["info", "done", "warn", "bad"]);
-function toast(text, go = null, tone = "", cmd = "") {
+// `label`: the word on its key when it does something other than go to an answer (Undo)
+function toast(text, go = null, tone = "", cmd = "", label = "") {
   const el = $("toast"), kind = TOAST_TONES.has(tone) ? tone : "info";
-  el.innerHTML = alertHtml(kind, noticeMsg(text, cmd), go ? `<span class="btn sm">${t("To the answer")}</span>` : "");
+  delete el.dataset.undo;   // a new notice takes the place of an Undo offered (offerUndo): z no longer reaches it
+  el.innerHTML = alertHtml(kind, noticeMsg(text, cmd), go ? `<span class="btn sm">${label || t("To the answer")}</span>` : "");
   el.dataset.tone = kind;
   el.onclick = go ? () => { go(); el.classList.remove("show"); } : null;
   el.tabIndex = go ? 0 : -1;                                 // a pressable one is reached by the keyboard too
   el.onkeydown = go ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.onclick(); } } : null;
   el.classList.toggle("go", !!go);
-  // Every notice comes in one place, under the bar, below any bands that are up; Classic places it, in index.html
+  el.title = String(text ?? "");                            // the whole of it, where one line in the bar cuts it short
+  placeToast();                                             // in the bar, where it covers no box (index.html, .toast)
   el.classList.add("show");
   // Long enough to be read: 3.6 s for a few words and more for more, up to 9 s; one to press stays 3 s longer
   const ms = Math.min(9000, Math.max(3600, 1600 + String(text ?? "").length * 70)) + (go ? 3000 : 0);
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { el.classList.remove("show"); el.tabIndex = -1; el.onclick = el.onkeydown = null; }, ms);   // gone: not to be reached by the keyboard, unseen
 }
+// Where a passing notice stands, in the bar (index.html, .toast). The first of these rooms its words fit in on one line, or
+// the widest: the free room between the name (and the signals beside it) and the keys; over the signals, where they stand
+// beside the name (they fade out while it shows); the signals' own row, where the bar takes two. Each room is the bar's own,
+// so the notice lies over no box and none of the page's edges run under it
+function placeToast() {
+  const el = $("toast"), root = document.documentElement;
+  const brand = document.querySelector(".brand-line")?.getBoundingClientRect(), keys = document.querySelector(".actions")?.getBoundingClientRect();
+  const bar = document.querySelector(".bar")?.getBoundingClientRect(), sigEl = document.querySelector(".signals");
+  if (!brand || !keys || !bar || !keys.width) return;
+  const sig = sigEl?.offsetParent && sigEl.getBoundingClientRect().width ? sigEl.getBoundingClientRect() : null;
+  const ownRow = !!sig && sig.top >= keys.bottom - 1;       // the signals under the name and the keys, a row of their own
+  const mid = (keys.top + keys.bottom) / 2;                 // the name's and the keys' row
+  const rooms = [{ l: (sig && !ownRow ? sig.right : brand.right) + 16, r: keys.left - 12, y: mid, h: 38, over: false }];
+  if (sig && !ownRow) rooms.push({ l: brand.right + 16, r: keys.left - 12, y: mid, h: 38, over: true });
+  if (ownRow) rooms.push({ l: sig.left, r: sig.right, y: (sig.top + sig.bottom) / 2, h: Math.max(26, Math.min(38, bar.bottom - keys.bottom - 8)), over: true });
+  // its words' own width, one line: measured with the whole window for room, as laid out (offsetWidth): the hidden notice is
+  // drawn at .98 of its size, and its drawn width chose a room 2% too narrow
+  root.style.setProperty("--toast-l", "0px"); root.style.setProperty("--toast-r", "0px");
+  const need = (el.firstElementChild?.offsetWidth || 0) + 1;
+  const room = rooms.find((x) => x.r - x.l >= need) || rooms.reduce((a, b) => (b.r - b.l > a.r - a.l ? b : a));
+  root.style.setProperty("--toast-l", `${Math.round(room.l)}px`);
+  root.style.setProperty("--toast-r", `${Math.round(window.innerWidth - room.r)}px`);
+  root.style.setProperty("--toast-y", `${Math.round(room.y)}px`);
+  root.style.setProperty("--toast-h", `${Math.round(room.h)}px`);
+  root.classList.toggle("toast-over-signals", room.over);
+}
+addEventListener("resize", () => { if ($("toast").classList.contains("show")) placeToast(); });
 function send(msg) {
   if (demo) { toast(t("A preview: nothing is sent")); return false; }
   if (!sock || sock.readyState !== WebSocket.OPEN) { toast(t("No connection to the server"), null, "bad"); return false; }
@@ -5908,6 +6299,19 @@ function setUiLang(l) {
   url.searchParams.delete("lang");
   if ((l === "auto" ? browserLang() : l) !== LANG || url.href !== location.href) location.replace(url.href);
 }
+// Another tab of this browser changed what the menu keeps here (Practice and how far its answers were opened, the theme,
+// motion, the language): this tab follows it. Two panels open side by side showed the same answer kept back in one and in
+// full in the other. The event comes to the other tabs only, never to the one that wrote, and a value stored again as it
+// is raises none, so following writes nothing on
+window.addEventListener("storage", (e) => {
+  const v = e.newValue;                                   // null when the key was removed
+  if (e.key === PRACTICE_KEY) setPractice(Number(v) > 0, Number(v) > 0 ? Number(v) : 0);
+  else if (e.key === PRACTICE_CARDS_KEY) followCards(v);
+  else if (e.key === "sidenote-theme") setTheme(v === "light" || v === "auto" ? v : "dark");       // unset is dark (theme.js)
+  else if (e.key === "sidenote-motion") setMotion(v === "off" || v === "system" ? v : "on");      // unset is on (theme.js)
+  // a page whose address names its language (?lang=) keeps it, as it does on opening (i18n.js)
+  else if (e.key === "sidenote-lang" && !new URLSearchParams(location.search).has("lang")) setUiLang(SUPPORTED.includes(v) ? v : "auto");
+});
 // The design (theme.js sets it before the first paint; Classic only since New (Beta) was switched off). Diagrams draw from its colours.
 function setSkin(skin) {
   document.documentElement.dataset.skin = skin;
@@ -5933,10 +6337,29 @@ function toggleMenu(open) {
   const m = $("menu"), want = open ?? m.hidden;
   m.hidden = !want; $("more").setAttribute("aria-expanded", String(want));
   $("menu-veil").hidden = !want;
+  placeMenu();
   if (!want && clearArmed) { clearArmed = 0; $("clear").textContent = t("Clear history"); $("clear").classList.remove("on"); }   // armed only while it is in view
 }
+// The gear menu as a sheet (index.html, Classic): hung from the bar's foot down to the window's, on the right column's edges,
+// or the window's width in one column, where it covers the bands' strip at the thread's head with the rest
+function placeMenu() {
+  const m = $("menu");
+  if (m.hidden || document.documentElement.dataset.skin !== "classic") return;
+  const one = window.matchMedia("(max-width: 1000px)").matches;
+  const rail = document.querySelector(".rail")?.getBoundingClientRect();
+  const bar = document.querySelector(".bar")?.getBoundingClientRect();
+  if (!bar || (!one && !rail?.width)) { m.style.left = m.style.width = m.style.top = ""; return; }
+  m.style.left = `${one ? 0 : Math.round(rail.left)}px`;
+  m.style.width = `${one ? window.innerWidth : Math.round(rail.width)}px`;
+  m.style.top = `${Math.round(bar.bottom)}px`;
+}
+addEventListener("resize", placeMenu);
+let reanalyzedAt = 0;
 function reanalyze() {
+  // a double click asked twice, and the server stopped the first to start the second: the second press of one is let go
+  if (Date.now() - reanalyzedAt < 800) return;
   if (!send({ type: "reanalyze" })) return;
+  reanalyzedAt = Date.now();
   manualUntil = Date.now() + 10000;   // the analysis this starts was asked for by hand: said at once (onStart)
   toast(!capture.screen_on ? t("Solving again from what was heard") : capture.clients === 0 ? t("Capture off: reanalyzing the last screen") : t("Reanalyzing the screen now"));
 }
@@ -5970,12 +6393,12 @@ $("menu-veil").onclick = () => { toggleMenu(false); $("more").focus({ preventScr
 $("reanalyze").onclick = reanalyze;
 $("open-settings").onclick = openSettings;
 function gpuPressed() {   // a press went out: both keys wait for the server's word on the engines, and for no longer than GPU_WAIT_MS if none comes
-  gpuPending = true; $("gpu-release").disabled = $("gpu-load").disabled = true;
+  gpuPending = true; $("gpu-release").setAttribute("aria-disabled", "true"); $("gpu-load").setAttribute("aria-disabled", "true");
   clearTimeout(gpuPressed.timer); gpuPressed.timer = setTimeout(() => { gpuPending = false; renderAll(); }, GPU_WAIT_MS);
 }
-$("gpu-release").onclick = () => { if (send({ type: "gpu_release" })) gpuPressed(); };
+$("gpu-release").onclick = () => { if (!gpuPending && send({ type: "gpu_release" })) gpuPressed(); };
 const gpuLoad = () => { if (send({ type: "gpu_load" })) { gpuPressed(); toast(t("Loading onto the GPU · tens of seconds")); } };
-$("gpu-load").onclick = () => { if (eng()?.local?.loading) { if (send({ type: "gpu_load_cancel" })) gpuPressed(); } else gpuLoad(); };
+$("gpu-load").onclick = () => { if (gpuPending) return; if (eng()?.local?.loading) { if (send({ type: "gpu_load_cancel" })) gpuPressed(); } else gpuLoad(); };
 // The local model's and the agent's cards fold to their top line on a press of their name, and open again; each as it was
 // left, in this browser (open at first, and open where the browser keeps nothing)
 const CARD_FOLD_KEY = "sidenote.cardFold";
@@ -6060,11 +6483,14 @@ document.addEventListener("click", (e) => {
   if (copy) copyText(copy.dataset.copy, copy);
   // One of the follow-up buttons under the latest answer: it carries the whole question it asks.
   const more = e.target.closest("[data-ask]");
-  if (more && !more.disabled) {
-    if (send({ type: "ask", text: more.dataset.ask })) {
-      more.disabled = true;                  // it is on its way: pressing again would ask twice
-      more._busyUntil = Date.now() + 2000;   // and syncNextAsks does not let it go any sooner
-      setTimeout(() => { more.disabled = wsState !== "up"; }, 2000);   // back, unless the socket went
+  if (more && !more.disabled && more.getAttribute("aria-disabled") !== "true" && !(Date.now() < (askBusy.get(more.dataset.ask) || 0))) {
+    const asking = more.dataset.ask;
+    if (send({ type: "ask", text: asking })) {
+      // it is on its way: pressing again would ask twice. Held as a key at work, which keeps the keyboard's focus
+      more.setAttribute("aria-disabled", "true");
+      askBusy.set(asking, Date.now() + 2000);   // by its question: syncNextAsks does not let it go any sooner, on whichever key
+      // back after that, unless the socket went: the key there then, which is another one once the turn's start drew the entry again
+      setTimeout(() => { askBusy.delete(asking); syncNextAsks(); }, 2000);
     }
   }
   const act = e.target.closest("[data-act]");
@@ -6103,8 +6529,11 @@ document.addEventListener("click", (e) => {
   // The star key asks the server, which keeps the star and tells every panel (the "star" message); offline, send() says so
   const sk = e.target.closest("[data-star]");
   if (sk) { const it = items.get(idOf(sk.dataset.star)); if (it) send({ type: "star", id: it.id, starred: !it.starred }); }
+  // The delete key asks the server too, which takes the card from every panel (answer_deleted); this one then offers Undo
+  const dk = e.target.closest("[data-delete]");
+  if (dk) deleteAnswer(items.get(idOf(dk.dataset.delete)));
   const pt = e.target.closest("[data-ptext]");
-  if (pt) { const it = items.get(idOf(pt.dataset.ptext)); if (it && send({ type: "problem_text", id: it.id })) { it.ptext = { pending: true }; renderEntry(it); } }
+  if (pt && pt.getAttribute("aria-disabled") !== "true") { const it = items.get(idOf(pt.dataset.ptext)); if (it && send({ type: "problem_text", id: it.id })) { it.ptext = { pending: true }; renderEntry(it); } }
   const mm = e.target.closest("[data-meta]");
   if (mm) {   // the tokens and the cost: opened or folded, and kept that way through a redraw of the entry
     const box = mm.closest(".meta"), open = !box.classList.contains("open");
@@ -6125,6 +6554,7 @@ $("practice-seg").onclick = (e) => { const b = e.target.closest("button"); if (b
 $("open-keys").onclick = openKeys;
 let clearArmed = 0;
 $("clear").onclick = () => {
+  if (clearArmed && Date.now() - clearArmed < CONFIRM_AFTER) return;   // the second half of a double click (CONFIRM_AFTER)
   if (Date.now() - clearArmed > 3000) {   // first click: ask once more (there is no undo)
     // armed: the words change and so does the colour (.menu .item.on), as the sheet's reset does when armed
     clearArmed = Date.now(); $("clear").textContent = t("Press again to clear"); $("clear").classList.add("on");
@@ -6153,6 +6583,11 @@ function clearShown() {
   historyDays = [];
   histStar = false; historyStarred = 0;   // the starred answers go with the rest (server/history.py, clear)
   heardAny = false; syncHeardKeys();      // and so does what was heard
+  // and Recently deleted with it: nothing in it can be put back, by an Undo still offered either
+  deletedCount = 0; goneCards.clear(); deleting.clear(); restoring.clear();
+  if ($("toast").dataset.undo != null) { $("toast").classList.remove("show"); delete $("toast").dataset.undo; }
+  syncDeleted();
+  if (!$("deleted-overlay").hidden) loadDeleted();
   renderThread(); renderAll();
 }
 // ---------- the keyboard ----------
@@ -6172,6 +6607,7 @@ function shortcutKey(e) {
 const SHORTCUTS = {
   j: () => stepAnswer(1), k: () => stepAnswer(-1), c: () => copyCurrent(), r: () => reanalyze(), p: () => togglePause(),
   "/": () => findAnswer(), h: () => practiceKey("hint"), a: () => practiceKey("answer"),
+  z: () => { if (!undoDelete()) toast(t("Nothing to undo"), null, "info"); },   // a delete's Undo, while its notice shows
   "?": () => ($("keys-overlay").hidden ? openKeys() : closeKeys()),
 };
 // j and k: the next or the previous answer in the notebook, brought into view and made the current one, the contents' ribbon on
@@ -6221,11 +6657,13 @@ function openKeys() {
   comboClose(false);   // a list stands on the page's body, over the sheet, and its arrows and Enter would still choose behind it
   keysOpener = document.activeElement;
   $("keys-overlay").hidden = false;
+  pageInert();
   $("keys-close").focus({ preventScroll: true });
 }
 function closeKeys() {
   if ($("keys-overlay").hidden) return;
   $("keys-overlay").hidden = true;
+  pageInert();
   // The keyboard goes back where it was: to the gear when the sheet came from the menu (closed by now), to nothing from the page
   const was = keysOpener;
   keysOpener = null;
@@ -6233,22 +6671,12 @@ function closeKeys() {
 }
 $("keys-close").onclick = closeKeys;
 // The keyboard stays inside the sheet while it is open, as in the settings sheet
-$("keys").addEventListener("keydown", (e) => {
-  if (e.key !== "Tab") return;
-  const f = [...$("keys").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
-  if (!f.length) return;
-  const edge = e.shiftKey ? f[0] : f[f.length - 1];
-  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
-});
-// Closed by a press on the veil only when the press and the release are both on it (the settings sheet's rule)
-let keysPress = false;
-$("keys-overlay").addEventListener("mousedown", (e) => { keysPress = e.target === $("keys-overlay"); });
-$("keys-overlay").addEventListener("click", (e) => { if (keysPress && e.target === $("keys-overlay")) closeKeys(); keysPress = false; });
+sheetPlumbing("keys", "keys-overlay", () => closeKeys());
 // ---------- What was heard, kept ----------
 // One day's sentences, from the server's /heard (Keep what is heard), in the keys' sheet's look: the time and the words of each, Copy all,
 // and a .md file. The keys to it, on the card and in the menu, are there while the switch is on or something is kept: with the sound
 // off the card is gone, and what was kept can still be read.
-let heardAny = false, heardKept = false, heardDay = "", heardLines = [], heardOpener = null, heardPress = false;
+let heardAny = false, heardKept = false, heardDay = "", heardLines = [], heardOpener = null;
 // Called when the server's settings come, when /history/days says what is kept, and when it is cleared
 function syncHeardKeys() {
   // Switched off: what it kept meanwhile is still there to read, which the server knows
@@ -6290,12 +6718,14 @@ function openHeard() {
   comboClose(false);   // as for the keys' sheet
   heardOpener = document.activeElement;
   $("heard-overlay").hidden = false;
+  pageInert();
   $("heard-close").focus({ preventScroll: true });
   loadHeard();   // the newest day: left open overnight, the page still knows yesterday
 }
 function closeHeard() {
   if ($("heard-overlay").hidden) return;
   $("heard-overlay").hidden = true;
+  pageInert();
   comboClose(false);   // the day list stands on the page's body, and would stay behind
   // The keyboard goes back where it was, as from the keys' sheet
   const was = heardOpener;
@@ -6313,16 +6743,310 @@ $("heard-save").onclick = () => {
   saveFile(out.join("\n"), "text/markdown;charset=utf-8", `sidenote-heard-${heardDay}.md`);
   toast(heardLines.length === 1 ? t("Saved {n} sentence (Markdown)", { n: 1 }) : t("Saved {n} sentences (Markdown)", { n: heardLines.length }), null, "done");
 };
-$("heard").addEventListener("keydown", (e) => {   // the keyboard stays inside the sheet, as in the keys' sheet
-  if (e.key !== "Tab") return;
-  const f = [...$("heard").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
-  if (!f.length) return;
-  const edge = e.shiftKey ? f[0] : f[f.length - 1];
-  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
+sheetPlumbing("heard", "heard-overlay", () => closeHeard());
+// ---------- Deleting an answer, and Recently deleted ----------
+// The delete key on an answer's head asks the server (answer_delete), which moves the answer to Recently deleted for its days
+// (deletedDays) and tells every panel (answer_deleted): each takes the card away, and the one it was pressed in offers Undo for
+// as long as its notice shows (the notice's key, or z). Recently deleted, from the menu, lists what the server holds: Restore
+// puts one back in every panel (answer_restored), Delete for good and Empty take it from the file (deleted_cleared). A card the
+// history never held (an error, a stopped one) leaves every panel all the same, and only Undo brings it back, from each panel's
+// own copy of it.
+function deleteAnswer(it) {
+  if (!it || !deletable(it)) return;
+  if (typeof it.id !== "number") {   // a stand-in for an earlier problem (onStart): this page's own, taken away here alone
+    const next = neighbourId(it.id), had = !!entryEl(it.id)?.contains(document.activeElement);
+    takeAway(it, true);
+    threadChanged();
+    focusAfter(next, had);
+    offerUndo(it.id, { kept: false });
+    return;
+  }
+  if (Date.now() - (deleting.get(it.id) || 0) < 5000) return;   // pressed again before the server answered
+  if (send({ type: "answer_delete", id: it.id })) deleting.set(it.id, Date.now());
+}
+// The card in a deleted one's place for the keyboard: the next on the page, or the one before it when it was the last
+function neighbourId(id) {
+  const shown = [...$("thread").children].filter((e) => e.classList.contains("entry") && !e.hidden);
+  const at = shown.findIndex((e) => idOf(e.dataset.id) === id);
+  const n = at < 0 ? null : shown[at + 1] || shown[at - 1];
+  return n ? idOf(n.dataset.id) : null;
+}
+// The keyboard was on the card that went: to the same key of the card now in its place, not back to the top of the page
+function focusAfter(nid, had) {
+  if (!had) return;
+  const key = nid != null ? entryEl(nid)?.querySelector(":scope > .row.head [data-delete]") : null;
+  if (key) key.focus({ preventScroll: true });
+}
+// Remembered as gone, the newest last; past GONE_KEEP the oldest go
+function forgetId(id) {
+  goneIds.delete(id); goneIds.add(id);
+  while (goneIds.size > GONE_KEEP) goneIds.delete(goneIds.values().next().value);
+}
+// A card off the page, with its follow-ups and whatever pointed at it. `keep`: the history does not hold it, so this page keeps
+// what it showed, for an Undo (a follow-up still being written under it ends here: nothing more of it will be drawn)
+function takeAway(it, keep) {
+  const ts = it.turns.map((tid) => turns.get(tid)).filter(Boolean);
+  if (keep) {
+    for (const tr of ts) if (tr.live) Object.assign(tr, { live: false, stopped: t("Stopped") });
+    goneCards.delete(it.id); goneCards.set(it.id, { it, turns: ts });
+    while (goneCards.size > GONE_CARDS_KEEP) goneCards.delete(goneCards.keys().next().value);
+  }
+  for (const tr of ts) { turns.delete(tr.id); forgetId(tr.id); if (followTurn === tr.id) followTurn = null; }
+  forgetId(it.id);
+  clearTimeout(it.revealTimer);
+  items.delete(it.id); unfolded.delete(it.id);
+  const i = thread.indexOf(it.id);
+  if (i >= 0) thread.splice(i, 1);
+  entryEl(it.id)?.remove();
+  if (jumpFor === it.id) { jumpFor = null; $("jump").hidden = true; }
+  if (repeatOf === it.id) repeatOf = null;
+  if (pinnedView === it.id) pinnedView = null;
+}
+// A card back in the thread by its time, the others left in their order
+function placeBack(id) {
+  thread = thread.filter((x) => x !== id);
+  const ts = items.get(id).ts, at = thread.findIndex((x) => (items.get(x)?.ts ?? 0) > ts);
+  if (at < 0) thread.push(id); else thread.splice(at, 0, id);
+}
+// What this page kept of a card the history does not hold, back on the page
+function putBack(id) {
+  const g = goneCards.get(id);
+  if (!g || items.has(id)) return false;
+  goneCards.delete(id); goneIds.delete(id);
+  for (const tr of g.turns) { turns.set(tr.id, tr); goneIds.delete(tr.id); }
+  items.set(id, g.it);
+  placeBack(id);
+  return true;
+}
+// Everything that reads the thread, after a card went or came back
+function threadChanged() {
+  pruneRuns(); refold(); renderTail(); syncEmpty(); renderIndex(); updateView(); syncAsk(); syncNextAsks();
+}
+// A card back on the page: where it was after an Undo (nothing moved when it went), else without moving what is being read.
+// It flashes, as a card gone to from a notice does
+function cameBack(id, how) {
+  if (how === "undo") { syncThread(); followEnd(); } else keepPlace(syncThread);
+  threadChanged();
+  const el = entryEl(id);
+  if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+}
+// The notice after a delete pressed here, with its Undo: what became of the answer, and for how long it can be put back
+function offerUndo(id, said) {
+  let text;
+  if (!said.kept) text = t("Removed from the page");
+  else if (said.until == null) text = t("Deleted · in Recently deleted until it is emptied");
+  else {
+    const n = Math.max(1, Math.round((said.until - serverNow()) / 86400));
+    text = n === 1 ? t("Deleted · in Recently deleted for a day") : t("Deleted · in Recently deleted for {n} days", { n });
+  }
+  toast(text, undoDelete, "done", "", t("Undo"));
+  $("toast").dataset.undo = String(id);   // after toast(), which clears it for any other notice
+}
+// Undo, from the notice's key or z: false when no notice offers it now
+function undoDelete() {
+  const el = $("toast"), at = el.dataset.undo;
+  if (at == null || !el.classList.contains("show")) return false;
+  delete el.dataset.undo;
+  el.classList.remove("show");
+  const id = idOf(at);
+  if (typeof id === "number") { if (send({ type: "answer_restore", id })) restoring.set(id, "undo"); }
+  else if (putBack(id)) cameBack(id, "undo");
+  return true;
+}
+function onDeleted(m) {
+  const id = idOf(m.id);
+  if (typeof m.n === "number") deletedCount = m.n;
+  if (typeof m.can_ask === "boolean") status.canAsk = m.can_ask;   // the last answer deleted: nothing to ask about now
+  const mine = deleting.delete(id);
+  const it = items.get(id);
+  if (it) {
+    const next = neighbourId(id), had = !!entryEl(id)?.contains(document.activeElement);
+    takeAway(it, m.kept === false);   // one the history never held: only this page's copy can put it back
+    threadChanged();
+    focusAfter(next, had);
+  } else forgetId(id);                // not on this page: a message about it still on its way draws nothing either
+  syncAsk(); syncNextAsks(); syncDeleted();
+  if (mine) offerUndo(id, m);
+  if (!$("deleted-overlay").hidden) loadDeleted();
+  refreshDays();   // the days' counts and the starred one in the contents, which counted it
+}
+// The days and the starred count as the server has them now: after a delete or a put back the contents' Starred and the
+// day it was answered counted it as before, until the next read of the history
+async function refreshDays() {
+  if (demo) return;
+  try {
+    const days = await fetch("history/days").then((r) => r.json());
+    historyDays = days.days || [];
+    historyStarred = days.starred || 0;
+    if (typeof days.deleted === "number") deletedCount = days.deleted;
+    syncDeleted();
+    renderIndex();
+  } catch (_) { /* the server will say it again */ }
+}
+function onRestored(m) {
+  const id = idOf(m.id);
+  if (typeof m.n === "number") deletedCount = m.n;
+  if (typeof m.can_ask === "boolean") status.canAsk = m.can_ask;   // the last answer put back: questions are about it again
+  const how = restoring.get(id);
+  restoring.delete(id);
+  const before = lastAnsweredId();
+  let back = false;
+  if (m.answer && typeof m.answer === "object") {   // the answer as the history keeps it, for a panel that did not show it too
+    back = restore(m.answer);
+    if (back) placeBack(id);
+  } else back = putBack(id);                        // one the history never held: the card this page showed, if it did
+  if (back) {
+    cameBack(id, how);
+    // the one that was the last answered is not any more: its asks and its Problem text key go
+    if (before != null && before !== lastAnsweredId() && items.has(before) && entryEl(before)) renderEntry(items.get(before));
+  }
+  syncAsk(); syncNextAsks(); syncDeleted();
+  if (back && how === "sheet") toast(t("Restored"), () => { closeDeleted(); goTo(id); }, "done");   // to it: the sheet closes first
+  if (!$("deleted-overlay").hidden) loadDeleted();
+  refreshDays();
+}
+function onDeletedCleared(m) {   // deleted for good: one (its id), or all of Recently deleted (no id)
+  if (typeof m.n === "number") deletedCount = m.n;
+  // An Undo still offered for one of them has nothing to put back now (a card the history never held stays this page's own)
+  const u = $("toast").dataset.undo;
+  if (u != null && (m.id == null || idOf(u) === idOf(m.id)) && !goneCards.has(idOf(u))) {
+    $("toast").classList.remove("show");
+    delete $("toast").dataset.undo;
+  }
+  syncDeleted();
+  if (!$("deleted-overlay").hidden) loadDeleted();
+}
+// The connection back: an answer deleted meanwhile, from another panel or by a program, goes from this page too
+async function dropDeletedElsewhere() {
+  if (!deletedCount || !thread.length) return;
+  let rows = [];
+  try { rows = (await fetch("history/deleted?brief=1").then((r) => r.json())).answers || []; } catch (_) { return; }
+  const shown = rows.map((r) => items.get(r.id)).filter(Boolean);
+  for (const it of shown) takeAway(it, false);
+  if (shown.length) threadChanged();
+}
+// A key that asks before it acts (Delete for good, Empty), as Clear history does: the first press arms it, its words and colour
+// change, and a second within 3 s acts. The second half of a double click is not a second press (CONFIRM_AFTER)
+function twoPress(btn, armedWords, act) {
+  const now = Date.now(), at = Number(btn.dataset.armed || 0);
+  if (at && now - at < CONFIRM_AFTER) return;
+  if (!at || now - at > 3000) {
+    const words = btn.querySelector("span") || btn;
+    if (btn.dataset.word == null) btn.dataset.word = words.textContent;
+    words.textContent = armedWords;
+    btn.dataset.armed = String(now);
+    btn.classList.add("on");
+    setTimeout(() => { if (btn.dataset.armed === String(now)) disarm(btn); }, 3100);
+    return;
+  }
+  disarm(btn);
+  act();
+}
+function disarm(btn) {
+  if (btn.dataset.word != null) (btn.querySelector("span") || btn).textContent = btn.dataset.word;
+  delete btn.dataset.armed;
+  btn.classList.remove("on");
+}
+// The sheet: the heard sheet's look, a row an answer, from the server's /history/deleted (the latest deleted first)
+let deletedRows = [], deletedOpener = null, deletedAsked = 0;
+// The menu's key to it: there while Recently deleted holds something, and while the sheet is open
+function syncDeleted() {
+  $("open-deleted").hidden = !(deletedCount > 0 || !$("deleted-overlay").hidden);
+  $("deleted-n").textContent = deletedCount > 0 ? String(deletedCount) : "";
+}
+function deletedLede() {
+  const n = deletedDays;
+  $("deleted-lede").textContent = n <= 0 ? t("Deleted answers stay here until emptied · Clear history in the menu clears them too")
+    : n === 1 ? t("Deleted answers stay here a day, then go for good · Clear history in the menu clears them too")
+    : t("Deleted answers stay here {n} days, then go for good · Clear history in the menu clears them too", { n });
+}
+async function loadDeleted() {
+  const asked = ++deletedAsked;   // two reads at once (a delete and a put back): only the later one is drawn
+  let got = null;
+  try { got = await fetch("history/deleted?brief=1").then((r) => (r.ok ? r.json() : null)); } catch (_) {}
+  if (asked !== deletedAsked || $("deleted-overlay").hidden) return;
+  if (got) { deletedRows = got.answers || []; if (typeof got.days === "number") deletedDays = got.days; }
+  renderDeleted(!got);
+}
+// A row: its kind, what names it as the contents name it (only its question, while Practice keeps its answer back), when it was
+// deleted and when it goes for good, and its two keys
+function deletedRowHtml(r) {
+  const head = splitHead(r.text || "", true), type = TYPE_LABEL[head.type] ? head.type : "";
+  const label = TYPE_LABEL[type] || t("Result");
+  const card = practiceCards.get(String(r.id)), hold = practiceSince != null && card != null && card !== OPENED;
+  const name = hold ? (plainAnswer(head.asked) || (r.trigger === "voice" ? sayable(r.transcript) : "") || t("Answer hidden for practice"))
+    : (plainAnswer(head.asked) || (r.trigger === "voice" ? sayable(r.transcript) : "") || sayable(head.answer) || firstSayable(head.body) || label);
+  const left = r.until == null ? null : Math.max(1, Math.ceil((r.until - serverNow()) / 86400));
+  const goes = left == null ? t("kept until emptied") : left === 1 ? t("goes for good within a day") : t("goes for good in {n} days", { n: left });
+  return `<li class="del-row" data-id="${escapeHtml(String(r.id))}"><div class="del-text"><span class="del-kind" data-kind="${escapeHtml(type)}">${escapeHtml(label)}</span>`
+    + `<span class="del-name" title="${escapeHtml(name)}">${r.starred ? STAR_ROW() : ""}${escapeHtml(name)}</span></div>`
+    + `<p class="del-when">${t("Deleted {when}", { when: fmtWhen(r.deleted * 1000) })} · ${goes}</p>`
+    + `<div class="del-keys"><button class="btn sm" type="button" data-restore="${escapeHtml(String(r.id))}">${t("Restore")}</button>`
+    + `<button class="btn sm ghost" type="button" data-purge="${escapeHtml(String(r.id))}"><span>${t("Delete for good")}</span></button></div></li>`;
+}
+function renderDeleted(failed = false) {
+  const list = $("deleted-list"), f = document.activeElement;
+  // A key in a row hands the keyboard on as the list is drawn again: to the same key of its row, or of the row now in its place
+  const row = list.contains(f) ? f.closest("li") : null, at = row ? [...list.children].indexOf(row) : -1;
+  const which = row ? (f.dataset.restore != null ? "restore" : "purge") : null;
+  deletedLede();
+  const none = !deletedRows.length;
+  list.hidden = none;
+  $("deleted-none").hidden = !none;
+  $("deleted-none").textContent = failed ? t("Recently deleted could not be read") : t("Nothing deleted");
+  $("deleted-foot").hidden = none;   // nothing to empty
+  const html = deletedRows.map(deletedRowHtml).join("");
+  if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
+  if (row && !list.contains(f)) {
+    const again = list.querySelector(`li[data-id="${CSS.escape(row.dataset.id)}"]`) || list.children[Math.min(at, list.children.length - 1)];
+    (again?.querySelector(`[data-${which}]`) || $("deleted-close")).focus({ preventScroll: true });
+  }
+}
+function openDeleted() {
+  toggleMenu(false); exportMenu(false);
+  comboClose(false);   // as for the keys' sheet
+  deletedOpener = document.activeElement;
+  // the Undo a notice still offers for an answer the sheet lists: its Restore stands in for it, and the notice would stand over
+  // the sheet's title. Not one for a card the history never held, which the sheet does not list and only Undo brings back
+  const offered = $("toast").dataset.undo;
+  if (offered != null && !goneCards.has(idOf(offered))) { $("toast").classList.remove("show"); delete $("toast").dataset.undo; }
+  $("deleted-overlay").hidden = false;
+  pageInert();
+  syncDeleted();
+  deletedLede();
+  $("deleted-list").hidden = true; $("deleted-none").hidden = true; $("deleted-foot").hidden = true;   // until it is read
+  $("deleted-close").focus({ preventScroll: true });
+  loadDeleted();
+}
+function closeDeleted() {
+  if ($("deleted-overlay").hidden) return;
+  $("deleted-overlay").hidden = true;
+  pageInert();
+  // armed, closed and reopened, one press did it: Empty, and a row's Delete for good, whose row a list drawn the same kept
+  disarm($("deleted-empty"));
+  document.querySelectorAll("#deleted-list [data-purge]").forEach(disarm);
+  syncDeleted();
+  const was = deletedOpener;     // the keyboard goes back where it was, as from the keys' sheet
+  deletedOpener = null;
+  focusBack(was);
+}
+$("deleted-close").onclick = closeDeleted;
+$("open-deleted").onclick = openDeleted;
+$("deleted-list").addEventListener("click", (e) => {
+  const r = e.target.closest("[data-restore]");
+  if (r) {   // every panel puts it back (answer_restored); this one says so, with the way to it
+    if (r.getAttribute("aria-disabled") === "true") return;
+    const id = idOf(r.dataset.restore);
+    if (send({ type: "answer_restore", id })) { restoring.set(id, "sheet"); r.setAttribute("aria-disabled", "true"); }
+    return;
+  }
+  const p = e.target.closest("[data-purge]");
+  if (p && p.getAttribute("aria-disabled") !== "true") {
+    twoPress(p, t("Press again to delete"), () => { if (send({ type: "answer_purge", id: idOf(p.dataset.purge) })) p.setAttribute("aria-disabled", "true"); });
+  }
 });
-// Closed by a press on the veil only when the press and the release are both on it (the settings sheet's rule)
-$("heard-overlay").addEventListener("mousedown", (e) => { heardPress = e.target === $("heard-overlay"); });
-$("heard-overlay").addEventListener("click", (e) => { if (heardPress && e.target === $("heard-overlay")) closeHeard(); heardPress = false; });
+$("deleted-empty").onclick = () => twoPress($("deleted-empty"), t("Press again to empty"), () => send({ type: "deleted_clear" }));
+sheetPlumbing("deleted", "deleted-overlay", () => closeDeleted());
 // ---------- The setup guide ----------
 // Four steps in the settings sheet's look: what solves, the screen, the sound, and a sample problem to try. Each says how things
 // stand as the cards say it (the same states, words and notes: localState and the others), what to do where something is
@@ -6330,7 +7054,7 @@ $("heard-overlay").addEventListener("click", (e) => { if (heardPress && e.target
 // menu, and once by itself on a new install: the server says fresh while it has kept no answer, and this browser remembers it.
 const SETUP_SEEN = "sidenote.setupSeen";
 const SETUP_STEPS = [["solve", () => t("Solving")], ["screen", () => t("Screen")], ["sound", () => t("Sound")], ["try", () => t("Try it")]];
-let setupStep = 0, setupOpener = null, setupPress = false;
+let setupStep = 0, setupOpener = null;
 let setupShot = null, setupShotAsked = false;   // the screen the screen step asked for: shown there, and no drawing starts on the screen card
 let setupHeard = "";                            // the last words heard, on the sound step
 let setupTry = null;                            // the sample problem: { state: "open" | "solving" | "done", at, id, answer, missed }
@@ -6356,7 +7080,7 @@ function setupParts(id) {
   const L = eng()?.local, C = eng()?.agent, up = wsState === "up";
   if (id === "solve") {
     return [
-      ["lede", `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both. One of them is enough", { agent: AG() })}</p>`],
+      ["lede", `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both · one of them is enough", { agent: AG() })}</p>`],
       ["cards", (L?.present ? setupCard(t("Local model"), localState()) : "") + (C?.present ? setupCard(AG(), agentState()) : "")],
       ["none", up && eng() && setupState("solve") === "warn"
         ? `<p class="setup-note warn">${t("Nothing can solve yet · get the local model, or sign in to the agent", { agent: AG() })}</p>` : ""],
@@ -6369,7 +7093,7 @@ function setupParts(id) {
         + `<figcaption>${setupShot.live ? t("Screen now") : t("Last screen {when}", { when: fmtAgo(serverNow() - setupShot.ts) })}</figcaption></figure>`
       : setupShot?.text ? `<p class="setup-note warn">${escapeHtml(setupShot.text)}</p>` : "";
     return [
-      ["lede", `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends. A problem on another monitor is not read")}</p>`],
+      ["lede", `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends, of the monitor chosen below")}</p>`],
       ["card", setupCard(t("Screen capture"), screenState())],
       ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`],
       ["shot", shot],
@@ -6398,7 +7122,7 @@ function setupParts(id) {
       : tr.failed ? t("No answer came that time · open the sample problem again")
       : tr.missed ? t("No problem found on that screen · bring the sample tab to the front") : t("Waiting for it on the screen · keep the sample tab in view")}</span></p>`;
   return [
-    ["lede", `<p class="setup-lede">${t("Opens a sample problem in a new tab. With it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`],
+    ["lede", `<p class="setup-lede">${t("Opens a sample problem in a new tab · with it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`],
     ["ready", ready || !up ? "" : `<p class="setup-note warn">${t("A solving engine and the screen come first")}</p>`],
     ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="sample"${up ? "" : " disabled"}>${t("Open the sample problem")}</button></div>`],
     ["says", says],
@@ -6411,10 +7135,16 @@ function renderSetup() {
   // The steps over the pane: a number, or the tick once the step works, in the colour of how it stands
   const nav = SETUP_STEPS.map(([id, name], i) => {
     const st = setupState(id);
+    // What a screen reader says for the step: its number, its name and how it stands ("1. Solving, done"). Read from what
+    // is drawn, a step that works lost its number (the tick is a drawing, and so is the colour) and its state came after
+    // a stray space ("Solving , done"): the words are given whole, and the drawn number is not read a second time
+    const said = `${i + 1}. ${name()}${st === "ok" ? t(", done") : st === "warn" ? t(", needs a look") : ""}`;
     return `<button type="button" role="tab" class="setup-step" data-step="${i}" data-state="${st}" aria-selected="${i === setupStep}"`
-      + ` tabindex="${i === setupStep ? 0 : -1}"><span class="n">${st === "ok" ? TICK_MARK : i + 1}</span><span class="name">${escapeHtml(name())}</span></button>`;
+      + ` aria-label="${escapeHtml(said)}" tabindex="${i === setupStep ? 0 : -1}"><span class="n" aria-hidden="true">${st === "ok" ? TICK_MARK : i + 1}</span>`
+      + `<span class="name">${escapeHtml(name())}</span></button>`;
   }).join("");
   const steps = $("setup-steps");
+  body.setAttribute("aria-label", SETUP_STEPS[setupStep][1]());   // the pane is the step shown, not the guide as a whole
   if (steps.dataset.html !== nav) {
     const at = steps.contains(document.activeElement) ? document.activeElement.dataset.step : null;
     steps.dataset.html = nav;
@@ -6448,18 +7178,21 @@ function renderSetup() {
     }
   }
   if (moved) { body.dataset.step = String(setupStep); body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
+  const backHad = document.activeElement === $("setup-back");
   $("setup-back").hidden = setupStep === 0;
+  if (backHad && setupStep === 0) $("setup-next").focus({ preventScroll: true });   // Previous gone on the first step: the focus to Next, not the page
   $("setup-next").textContent = setupStep === SETUP_STEPS.length - 1 ? t("Finish") : t("Next");
 }
 function openSetup(step) {
   toggleMenu(false); exportMenu(false); comboClose(false);
   // One sheet at a time: the guide holds some of the same settings, and two dialogs would each keep the keyboard
   if (!$("settings-overlay").hidden) closeSettings();
-  closeKeys(); closeHeard();
+  closeKeys(); closeHeard(); closeDeleted();
   setupOpener = document.activeElement;
   if (typeof step === "number") setupStep = step;
   try { localStorage.setItem(SETUP_SEEN, "1"); } catch (_) {}
   $("setup-overlay").hidden = false;
+  pageInert();
   $("setup-body").dataset.shape = "";             // drawn afresh: the parts as they are now
   $("setup-body").dataset.step = "";
   $("setup-steps").dataset.html = "";
@@ -6469,6 +7202,7 @@ function openSetup(step) {
 function closeSetup() {
   if ($("setup-overlay").hidden) return;
   $("setup-overlay").hidden = true;
+  pageInert();
   comboClose(false);          // a list stands on the page's body, and would stay behind
   const was = setupOpener;
   setupOpener = null;
@@ -6479,7 +7213,7 @@ function closeSetup() {
 function setupFirst() {
   let seen = true;
   try { seen = !!localStorage.getItem(SETUP_SEEN); } catch (_) {}
-  if (seen || ["setup-overlay", "settings-overlay", "keys-overlay", "heard-overlay"].some((o) => !$(o).hidden)) return;
+  if (seen || SHEETS.some((o) => !$(o).hidden)) return;
   openSetup(0);
 }
 function setupGo(i) {
@@ -6557,20 +7291,12 @@ function setupLost(m) {
   setupTry = of ? { ...tr, state: "done", id: of.id, answer: of.head?.answer || "" } : { ...tr, state: "open", id: null, failed: true, missed: false };
   renderSetup();
 }
-// Closed by a press on the veil only when the press and the release are both on it, and the keyboard stays inside while it is open
-$("setup-overlay").addEventListener("mousedown", (e) => { setupPress = e.target === $("setup-overlay"); });
-$("setup-overlay").addEventListener("click", (e) => { if (setupPress && e.target === $("setup-overlay")) closeSetup(); setupPress = false; });
-$("setup").addEventListener("keydown", (e) => {
-  if (e.key !== "Tab") return;
-  const f = [...$("setup").querySelectorAll(CAN_FOCUS)].filter((el) => el.offsetParent !== null);
-  if (!f.length) return;
-  const edge = e.shiftKey ? f[0] : f[f.length - 1];
-  if (document.activeElement === edge) { (e.shiftKey ? f[f.length - 1] : f[0]).focus(); e.preventDefault(); }
-});
+sheetPlumbing("setup", "setup-overlay", () => closeSetup());
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!$("keys-overlay").hidden) { closeKeys(); return; }
     if (!$("heard-overlay").hidden) { closeHeard(); return; }
+    if (!$("deleted-overlay").hidden) { closeDeleted(); return; }
     if (!$("setup-overlay").hidden) { closeSetup(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
     if (!$("export-menu").hidden) { exportMenu(false, true); return; }
@@ -6592,6 +7318,7 @@ document.addEventListener("keydown", (e) => {
   // The keys' sheet is one too: its own key closes it, and nothing else acts behind it
   if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
   if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
+  if (!$("deleted-overlay").hidden) return;   // and Recently deleted
   if (!$("setup-overlay").hidden) return;   // and the setup guide
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
   // Drawing a region is its own mode, ended by Escape: nothing starts behind it
@@ -6604,10 +7331,15 @@ document.addEventListener("keydown", (e) => {
   else if (["ArrowDown", "PageDown", "End", " "].includes(e.key) && !stick) readerMoved();
 });
 setInterval(() => {   // keep the "N s ago / N s so far" readouts current
+  const day = dayOf(Date.now());
+  if (stampDay !== null && stampDay !== day) {   // midnight passed with the page open: each stamp marked by its own day again
+    document.querySelectorAll(".stamped .day[data-day]").forEach((d) => d.classList.toggle("today", d.dataset.day === day));
+    stampDay = day;
+  }
   renderSignals();
   renderHear();        // the listening bars stop when sound stops arriving
   document.querySelectorAll("[data-elapsed]").forEach((el) => {
-    const it = items.get(idOf(el.closest(".entry")?.dataset.id)); if (it && it.live) el.textContent = liveText(it);
+    const it = items.get(idOf(el.closest(".entry")?.dataset.id)); if (it && it.live) paintElapsed(el, it);
   });
   document.querySelectorAll("[data-countdown]").forEach((el) => {
     const c = confirms.get(el.dataset.countdown); if (!c) return;
@@ -6644,7 +7376,11 @@ function endBoot() {
   root.classList.add("booted");
   setTimeout(() => root.classList.remove("booted"), 700);   // once: an answer redrawn later does not rise again
 }
-setTimeout(endBoot, 1800);                                  // no server, or a slow one: the page does not wait on it for long
+// No server: the page does not wait on it for long. A server that answered and is still reading what it has kept is
+// waited for, to 8 s: let go at 1.8 s, someone with a long history saw the first-run welcome and its checklist until
+// their answers took its place (the history's own answer ends the wait, in connect below)
+setTimeout(() => { if (wsState !== "up" || historyLoaded) endBoot(); }, 1800);
+setTimeout(endBoot, 8000);
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   try { sock = new WebSocket(`${proto}://${location.host}/panel`); }
@@ -6659,6 +7395,7 @@ function connect() {
       if (ok) historyLoaded = true;
       endBoot();
       if (ok && !first && latestId() !== before) { refold(); afterGrow(); }   // what was answered while it was down: followed, or offered, as any new answer
+      if (ok && !first) dropDeletedElsewhere();   // and what was deleted meanwhile goes from here too
       if (ok && first && stick && thread.length) { toBottom(); updateView(); }   // a page opens on the newest answer, its screen in the rail; the welcome page, at its top
     });
   };

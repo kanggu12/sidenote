@@ -83,6 +83,8 @@ class Stand:
         self.rows: list[dict] = []
         self.asked: list[str] = []   # the query of each /history the page asked for, in order
         self.heard: dict = {"days": [], "day": "", "lines": []}   # what /heard gives: Keep what is heard
+        self.deleted: list[dict] = []   # what /history/deleted gives: Recently deleted, the latest deleted first
+        self.deleted_days = 7           # for how many days it holds one (the server's SIDENOTE_DELETED_DAYS)
         stand = self
 
         class H(SimpleHTTPRequestHandler):
@@ -108,7 +110,10 @@ class Stand:
                         e["n"] += 1
                         e["first"], e["last"] = min(e["first"], r["ts"]), max(e["last"], r["ts"])
                     return self._json({"days": sorted(days.values(), key=lambda x: x["day"], reverse=True),
-                                       "starred": sum(1 for r in stand.rows if r.get("starred")), "heard": bool(stand.heard["days"])})
+                                       "starred": sum(1 for r in stand.rows if r.get("starred")), "heard": bool(stand.heard["days"]),
+                                       "deleted": len(stand.deleted), "deleted_days": stand.deleted_days})
+                if url.path == "/history/deleted":
+                    return self._json({"answers": list(stand.deleted), "days": stand.deleted_days})
                 if url.path == "/heard":
                     q = parse_qs(url.query)
                     day = q.get("day", [""])[0] or stand.heard["day"]

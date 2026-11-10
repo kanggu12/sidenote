@@ -37,38 +37,39 @@ ROWS = [row(1, "essay", "물음", "답", "풀이")]
 
 
 def group_menu(br, s):
-    if not T.group("the version in the menu"):
+    if not T.group("the version beside the name"):
         return
     p = Page(br, s, ROWS, w=1440, h=900, settle=300)
-    p.js("() => document.getElementById('more').click()")
-    p.wait(200)
-    check("before the server says its version the menu shows none", p.js("() => document.getElementById('menu-about').hidden"))
+    check("before the server says its version the bar shows none", p.js("() => document.getElementById('brand-ver').hidden"))
     p.send({"type": "status", "version": "0.1.0"})
     p.wait(150)
-    got = p.js("""() => { const m = document.getElementById('menu').getBoundingClientRect(), v = document.getElementById('menu-ver');
-        const left = (el) => { const t = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); const r = document.createRange(); r.selectNodeContents(t); return Math.round(r.getBoundingClientRect().left - m.left); };
-        return { shown: !document.getElementById('menu-about').hidden && !!v.offsetParent, text: v.textContent, at: left(v), items: [...document.querySelectorAll('#menu .item')].filter((el) => el.offsetParent).map(left),
-                 last: document.getElementById('menu').lastElementChild.id, inside: v.getBoundingClientRect().bottom <= m.bottom }; }""")
-    check("then its foot says it: '버전 0.1.0'", got["shown"] and got["text"] == "버전 0.1.0" and got["last"] == "menu-about" and got["inside"], got)
-    # the items drawn: one that is hidden (What was heard, with nothing kept) has no column to be on
-    check("...its words on the items' words' column", {got["at"]} == set(got["items"]), got)
+    p.js("() => document.getElementById('more').click()")
+    p.wait(200)
+    # The gear menu has no line of its own for it: one stood alone at its foot, apart from the items, with the bar saying it
+    # beside the name already
+    got = p.js("""() => ({ ver: !!document.querySelector('#menu .ver, #menu-about, #menu-ver'), words: document.getElementById('menu').textContent,
+                           last: document.getElementById('menu').lastElementChild.id || document.getElementById('menu').lastElementChild.className })""")
+    check("the gear menu says no version: the bar says it beside the name", not got["ver"] and "0.1.0" not in got["words"], got)
     # beside the name in the bar too, where a product's version is looked for, opening that release's notes in a new tab, at
-    # every width 12 px after the name's highlighter and on its middle
+    # every width 12 px after the name and on its baseline (each centred in the bar on its own, the words stood 2.3 px apart)
     for w in (1440, 700):
         p.page.set_viewport_size({"width": w, "height": 900})
         p.wait(150)
         tag = p.js("""() => { const t = document.getElementById('brand-ver'), r = t.getBoundingClientRect(), n = document.querySelector('.brand').getBoundingClientRect();
             return { shown: !t.hidden && !!t.offsetParent, text: t.textContent, href: t.getAttribute('href'), target: t.target, rel: t.rel, title: t.title,
-                     gap: Math.round(r.left - n.right), mid: Math.round((r.top + r.bottom) / 2 - (n.top + n.bottom) / 2) }; }""")
-        check(f"{w}: beside the name 'v0.1.0', linking to its release notes in a new tab, 12 px after it and on its middle",
+                     gap: Math.round(r.left - n.right), line: (() => {   // a box of nothing at each one's start stands on its baseline
+                       const at = (el) => { const b = document.createElement('span'); b.style.cssText = 'display:inline-block;width:0;height:0';
+                         el.prepend(b); const y = b.getBoundingClientRect().bottom; b.remove(); return y; };
+                       return Math.round((at(t) - at(document.querySelector('.brand'))) * 100) / 100; })() }; }""")
+        check(f"{w}: beside the name 'v0.1.0', linking to its release notes in a new tab, 12 px after it and on its baseline",
               tag["shown"] and tag["text"] == "v0.1.0" and tag["href"] == "https://github.com/kanggu12/sidenote/releases/tag/v0.1.0"
               and tag["target"] == "_blank" and "noopener" in tag["rel"] and tag["title"] == "버전 0.1.0 · 릴리스 노트"
-              and tag["gap"] == 12 and abs(tag["mid"]) <= 1, tag)
+              and tag["gap"] == 12 and abs(tag["line"]) <= 0.75, tag)
     p.page.set_viewport_size({"width": 1440, "height": 900})
     p.send({"type": "status", "version": "<img src=x onerror=alert(1)>"})
     p.wait(100)
-    check("a version that is not one is not shown, nor drawn as markup", p.js("() => document.getElementById('menu-about').hidden && !document.querySelector('#menu img')"))
-    check("...nor beside the name", p.js("() => document.getElementById('brand-ver').hidden && !document.querySelector('.bar img')"))
+    check("a version that is not one is not shown beside the name, nor drawn as markup",
+          p.js("() => document.getElementById('brand-ver').hidden && !document.querySelector('.bar img')"))
     check("the page threw nothing", not p.errors, p.errors[:2])
     p.close()
 
@@ -182,11 +183,9 @@ def group_english(br, s):
     b = p.js(BAND)
     check("the notice in English: 'Sidenote 0.1.2 is out', 'Release notes'", b and b["words"] == "Sidenote 0.1.2 is out Release notes"
           and b["key"]["title"] == "Hide for this version", b)
-    p.js("() => document.getElementById('more').click()")
-    p.wait(150)
-    words = p.js("() => document.getElementById('menu-ver').textContent")
-    check("...the menu's 'Version 0.1.0'", words == "Version 0.1.0", words)
-    seen = p.js("""() => [...document.querySelectorAll('#alerts .alert, #menu-about')].map((e) => e.textContent + ' ' + [...e.querySelectorAll('[title], [aria-label]')].map((x) => x.title + x.getAttribute('aria-label')).join(' ')).join(' ')""")
+    words = p.js("() => document.getElementById('brand-ver').title")
+    check("...the release beside the name: 'Version 0.1.0 · Release notes'", words == "Version 0.1.0 · Release notes", words)
+    seen = p.js("""() => [...document.querySelectorAll('#alerts .alert, #brand-ver')].map((e) => e.textContent + ' ' + e.title + ' ' + [...e.querySelectorAll('[title], [aria-label]')].map((x) => x.title + x.getAttribute('aria-label')).join(' ')).join(' ')""")
     check("...with no Hangul in it", not HANGUL.search(seen), seen)
     p.close()
 

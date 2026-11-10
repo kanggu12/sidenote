@@ -414,10 +414,12 @@ def group_keys(br, s):
     p.js("() => { window.__sent.length = 0; $('gpu-load').click(); $('gpu-load').click(); $('gpu-load').click(); }")
     check("the GPU key pressed three times sends once", p.js("() => window.__sent.filter((m) => m.type === 'gpu_load').length") == 1, p.js("() => window.__sent"))
     p.wait(1200)
-    check("...and is still held after the clock's tick", p.js("() => $('gpu-load').disabled") is True)
+    # held as a key at work (aria-disabled), which keeps the keyboard's focus: disabled, the focus fell to the page
+    check("...and is still held after the clock's tick, the focus kept on it",
+          p.js("() => $('gpu-load').getAttribute('aria-disabled') === 'true' && !$('gpu-load').disabled"))
     p.send({"type": "status", "engines": engines})
     p.wait(80)
-    check("...until the server has said", p.js("() => $('gpu-load').disabled") is False)
+    check("...until the server has said", p.js("() => !$('gpu-load').hasAttribute('aria-disabled') && !$('gpu-load').disabled"))
     # A toast gone is not reached by the keyboard
     p.js("() => { toast('이동', () => {}, ''); }")
     check("a pressable notice can be reached", p.js("() => $('toast').tabIndex") == 0)
@@ -484,8 +486,9 @@ def group_review_fixes(br, s):
     check("at 1000 px the band at the top of the page lies over no answer", not over[2] and over[0] <= over[1], over)
     no_errors(p, "band")
     p.close()
-    # ...and where the bands fit in the bar at the top, scrolling a little takes them out of it without moving the thread:
-    # taking their room there, the first answer jumped down by their height
+    # ...and where the bands fit in the bar, scrolling a little keeps them there and moves the thread by the scroll alone:
+    # taking their room as they left the bar, the first answer jumped down by their height; floating under the bar once
+    # scrolled, they lay over the cards
     p = Page(br, s, [row(905 + i, "essay", f"문제 {i}", "답", "풀이입니다 " * 40, ago=300 - i) for i in range(4)], w=1366, h=900)
     p.js("() => { window.scrollTo(0, 0); paused = true; renderAlerts(); placeBands(); }")
     p.wait(300)
@@ -494,8 +497,8 @@ def group_review_fixes(br, s):
     p.page.mouse.wheel(0, 10)
     p.wait(400)
     after = p.js("() => [document.documentElement.classList.contains('bands-in-bar'), Math.round(document.querySelector('.entry:not([hidden])').getBoundingClientRect().top), Math.round(window.scrollY)]")
-    check("at 1366 px a band in the bar leaves it on a small scroll, and the thread moves only by the scroll",
-          before[0] and not after[0] and abs((before[1] - after[1]) - after[2]) <= 2, [before, after])
+    check("at 1366 px a band in the bar stays in it on a small scroll, and the thread moves only by the scroll",
+          before[0] and after[0] and abs((before[1] - after[1]) - after[2]) <= 2, [before, after])
     no_errors(p, "band scroll")
     p.close()
     # ...and where they do not fit in the bar (three at 1100 px), they take their room at the top and keep it scrolled:

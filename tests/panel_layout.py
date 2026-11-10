@@ -1144,11 +1144,15 @@ def group_asked(br, s):
     p = Page(br, s, many(30), w=1920, h=1300, settle=500)
     capture(p, clients=0)
     p.wait(250)
-    # Scrolled into the thread, the question box narrows to the width of the bands at the top
-    p.js("() => { stick = false; window.scrollTo(0, document.documentElement.scrollHeight / 3); }")   # scrolled into the thread: the band stands under the bar
+    # Scrolled into the thread, the question box floats narrower than the thread's column and centred on it (it once went
+    # the column's full width); the bands it was measured against stand in the bar now, scrolled too
+    p.js("() => { stick = false; window.scrollTo(0, document.documentElement.scrollHeight / 3); }")
     p.wait(400)
-    w = p.js("() => { const f = document.getElementById('askform'), a = document.getElementById('alerts'); return { floating: f.classList.contains('floating'), ask: Math.round(f.getBoundingClientRect().width), band: Math.round(a.getBoundingClientRect().width) }; }")
-    check("floating, the question box is as wide as the bands over the thread", w["floating"] and abs(w["ask"] - w["band"]) <= 2, w)
+    w = p.js("""() => { const f = document.getElementById('askform').getBoundingClientRect(), c = document.getElementById('stage').getBoundingClientRect();
+        return { floating: document.getElementById('askform').classList.contains('floating'), ask: Math.round(f.width), column: Math.round(c.width),
+                 off: Math.round(Math.abs((f.left + f.right) / 2 - (c.left + c.right) / 2)) }; }""")
+    check("floating, the question box is narrower than the thread's column and centred on it",
+          w["floating"] and 16 <= w["column"] - w["ask"] <= 120 and w["off"] <= 2, w)
     # The band that says the capture program is off has no key to copy a command
     check("the band that says the capture program is off has no copy key", p.js("() => [...document.querySelectorAll('#alerts .alert')].filter((a) => a.textContent.includes('캡처 프로그램')).every((a) => !a.querySelector('[data-copy]'))"))
     # In the contents a row's time stands on the left
@@ -1565,15 +1569,19 @@ def group_controls(br, s):
         lv = None if mark is None or words is None else [mark, words]
     check("a band in the bar has its mark level with its words, by their ink", lv is not None and abs(lv[0] - lv[1]) <= 1, lv)
     b.close()
-    # A notice under the bands that float, not on the last of them (it lay 8 px into it)
+    # A notice in the bar, over none of the bands at the thread's head: under the bar it lay on the last of them (8 px into
+    # it), then over the thread's cards under them
     n = Page(br, s, many(6), w=900, h=900, settle=400)
     status(n, eng(local={"ok": False}))
     n.js("() => { stick = false; window.scrollTo(0, 0); }")
     n.wait(200)
     n.js("() => { placeBands(); toast('알림 하나', null, 'warn'); }")
     n.wait(450)
-    tb = n.js("() => [document.documentElement.classList.contains('bands-in-bar'), document.getElementById('alerts').getBoundingClientRect().bottom, document.getElementById('toast').getBoundingClientRect().top]")
-    check("a notice stands under the bands that float, not on the last of them", not tb[0] and tb[2] >= tb[1] + 4, tb)
+    tb = n.js("""() => { const t = document.getElementById('toast').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect(),
+        a = document.getElementById('alerts').getBoundingClientRect();
+        return [document.documentElement.classList.contains('bands-in-bar'), t.top >= b.top && t.bottom <= b.bottom, a.height > 0,
+                Math.max(0, Math.min(t.bottom, a.bottom) - Math.max(t.top, a.top))]; }""")
+    check("a notice stands in the bar, over none of the bands at the thread's head", not tb[0] and tb[1] and tb[2] and tb[3] == 0, tb)
     n.close()
     # Folded to one line, the profile gives its plan whole: "Claude Code Max ..." was cut at 1366x768
     n = Page(br, s, many(6), w=1366, h=768, settle=400)
@@ -1635,9 +1643,11 @@ STAR_LOOK = """(id) => {
   const p = document.createElement('i'); p.style.color = 'var(--hl-yellow)'; document.body.append(p); const token = getComputedStyle(p).color; p.remove();
   // the answer's own inner edges: a head row laid out wider than the page carries its column out with it, so the column is no measure
   const page = e.getBoundingClientRect(), pad = getComputedStyle(e);
-  // its place: just before Copy all, or last where an answer has none yet, so it stays put whatever keys come before it
-  const last = keys[keys.length - 1], placed = last === key || (!!last?.matches('[data-copy-item]') && keys[keys.length - 2] === key);
-  const out = { keys: keys.map(box), placed, fromEnd: tools.getBoundingClientRect().right - key.getBoundingClientRect().right, key: box(key), svg: box(svg), ct: box(ct), date: box(date), W: innerWidth,
+  // its place: just before Copy all and Delete, the last two keys, or before what of them an answer has, so it stays put whatever
+  // keys come before it
+  const names = keys.map((b) => Object.keys(b.dataset)[0]), after = names.slice(keys.indexOf(key) + 1).join(",");
+  const placed = ["", "copyItem", "copyItem,delete", "delete"].includes(after);
+  const out = { keys: keys.map(box), names, placed, fromEnd: tools.getBoundingClientRect().right - key.getBoundingClientRect().right, key: box(key), svg: box(svg), ct: box(ct), date: box(date), W: innerWidth,
                 inner: { l: page.left + parseFloat(pad.paddingLeft), r: page.right - parseFloat(pad.paddingRight) },
                 fill: getComputedStyle(svg).fill, token, pressed: key.getAttribute('aria-pressed') };
   const rowEl = document.querySelector(`#history .h[data-id="${id}"]`), star = rowEl?.querySelector('.h-star');
@@ -1678,8 +1688,13 @@ def group_star(br, s):
                 if not all(abs(x["t"] - k["t"]) <= .5 for x in ks):
                     bad["row"].append([at, [round(x["t"], 1) for x in ks]])
                 gaps = [round(b["l"] - a["r"], 1) for a, b in zip(ks, ks[1:])]
-                if gaps and max(gaps) - min(gaps) > .5:
+                # Delete, last, stands 4 px further off (index.html, [data-delete]); every other gap is the same
+                apart = m["names"][-1:] == ["delete"] and len(gaps) >= 2
+                even = gaps[:-1] if apart else gaps
+                if even and max(even) - min(even) > .5:
                     bad["gap"].append([at, gaps])
+                if apart and not 3.5 <= gaps[-1] - gaps[0] <= 4.5:
+                    bad["gap"].append([at, "Delete not 4 px apart", gaps])
                 # inside the answer's writing, the answer's page and the window, at every width
                 if not (k["l"] >= m["ct"]["l"] - .5 and ks[-1]["r"] <= m["ct"]["r"] + .5 and k["l"] >= m["inner"]["l"] - .5
                         and ks[-1]["r"] <= m["inner"]["r"] + .5 and m["ct"]["r"] <= m["inner"]["r"] + .5 and ks[-1]["r"] <= m["W"]):
@@ -1709,10 +1724,10 @@ def group_star(br, s):
             if p.errors:
                 check(f"{theme} {w}: the page threw nothing", False, p.errors[:2])
             p.close()
-        check(f"{theme}: the star key is the keys' size, just before Copy all, pressable", not bad["size"], bad["size"][:3])
+        check(f"{theme}: the star key is the keys' size, just before Copy all and Delete, pressable", not bad["size"], bad["size"][:3])
         check(f"{theme}: ...at the same place on a folded answer as on an open one, whatever keys come before it", not bad["place"], bad["place"][:3])
         check(f"{theme}: ...in their row", not bad["row"], bad["row"][:3])
-        check(f"{theme}: ...at their spacing", not bad["gap"], bad["gap"][:3])
+        check(f"{theme}: ...at their spacing, Delete a little apart", not bad["gap"], bad["gap"][:3])
         check(f"{theme}: ...inside the answer and the window, from 360 to 2560", not bad["inside"], bad["inside"][:3])
         check(f"{theme}: ...its star in its middle", not bad["mark"], bad["mark"][:2])
         check(f"{theme}: ...filled with the highlighter when starred, an outline when not", not bad["fill"], bad["fill"][:3])
@@ -1864,13 +1879,98 @@ def group_column_kept(br, s):
     p.close()
 
 
+# The top layers clear of every box's edge (the user: a notice at the top and the gear menu must not lie over other boxes'
+# and panels' edges). Every visible box that straddles the layer's edge, part of it under the layer and part out, is an edge
+# crossing it; a box round the layer (the bar round a notice in it) or wholly under it is none. What passes under the header
+# (the bar, and the bands' strip stuck to its foot over the thread's column) is the page under the header, as under any bar:
+# only the part of a box below the header counts, and a band past the strip's own scroll is cut by the strip
+TOP_CROSS = r"""
+(sel) => {
+  const f = document.querySelector(sel); if (!f) return null;
+  const vw = innerWidth, vh = innerHeight;
+  const clip = (b) => ({ l: Math.max(0, b.left), t: Math.max(0, b.top), r: Math.min(vw, b.right), b: Math.min(vh, b.bottom) });
+  const a = clip(f.getBoundingClientRect());
+  const bar = document.querySelector('header.bar'), barR = bar.getBoundingClientRect();
+  const al = document.getElementById('alerts'), alR = al.getBoundingClientRect();
+  const stuck = al.children.length && !document.documentElement.classList.contains('bands-in-bar') && alR.top <= barR.bottom + 1 ? alR : null;
+  const alpha = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return c === 'transparent' ? 0 : 1; const p = m[1].split(/[ ,/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; };
+  const name = (el) => el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + String(typeof el.className === 'string' ? el.className : '').trim().split(/\s+/).slice(0, 2).join('.');
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (f.contains(el) || el.contains(f)) continue;
+    if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    const cs = getComputedStyle(el);
+    const line = ['Top', 'Right', 'Bottom', 'Left'].some((s) => parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none' && alpha(cs['border' + s + 'Color']) > 0.03);
+    if (!line && !(alpha(cs.backgroundColor) > 0.05) && cs.backgroundImage === 'none' && cs.boxShadow === 'none') continue;   // draws no edge
+    const r0 = el.getBoundingClientRect();
+    if (r0.width < 3 || r0.height < 3) continue;
+    const b = clip(r0);
+    if (!bar.contains(el) && !al.contains(el)) {
+      b.t = Math.max(b.t, barR.bottom);
+      if (stuck && b.l >= stuck.left - 1 && b.r <= stuck.right + 1) b.t = Math.max(b.t, stuck.bottom);
+    } else if (al.contains(el) && el !== al) { b.t = Math.max(b.t, alR.top); b.b = Math.min(b.b, alR.bottom); }
+    const ov = Math.min(a.r, b.r) - Math.max(a.l, b.l), oh = Math.min(a.b, b.b) - Math.max(a.t, b.t);
+    if (ov <= 1 || oh <= 1) continue;                                   // apart, or edge on edge
+    const inside = b.l >= a.l - 1 && b.r <= a.r + 1 && b.t >= a.t - 1 && b.b <= a.b + 1;
+    const around = b.l <= a.l + 1 && b.r >= a.r - 1 && b.t <= a.t + 1 && b.b >= a.b - 1;
+    if (!inside && !around) out.push(name(el) + ' [' + [b.l, b.t, b.r, b.b].map(Math.round).join(',') + ']');
+  }
+  return out;
+}
+"""
+
+
+def group_top_layers(br, s):
+    if not T.group("the notice, the bands and the gear menu over no box's edge"):
+        return
+    p = Page(br, s, many(30), w=1600, h=900, settle=400)
+    crossed, cut, sheet, inbar = [], [], [], []
+    for bands in ("none", "two"):
+        status(p, eng() if bands == "none" else eng(local={"ok": False}, agent={"ok": False}))
+        p.wait(300)
+        for w in (1600, 1100, 900, 760, 480, 400):
+            p.page.set_viewport_size({"width": w, "height": 900})
+            for y in (0, 700):
+                p.js("(y) => { stick = false; window.scrollTo(0, y); placeBands(); }", y)
+                p.wait(250)
+                at = f"{w} px, {bands} bands, scrolled {y}"
+                # a short notice, and a long one with a key to press
+                for long in (False, True):
+                    p.js("() => toast('Deleted · in Recently deleted for 30 days', () => {}, 'done', '', 'Undo')" if long else "() => toast('Restored', null, 'done')")
+                    p.wait(450)
+                    crossed += [f"notice, {at}: {x}" for x in p.js(TOP_CROSS, "#toast")]
+                    got = p.js("""() => { const t = document.getElementById('toast').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect(),
+                        m = document.querySelector('#toast .msg'); return [t.top >= b.top && t.bottom <= b.bottom && t.left >= 0 && t.right <= innerWidth, m.scrollWidth > m.clientWidth + 1]; }""")
+                    if not got[0]:
+                        inbar.append(at)
+                    if got[1] and w >= 480:
+                        cut.append(at)
+                    p.js("() => { clearTimeout(toast.timer); $('toast').classList.remove('show'); }")
+                    p.wait(260)
+                p.js("() => toggleMenu(true)")
+                p.wait(350)
+                crossed += [f"menu, {at}: {x}" for x in p.js(TOP_CROSS, "#menu")]
+                m = p.js("""() => { const r = document.getElementById('menu').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect();
+                    return Math.abs(r.top - b.bottom) <= 1 && Math.abs(r.bottom - innerHeight) <= 1; }""")
+                if not m:
+                    sheet.append(at)
+                p.js("() => toggleMenu(false)")
+                p.wait(200)
+    check("a notice stands in the bar, at every width, scroll and band", not inbar, inbar[:4])
+    check("...its words on one line at 480 px and wider", not cut, cut[:4])
+    check("the gear menu is a sheet from the bar's foot to the window's", not sheet, sheet[:4])
+    check("no box's edge crosses a notice or the gear menu: 6 widths, at the top and scrolled, with no band and with two",
+          not crossed, crossed[:6])
+    p.close()
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     s = Stand("layout")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays, group_release, group_column_kept):
+        for group in (group_audit, group_asked, group_named, group_found, group_controls, group_top_layers, group_star, group_recheck, group_motion, group_rail, group_answers, group_overlays, group_release, group_column_kept):
             group(br, s)
         br.close()
     if os.environ.get("AUDIT_REPORT"):

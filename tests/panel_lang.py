@@ -120,7 +120,7 @@ def group_english(br, s):
     check("the kinds are named in English", p.js("() => [...document.querySelectorAll('#history .hk')].map((x) => x.textContent)")
           == ["Math", "Essay", "Short", "Coding", "MCQ"],
           p.js("() => [...document.querySelectorAll('#history .hk')].map((x) => x.textContent)"))
-    check("a date is written with an English weekday", p.js("() => fmtDay(new Date(2026, 10, 2, 12).getTime())") == "11.02(Mon)",
+    check("a date is written with its month as a word, as English writes it", p.js("() => fmtDay(new Date(2026, 10, 2, 12).getTime())") == "Mon, Nov 2",
           p.js("() => fmtDay(new Date(2026, 10, 2, 12).getTime())"))
     p.answer(206, "algorithm", "Find the shortest path", "BFS", "Breadth first from the source.", final=False)
     p.send({"type": "status", "text": "connected", "paused": True, "lang": "en", "audio": True, "voice": True, "can_ask": True,
