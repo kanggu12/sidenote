@@ -286,6 +286,8 @@ class Glass:
         self.picture = None                                     # the last picture as shown, for what is drawn over it each frame
         self.logo_at = None                                     # where the logo is pasted (logo): left, top, width, height
         self.tag = None                                         # the release's tag: its words' box, for the line round it
+        self.hwnd = None                                        # Windows: the frame Tk made round the window (dress)
+        self.own_style = 0                                      # Windows: the extended style's bits this window keeps (restyle)
 
     def px(self, n: float) -> int:
         return round(n * self.scale)
@@ -310,19 +312,22 @@ class Glass:
 
     def arrive(self, x: int, y: int) -> None:
         """On screen as a notification comes: up from 10 px lower and from clear, over a fifth of a second, slowing as it
-        lands. The window is opaque at the end (alpha 1, no longer layered), as it was before."""
+        lands. The window is opaque at the end (alpha 1; Tk keeps it a layered window, drawn whole)."""
         rise, steps = self.px(10), 9
         try:
             self.root.attributes("-alpha", 0.0)
+            self.restyle()                                       # before it is shown: Tk's alpha took them off
             self.root.geometry(f"+{x}+{y + rise}")
         except Exception:
             pass
         self.root.deiconify()
+        self.corners()                                           # on screen now, its shadow come with it
 
         def go(k: int) -> None:
             ease = 1 - (1 - (k + 1) / steps) ** 3                # quick at first, slowing as it lands
             try:
                 self.root.attributes("-alpha", ease)
+                self.restyle()                                   # and again after each of Tk's alpha changes
                 self.root.geometry(f"+{x}+{round(y + rise * (1 - ease))}")
             except Exception:                                    # gone meanwhile
                 return
@@ -342,6 +347,7 @@ class Glass:
             ease = ((k + 1) / steps) ** 2
             try:
                 self.root.attributes("-alpha", 1 - ease)
+                self.restyle()                                   # no taskbar button as it goes either
                 self.root.geometry(f"+{x}+{round(y + self.px(6) * ease)}")
             except Exception:
                 return
@@ -424,29 +430,55 @@ class Glass:
         return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()
 
     def dress(self) -> None:
-        """Windows only, each an extra: no taskbar button, no focus on a click unless it is to be read and closed, and
-        Windows 11's rounded corners."""
+        """Windows only, each an extra, before it is shown: no taskbar button, no focus on a click unless it is to be read
+        and closed (restyle keeps both), and a shadow; Windows 11's rounded corners once it is shown (corners)."""
         try:
             import ctypes
             user32 = ctypes.windll.user32
-            hwnd = user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
-            GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = -20, 0x80, 0x08000000
-            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW | (0 if self.focus else WS_EX_NOACTIVATE)
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-            corner = ctypes.c_int(3)                             # DWMWCP_ROUNDSMALL: this design is nearly square
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))   # DWMWA_WINDOW_CORNER_PREFERENCE
-            # Windows 11's own line round the window in the glass's edge colour (DWMWA_BORDER_COLOR takes 0x00BBGGRR), not its accent
-            r, g, b = (int(self.EDGE[k:k + 2], 16) for k in (1, 3, 5))
-            edge = ctypes.c_uint(r | g << 8 | b << 16)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(edge), ctypes.sizeof(edge))
+            hwnd = user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()   # the frame Tk made round the window
+            WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = 0x80, 0x08000000
+            self.hwnd = hwnd
+            self.own_style = WS_EX_TOOLWINDOW | (0 if self.focus else WS_EX_NOACTIVATE)
+            self.restyle()
             # A shadow under it, as a menu or a notification has: the glass stands off the desktop. The class's style (CS_DROPSHADOW),
-            # which this process's one window alone wears
+            # which this process's one window alone wears, set before the window is first shown: its shadow comes as it does
             get = getattr(user32, "GetClassLongPtrW", user32.GetClassLongW)
             put = getattr(user32, "SetClassLongPtrW", user32.SetClassLongW)
             put(hwnd, -26, get(hwnd, -26) | 0x00020000)          # GCL_STYLE, CS_DROPSHADOW
             # No acrylic of Windows' own: it paints over what Tk draws, which carries no alpha, and the window showed its tint
             # with no words on it. The frosted glass is drawn instead (frost), and the window is opaque: made see-through, the
             # words went see-through with it and read washed out
+        except Exception:
+            pass
+
+    def restyle(self) -> None:
+        """Windows: the frame's own bits (no taskbar button, no activation) on its extended style again. Tk writes the
+        frame's extended style from its own record when its alpha first leaves 1 (arrive), which knows neither: measured on
+        a real Windows desktop, the start window gained a taskbar button and a click on it took the focus. Called after
+        each of Tk's alpha changes; nothing elsewhere."""
+        if not self.hwnd or not self.own_style:
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.SetWindowLongW(self.hwnd, -20, user32.GetWindowLongW(self.hwnd, -20) | self.own_style)   # GWL_EXSTYLE
+        except Exception:
+            pass
+
+    def corners(self) -> None:
+        """Windows 11's small rounded corners and its line round the window in the glass's edge colour, asked once the
+        window is on screen: asked before it was first shown, the shadow its class asks for did not come (the tray menu
+        asks after, and has it)."""
+        if not self.hwnd:
+            return
+        try:
+            import ctypes
+            corner = ctypes.c_int(3)                             # DWMWCP_ROUNDSMALL: this design is nearly square
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(self.hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))   # DWMWA_WINDOW_CORNER_PREFERENCE
+            # Windows 11's own line round the window in the glass's edge colour (DWMWA_BORDER_COLOR takes 0x00BBGGRR), not its accent
+            r, g, b = (int(self.EDGE[k:k + 2], 16) for k in (1, 3, 5))
+            edge = ctypes.c_uint(r | g << 8 | b << 16)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(self.hwnd, 34, ctypes.byref(edge), ctypes.sizeof(edge))
         except Exception:
             pass
 
