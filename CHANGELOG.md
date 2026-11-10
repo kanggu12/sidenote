@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-10
+
 ### Fixed
 
 - The capture program's zip (`sidenote-capture-<version>.zip`) carries its logo, the shortcut's icon and its version.
@@ -623,7 +625,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/kanggu12/sidenote/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kanggu12/sidenote/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/kanggu12/sidenote/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/kanggu12/sidenote/compare/v0.5.0...v0.5.1
