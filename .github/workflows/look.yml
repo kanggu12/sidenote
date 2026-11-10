@@ -1,0 +1,59 @@
+name: look
+
+# What only a real system draws, looked at on one: the capture's windows on Windows (DWM's corners, border and shadow round
+# the glass each draws from the desk behind it, the words' contrast on it) and the panel's top layers in Safari (where a
+# notice, the bands and the gear menu stand, the boxes whose edges cross them, Safari's blur behind the glass). Pictures and
+# measures as artifacts; nothing is published. Run by hand (Actions, look, Run workflow); the windows' part also runs in
+# the desktop workflow's Windows job, on every change to them and every release, and fails it when one is not as meant.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: the capture's windows on Windows
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"          # the server image's Python, as the desktop app's
+          cache: pip
+          cache-dependency-path: client/requirements.txt
+      - name: The capture program's packages
+        run: python -m pip install -r client/requirements.txt
+      - name: The windows, drawn by their own code over a desk, and shot off the screen
+        run: python .github/look/windows.py look-windows
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: look-windows
+          path: look-windows
+
+  safari:
+    name: the panel's top layers in Safari
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: .github/workflows/look.yml
+      - name: Safari's own WebDriver, and Selenium to drive it
+        run: |
+          sudo safaridriver --enable
+          python -m pip install selenium==4.27.1
+      - name: The panel's libraries, checked against their checksums
+        run: python docker/fetch_vendor.py docker/vendor.json panel/vendor
+      - name: The top layers at four widths, scrolled and not, with no band and with two
+        run: python .github/look/safari.py look-safari
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: look-safari
+          path: look-safari

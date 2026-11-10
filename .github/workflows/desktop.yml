@@ -17,7 +17,9 @@ on:
       - "docker/fetch_vendor.py"
       - "docker/constraints.txt"
       - "tests/desktop_check.py"
+      - "tests/start_output.py"
       - "tests/mac_app_open.py"
+      - ".github/look/windows.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -29,7 +31,9 @@ on:
       - "docker/fetch_vendor.py"
       - "docker/constraints.txt"
       - "tests/desktop_check.py"
+      - "tests/start_output.py"
       - "tests/mac_app_open.py"
+      - ".github/look/windows.py"
       - ".github/workflows/desktop.yml"
   workflow_call:       # release.yml builds the zips it attaches with this
   workflow_dispatch:
@@ -75,6 +79,17 @@ jobs:
         run: python tests/start_output.py
       - name: The desktop suite, from the checkout
         run: python tests/desktop_check.py
+      # The capture's windows as Windows itself draws them (no taskbar button, no focus taken, a shadow, every word at
+      # 4.5:1): what only a real Windows desktop shows, on this runner's. Pictures and look.json in the artifact below
+      - name: The capture's windows on this Windows desktop
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: python .github/look/windows.py look-windows
+      - uses: actions/upload-artifact@v7
+        if: always() && runner.os == 'Windows'
+        with:
+          name: look-windows
+          path: look-windows
       - name: The Mac's GPU, as the server reads it to pick a model
         if: runner.os == 'macOS'
         run: |
