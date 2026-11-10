@@ -230,7 +230,7 @@ def group_choice(br, s):
     s.rows = rows
     p = Page(br, s, rows, w=1600, h=1100)
     pick_day(p, "starred")
-    p.js("() => { clearArmed = Date.now() - 500; document.getElementById('clear').click(); }")   # its second press
+    p.js("() => { clearArmed = Date.now() - 1000; document.getElementById('clear').click(); }")   # its second press, a second after the first
     p.wait(300)
     got = p.js("() => [histStar, document.getElementById('hist-day').value, [...document.getElementById('hist-day').options].map((o) => o.value), thread.length]")
     check("Clear history takes the starred answers and the Starred choice with the rest", got == [False, "", [""], 0], got)

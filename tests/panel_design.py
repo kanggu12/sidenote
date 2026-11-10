@@ -435,6 +435,29 @@ def group_drawn(br, s):
     bars = p.js("""() => [...entryEl(602).querySelectorAll('tbody tr')].map((r) => [...r.cells].map((c) => c.style.getPropertyValue('--bar')))""")
     check("figures get bars by their share of the largest", [r[1] for r in bars] == ["0.125", "0.25", "0.5", "1"], bars)
     check("numbers that count the rows off get none, nor a column with a negative", all(r[0] == "" and r[2] == "" for r in bars), bars)
+    # "Which is NOT correct?": the answer's row is marked, the true statements are not (each "맞음" was green, ④ was not)
+    mcq = "| 보기 | 판단 | 이유 |\n|---|---|---|\n| ① | 맞음 | 가 |\n| ② | 맞음 | 나 |\n| ③ | 맞음 | 다 |\n| ④ | 틀림 | 라 |\n"
+    p.answer(691, "mcq", "옳지 않은 것은?", "④", mcq)
+    p.answer(692, "work", "", "표", mcq)
+    p.wait(250)
+    rows = p.js("""() => [691, 692].map((i) => [...entryEl(i).querySelectorAll('tbody tr')].map((r) => r.classList.contains('v-right')))""")
+    check("a multiple-choice answer marks the row it names, not each one that says 맞음", rows[0] == [False, False, False, True], rows[0])
+    check("...and the same table in an answer that names no choice marks none", rows[1] == [False] * 4, rows[1])
+    # Only a table of the choices, and only an answer that names its choices: "4번" and a list of two mark theirs; the
+    # answers to two questions mark none (row ① was marked in both tables), nor do a table of steps or of nodes (step 3
+    # and node B were marked for ③ and ②). Each read as it comes, while it is the newest and drawn whole
+    steps = "| 단계 | 상태 |\n|---|---|\n| 1 | 시작 |\n| 2 | 비교 |\n| 3 | 교환 |\n| 4 | 끝 |\n"
+    nodes = "| 노드 | 차수 |\n|---|---|\n| A | 2 |\n| B | 3 |\n| C | 1 |\n| D | 2 |\n"
+    marked = {}
+    for i, asked, key, body in ((693, "옳지 않은 것은?", "4번", mcq), (694, "옳은 것을 모두 고르면?", "③, ④", mcq),
+                                (695, "", "1) ③  2) ②", mcq + "\n" + mcq), (696, "", "③", steps), (697, "", "②", nodes)):
+        p.answer(i, "mcq", asked, key, body)
+        p.wait(250)
+        marked[i] = p.js("(i) => [...entryEl(i).querySelectorAll('tbody tr')].map((r) => r.classList.contains('v-right'))", i)
+    check("\"4번\" marks row ④, and \"③, ④\" marks both",
+          marked[693] == [False, False, False, True] and marked[694] == [False, False, True, True], marked)
+    check("...the answers to two questions mark no row, nor does a table of steps or of nodes",
+          marked[695] == [False] * 8 and marked[696] == [False] * 4 and marked[697] == [False] * 4, marked)
     p.answer(603, "essay", "", "1) 첫째 답 2) 둘째 답", "## (1) 물음\n\n글\n\n## (2) 물음\n\n글\n")
     p.wait(250)
     tiles = p.js("() => [...entryEl(603).querySelectorAll('.ans-list > li.v-tile')].length")
@@ -442,6 +465,13 @@ def group_drawn(br, s):
     p.answer(604, "work", "", "커넥션 풀 → 슬로우 쿼리 → 락", "풀이")
     p.wait(150)
     check("a key line that is all a chain is drawn under it", p.js("() => entryEl(604).querySelectorAll('.answer-text .v-flow > span').length") == 3)
+    # A chain in bold in a list item that stands in its own paragraph (a list with blank lines between its items) is drawn
+    # once and whole: the item read whole drew a second chain, cut where a link has a space ("Deny → Allow → 기본")
+    p.answer(698, "work", "", "정책 확인", "1. **역할 확인**: 먼저 쓰는 역할을 봅니다.\n\n2. **버킷 정책 확인**: 평가 순서는 "
+             "**명시적 Deny → Allow → 기본 Deny** 입니다.\n\n3. **엔드포인트 확인**: 그 정책도 봅니다.\n")
+    p.wait(250)
+    flows = p.js("() => [...entryEl(698).querySelectorAll('.md .v-flow')].map((f) => [...f.querySelectorAll(':scope > span')].map((x) => x.textContent.trim()))")
+    check("a chain in a list item's own paragraph is drawn once, whole", flows == [["명시적 Deny", "Allow", "기본 Deny"]], flows)
     # Starting numbers
     p.answer(605, "work", "", "답", "3. 셋째부터\n4. 넷째\n")
     p.wait(150)
@@ -743,6 +773,42 @@ def group_shots(br, s):
             p.close()
 
 
+def group_place(br, s):
+    """An answer that ends while it is read above its end: its scale, its strip of parts and its boxed sections come in above
+    the words read, and moved them down by 144 px at once (172 on a narrow window)."""
+    if not T.group("the place read, kept as an answer ends"):
+        return
+    text = (Path(__file__).resolve().parent / "data" / "answers" / "code_prog_peak.md").read_text(encoding="utf-8")
+    words = "회의마다 시작 시각에"
+    find = """(s) => { const tw = document.createTreeWalker(document.getElementById('thread'), NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) if (n.nodeValue.includes(s)) {
+        const r = document.createRange(); r.selectNodeContents(n); return Math.round(r.getBoundingClientRect().top); }
+      return null; }"""
+    for w in (1280, 700):
+        p = Page(br, s, [row(980 + i, "essay", f"문제 {i}", "답", "풀이", ago=100 - i) for i in range(3)], w=w, h=900)
+        p.send({"type": "analysis_start", "id": 990, "ts": p.js("() => Date.now() / 1000"), "thumb": None, "transcript": "",
+                "pages": 0, "trigger": "screen", "roi": None})
+        cut = int(len(text) * .8)
+        for c in range(0, cut, 30):        # written as it comes, followed at its end
+            p.send({"type": "delta", "id": 990, "text": text[c:min(c + 30, cut)]})
+            p.wait(15)
+        p.wait(300)
+        p.page.mouse.move(w // 3, 400)     # then read further up, by hand
+        p.page.mouse.wheel(0, p.js(find, words) - 300)
+        p.wait(500)
+        for c in range(cut, len(text), 30):
+            p.send({"type": "delta", "id": 990, "text": text[c:c + 30]})
+            p.wait(15)
+        p.wait(300)
+        before = p.js(find, words)
+        p.done(990, text)
+        p.wait(1200)
+        after = p.js(find, words)
+        check(f"{w}: the words read stay where they are as the answer ends ({before} -> {after} px)",
+              before is not None and after is not None and 200 <= before <= 400 and abs(after - before) <= 4, (before, after))
+        p.close()
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     group_stylesheet()
@@ -750,7 +816,7 @@ def main() -> int:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_heard, group_release, group_matrix, group_study, group_shots):
+        for group in (group_material, group_motion, group_ribbon, group_engines, group_drawn, group_readable, group_skip, group_heard, group_release, group_matrix, group_study, group_place, group_shots):
             group(br, s)
         br.close()
     return T.end()

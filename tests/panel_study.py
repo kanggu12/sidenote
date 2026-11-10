@@ -373,7 +373,11 @@ def group_edges(br, s):
     p.page.keyboard.press("Tab")
     p.page.keyboard.press("End")
     p.wait(250)
-    check("the keys' sheet in a low window: Tab and End reach its last rows", p.js("() => document.querySelector('.keys-list').scrollTop") > 50, p.js("() => document.querySelector('.keys-list').scrollTop"))
+    # In a window this low the whole sheet scrolls in its overlay (a list of its own would be a few rows high), so what is
+    # asked is where the last row ends up, whichever of the two scrolled. The list kept the End key and the wheel to
+    # itself with nothing of its own to scroll, and the last row stayed 170 px under the window's edge
+    last = p.js("() => { const rows = document.querySelectorAll('.keys-list .set'), r = rows[rows.length - 1].getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), innerHeight]; }")
+    check("the keys' sheet in a low window: Tab and End reach its last rows", 0 <= last[0] and last[1] <= last[2], last)
     p.page.keyboard.press("Escape")
     p.page.set_viewport_size({"width": 1400, "height": 700})
     p.wait(80)
@@ -425,10 +429,10 @@ def group_edges(br, s):
 
 
 # ---------------------------------------------------------------- the keys
-KEYS = ["j", "k", "c", "r", "p", "/", "h", "a", "?", "Esc"]
-WORDS_KO = ["다음 답", "이전 답", "정답 한 줄 복사", "다시 분석", "일시정지 또는 계속하기", "답 찾기", "힌트 보기", "정답 보기", "단축키", "닫기"]
+KEYS = ["j", "k", "c", "r", "p", "/", "h", "a", "z", "?", "Esc"]
+WORDS_KO = ["다음 답", "이전 답", "정답 한 줄 복사", "다시 분석", "일시정지 또는 계속하기", "답 찾기", "힌트 보기", "정답 보기", "삭제 되돌리기", "단축키", "닫기"]
 WORDS_EN = ["Next answer", "Previous answer", "Copy the one-line answer", "Reanalyze", "Pause or continue", "Find an answer", "Show a hint", "Show the answer",
-            "Keyboard shortcuts", "Close"]
+            "Undo a delete", "Keyboard shortcuts", "Close"]
 
 
 def press_js(p, key, code, **mods):

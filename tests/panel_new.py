@@ -156,11 +156,23 @@ def main() -> int:
         page.close()
         page, _ = fresh(br, url)
         many(page, 1)
-        page.evaluate("() => { window.send = () => false; clearArmed = Date.now() - 500; document.getElementById('clear').click(); }")
+        page.evaluate("() => { window.send = () => false; clearArmed = Date.now() - 1000; document.getElementById('clear').click(); }")
         page.wait_for_timeout(100)
         check("Clear while offline deletes nothing and says so", page.evaluate("() => thread.length") == 1 and "못 지움" in page.evaluate("() => document.getElementById('toast').textContent"))
         page.evaluate("() => { toggleMenu(true); document.getElementById('clear').click(); toggleMenu(false); }")
         check("closing the menu disarms Clear", page.evaluate("() => clearArmed") == 0)
+        # A double click arms it and asks again, and clears nothing: both presses came at once, and every answer was gone
+        # with nothing asked (Reset to defaults the same)
+        page.evaluate("() => { window.__sent = []; window.send = (m) => { window.__sent.push(m); return true; }; toggleMenu(true); }")
+        page.evaluate("() => { const b = document.getElementById('clear'); b.click(); b.click(); }")
+        page.wait_for_timeout(100)
+        check("a double click on Clear history asks again and clears nothing",
+              page.evaluate("() => thread.length === 1 && !window.__sent.some((m) => m.type === 'history_clear') && clearArmed > 0"))
+        page.evaluate("() => { toggleMenu(false); openSettings(); const b = document.getElementById('settings-reset'); b.click(); b.click(); }")
+        page.wait_for_timeout(100)
+        check("...nor does one on Reset to defaults reset anything",
+              page.evaluate("() => !window.__sent.some((m) => m.type === 'settings_reset') && resetArmed > 0"))
+        page.evaluate("() => closeSettings()")
         page.close()
 
         print("[filters]")
@@ -273,6 +285,26 @@ def main() -> int:
         done = page.evaluate("() => [getComputedStyle(document.getElementById('boot')).display, thread.length]")
         check("then they go, the answers in place", done == ["none", 5], str(done))
         page.close()
+        # A history that takes longer than the page waits with no server at all (1.8 s): the placeholders stay until it
+        # comes. Let go at 1.8 s, the first-run welcome page and its checklist stood there for the rest of the wait
+        page = br.new_page(viewport={"width": 1400, "height": 900}, locale=support.LOCALE)
+        page.add_init_script("window.WebSocket = function () { window.__ws = this; this.close = function () {}; this.send = function () {}; };")
+        held = []                                        # the request for the answers, kept unanswered
+        page.route("**/history*", lambda r: held.append(r))   # a function of this file: the browser driver marks the handler it is given, and a list's own method takes no mark
+        page.route("**/history/days*", lambda r: r.fulfill(json={"days": []}))
+        page.goto(url, wait_until="commit")
+        page.wait_for_selector("#boot", state="attached")
+        page.wait_for_timeout(300)
+        page.evaluate("() => { __ws.onopen && __ws.onopen(); }")
+        page.wait_for_timeout(2400)                      # 2.7 s after it opened, the history still on its way
+        waiting = page.evaluate("() => [document.documentElement.classList.contains('booting'), getComputedStyle(document.getElementById('welcome')).visibility]")
+        check("a history slower than 1.8 s is waited for, the welcome page not shown meanwhile", len(held) == 1 and waiting == [True, "hidden"], f"{len(held)} {waiting}")
+        if held:
+            held[0].fulfill(json={"answers": [row(i, time.time() - 50 + i) for i in range(1, 6)], "days": []})
+        page.wait_for_function("() => !document.documentElement.classList.contains('booting')", timeout=4000)
+        done = page.evaluate("() => [getComputedStyle(document.getElementById('boot')).display, thread.length]")
+        check("...and they go as it comes, the answers in place", done == ["none", 5], str(done))
+        page.close()
         page, _ = fresh(br, url)
         ended = page.evaluate("() => document.documentElement.classList.contains('booting')")
         check("with no server the placeholders do not stay", not ended or page.wait_for_function("() => !document.documentElement.classList.contains('booting')", timeout=4000) is not None)
@@ -361,9 +393,10 @@ def main() -> int:
         page.wait_for_timeout(300)
         scrolled = page.evaluate("() => Math.abs(document.querySelector('.alerts').getBoundingClientRect().top - document.querySelector('.rail .card').getBoundingClientRect().top) ")
         check("and still level once scrolled", scrolled <= 1 or page.evaluate("() => document.querySelector('.rail').offsetHeight > innerHeight"), str(scrolled))
-        out = page.evaluate("""() => { const a = document.querySelector('.alerts').getBoundingClientRect(), t = document.querySelector('.sheet.thread').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect();
-            return { inBar: document.documentElement.classList.contains('bands-in-bar'), inset: [Math.round(a.left - t.left), Math.round(t.right - a.right)], gap: Math.round(a.top - b.bottom) }; }""")
-        check("scrolled, it floats under the bar, narrower than the page and centred on it", not out["inBar"] and out["inset"][0] >= 8 and abs(out["inset"][0] - out["inset"][1]) <= 1 and out["gap"] == 18, str(out))
+        out = page.evaluate("""() => { const a = document.querySelector('.alerts').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect();
+            return { inBar: document.documentElement.classList.contains('bands-in-bar'), within: a.top >= b.top && a.bottom <= b.bottom }; }""")
+        # in the bar scrolled too: floating under it once scrolled, it lay over the cards and their edges ran under it
+        check("scrolled, it stays in the bar, over nothing of the thread", out["inBar"] and out["within"], str(out))
         page.close()
         page, _ = fresh(br, url, skin="classic")
         push(page, answer(810, time.time(), text="## (1) 첫 질문?\n\n답 하나.\n\n- 항목\n\n## (2) 둘째 질문?\n\n답 둘.\n\n맺음말은 둘째 뒤."))
@@ -534,9 +567,10 @@ def main() -> int:
         # the toast
         page.evaluate("() => { toast('막혔습니다', null, 'bad'); }")
         page.wait_for_timeout(300)
-        t = page.evaluate("""() => { const a = document.getElementById('toast').getBoundingClientRect(), c = document.getElementById('stage').getBoundingClientRect();
-            return [Math.abs((a.left + a.right) / 2 - (c.left + c.right) / 2), getComputedStyle(document.getElementById('toast')).backgroundColor, document.getElementById('toast').dataset.tone]; }""")
-        check("a notice stands over the thread's middle, tinted by what it says", t[0] <= 1 and t[2] == "bad", str(t))
+        # in the bar, where it covers no box (index.html, .toast): over the thread's middle it lay over the cards
+        t = page.evaluate("""() => { const a = document.getElementById('toast').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect();
+            return [a.left >= b.left && a.right <= b.right && a.top >= b.top && a.bottom <= b.bottom, document.getElementById('toast').dataset.tone]; }""")
+        check("a notice stands in the bar, tinted by what it says", t[0] and t[1] == "bad", str(t))
         page.evaluate("() => handle({ type: 'notice', text: '저장된 기록을 지우지 못했습니다.' })")
         check("a server notice of what could not be done is the warning tone", page.evaluate("() => document.getElementById('toast').dataset.tone") == "warn")
         page.evaluate("() => document.getElementById('toast').classList.remove('show')")

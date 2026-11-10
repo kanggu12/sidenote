@@ -36,7 +36,8 @@ document.documentElement.lang = LANG;
 // closing quote of a word given quoted ('{name}' then the particle goes by the word inside the quotes).
 function particle(word, pair) {
   const [withFinal, withoutFinal] = pair.split("/");
-  const last = String(word || "").replace(/['"\u2019\u201d]$/, "").replace(/\s*\([^()]*\)\s*$/, "").trim().slice(-1);
+  // markup round a value (a setting's name in <b>) is not its last letter: ">" chose "을" after "붙이기"
+  const last = String(word || "").replace(/<[^>]*>/g, "").replace(/['"\u2019\u201d]$/, "").replace(/\s*\([^()]*\)\s*$/, "").trim().slice(-1);
   const code = last.charCodeAt(0);
   if (!last || code < 0xac00 || code > 0xd7a3) return withFinal;
   return (code - 0xac00) % 28 ? withFinal : withoutFinal;

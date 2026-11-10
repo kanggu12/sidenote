@@ -152,6 +152,7 @@ def group_keys(br, s):
     p.js("() => document.getElementById('more').click()")
     p.wait(100)
     p.page.locator("#clear").click()
+    p.wait(700)                          # the second press once the question could be read: a quicker one is a double click's
     p.page.locator("#clear").click()
     p.wait(100)
     check("Clear history takes the keys with it", p.js(keys) == [True, True], p.js(keys))

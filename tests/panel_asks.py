@@ -103,8 +103,12 @@ def main() -> int:
         check("a press sends the whole instruction as the question",
               len(sent) == 1 and sent[0]["type"] == "ask" and sent[0]["text"].startswith("방금 답을 더 깊게"),
               json.dumps(sent, ensure_ascii=False)[:110])
-        check("and it cannot be pressed again for a moment after",
-              page.evaluate("""() => document.querySelector('.row.asks [data-ask]').disabled"""))
+        # held as a key at work, which keeps the keyboard's focus (disabled, the focus fell to the page): a press sends nothing
+        page.evaluate("""() => { const b = document.querySelector('.row.asks [data-ask]'); b.focus(); b.click(); }""")
+        check("and it cannot be pressed again for a moment after, the focus kept on it",
+              page.evaluate("""() => { const b = document.querySelector('.row.asks [data-ask]');
+                                      return b.getAttribute('aria-disabled') === 'true' && document.activeElement === b; }""")
+              and len(page.evaluate("() => window.__sent")) == 1)
 
         # a newer answer of another kind: the old row goes, the new one suits its type
         page.evaluate("(s) => s.forEach(handle)", seed(WORK, 1793000002))

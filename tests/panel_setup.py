@@ -121,6 +121,13 @@ def group_steps(br, s) -> None:
           [(c["pill"], c["state"]) for c in cards] == [(r["pill"], r["state"]) for r in rail], str((cards, rail)))
     check("...and a step that works is ticked over the pane", p.js("() => document.querySelector('#setup-steps [data-step=\"0\"]')?.dataset.state") == "ok"
           and p.js("() => !!document.querySelector('#setup-steps [data-step=\"0\"] .n svg')"))
+    # What a screen reader is given for a step: its number, its name and how it stands, whole. Read from what is drawn, a
+    # ticked step had no number (the tick is a drawing) and its state came after a stray space ("풀이 , 완료")
+    said = p.js("""() => [...document.querySelectorAll('#setup-steps .setup-step')].map((b) => [b.getAttribute('aria-label'), b.dataset.state,
+      b.querySelector('.name').textContent, b.querySelector('.n').getAttribute('aria-hidden')])""")
+    check("...and each step is read out whole: its number, its name, done or to look at",
+          len(said) >= 4 and all(a == f"{i + 1}. {name}" + {"ok": ", 완료", "warn": ", 확인 필요"}.get(st, "") and hid == "true" for i, (a, st, name, hid) in enumerate(said))
+          and said[0][1] == "ok", str(said))
     rows = p.js("() => [...document.querySelectorAll('#setup-body .set [data-set]')].map((b) => b.dataset.set)")
     check("...with its settings, drawn as Solver settings draws them", {"local_llm", "local_model", "agent_mode"} <= set(rows), str(rows))
     p.js("() => { window.__sent.length = 0; document.querySelector('#setup-body [data-set=\"local_llm\"]')?.click(); }")

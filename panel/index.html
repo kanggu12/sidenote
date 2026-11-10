@@ -338,8 +338,10 @@
     bottom: var(--brand-hl-y); height: var(--brand-hl-h);
     border-radius: 3px 7px 5px 3px; background: var(--brand-hl); transform: skewX(-14deg) rotate(-1.2deg); }
   /* The release beside the name, where a product's version is looked for: small, in the code face, quiet until pointed at,
-     square as the panel's keys. It sits in the space the name keeps after it (the name's right margin) */
-  .brand-ver { margin-left: -12px; padding: 3px 6px; font-family: var(--mono); font-size: 11.5px; line-height: 1;
+     square as the panel's keys. The two are one item of the bar, set on one baseline: centred in the bar each on its own,
+     the tag's words stood 2.3 px off the name's line. 12 px after the name (its 6 px margin and these 6) */
+  .brand-line { display: inline-flex; align-items: baseline; }
+  .brand-ver { margin-left: 6px; padding: 3px 6px; font-family: var(--mono); font-size: 11.5px; line-height: 1;
     color: var(--ink-2); text-decoration: none; border: 1px solid var(--rule); white-space: nowrap; }
   .brand-ver:hover, .brand-ver:focus-visible { color: var(--ink); border-color: var(--ink-2); }
   /* The five signals are one reading, so they sit together in one well set into the bar, the way Slack sets its
@@ -375,6 +377,8 @@
   .btn:hover:not(:disabled) { border-color: var(--ink-2); }
   .btn:active:not(:disabled) { transform: translateY(1px); }
   .btn:disabled { opacity: .45; cursor: default; }
+  /* a key at work that keeps the keyboard's focus (app.js): it looks as a disabled one does, and a press does nothing */
+  .btn[aria-disabled="true"] { opacity: .45; cursor: default; }
   .btn.pen { background: var(--pen); border-color: var(--pen); color: var(--pen-ink); font-weight: 650; }
   .btn.pen:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--pen); }
   .btn.on { border-color: var(--warn); color: var(--warn); }
@@ -402,6 +406,8 @@
     transition: box-shadow .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease); }
   .seg button[aria-pressed="true"] { box-shadow: var(--sunken); }
   .seg button[aria-pressed="true"] { border-color: var(--pen); background: var(--pen-soft); color: var(--pen); font-weight: 650; }
+  /* a choice not taken answers the pointer, as the gear menu's do (it gave no sign it could be pressed) */
+  .set .seg button:not([aria-pressed="true"]):not(:disabled):hover { color: var(--ink); border-color: var(--ink-2); }
   .menu .item { display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 5px; border: 0; background: none; cursor: pointer; font-size: 14px; }
   .menu .item:hover { background: var(--sheet-2); }
   /* Clear the history waiting for its second press: in the warning tone, as Reset to defaults is when armed */
@@ -451,6 +457,12 @@
      of the window, under the notices, and scrolled further it left the window. At the column's foot it floats at the window's
      foot until the page's end, as under a long thread (app.js, the question box's two shapes) */
   @media (min-width: 1001px) {
+    /* and the page is at least the window's height under the bar: on a window taller than the right column (2560x1440,
+       3840x2160) the page ended in the middle of the window, and the box with it, with the window's lower part empty */
+    .layout { min-height: calc(100vh - var(--bar-h, 56px) - var(--alerts-h, 0px)); }
+    /* the bands standing in the bar (classic, a wide window) take no room above the page, even with none to show: their
+       38 px taken off it left the box that far above the window's foot */
+    html.bands-in-bar[data-skin="classic"] .layout { min-height: calc(100vh - var(--bar-h, 56px)); }
     .stage { align-self: stretch; display: flex; flex-direction: column; }
     .stage > .stage-fill { flex: 1 0 0; }   /* the room under a thread shorter than the page, above the box (app.js measures the thread's end without it) */
   }
@@ -522,6 +534,16 @@
   /* An answer's star key: its outline filled with the highlighter once the answer is starred, a mark on the answer as the
      highlighter is. The outline keeps the key's ink, so the star reads on the light sheet, where the yellow alone does not */
   .tools .btn[data-star][aria-pressed="true"] svg { fill: var(--hl-yellow); }
+  /* The delete key (app.js, deleteKey): last of an answer's keys and a little apart from Copy all beside it, in the colour of what
+     breaks only under the pointer, where it says what a press does */
+  .tools .btn[data-delete] { margin-left: 4px; }
+  .tools .btn[data-delete]:hover:not(:disabled) { color: var(--bad); }
+  /* Classic's keys take the ink under the pointer (:is(.tools, .answer) .btn.ghost:hover): this one keeps its colour there */
+  :root[data-skin="classic"] .tools .btn.ghost[data-delete]:hover:not(:disabled) { color: var(--bad); }
+  /* An error's delete key on its title's line, at its right: an error has no headline row to hold it */
+  .errtop { display: flex; align-items: flex-start; gap: 8px; }
+  .errtop h2 { flex: 1 1 auto; min-width: 0; }
+  .errtop .tools { flex: none; display: flex; }
   @media (max-width: 420px) { .headline { flex-wrap: wrap; } }   /* or the folded row's buttons ran 8 px past the column */
   .asked { color: var(--ink-2); font-size: 14.5px; overflow-wrap: anywhere; word-break: keep-all; }
   .answer { display: flex; align-items: flex-start; gap: 10px; }
@@ -663,6 +685,7 @@
      compared: right-aligned, every digit the width of the others. */
   .md :where(td, th).num { text-align: right; font-variant-numeric: tabular-nums; width: 1%; white-space: nowrap; }
   .md th, .md td { border-bottom: 1px solid var(--rule); padding: 9px 16px; text-align: left; vertical-align: top; min-width: 3.5em; }
+  .md :is(td, th).v-token { white-space: nowrap; }   /* an identifier on one line (app.js, vTables) */
   .md th { background: var(--code-bar); color: var(--ink-2); font-weight: 650; font-size: 13px; letter-spacing: .01em;
     border-bottom-color: var(--rule-2); padding-top: 8px; padding-bottom: 8px; white-space: nowrap; }
   .md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--ink) 2.5%, transparent); }
@@ -807,9 +830,12 @@
     font-variant-numeric: tabular-nums; }
   /* Which engine answered, and so whether the answer left the PC: its word in the colour the header's signal uses for
      it, behind a lamp like the signal's, and the model beside it in the code face. */
-  .meta .by { display: inline-flex; align-items: center; gap: 7px; }
+  /* Its words stand on one baseline, the lamp at their middle. Centred, the engine's word and the model's name (another
+     face, a size smaller) were level only by the faces' own metrics: with the web fonts not loaded (blocked, or the page
+     served without them) they stood 1.2 px apart on every answer */
+  .meta .by { display: inline-flex; align-items: baseline; gap: 7px; }
   .meta .by b { font-weight: 700; }
-  .meta .by::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--lamp);
+  .meta .by::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; align-self: center; background: var(--lamp);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--lamp) 18%, transparent), 0 0 7px color-mix(in srgb, var(--lamp) 65%, transparent); }
   .meta .by.here { color: var(--ok); --lamp: var(--ok); } .meta .by.cloud { color: var(--pen); --lamp: var(--pen); }
   .meta .by .model { font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-weight: 400; }
@@ -1142,7 +1168,7 @@
   .h .hk { font-size: 12px; font-weight: 700; color: var(--t, var(--graphite)); white-space: nowrap; }
   .h .ht { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   /* A starred row: the same star, small and filled, before its words and inside them, so it gives way with them at every width */
-  .h .h-star { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; fill: var(--hl-yellow); stroke: currentColor; }
+  :is(.h, .del-name) .h-star { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; fill: var(--hl-yellow); stroke: currentColor; }
   .h { outline-offset: -2px; }   /* the list scrolls, so the focus ring is drawn inside the row */
   .h[aria-current="true"] time { color: var(--ink-2); }
   .h[aria-current="true"] .ht, .h.err[aria-current="true"] .ht { color: var(--ink); }   /* beats .h.err .ht below */
@@ -1180,9 +1206,11 @@
 
   /* ---- the settings sheet (from the menu): every stage of solving switched in one place ---- */
   /* The veil over the page is plain black, as Slack's is, at the strength it had. */
-  .overlay { position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .44); overflow-y: auto; overscroll-behavior: contain;
+  /* The veil behind a sheet: dark enough that the page behind reads as put aside (.44 left it nearly as bright as it was) */
+  .overlay { position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .64); overflow-y: auto; overscroll-behavior: contain;
     display: flex; justify-content: center; align-items: flex-start; padding: calc(var(--bar-h, 56px) + 18px) 16px 32px;
-    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: veil .18s var(--ease); }
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: veil .18s var(--ease); }
+  :root[data-theme="light"] .overlay { background: rgba(18, 20, 24, .48); }
   @keyframes veil { from { opacity: 0; } }
   /* The sheet holds two dozen settings: it keeps its own scrollbar, with the title and the way
      out always in view, rather than running off the bottom of the window. It is read, so it is opaque,
@@ -1340,7 +1368,6 @@
   @media (max-width: 820px) {
     :root { --mg-w: 0px; }
     .bar-in { padding: 9px 14px; gap: 10px; }
-    .brand-ver { margin-left: -4px; }   /* the bar's gap is 10 px here: the tag keeps its 12 px from the name */
     .layout { padding: 14px 12px 40px; }
     .alerts { padding: 0 12px; }
     .sheet { padding: 16px 16px 16px; }
@@ -1364,15 +1391,23 @@
     .row.head:not(.err) > .ct, .row.head:not(.err) .headline { display: contents; }
     .row.head:not(.err) .headline > .tools { order: 2; margin-left: auto; }
     .row.head:not(.err) .headline > :not(.tools) { order: 3; flex: 1 0 100%; text-align: right; }
+    /* How long it has been solved for stands at the right of the date's line, where the keys come as it ends: on a line of its
+       own, as how a problem came is, the head of every answer was 18 px taller while written and the answer jumped up by that
+       as it ended. One line whatever it says: what does not fit beside the date is cut, never wrapped under it */
+    .row.head:not(.err) .headline > [data-elapsed] { order: 2; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row.head:not(.err) .headline > .tools:empty { display: none; }   /* no keys yet: the gap before them is not kept either */
+    .row.head:not(.err) { min-height: 28px; }   /* as tall as its keys (.btn.sm) before they come: 22 px while written, it grew by 6 as it ended */
     .turn { margin-left: 0; }
     .turn .row { margin-left: 0; }
     .short .hl { font-size: 30px; }
   }
   @media (max-width: 420px) {
-    /* On a phone the newest answer's three keys (the star, Copy all, Problem text) keep the head one line beside the kind and the
-       date: the date's trailing margin and 4 px of the gap go to them, and they still stand 12 px clear of the date */
+    /* On a phone the newest answer's four keys (Problem text, the star, Copy all, Delete) keep the head one line beside the kind and
+       the time: the date's trailing margin and 4 px of the gap go to them, and today's date itself, which every answer of the
+       day would repeat (app.js, entryWhen; an older day's stays, and its keys take a line of their own) */
     .row.head:not(.err) { column-gap: 8px; }
     .row.head:not(.err) > .mg time { margin-right: 0; }
+    .row.head .stamped .day.today { display: none; }
   }
   /* Narrower than the bar's one row (754 px since the signals sit in their well; it is 780 here for a margin): the
      brand and the buttons keep the first row and the signals take a second one of their own. Left to wrap by itself
@@ -1395,6 +1430,7 @@
   }
   html[data-motion="off"] :is(.cursor::after, .spin, .fresh [data-answer], .entry.flash) { animation: none; }
   html[data-motion="off"] :is(.toast, .switch, .switch::after) { transition: none; }
+  html[data-motion="off"][data-skin="classic"] :is(.signals, .alerts) { transition: none !important; }   /* their fade for a notice in the bar */
 
 
   /* ---- in every design: the answer's stroke, headings, lists, diagrams, the bands and the rail ---- */
@@ -1679,12 +1715,14 @@
   :root[data-skin="classic"][data-theme="light"] { --pane-top: transparent; --relief: 0 1px 2px rgba(0, 0, 0, .1); }
   :root[data-skin="classic"] :is(.sheet, .rail .card, .rail.stick .card, .settings, .composer, .composer.floating, .alerts, .alert, .menu, .combo-list, .doc-tip, .toast, .jump) { border-radius: 2px !important; }
   :root[data-skin="classic"] :is(.btn, .btn.sm, .btn.icon, .combo-btn, .seg button, .meta-more) { border-radius: 5px !important; }
-  :root[data-skin="classic"] :is(.md pre, .md .tablewrap, .runbox, .md figure.viz-chart, .gpu-viz, .agent-who, .agent-who .ava, .agent-tiles > div, .shot, .hist-tools input, .combo-list li, .composer :is(input, textarea), pre.ptext, .meta.open .meta-rest, .set-tab, .menu .item, code.cmd) { border-radius: 2px !important; }
+  :root[data-skin="classic"] :is(.md pre, .md .tablewrap, .runbox, .md figure.viz-chart, .gpu-viz, .agent-who, .agent-who .ava, .agent-tiles > div, .shot, .hist-tools input, .combo-list li, .composer :is(input, textarea), pre.ptext, .meta.open .meta-rest, .set-tab, .menu .item, code.cmd, .setup-state, .setup-step, .setup-shot img, .sec-note) { border-radius: 2px !important; }   /* the setup guide's state box, steps and picture too: they stood at 10, 8 and 8 px, made after this list */
   :root[data-skin="classic"] .rail .card, :root[data-skin="classic"] .rail.stick .card { box-shadow: 0 8px 24px -14px rgba(0, 0, 0, .55); }
   :root[data-skin="classic"] .btn svg, :root[data-skin="classic"] .src-name svg { stroke-width: 1.8; }
   /* The bands as a notice in the bar: nothing of the thread is covered, at the top of the page or scrolled */
   html.bands-in-bar[data-skin="classic"] .alerts, html.bands-in-bar[data-skin="classic"] .alerts:not(:empty) { position: fixed; top: calc((var(--bar-h, 56px) - 38px) / 2); left: var(--band-l); right: var(--band-r); width: auto; height: 38px; margin: 0; z-index: 21;
     display: flex; gap: 6px; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  /* with no band to show, nothing: the empty box stood in the bar over what is under it and took its clicks */
+  html.bands-in-bar[data-skin="classic"] .alerts:empty { display: none; }
   html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm), html.bands-in-bar[data-skin="classic"] .alerts .alert:first-child { flex: 1 1 0; min-width: 0; height: 38px; padding: 0 5px 0 10px; gap: 8px; flex-wrap: nowrap; font-size: 13px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
     background: color-mix(in srgb, var(--tone) 18%, var(--sheet)); }
   html.bands-in-bar[data-skin="classic"] .alerts .alert:not(.confirm) + .alert { border-top: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); }
@@ -1806,8 +1844,9 @@
   :root[data-skin="classic"] .shot-empty { height: 100%; width: 100%; }
   /* What floats over the page is glass: the menu, the dropdowns, the settings sheet. The bar under the menu has no blur of its own, or the menu's would see nothing through it */
   :root[data-skin="classic"] .bar.under { backdrop-filter: none; -webkit-backdrop-filter: none; }
-  :root[data-skin="classic"] { --float: rgba(46, 47, 52, .58); --float-line: rgba(255, 255, 255, .16); }
-  :root[data-skin="classic"][data-theme="light"] { --float: rgba(255, 255, 255, .62); --float-line: rgba(255, 255, 255, .95); }
+  /* Nearly the sheet's own colour: the menu and the dropdowns are read, and at .58 the cards under them showed through */
+  :root[data-skin="classic"] { --float: color-mix(in srgb, var(--sheet) 96%, transparent); --float-line: rgba(255, 255, 255, .16); }
+  :root[data-skin="classic"][data-theme="light"] { --float: color-mix(in srgb, var(--sheet) 96%, transparent); --float-line: rgba(255, 255, 255, .95); }
   :root[data-skin="classic"] :is(.menu, .combo-list) { background: var(--float); background-image: none; border: 1px solid var(--float-line); backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3); box-shadow: 0 16px 40px -16px rgba(0, 0, 0, .6); }
   :root[data-skin="classic"] .settings { background: color-mix(in srgb, var(--sheet) 74%, transparent); border: 1px solid var(--float-line); backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2); }
   :root[data-skin="classic"] .menu { top: 42px; min-width: 240px; padding: 12px; }
@@ -1844,7 +1883,7 @@
     :root[data-skin="classic"] .row.head { position: relative; min-height: 28px; align-items: center; }
     :root[data-skin="classic"] .row.head .mg { padding-top: 0; }
     :root[data-skin="classic"] .row.head .mg time { position: absolute; left: calc(var(--mg-w) + 24px); top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--graphite); }
-    /* The room kept for the date, the widest one and 13 px: 133 px in Korean, 149 px in English ("01.07(Wed) 12:00 AM"; Pretendard's
+    /* The room kept for the date, the widest one and 13 px: 133 px in Korean, 153 px in English ("Wed, Sep 30 12:00 AM"; Pretendard's
        figures are all one width), where 146 px ran its AM into "Solving" */
     :root[data-skin="classic"] .row.head .headline { justify-content: flex-end; padding-left: 146px; }
     :root[data-skin="classic"][lang="en"] .row.head .headline { padding-left: 162px; }
@@ -1871,6 +1910,14 @@
   .rail .src-note { margin-top: 4px; }
   /* The menu hangs clear of the bar, and each thing in it wears its mark */
   :root[data-skin="classic"] .menu { top: calc(100% + 18px); }
+  /* ...as a sheet hung from the header's foot (the bar, or the bands' strip under it) down to the window's foot, on the right
+     column's edges, or the window's width in one column (placeMenu): hung from the key at a width of its own, it lay over
+     the cards and its edges crossed theirs; as a card of the column's own height, its foot cut through the card under it.
+     Square where it meets the bar and the window's foot; its items at its top, a scroll away past the window's height */
+  :root[data-skin="classic"] #menu { position: fixed; right: auto; bottom: 0; min-width: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain;
+    border-top: 0; border-bottom: 0; }
+  :root[data-skin="classic"] #menu { border-radius: 0 !important; }   /* over the 2 px every Classic box has */
+  @media (max-width: 1000px) { :root[data-skin="classic"] #menu { border-left: 0; border-right: 0; padding-left: max(14px, calc((100% - 640px) / 2)); padding-right: max(14px, calc((100% - 640px) / 2)); } }
   /* A heading's mark and words on the items' columns: its mark at their marks' edge and its words at theirs (rows and columns; they stood
      6 and 8 px apart) */
   :root[data-skin="classic"] .menu h3 { display: flex; align-items: center; gap: 9px; margin-left: 8px; }
@@ -1985,9 +2032,21 @@
   :root[data-skin="classic"] .hist-tools .combo.pick .combo-btn { padding: 0 6px 0 9px; gap: 4px; }
   :root[data-skin="classic"] .hist-tools .combo.pick .combo-val { overflow: visible; text-overflow: clip; }
   :root[data-skin="classic"] .combo-list li { white-space: nowrap; }
-  /* A passing notice is the same glass as a band, in the same place: under the bar, over the page's column */
-  :root[data-skin="classic"] .toast { top: calc(var(--bar-h, 56px) + 18px + var(--toast-off, 0px)); bottom: auto !important; left: var(--col-mid, 50%); max-width: min(760px, calc(var(--col-w, 100vw) - 32px)); }
-  @media (max-width: 1000px) { :root[data-skin="classic"] .toast { left: 50%; max-width: calc(100vw - 56px); } }   /* the bands' width */
+  /* A passing notice stands in the bar, where it covers no box (placeToast, app.js): the bar's free middle beside the name;
+     with the signals in the bar and no free room left for its words, over the signals; in the signals' own row when the
+     bar takes two. Centred in that room, as tall as a band in the bar (a little less in the signals' row), on one line, its
+     words cut short with an ellipsis past the room. Under the bar it lay over the page's cards and their edges ran under
+     its glass */
+  :root[data-skin="classic"] .toast { top: var(--toast-y, calc(var(--bar-h, 56px) / 2)); bottom: auto !important; left: var(--toast-l, 16px); right: var(--toast-r, 16px);
+    margin: 0 auto; max-width: calc(100vw - var(--toast-l, 16px) - var(--toast-r, 16px)); translate: 0 -50%; transform: translateY(-4px) scale(.98); }
+  :root[data-skin="classic"] .toast.show { transform: none; }
+  :root[data-skin="classic"] .toast > .alert { height: var(--toast-h, 38px); padding-top: 0; padding-bottom: 0; flex-wrap: nowrap; }
+  :root[data-skin="classic"] .toast > .alert .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* What the notice stands over gives it the room while it shows and comes back after: the signals it covers, the bands
+     in the bar where it stands in their place. Faded out, not left under its glass, whose blur showed their edges */
+  :root[data-skin="classic"] :is(.signals, .alerts) { transition: opacity .2s var(--ease); }
+  html.toast-over-signals[data-skin="classic"]:has(#toast.show) .signals,
+  html.bands-in-bar[data-skin="classic"]:has(#toast.show) .alerts { opacity: 0; visibility: hidden; transition: opacity .2s var(--ease), visibility 0s .2s; }
   /* A notice that floats over the page is frosted glass, as the panel's other floating layers are: the sheet's colour
      well under half, over a blur that keeps its words clear and the page behind still showing, the glass's line and
      lit top edge, the lift's shadow. Its kind shows in its mark alone, so it reads at once without standing out; the
@@ -2022,7 +2081,6 @@
     backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); }
   :root[data-skin="classic"][data-theme="light"] header.bar.under { border-bottom-color: rgba(0, 0, 0, .1); }
   :root[data-skin="classic"][data-theme="light"] header.bar.under::before { background: linear-gradient(145deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .6)); }
-  :root[data-skin="classic"] .bar.under .menu { background: color-mix(in srgb, var(--sheet) 88%, transparent); }
   /* No highlighter in the contents */
   :root[data-skin="classic"] .h .ht, :root[data-skin="classic"] .h[aria-current="true"] .ht { background: none !important; }
   /* The contents as a notebook's table of contents: chapters by day, each line the question, a dotted leader, and the time where a page number would stand */
@@ -2078,6 +2136,17 @@
   .load-steps .now { color: var(--ink); font-weight: 650; border-top-color: #2eb67d; animation: load-breathe 1.2s ease-in-out infinite alternate; }
   @keyframes load-breathe { from { border-top-color: color-mix(in srgb, #2eb67d 35%, transparent); } }
   html[data-motion="off"] .load-steps .now { animation: none; }
+  /* A bar that runs while something is under way (a model's download, the step a load is at), as the capture's start window
+     draws its own: the green deeper at its foot and lit at its head, and a light running along it again and again, as the
+     page's loading sweep runs. The menu's Motion stops the light (the rule at the top of this sheet) */
+  .pull-bar > span { position: relative; overflow: hidden;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--ok) 72%, #000), color-mix(in srgb, var(--ok) 72%, #fff)); }
+  .pull-bar > span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .38), transparent) no-repeat;
+    background-size: 40% 100%; animation: bar-run 1.4s ease-in-out infinite; }
+  .load-steps .now { position: relative; }
+  .load-steps .now::before { content: ""; position: absolute; left: 0; right: 0; top: -3px; height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .62), transparent) no-repeat; background-size: 40% 100%; animation: bar-run 1.4s ease-in-out infinite; }
+  @keyframes bar-run { from { background-position: -60% 0; } to { background-position: 160% 0; } }
   .load-now { display: block; margin-top: 4px; font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; }
   /* One colour for every kind of answer: the ink. The red pen is for what is marked on the page (the margin, a label, a question's number), and
      a page with every heading in it was all red */
@@ -2113,7 +2182,8 @@
   :root[data-skin="classic"][data-theme="light"] .rail .switch:not([aria-checked="true"]) { background: linear-gradient(180deg, rgba(0, 0, 0, .06), rgba(0, 0, 0, .02)), #d8d9de; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15), inset 0 0 0 1px rgba(0, 0, 0, .1); }
   :root[data-skin="classic"][data-theme="light"] .rail .steps3 i:not(.on) { background: rgba(0, 0, 0, .08); box-shadow: none; }
   /* GPU Release: the words read at a glance */
-  :root[data-skin="classic"] .rail #gpu-release:not(:hover):not(:active) { color: #ffb066; font-weight: 650; border-color: color-mix(in srgb, #ffb066 65%, transparent); background: linear-gradient(180deg, rgba(255, 159, 67, .24), rgba(255, 159, 67, .1)); }
+  /* #ffb878: #ffb066 measured 4.47:1 on the dark card under its tint, short of 4.5 */
+  :root[data-skin="classic"] .rail #gpu-release:not(:hover):not(:active) { color: #ffb878; font-weight: 650; border-color: color-mix(in srgb, #ffb878 65%, transparent); background: linear-gradient(180deg, rgba(255, 159, 67, .24), rgba(255, 159, 67, .1)); }
   :root[data-skin="classic"][data-theme="light"] .rail #gpu-release:not(:hover):not(:active) { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 65%, transparent); background: linear-gradient(180deg, #fff, rgba(255, 159, 67, .12)); }
   /* The thread and the contents, the glass of the connection card: see-through over the page, with a sheen from the upper left and a lit top edge */
   :root[data-skin="classic"] .sheet { background-color: color-mix(in srgb, var(--page-sheet, var(--sheet)) 66%, transparent);
@@ -2181,8 +2251,13 @@
   :root[data-skin="classic"] .entry[data-here]::before { content: ""; display: block; position: sticky; top: calc(var(--bar-h, 56px) + var(--alerts-h, 0px) - 1px); z-index: 3; width: 11px; height: 26px; margin: -12px 0 -14px calc(var(--mg-w) + 6px); background: var(--margin); clip-path: var(--ribbon-cut); pointer-events: none; }
   @media (max-width: 820px) { :root[data-skin="classic"] .entry[data-here]::before { display: none; } }
   /* ---- Details ---- */
-  /* The status's lamp breathes a ring outside its own box: the pill's ellipsis cut it to a D */
-  :root[data-skin="classic"] .src-top .pill { overflow: clip; overflow-clip-margin: 8px; }
+  /* The status's lamp breathes a ring outside its own box: the pill's ellipsis cut it to a D. The state wraps now (below), so
+     nothing is cut at all, and the ring is whole where overflow-clip-margin is unknown (Safari): a word longer than the pill
+     breaks rather than spill */
+  :root[data-skin="classic"] .src-top .pill { overflow: visible; overflow-wrap: anywhere; }
+  /* A state longer than its column (English: "Auto sending paused", "Sign-in expired") goes onto a second line: cut, it
+     ended mid-word and ran under the switch, and the state is what the card is for */
+  :root[data-skin="classic"] .src-top .pill { white-space: normal; text-overflow: clip; line-height: 1.3; }
   /* A cost is a figure like the others: amber is for caution */
   :root[data-skin="classic"] .meta-rest .cost b { color: var(--ink); }
   /* The screen's card: nothing to show takes the card's whole width, with its mark and its words together in the middle; a picture keeps its shape */
@@ -2228,6 +2303,8 @@
   :root[data-skin="classic"] { --v: var(--series-1); --v-ink: var(--in-1); --v-2: var(--series-3); --v-soft: color-mix(in srgb, var(--v) 22%, transparent); --v-line: color-mix(in srgb, var(--v) 46%, transparent); --v-pane: color-mix(in srgb, var(--ink) 5%, transparent); --v-pane-line: color-mix(in srgb, var(--ink) 10%, transparent); }
   /* Numbered steps are a ladder: each number in its disc, a line down to the next */
   :root[data-skin="classic"] :is(.md > ol, .md > .qa > ol) { list-style: none; padding: 0; margin: 1em 0; counter-reset: v-step calc(var(--start, 1) - 1); }
+  /* an item with nothing in it (a "1." the answer left empty) takes no number: its circle hung alone over the section's foot */
+  :root[data-skin="classic"] :is(.md > ol, .md > .qa > ol) > li:empty { display: none; }
   :root[data-skin="classic"] :is(.md > ol, .md > .qa > ol) > li { position: relative; counter-increment: v-step; margin: 0; padding: 0 0 12px 40px; min-height: 40px; }
   :root[data-skin="classic"] :is(.md > ol, .md > .qa > ol) > li:last-child { padding-bottom: 0; min-height: 0; }
   :root[data-skin="classic"] :is(.md > ol, .md > .qa > ol) > li::before { content: counter(v-step); position: absolute; left: 0; top: 0; width: 27px; height: 27px; display: grid; place-items: center; border-radius: 50%; font-size: 13.5px; font-weight: 760; line-height: 1; font-variant-numeric: tabular-nums; color: var(--v-ink); background: var(--v); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); }
@@ -2425,7 +2502,9 @@
   :root[data-skin="classic"] .rail .agent-scale > .t { display: contents; }
   :root[data-skin="classic"] .rail .agent-scale > .t > span { grid-area: 1 / 1; white-space: nowrap; }
   :root[data-skin="classic"] .rail .agent-scale > .steps3 { grid-area: 1 / 2; width: 42px; }
-  :root[data-skin="classic"] .rail .agent-scale > .t > b { grid-area: 1 / 3; justify-self: start; min-width: 0; max-width: 100%; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* the value goes on to a second line when it is longer than its column (English: "Hard problems of chosen types" ended in
+     "chosen t…"); the name and the steps stay on its middle */
+  :root[data-skin="classic"] .rail .agent-scale > .t > b { grid-area: 1 / 3; justify-self: start; min-width: 0; max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
   /* The values of the two engine cards start on one line */
   /* The tiles on the two columns the facts stand in */
   :root[data-skin="classic"] .rail .usage .stat + .stat { padding-left: 6px; }
@@ -2484,6 +2563,10 @@
   :root[data-skin="classic"] .entry > .row.head.err { align-items: first baseline; }
   @media (min-width: 1001px) { :root[data-skin="classic"] .entry > .row.head.err .mg time { margin-top: 1.4px; } }
   @media (min-width: 821px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { justify-content: flex-end; } }
+  /* Up to 1000 px the type and the date stand on one line: the type at one width, so the dates of the answers stand in one column
+     ("실무", "선다형" and "알고리즘" put them at 81, 92 and 104 px). Not on a phone's width, where the room it takes pushed the
+     answer's keys onto a second line */
+  @media (min-width: 481px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) > .kind { min-width: 6.6em; text-align: center; } }
   @media (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; } :root[data-skin="classic"] .entry > .row .mg:has(.kind) > * { align-self: baseline; margin-block: 0; } }
   /* A key's name in a sentence: on the sentence's baseline, its mark beside it */
   .key-hint { align-items: baseline; }
@@ -2913,12 +2996,23 @@
   }
   /* The section map gives each part room by the length of its name: a long name was cut while a short one had space to spare */
   :root[data-skin="classic"] .v-seg { flex: 1 1 auto; min-width: 72px; }
-  /* Two bands stacked over the thread read as one block: what passes under them does not show between them */
-  html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { background: color-mix(in srgb, var(--paper) 78%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 4px; }
+  /* The bands that do not fit in the bar are the thread column's head: as wide as the column and its cards, at the top of
+     the column with their room taken, and once scrolled stuck to the bar's foot with the bar's own surface under them
+     (.bar.under) and its lower edge at their foot, the thread passing under them as the page passes under the bar. As
+     boxes floating 18 px under the bar they lay over the cards, the cards' edges running under them and the page showing
+     in the gaps. The 8 px over the first band is drawn into the column's top margin, so the band stands level with the
+     right column at the top and nothing moves as the strip comes to the bar */
+  html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { top: var(--bar-h, 56px); width: auto; max-width: none; margin: -8px 0 6px; border-radius: 0 !important;
+    padding: 8px 0 10px; border-bottom: 1px solid transparent; }
+  html:not(.bands-in-bar)[data-skin="classic"]:has(.bar.under) .alerts:not(:empty) { border-bottom-color: rgba(255, 255, 255, .16); box-shadow: 0 8px 22px -14px rgba(0, 0, 0, .7);
+    background: linear-gradient(145deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .05)), color-mix(in srgb, var(--paper) 72%, transparent);
+    backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); }
+  html:not(.bands-in-bar)[data-skin="classic"][data-theme="light"]:has(.bar.under) .alerts:not(:empty) { border-bottom-color: rgba(0, 0, 0, .1);
+    background: linear-gradient(145deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .6)); }
   /* The bands that do not go in the bar at the top of the page take their room over the thread (html.bands-room, placeBands),
      there and scrolled alike, so the page never jumps as it scrolls; floating, they lay over the first answer, whose keys
      could not be pressed. Up to a third of the window, past which they scroll inside themselves rather than spill over. */
-  html.bands-room:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { margin-bottom: 16px; overflow-y: auto; padding-bottom: 2px; }
+  html.bands-room:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { overflow-y: auto; }
 
   /* ---- Practice, the keyboard shortcuts and Export's menu: parts the panel has, put to these uses ---- */
   /* An answer Practice keeps back: its keys wear the follow-up row's look (.row.asks), how many hints it has stands on their middle */
@@ -2946,11 +3040,30 @@
     font-size: 13.5px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
   .heard-line + .heard-line { border-top: 1px dashed var(--rule); }
   .heard-line time { font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Recently deleted: the heard sheet again, a row an answer with its two keys at its right, under its words in a narrow window */
+  #deleted { width: min(720px, 100%); max-height: calc(100vh - var(--bar-h, 56px) - 32px); }
+  .deleted-list { list-style: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -8px 0 0; padding: 0 8px 0 0; }
+  .del-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 8px 0; }
+  .del-row + .del-row { border-top: 1px dashed var(--rule); }
+  .del-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+  .del-kind { flex: none; font-size: 12.5px; font-weight: 750; color: var(--t, var(--ink)); }
+  .del-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .del-when { grid-column: 1; margin: 0; font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; word-break: keep-all; }
+  .del-keys { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; }
+  @media (max-width: 520px) { .del-row { grid-template-columns: minmax(0, 1fr); } .del-keys { grid-column: 1; grid-row: auto; margin-top: 4px; } }
+  /* how many it holds, at the right of the menu's key to it; its mark a clock turned back, not Clear history's bin below it */
+  .menu .item .n { margin-left: auto; padding-left: 12px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+  :root[data-skin="classic"] #open-deleted { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12a8 8 0 1 0 2.4-5.7L4 8.5M4 4v4.5h4.5M12 8v4.2l3 1.8'/%3E%3C/svg%3E"); }
+  /* A key that asks twice, armed: the words and the colour change (.btn.on), as Clear history's do in the menu. Classic's sheet keys
+     keep the ink otherwise (#settings-reset), and the armed one looked only pressed */
+  :root[data-skin="classic"] :is(#settings-reset, #deleted .btn).on { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   :root[data-skin="classic"] #open-heard { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3'/%3E%3C/svg%3E"); }
   /* The setup guide: the settings sheet again, its four steps in a row over the pane, each numbered or ticked in the colour of
      how it stands; a step's states are drawn as the cards draw them, its settings as Solver settings draws them (app.js, renderSetup) */
   #setup { width: min(720px, 100%); }
-  @media (min-width: 721px) { #setup.settings { height: min(680px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
+  /* one height for every step, so the sheet does not jump between them: 680 px left the first step's last line 13 px under the
+     keys at the foot */
+  @media (min-width: 721px) { #setup.settings { height: min(720px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
   .setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; padding: 3px 3px 10px;
     border-bottom: 1px solid var(--rule); }
   .setup-step { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; border: 0; border-radius: 8px;
@@ -2995,10 +3108,6 @@
   :root[data-skin="classic"] #open-keys { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 14h8'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #export-menu [data-export="md"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3h8l4 4v14H6z'/%3E%3Cpath d='M14 3v4h4M9 12h6M9 16h4'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #export-menu [data-export="anki"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='7.5' width='13' height='13' rx='2'/%3E%3Cpath d='M8 4h11a2 2 0 0 1 2 2v11'/%3E%3C/svg%3E"); }
-  /* The version at the foot of the gear menu: small and quiet, its words on the column of the items' words (an item's
-     padding, then its mark and the gap after it) */
-  .menu .about .ver { margin: 2px 10px 4px; font-size: 12px; color: var(--ink-2); }
-  :root[data-skin="classic"] .menu .about .ver { margin: 0 8px 2px 32px; }
   /* A band's close key is square, as the panel's other keys with a mark alone are, and as tall as the band's keys */
   .alert .btn.icon { width: 28px; padding: 0; }
   html.bands-in-bar .alerts .alert .btn.icon { width: 26px; }
@@ -3026,15 +3135,36 @@
     /* The day on a row of its own and the two keys under it, not one key alone on the second row */
     :root[data-skin="classic"] .heard-tools .combo.pick { flex-basis: 100%; }
   }
+
+  /* High contrast (forced colours) paints every background with the system's own: the answer line's marker, a switch's
+     knob and track, and the chosen key of a row were then the same as what is not chosen, so they are drawn in the
+     system's colours here */
+  @media (forced-colors: active) {
+    mark.hl { forced-color-adjust: none; color: CanvasText; background: Canvas; }
+    .switch { border: 1px solid ButtonText; }
+    .switch::after { forced-color-adjust: none; background: ButtonText; }
+    .switch[aria-checked="true"] { forced-color-adjust: none; background: Highlight; }
+    .switch[aria-checked="true"]::after { background: HighlightText; }
+    .seg button[aria-pressed="true"], .set-tab[aria-selected="true"], .setup-step[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+    .signal .dot { forced-color-adjust: none; }
+    .md tr.v-right > td:first-child { outline: 2px solid Highlight; outline-offset: -2px; }
+  }
+  /* A short window (a laptop at 200 % zoom): the whole sheet scrolls in its overlay, not one 30 px pane inside it */
+  @media (max-height: 560px) {
+    .settings, #settings.settings, #setup.settings { height: auto; max-height: none; }
+    /* the keys' list by its sheet's id, as its own rule names it: a rule of less weight left it a scroller with nothing to
+       scroll, and one that keeps the wheel and the End key to itself (overscroll-behavior), so the sheet stood still */
+    .set-pane, #setup-body, .set-nav, #keys .keys-list { overflow: visible; }
+  }
 </style>
 </head>
 <body>
 <header class="bar">
   <div class="bar-in">
-    <span class="brand" aria-label="Sidenote">sidenote</span>
-    <!-- this server's release beside the name, linking to its notes (app.js, renderVersion), once the server has said it -->
-    <a class="brand-ver" id="brand-ver" target="_blank" rel="noopener noreferrer" hidden></a>
-    <div class="signals" role="status" aria-label="Connection status" data-t-aria>
+    <!-- the name, and this server's release beside it on its baseline, linking to its notes (app.js, renderVersion), once the
+         server has said it -->
+    <span class="brand-line"><span class="brand" aria-label="Sidenote">sidenote</span><a class="brand-ver" id="brand-ver" target="_blank" rel="noopener noreferrer" hidden></a></span>
+    <div class="signals" role="group" aria-label="Connection status" data-t-aria>
       <span class="signal" id="sig-server" data-state="idle" data-t><span class="dot"></span>Server</span>
       <span class="signal" id="sig-local" data-state="idle" data-t><span class="dot"></span>Local model</span>
       <span class="signal" id="sig-agent" data-state="idle"><span class="dot"></span><span class="name" data-t>Agent</span></span>
@@ -3051,22 +3181,23 @@
       <button class="btn icon" id="more" aria-controls="menu" aria-expanded="false" title="Settings" data-t-title>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.9l.1-.1a1.7 1.7 0 0 0-1.2-2.8H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.9-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       <div class="menu" id="menu" hidden>
-        <h3 data-t>Theme</h3>
-        <div class="seg" id="theme-seg">
+        <!-- each row of choices named by its heading (role group): a screen reader heard "Auto" three times with nothing saying of what -->
+        <h3 id="h-theme" data-t>Theme</h3>
+        <div class="seg" id="theme-seg" role="group" aria-labelledby="h-theme">
           <button type="button" data-theme="auto" data-t>Auto</button><button type="button" data-theme="light" data-t>Light</button><button type="button" data-theme="dark" data-t>Dark</button>
         </div>
-        <h3 data-t>Motion</h3>
-        <div class="seg" id="motion-seg">
+        <h3 id="h-motion" data-t>Motion</h3>
+        <div class="seg" id="motion-seg" role="group" aria-labelledby="h-motion">
           <button type="button" data-motion="on" data-t>Full</button><button type="button" data-motion="system" title="Follows the system's reduced motion setting" data-t data-t-title>Auto</button><button type="button" data-motion="off" data-t>None</button>
         </div>
-        <h3 data-t>Language</h3>
+        <h3 id="h-lang" data-t>Language</h3>
         <!-- the languages in the order Solver settings > Speech gives the same choices -->
-        <div class="seg" id="lang-seg">
+        <div class="seg" id="lang-seg" role="group" aria-labelledby="h-lang">
           <button type="button" data-lang="auto" title="Follows the browser's language" data-t data-t-title>Auto</button><button type="button" data-lang="ko" lang="ko">한국어</button><button type="button" data-lang="en" lang="en">English</button>
         </div>
         <!-- Practice keeps each new answer back until it is asked for (app.js, setPractice). Its two words have keys of their own (data-t): in Korean the states Off and On are other words -->
-        <h3 data-t>Practice</h3>
-        <div class="seg" id="practice-seg">
+        <h3 id="h-practice" data-t>Practice</h3>
+        <div class="seg" id="practice-seg" role="group" aria-labelledby="h-practice">
           <button type="button" data-practice="on" title="New answers show their question first, and their hints and the answer when asked" data-t="Practice: On" data-t-title>On</button><button type="button" data-practice="off" data-t="Practice: Off">Off</button>
         </div>
         <hr />
@@ -3074,9 +3205,9 @@
         <button class="item" id="open-setup" type="button" data-t>Setup guide</button>
         <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
         <button class="item" id="open-heard" type="button" data-t hidden>What was heard</button>
+        <!-- the answers deleted, for their days (app.js, openDeleted): there while it holds some, with how many -->
+        <button class="item" id="open-deleted" type="button" hidden><span data-t>Recently deleted</span><span class="n" id="deleted-n"></span></button>
         <button class="item" id="clear" type="button" data-t>Clear history</button>
-        <!-- this server's release (app.js, renderVersion), once the server has said it -->
-        <div class="about" id="menu-about" hidden><hr /><p class="ver" id="menu-ver"></p></div>
       </div>
     </div>
   </div>
@@ -3089,7 +3220,6 @@
     <div id="welcome"></div>
     <p class="choice-none" id="choice-none" hidden data-t>No matching answer <button type="button" class="btn sm" id="choice-reset" data-t>Show all</button></p>
     <article class="sheet thread" id="thread" hidden><div id="thread-tail"></div></article>
-    <div id="live-note" class="sr-only" role="status" aria-live="polite"></div>
     <div class="stage-fill" id="stage-fill" aria-hidden="true"></div>
     <form class="composer" id="askform" autocomplete="off">
       <button type="button" class="jump" id="jump" hidden data-t>New answer<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v13.5M6.5 13l5.5 5.5 5.5-5.5"/></svg></button>
@@ -3149,7 +3279,7 @@
       <h2 data-t>What is heard
         <span class="ears" id="hear-ears" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="lang" id="hear-lang"></span></h2>
-      <div class="hear-body" id="hear-text" aria-live="polite"></div>
+      <div class="hear-body" id="hear-text"></div>
       <div class="hear-foot"><p class="hear-state" id="hear-state"></p>
         <button class="btn sm" id="hear-kept" type="button" title="What was heard, kept by the day" data-t-title hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg><span class="lab-word" data-t>What was heard</span></button></div>
     </section>
@@ -3195,6 +3325,7 @@
       <div class="set"><span class="lbl" data-t>Find an answer</span><span class="ctl"><kbd class="cmd">/</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Show a hint</span><span class="ctl"><kbd class="cmd">h</kbd></span><p class="help" data-t>In practice mode, the marked answer</p></div>
       <div class="set"><span class="lbl" data-t>Show the answer</span><span class="ctl"><kbd class="cmd">a</kbd></span><p class="help" data-t>In practice mode, the marked answer</p></div>
+      <div class="set"><span class="lbl" data-t>Undo a delete</span><span class="ctl"><kbd class="cmd">z</kbd></span><p class="help" data-t>While its notice is shown</p></div>
       <div class="set"><span class="lbl" data-t>Keyboard shortcuts</span><span class="ctl"><kbd class="cmd">?</kbd></span></div>
       <div class="set"><span class="lbl" data-t>Close</span><span class="ctl"><kbd class="cmd">Esc</kbd></span></div>
     </div>
@@ -3215,6 +3346,19 @@
     <p class="lede" id="heard-none" hidden></p>
   </section>
 </div>
+<!-- Recently deleted (app.js, openDeleted; the server's /history/deleted): the heard sheet's look, a row an answer with its kind, what
+     names it as the contents do, when it was deleted and when it goes for good, and its keys Restore and Delete for good. Empty, at
+     the foot, asks twice as Clear history does -->
+<div class="overlay" id="deleted-overlay" hidden>
+  <section class="card settings" id="deleted" role="dialog" aria-modal="true" aria-labelledby="deleted-title">
+    <header><h2 id="deleted-title" data-t>Recently deleted</h2>
+      <button class="btn icon" id="deleted-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" id="deleted-lede"></p>
+    <ol class="deleted-list" id="deleted-list" aria-labelledby="deleted-title" hidden></ol>
+    <p class="lede" id="deleted-none" hidden></p>
+    <footer class="set-foot" id="deleted-foot" hidden><button class="btn sm ghost" id="deleted-empty" type="button"><span data-t="Recently deleted: Empty">Empty</span></button></footer>
+  </section>
+</div>
 <!-- The setup guide (app.js, renderSetup): the settings sheet's look, four steps over one pane, each with how things stand as the cards
      say it, what to do, and the settings that step is about. From the menu, and once by itself on a new install (the server's fresh) -->
 <div class="overlay" id="setup-overlay" hidden>
@@ -3223,7 +3367,8 @@
       <button class="btn icon" id="setup-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
     <p class="lede" data-t>Four steps, each checked as you go · opened again from the menu</p>
     <nav class="setup-steps" id="setup-steps" role="tablist" aria-label="Steps" data-t-aria></nav>
-    <div class="set-pane" id="setup-body" role="tabpanel" aria-labelledby="setup-title"></div>
+    <!-- named by the step it shows (app.js, renderSetup) -->
+    <div class="set-pane" id="setup-body" role="tabpanel"></div>
     <footer class="set-foot setup-foot"><button class="btn sm ghost" id="setup-back" type="button" data-t>Previous</button><button class="btn sm" id="setup-next" type="button" data-t>Next</button></footer>
   </section>
 </div>
@@ -3232,6 +3377,7 @@
   <button class="item" type="button" role="menuitem" data-export="md" title="One Markdown file with each answer, what was asked and its follow-ups" data-t-title>Markdown</button>
   <button class="item" type="button" role="menuitem" data-export="anki" title="Notes for Anki: the question on the front, the answer line and its key point on the back" data-t-title>Anki</button>
 </div>
+<div id="live-note" class="sr-only" role="status" aria-live="polite"></div>
 <div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>

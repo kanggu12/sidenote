@@ -234,8 +234,9 @@ def main():
         print(f"     {json.dumps(own, ensure_ascii=False)} still open: {still}")
         check("a scroll that does not move the control leaves the list alone",
               bool(own and own["before"] and own["after"] and still), json.dumps(own, ensure_ascii=False))
-        # and one that does move it still closes it. A short window, so the pane has to scroll at all.
-        pg.set_viewport_size({"width": 1500, "height": 560})
+        # and one that does move it still closes it. A short window, so the pane has to scroll at all; not 560 or less, where
+        # the whole sheet scrolls in its overlay instead and the pane does not (index.html, max-height: 560px)
+        pg.set_viewport_size({"width": 1500, "height": 600})
         pg.wait_for_timeout(250)
         moved_shut = pg.evaluate("""() => {
             comboClose(false);
@@ -440,9 +441,11 @@ def main():
         if menu and combo:
             # what is read is opaque: a list of words with the page showing through is the one
             # thing the glass is not for
+            # the same surface; not the same corners: the gear menu is a sheet hung from the bar, square where it meets it
             check("the menu and the dropdown are made of the same surface",
-                  menu["bg"] == combo["bg"] and menu["blur"] == combo["blur"] and menu["radius"] == combo["radius"],
+                  menu["bg"] == combo["bg"] and menu["blur"] == combo["blur"],
                   f"{menu['bg']}/{menu['blur']} vs {combo['bg']}/{combo['blur']}")
+            check("...the menu a sheet, square where it meets the bar", menu["radius"] == "0px", menu["radius"])
             check("and it has a surface of its own", combo["bg"] != "rgba(0, 0, 0, 0)", combo["bg"])
         print("\n[a narrow window]")
         # the sheet stacks its tabs above the pane below 760 px; the dropdown has to stay inside it

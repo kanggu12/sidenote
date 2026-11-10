@@ -157,6 +157,8 @@ def main() -> int:
             "() => !document.getElementById('toast').classList.contains('go')"))
 
         print("[the agent at its limit, this PC's model standing in]")
+        # the notice above gone: while one stands in the bar the bands there step aside for it, unread
+        page.evaluate("() => { clearTimeout(toast.timer); $('toast').classList.remove('show'); }")
         until = int(time.time()) + 2 * 86400 + 4 * 3600 + 120
         page.evaluate("(e) => handle({ type: 'status', engines: e })", engines(until, local_on=False, stand_in="limit"))
         page.wait_for_timeout(300)
@@ -272,7 +274,7 @@ def main() -> int:
         check("bold in prose wears the highlighter, a heading line does not", marks == [True, False, True], str(marks))
         print("[clearing, toasts, focus and the settings tabs at 360 px]")
         page.fill("#hist-q", "bfs")
-        page.evaluate("() => { clearArmed = Date.now(); document.getElementById('clear').click(); }")
+        page.evaluate("() => { clearArmed = Date.now() - 1000; document.getElementById('clear').click(); }")   # armed a second before
         page.wait_for_timeout(200)
         check("clearing the answers clears the search, so the next answer is listed", page.evaluate(
             "() => histQuery === '' && document.getElementById('hist-q').value === ''"))
@@ -281,7 +283,7 @@ def main() -> int:
         page.wait_for_timeout(300)
         box = page.evaluate("""() => { const r = document.getElementById('toast').getBoundingClientRect();
                                        return {w: r.width, top: r.top}; }""")
-        check("at 360 px a toast takes the width it needs, not half the window, and sits under the bar",
+        check("at 360 px a toast takes the width it needs, not half the window, and stands in the bar",
               box["w"] > 200 and box["top"] < 120, str(box))
         check("a toast shows over the settings sheet", page.evaluate(
             "() => +getComputedStyle(document.getElementById('toast')).zIndex > "
