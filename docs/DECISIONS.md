@@ -13,10 +13,10 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -1444,7 +1444,7 @@ Each rule below is a check in tests/panel_layout.py (`group_controls`) or tests/
 - A backup of Claude Code's config that names no account is a sign-out.
 - A program's caption does not take a step comment, an include or a shebang.
 - The menu's headings stand on its items' columns, a band's mark is level with its words in the bar, and a notice stands
-  under floating bands.
+  in the bar, over none of the bands ([note 122](#note-122)).
 - A failed answer's date stands in every date's place, and its command is a chip.
 - A particle after a key's name follows its last letter, the agent's **Review** row is named on one line with no lone
   colon, and the working line is said one way.
@@ -1543,6 +1543,40 @@ of this PC's, from no other site's page), with no key of its own, and a change h
 cannot send JSON without asking the server first, which this server never answers, and a plain form post sends none.
 Of the panel's messages, the two whose answer comes later (a code run, a problem written out) are waited for, so the
 API answers with what they give.
+
+### <a id="note-118"></a>118. One answer is deleted to Recently deleted, for a week
+
+**Clear history** was the only way to take an answer away, and it takes all of them, starred ones too. An answer can now
+be deleted alone, from the bin at the end of its head. A delete pressed by mistake costs nothing: every panel takes the
+card away, the one it was pressed in says so with **Undo** (and `z`) for as long as its notice shows, and the answer
+waits in **Recently deleted** for 7 days (`SIDENOTE_DELETED_DAYS`), with its star and its follow-ups, where **Restore**
+puts it back in its place. **Delete for good** and **Empty** each take a second press, as **Clear history** does, and
+remove the answer from the file at once: SQLite's secure delete overwrites its words, and the log beside the file is
+folded back, so they are not left readable in either. The days, and not a count, decide how long one is held, as for
+the history itself; past the history's size cap what was deleted goes first, the longest deleted first, before any
+answer still shown. **Clear history** stays the wipe of everything, **Recently deleted** with it.
+
+The row stays in `history.sqlite` with when it was deleted, and every listing leaves it out; a deleted answer takes no
+star. The answer the questions are about is held aside with its follow-ups when it is deleted, so **Undo** makes it the
+one asked about again if nothing newer was answered meanwhile; a follow-up still being written about it stops. A card
+the history never held (an error, an answer stopped part way, any with **Keep answers** off) is deleted the same way and
+leaves every panel, and only a panel that showed it can put it back, from what it kept of the card: the server has no
+words of it to give. What the server still held in memory of a deleted answer (its picture and words for a problem seen
+again) goes when it is deleted for good. A message still on its way about a deleted answer draws no card. A program does
+all of it through the API (`DELETE /api/v1/answers/{seq}` and the routes beside it), as the panel does.
+
+### <a id="note-120"></a>120. Each panel has its own line out
+
+The server sent each message to the panels one after the other and waited for each. A panel that stopped reading (a
+browser tab frozen in the background, a socket half gone) held every broadcast from then on: every panel's updates, every
+API write that sends one, the analysis worker at its next message, and the server's shutdown, which waited on that
+connection for good (measured: the eighth settings change hung, and SIGTERM did not end the server in 30 s). Now each panel
+has its own line out (`PanelOut`): a broadcast puts the message in every panel's line and waits on none, and one writer a
+panel sends them in order, the replies to that panel among them. A message that has waited 5 s on a panel, or 1,000
+messages or 16 MB waiting, closes that panel with `1013` (try again later): the page connects again and is sent the state
+afresh, as after any drop. The server's start gives uvicorn a 5 s shutdown wait (`--timeout-graceful-shutdown`, and
+`timeout_graceful_shutdown` in the app), so a connection that never closes no longer holds the server's end, which
+still writes what a restart takes up.
 
 ## Speech
 
@@ -1835,21 +1869,22 @@ filesystem (128 processes, 512 MB, no CPU cap); the model download has the local
 
 Covering them is for people's portrait rights: a video call beside the problem, a video, a photo or a profile picture
 shows somebody's likeness, and a screen goes to the local model, to the cloud agent when it answers, and into the
-panel's thumbnail. Each screen that comes in (and each scrolled page) has its faces found and painted gray in
-prepare_frame, so the change signature, the model's picture, the crops and the thumbnail are all made from the covered
-screen (server/faces.py; the **Cover faces** switch, on by default; the analysis's record carries how many were
-covered). The finder is YuNet (OpenCV Zoo, MIT license, 232 KB of ONNX) on onnxruntime, single-threaded so that no
-native thread pool sits beside a fork (forksafe). Its input is fixed at 640 x 640, so a screen is read whole and in
-overlapping tiles (2 x 2 up to 2560 wide, 3 x 3 above). A finder trained on photos takes some drawn circles for faces (a
-graph's node, a lamp on a grid): on the public corpus's 2,279 problem pictures it boxed one on 116 at score 0.6. A box
-is therefore kept only when its middle looks like a face in a photo: 30% or more of it in skin's chroma, 30 or more
-colors at 16 levels a channel, and a brightness spread of 70 or less (no black digits on a pale fill). Measured: 0 boxes
-on the bench's 67 screens; 3 of the 2,279 pictures keep one, each a node drawn with a pale skin-like fill; faces pasted
-onto a 4K screen are covered 17 of 18 at 96 px wide and 18 of 18 at 320, onto a 1080p one 14 of 18 at 64 px and 16 of 18
-at 96, and 116 of 117 pass the color test. Smaller faces (a 32 px avatar) are covered about half the time. A face in a
-black-and-white photo is not covered, the price of leaving the problems' figures alone. The cost is one read of the
-screen, 48 ms at 1080p and 123 ms at 4K on one core, and the screen is written again (fast PNG) only when something was
-covered.
+panel's thumbnail. Each screen that comes in (and each scrolled page) has its faces found and painted over in
+prepare_frame, in the dark gray with the name and its highlighter stroke that the capture program covers the panel's own
+window with (a plain gray box read as a window), so the change signature, the model's picture, the crops and the
+thumbnail are all made from the covered screen (server/faces.py; the **Cover faces** switch, on by default; the
+analysis's record carries how many were covered). The finder is YuNet (OpenCV Zoo, MIT license, 232 KB of ONNX) on
+onnxruntime, single-threaded so that no native thread pool sits beside a fork (forksafe). Its input is fixed at 640 x
+640, so a screen is read whole and in overlapping tiles (2 x 2 up to 2560 wide, 3 x 3 above). A finder trained on photos
+takes some drawn circles for faces (a graph's node, a lamp on a grid): on the public corpus's 2,279 problem pictures it
+boxed one on 116 at score 0.6. A box is therefore kept only when its middle looks like a face in a photo: 30% or more of
+it in skin's chroma, 30 or more colors at 16 levels a channel, and a brightness spread of 70 or less (no black digits on
+a pale fill). Measured: 0 boxes on the bench's 67 screens; 3 of the 2,279 pictures keep one, each a node drawn with a
+pale skin-like fill; faces pasted onto a 4K screen are covered 17 of 18 at 96 px wide and 18 of 18 at 320, onto a 1080p
+one 14 of 18 at 64 px and 16 of 18 at 96, and 116 of 117 pass the color test. Smaller faces (a 32 px avatar) are covered
+about half the time. A face in a black-and-white photo is not covered, the price of leaving the problems' figures alone.
+The cost is one read of the screen, 48 ms at 1080p and 123 ms at 4K on one core, and the screen is written again (fast
+PNG) only when something was covered.
 
 ## Deployment and packaging
 
@@ -1945,3 +1980,50 @@ the answers' writer is done, it ends without waiting for either: 0.4 s during th
 screens and sound coming in and the CLI still being asked. A download cut off this way left an empty partial file, and
 the next start downloaded the model again and loaded it. The image's server is left as it was: there `docker stop` ends
 it after 10 s.
+
+### <a id="note-119"></a>119. A program that ends by itself is started again inside its container
+
+Under compose nothing started a server that ended by itself (the watchdog ending a stalled loop, an out-of-memory kill)
+until someone typed `./sidenote up`; the desktop app starts its server again (its watch, `desktop/app.py`). Docker's own restart
+policies are not used: they start a container at Docker's own start too, and a PC switched off with Sidenote running
+would bring it up at the next boot unasked (`restart: "no"` stays). The server, the model server and the code runner run
+in a small loop instead (`docker/keep-running.sh`), which lives only as long as its container: a program that ends in
+failure is started again a second later, at most 5 starts in 10 minutes (the first included), after which the container
+stays ended. A stop that was asked for (`docker stop`, `./sidenote down`) is not a failure, and `USR1` still reaches the
+server, which writes its threads' stacks on it (`server/watchdog.py`). Each end of the server nobody asked for is
+written to `.ended` in the log folder (one line, the last end), which `./sidenote status` reads to say why the server is
+off. A code runner that could not clean up after a run reported itself unhealthy and refused runs until someone
+restarted it; it now ends with exit code 3 a second after, and the loop (on Kubernetes the kubelet, where the runner
+runs without it) starts a clean one, which cleans up first.
+
+### <a id="note-121"></a>121. The capture's windows draw their glass from the desktop behind them
+
+The desktop shortcut's window (client/launch.pyw) was a dark board made a little see-through by the window's own alpha,
+which Tk on Windows offers for a whole window only: the words went see-through with the glass and read washed out on a
+light desktop. Windows 11's own acrylic paints over what Tk draws, which carries no alpha: the window showed its tint
+with no words on it. So the glass is drawn. Before the window is shown, the screen where it is to stand and a little round it is read once (Pillow's
+`ImageGrab`): blurred 7 px at 100%, the glass's own colour laid over it at 80%, its colours brought up 1.6 times, a fine
+grain over that, and the words, strokes and keys on top. At 80% a white desk under it comes out a grey the quieter
+words keep 4.5:1 on, and a dark one nearly as dark as it is; the tint was 55 to 90% at first, and over a light desk the
+window read as a grey board with nothing behind it. The picture is not live: a window moved under it in the few seconds
+it stands there is not seen through it. Excluding the window from screen reads (`WDA_EXCLUDEFROMCAPTURE`) would let it
+read the screen again while shown, and would also take it out of every screenshot and of the capture program's own
+frames; it is not done. Where the screen cannot be read, or Pillow is missing, the glass is its own dark colour. The tray
+icon's menu is drawn the same way, read on whichever screen it opens. The logo at the top of both is a picture
+(`client/logo.png`): Sidenote's own wordmark as `docs/assets/logo-dark.svg` has it, with "capture" after it in the same
+face, drawn as outlines of Bricolage Grotesque, which Windows does not have.
+
+### <a id="note-122"></a>122. The panel's top layers lie over no box
+
+A passing notice, the bands and the gear menu floated over the page: the notice under the bar over the thread's column,
+the bands under the bar once the page was scrolled, the menu hung from its key at a width of its own. Each lay over
+cards whose edges ran under its glass and crossed its own. Each now stands where it covers no box. A notice stands in
+the bar (`placeToast`), in the first of three rooms its words fit in on one line: the free middle beside the name; over
+the signals where they stand beside the name, which fade out while it shows; the signals' own row where the bar takes
+two. It is cut short with an ellipsis only where none of them holds it, under 480 px. The bands go in the bar wherever
+they fit, scrolled too, and fade out while a notice stands in their place. Where they do not fit they head the thread's
+column as wide as its cards, and once scrolled they stick to the bar's foot with the bar's surface under them, the
+thread passing under them as the page passes under the bar. The gear menu is a sheet from the bar's foot to the
+window's, on the right column's edges, or the window's width in one column, in the sheet colour the settings'
+dropdowns share. tests/panel_layout.py checks it at six widths, at the top and scrolled, with no band and with two: no
+visible box straddles the edge of a notice or of the menu, what passes under the header aside.

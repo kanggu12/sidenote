@@ -139,7 +139,7 @@ measurements.
 | Change detection | `server/gate.py`, `server/detector.py` | The high-pass signature (a 160x120 edge map) and its distance; whether a screen is new, measured inside the last answer's problem region once one is known, with the cells that keep moving left out | `ChangeDetector` |
 | Repeats | `server/repeats.py` | Knows a problem seen again by its picture (bands, then pieces) or by its words, before anything is spent on it | `Recent.match` |
 | Speech | `server/transcriber.py` | Silero VAD, faster-whisper, and the utterance splitter | `UtteranceTracker` |
-| Faces | `server/faces.py` | Finds faces (YuNet on onnxruntime) and paints them gray before anything reads the screen | `find`, `cover` |
+| Faces | `server/faces.py` | Finds faces (YuNet on onnxruntime) and paints them over, as the panel's own window is, before anything reads the screen | `find`, `cover` |
 | Web search | `server/search.py` | `web_search` through SearXNG and `fetch_page` from public addresses only, for the local model; each shown on the panel and logged | `WebTools` |
 | History | `server/history.py` | The answers kept in SQLite with their follow-ups, code check, thumbnail and star | `History` |
 | Settings | `server/config.py`, `server/settings.py` | The `SIDENOTE_*` environment, and **Solver settings**: a default, a kind of control and the dependencies for each stage, kept in `.settings.json` and applied to the next analysis | `Config`, `Settings` |
@@ -206,10 +206,10 @@ PersistentVolumeClaim on Kubernetes.
 
 | File | What it holds | How long | How big |
 |:---|:---|:---|:---|
-| `server.log` | the server's log | rotated files deleted after 14 days (`SIDENOTE_LOG_DAYS`), at start and every 6 hours | 5 MB a file, 4 old files (`SIDENOTE_LOG_MAX_MB`, `SIDENOTE_LOG_FILES`; at least 64 KB and 1 file) |
+| `server.log` | the server's log | rotated files deleted after 14 days (`SIDENOTE_LOG_DAYS`, at least 1), at start and every 6 hours | 5 MB a file, 4 old files (`SIDENOTE_LOG_MAX_MB`, `SIDENOTE_LOG_FILES`; at least 64 KB and 1 file) |
 | `events.jsonl` | one line per event: an analysis's start and end (type, one-line answer, time to the first character, elapsed time, region, tokens, cost), cancels, errors, follow-ups, panel actions, capture connections, sign-in changes; no screen images | as `server.log` | as `server.log` |
 | `capture.log` | the capture program's log | deleted after 14 days without a line | under 4 MB, the older half dropped |
-| `history.sqlite` | the answers with their follow-ups, code check, a small thumbnail of their screen and whether each is starred; nothing new with **Keep answers** off. A file from 0.1.0 gains the `starred` column when the server opens it, its rows kept. With **Keep what is heard** on, a table of its own (`heard`): one row a closed sentence, with its time, its length and its language | 90 days (`SIDENOTE_HISTORY_DAYS`); a starred answer until it is unstarred; what was heard goes by the same age | 200 MB (`SIDENOTE_HISTORY_MB`) for the answers that are not starred, counted in pages less the starred ones' bytes and what was heard; the starred ones stay beside them, and the log says once when they alone are over it. What was heard has its own 20 MB (`SIDENOTE_HEARD_MB`), the oldest going first |
+| `history.sqlite` | the answers with their follow-ups, code check, a small thumbnail of their screen and whether each is starred; nothing new with **Keep answers** off. A file from 0.1.0 gains the `starred` column when the server opens it, its rows kept. An answer deleted stays in it with when it was deleted (**Recently deleted**), listed nowhere else; a file from before 0.6.0 gains that `deleted` column the same way, none of its rows deleted, and a 0.5.2 server opening a 0.6.0 file lists the deleted rows again. With **Keep what is heard** on, a table of its own (`heard`): one row a closed sentence, with its time, its length and its language | 90 days (`SIDENOTE_HISTORY_DAYS`); a starred answer until it is unstarred; a deleted one 7 days from its deletion (`SIDENOTE_DELETED_DAYS`, `0` until emptied), starred or not, and none once removed for good (secure delete, the log folded back); what was heard goes by the same age | 200 MB (`SIDENOTE_HISTORY_MB`) for the answers that are not starred, what was deleted going first, the longest deleted first, counted in pages less the starred ones' bytes and what was heard; the starred ones stay beside them, and the log says once when they alone are over it. What was heard has its own 20 MB (`SIDENOTE_HEARD_MB`), the oldest going first |
 | `.settings.json` | the values changed in **Solver settings** | until changed | a few values |
 | `.switches.json` | the screen and sound switches and pause | until changed | a few values |
 | `.speed.json` | the last 15 times to the first word of the thinking pass and of the agent (`pipeline.Speed`) | rolling | a few values |
@@ -217,6 +217,8 @@ PersistentVolumeClaim on Kubernetes.
 | `.spend.json` | the last hour's spend on the agent and a rest on its usage limit | across restarts | a few values |
 | `.restart.npz` | the problems answered lately and the last screen's signature, written when the server stops | read and removed at the next start, which takes up problems under 30 minutes old and a last screen under 10 | the gray pictures of up to six boxes, compressed |
 | `stall.txt` | every thread's stack when the event loop stalls (`watchdog.py`) | each dump added; the file starts over at a start once past 1 MB | under about 1 MB |
+| `.ended` | under compose, the server's last end nobody asked for, as the loop it runs in saw it (`docker/keep-running.sh`): when, its exit code, its starts in the last 10 minutes, whether it was started again, and whether `stall.txt` was written in that run; `./sidenote status` reads it | removed when its container starts | one line |
+| `before-restore-<when>/` | what `./sidenote restore` replaced: the history and the settings as they were | each, until `./sidenote uninstall --data` | the files it holds |
 | `none_*.png` | with `SIDENOTE_DEBUG_FRAMES` set, the screens read as nothing to solve | the last eight | a few MB each |
 | Docker's container logs | each container's output (json-file) | rotated | the server 3 x 5 MB, the local model 2 x 5 MB, the runner and SearXNG 2 x 2 MB, the model download 1 x 2 MB |
 | `hf-cache` volume | the speech model | until removed | about 0.5 GB for `small` |
@@ -261,7 +263,7 @@ one is logged as lost (code 1009).
 | `stage` | the card's status line changes | `id`, `stage` (`think`, `local`, `extract`, `confirm`, `agent`, `halves`), `detail`, `thought` (the thinking pass's last finished sentence), `restart` (another engine starts the answer over, so the card is cleared) |
 | `delta` | as the answer is written | `id`, `text` |
 | `analysis_done` | the answer is complete | `id`, `text`, `usage`, `cost_usd` (null for the local model and for an agent with no price, such as a Codex login), `model`, `engine` (`local`, `agent`), `sent` (`to`: `search`, `page`, `agent`, and `what`), `stages`, `elapsed`, `region` |
-| `analysis_cancelled` | an analysis stops | `id`, `reason` (`pause`, `screen_off`, `sound_off`, `reanalyze`, `voice`, `superseded`, `not_sent`) |
+| `analysis_cancelled` | an analysis stops | `id`, `reason` (`pause`, `screen_off`, `sound_off`, `local_off`, `reanalyze`, `voice`, `superseded`, `not_sent`, `gpu_busy`, `deleted` (a follow-up whose answer was deleted), `repeat` with `of`, the answer it repeats, left out when that answer was deleted) |
 | `check` | the example check starts, then ends | `id` (a retry's number for the check of its fixed code), `running`; then `passed`, `total`, `how` (`function`, `stdin`), `rows` and `fails` (`input`, `expected`, `got`), or `none`, `error`, `cancelled` |
 | `verify` | the **Check answers** check of an answer starts, then ends | `id`, `running`; then `verdict` (`ok`, `fix`, `other`), `text`, `model`, `usage`, `cost_usd`, `sent`, or `not_sent` (with `why`), `error`, `cancelled` |
 | `agent_confirm`, `agent_confirm_done` | **Confirm before sending** asks, then the question ends | `id`, `cid`, `what`, `text`, `thumb`, `timeout` (120 s), `ts` |
@@ -272,9 +274,18 @@ one is logged as lost (code 1009).
 | `utterance` | a sentence ended, or the first pass found nothing to solve in what was heard | `text`, `lang`; `why` when it was not taken: `short` (under the limit, or sound too short to write down that the live words show), `told` (it only sounds like a question), `none` (nothing asked) |
 | `notice` | a short notice | `text`, `level`, `of` (the answer it is about, brought into view when the notice is pressed) |
 | `star` | an answer is starred or unstarred, from any panel, to every panel | `id`, `starred`, `n` (how many answers are starred now) |
+| `answer_deleted` | an answer is deleted, from any panel or a program, to every panel | `id`, `kept` (**Recently deleted** holds it; else only a panel that showed it can put it back), `until` (when it goes by itself, or null), `n` (how many **Recently deleted** holds), `can_ask` (whether a question has an answer to be about) |
+| `answer_restored` | an answer is put back, to every panel | `id`, `answer` (as `GET /history` gives it, or null for one the history never held), `n`, `can_ask` |
+| `deleted_cleared` | one answer deleted for good (`id`), or **Recently deleted** emptied (`id` null), to every panel | `id`, `gone` (how many went), `n` |
+| `history_cleared` | **Clear history**, from any panel or a program, to every panel | |
 
 An answer streams as `{"type":"delta","id":N,"text":"..."}` messages between its `analysis_start` and its
 `analysis_done`.
+
+Each panel has its own line out (`PanelOut` in `server/app.py`): a broadcast puts a message in every panel's line and
+waits on none, and one writer a panel sends them in order. A panel that stops reading (a frozen tab, a socket half
+gone) is closed with `1013` once a message has waited 5 s on it, or 1,000 messages or 16 MB wait; the page connects again
+and is sent the state afresh. One such panel used to hold every broadcast, and the server's shutdown with it.
 
 ### Panel to server, on `/panel`
 
@@ -288,7 +299,7 @@ well: every message here has a route under `/api/v1` ([API](API.md)), and `tests
 | `ask` | a follow-up question | `text` |
 | `capture_set` | the screen and sound switches | `screen` or `audio` |
 | `setting`, `settings_reset` | a change in **Solver settings**, or all of them back to their defaults | `key`, `value` |
-| `set_lang` | the speech language, as the setting `speech_lang` sets it | `lang` (`auto`, `ko`, `en`) |
+| `set_lang` | the speech language, as the setting `speech_lang` sets it (for programs; the panel sends `setting` with `speech_lang`) | `lang` (`auto`, `ko`, `en`) |
 | `ui_lang` | the panel's own language, once it connects; the server's words follow it | `lang` |
 | `run` | **Run** on a code box | `id` (`<per-panel prefix>-N`), `lang` (`python`, `c`, `cpp`, `javascript`, `typescript`, `java`, `kotlin`, `go`, `bash`), `code`, `stdin` |
 | `agent_confirm_reply` | the answer to **Confirm before sending** | `cid`, `send` |
@@ -296,6 +307,8 @@ well: every message here has a route under `/api/v1` ([API](API.md)), and `tests
 | `gpu_release`, `gpu_load`, `gpu_load_cancel` | giving the GPU back, **Load to GPU**, stopping that load | |
 | `llm_pull` | **Download** on the Local model card | `model` |
 | `history_clear` | **Clear history** | |
+| `answer_delete`, `answer_restore` | **Delete** on an answer's head; **Undo**, or **Restore** in **Recently deleted** | `id` |
+| `answer_purge`, `deleted_clear` | **Delete for good** on one answer in **Recently deleted**; **Empty** | `id` for `answer_purge` |
 | `star` | **Star** on an answer; refused with a `notice` to that panel alone when `history.sqlite` does not hold the answer | `id`, `starred` |
 
 ### HTTP
@@ -306,7 +319,8 @@ well: every message here has a route under `/api/v1` ([API](API.md)), and `tests
 | `GET /health` | the state: `version`, the analyzer, the agent and its label, sign-in, capture, pause, `runner` (configured and responding), `activity` (what runs) |
 | `GET /stats` | totals, recent response times and log size |
 | `GET /heard` | what was heard and kept: `days` (each with `day`, `n`, `first`, `last`), `day`, and the `lines` of that day or the newest (`ts`, `secs`, `lang`, `text`; of a longer day its last 20,000) |
-| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred` and whether anything heard is kept (`heard`) |
+| `GET /history`, `GET /history/days` | the answers kept, newest first (`day`, `q`, `kind`, `starred=1` for the starred ones only, `limit`), each with its `starred`; and the days that have some, with how many answers are `starred`, whether anything heard is kept (`heard`), how many **Recently deleted** holds (`deleted`) and for how many days (`deleted_days`) |
+| `GET /history/deleted` | **Recently deleted**, the latest deleted first: each answer as `GET /history` gives it, with `deleted` and `until`; and `days` |
 | `POST /capture/quit`, `POST /capture/restart` | asks the capture program to end or to restart (`./sidenote capture-stop`, a deploy); refused from a page |
 | `POST /server/stop` | asks the server to close down by itself, as the app does when it quits (Windows has no SIGTERM); only with the token the app started the server with, in `X-Sidenote-Stop` |
 | `/api/v1/...` | the API: what the panel shows, each of its messages as a route, and what the panels are sent as Server-Sent Events (`GET /api/v1/events`); its routes are listed at `GET /api/v1` and in [API](API.md) |
@@ -319,7 +333,7 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 |:---|:---|
 | `POST /run` with `lang`, `code`, `stdin`, `timeout` | `ok`, `stage`, `exit`, `stdout`, `stdout_truncated`, `stderr`, `stderr_truncated`, `timed_out`, `output_limited`, `elapsed`; or `{ok: false, busy: true}` when the previous run does not end within 15 s |
 | `POST /run` with `stdins` (1 to 8 inputs) in place of `stdin` | one compile and a run on each input: `runs` (one result as above per input) beside the last run's fields, or the compile's failure |
-| `GET /health` | `ok`, `busy` |
+| `GET /health` | `ok` (false once a run's leftovers could not be removed: the runner then ends with exit code 3 a second later, and what starts it starts a clean one), `busy` |
 
 ## Security
 
@@ -331,13 +345,13 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 | What the panel loads | a CDN that changes, breaks or records each load | the libraries and fonts pinned and sha256-checked when the image is built, then served by the server; CSP `default-src 'none'` with `script-src 'self'` and `frame-ancestors 'none'`; nosniff, no referrer, COOP and CORP, no camera or microphone | `docker/vendor.json`, `docker/fetch_vendor.py`, `SecurityHeaders` in `server/app.py` ([38](DECISIONS.md#note-38)) |
 | The PC and its network | code a model wrote, run for a check or by **Run** | the runner has no network and takes one run at a time, each compile and run as a user of its own, under rlimits and a time limit; output over 8 MB stops a run; what a run leaves is removed; a read-only root, 128 processes, 1 GB, 2 CPUs; a token for every run on Kubernetes | `runner/runner.py`, `compose.yaml` ([47](DECISIONS.md#note-47), [87](DECISIONS.md#note-87)) |
 | The screens and speech the local model reads | leaving the PC | the local model is on `llmnet` (`internal: true`), with no route out; models come in through `llm-pull` | `compose.yaml` ([48](DECISIONS.md#note-48)) |
-| People's likeness on the screen | going to a model, the agent or a thumbnail | faces found and painted gray before anything reads the screen (**Cover faces**, on by default) | `server/faces.py`, `prepare_frame` ([85](DECISIONS.md#note-85)) |
+| People's likeness on the screen | going to a model, the agent or a thumbnail | faces found and painted over before anything reads the screen (**Cover faces**, on by default) | `server/faces.py`, `prepare_frame` ([85](DECISIONS.md#note-85)) |
 | A password manager or a private browser window on screen | being sent at all | no screenshot is taken while a window on screen has a word of **Skip windows** in its title or its program's name; the title and the name stay in the capture program, and only `skipping` and `skip_limit` go out | `FrontWindow`, `screen_loop` in `client/capture.py` |
 | Personal data on the screen | a search, a page address or a problem written out from the screen | a number shaped like personal data stops the search, the page read or the written-out problem; the local model solves instead | `personal_data` in `server/pipeline.py`, `server/analyzer.py` |
 | The private network | the server reading a page for the model | pages are read from public addresses only: the name is resolved once, every address it gives must be public, and the connection goes to one of those addresses (a name that resolves elsewhere by the time of the connect gets no request) | `allowed_url`, `public_backend` in `server/search.py` |
 | This PC's agent setup | the CLI in the container | Claude Code reads none of the PC's settings, hooks, plugins, MCP servers or skills and keeps no sessions; Codex reads none of its config or rules; the container's config backups and process registry stay in its own scratch space | `claude_args`, `codex_args` in `server/agents.py`, `compose.yaml` ([23](DECISIONS.md#note-23)) |
 | The host | a container gone wrong | all capabilities dropped but the few each needs, `no-new-privileges`, read-only roots, caps on processes, memory and CPUs, no core dumps | `compose.yaml`, the chart's `values.yaml` ([39](DECISIONS.md#note-39)) |
-| The settings, the capture program and the server itself | a page in the browser posting to the server | no HTTP endpoint changes a setting; the two that end or restart the capture program refuse an Origin other than the server's own; `/server/stop` takes only the token the app gave the server | `server/app.py` |
+| The settings, the capture program and the server itself | a page in the browser posting to the server | the API's changes take only a JSON body (`Content-Type: application/json`), which another site's page cannot send without a preflight this server refuses (a `403`, with no CORS headers), and refuse any Origin but the server's own (403); `/capture/quit` and `/capture/restart` refuse such an Origin too; `/server/stop` takes only the token the app gave the server | `api_refused`, `ask_captures` in `server/app.py` |
 | The account the agent signs in as | the logs and the status pages | it goes only to the panel (`panel_engines`), not to `/health`, `/stats` or the logs | `server/app.py` ([97](DECISIONS.md#note-97)) |
 | The panel, and what this PC tells GitHub | a reply to the release check that is not a release, or a page it links to elsewhere | the request carries no token and only Sidenote's version; of the reply only the tag's three numbers reach the panel, and its page only when it is under this repository's releases (checked by the server and again by the panel); drafts and pre-releases never count; `SIDENOTE_UPDATE_CHECK=0` makes no request | `server/updates.py`, `releaseLink` in `panel/app.js` |
 

@@ -33,13 +33,13 @@ self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # this script, for its 
 
 cd "$(dirname "$0")/.." || exit 2      # the repository's root, whatever folder this was started from
 
-# The suites in the order they run. Each is tests/<name>.py, run with its group's interpreter, except launcher_args,
-# which is tests/launcher_args.sh, run with bash.
+# The suites in the order they run. Each is tests/<name>.py, run with its group's interpreter, except launcher_args and
+# entrypoint_loop, which are tests/<name>.sh, run with bash.
 SERVER=(integ agent_first local_fallback server_review worker_order voice_trigger speech_hints heard_keep lang_vote stall_guard capture_loop up_wait
-        report_period capture_update capture_panel capture_skip scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch launch_window
-        codex_agent repeats_check limits_check server_scenarios models_check desktop_check i18n_check history_star api_check ci_gate update_check
-        version_check changelog_check launcher_args)
-PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout panel_reading
+        report_period capture_update capture_panel capture_skip scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch launch_window capture_single launch_setup
+        codex_agent repeats_check limits_check server_scenarios models_check desktop_check desktop_restart i18n_check history_star history_delete api_check stalled_panel ci_gate
+        update_check version_check changelog_check launcher_args entrypoint_loop)
+PANEL=(panel_scroll panel_run panel_asks panel_settings panel_review panel_viz panel_churn panel_limits panel_new panel_star panel_delete panel_heard panel_scenarios panel_study panel_design panel_lang panel_layout panel_reading
        panel_setup panel_update)
 # What the suites import or start: not suites themselves
 HELPERS=(support panel_harness fake_claude fake_codex)
@@ -86,7 +86,7 @@ chosen() {
 }
 
 suite() {   # suite <name> <interpreter>: the command that runs one suite, into the array CMD
-  if [ "$1" = launcher_args ]; then CMD=(bash "tests/$1.sh"); else CMD=("$2" "tests/$1.py"); fi
+  if [ -f "tests/$1.sh" ]; then CMD=(bash "tests/$1.sh"); else CMD=("$2" "tests/$1.py"); fi   # launcher_args, entrypoint_loop
 }
 
 accounted || exit 2

@@ -6,18 +6,164 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- Delete one answer: the bin at the end of its head takes it off the page in every open panel, and a notice says so
+  with **Undo** (`z` does the same while the notice shows). A deleted answer waits in **Recently deleted** in the gear
+  menu for 7 days (`SIDENOTE_DELETED_DAYS`) with its star and its follow-ups, where **Restore** puts it back in its
+  place, and **Delete for good** and **Empty** remove it from the file at once, each after a second press. **Clear
+  history** takes **Recently deleted** with the rest. Through the API: `DELETE /api/v1/answers/{seq}`,
+  `POST /api/v1/answers/{seq}/restore`, `GET /api/v1/answers/deleted`, `DELETE /api/v1/answers/deleted/{seq}` and
+  `DELETE /api/v1/answers/deleted`, and the events `answer_deleted`, `answer_restored` and `deleted_cleared`.
+- `./sidenote backup [FILE]` writes the history and the settings into one file, Recently deleted left out, and
+  `./sidenote restore FILE` puts them back, keeping what was there in a `before-restore-<when>` folder.
+- `./sidenote uninstall` says what it removes and what it keeps (the history, the settings and the logs, which an install
+  goes on with), and `--data` removes those too. `./sidenote llm rm MODEL` removes a model from the models' volume. On a
+  WSL that cannot start Windows programs, `py -3 "...\client\launch.pyw" --remove` in a Windows terminal removes the
+  desktop shortcut and its icon.
+- One capture program runs for a server: a second one says so and ends with exit code 76 before it captures anything,
+  and the desktop shortcut opens the panel then.
+- Under compose, the server, the model server and the code runner are started again inside their containers when they
+  end by themselves in failure, at most 5 starts in 10 minutes, and never at the PC's boot. `./sidenote status` says why
+  the server is off: its exit code, a memory kill, the watchdog, or the starts given up on.
+- `./sidenote doctor` checks Docker Compose: its plugin, 2.24 or newer.
+- `POST /api/v1/ask` and `POST /api/v1/reanalyze` answer with the `id` their answer takes in the events, so a program
+  can tell its answer from one the watching started by itself.
+- On a WSL that cannot start Windows programs (`[interop] enabled=false` in `/etc/wsl.conf`, or no Windows drive
+  mounted), the capture is set up and started from Windows, with the setting left as it is. The command `./sidenote`
+  prints there, `py -3 "...\client\launch.pyw" --setup --distro ... --repo ...`, run once in a Windows terminal,
+  installs the capture packages into Windows Python and makes the desktop shortcut. The shortcut then brings the server
+  up in WSL and starts the capture program from Windows, and `./sidenote capture-stop` ends it through the server.
+
 ### Changed
 
+- A code runner that could not clean up after a run ends a second later, and is started again clean (the loop above, or
+  the kubelet). It refused every run until someone restarted it.
+- On a phone's width the answers of today show the time alone on their head, the date on the pointer: with the date the
+  newest answer's four keys took a line of their own.
+- AMD: `./sidenote` gives the model container the GPU's render group by its number, which ROCm images do not know by
+  name, and uses the AMD file only with a GPU a model fits and `/dev/kfd` there.
+- Helm: the server's volume is 4 Gi; Claude Code is fetched for the node's CPU, with time limits, a failed fetch
+  leaves no file and does not hold the pod, and a fetched copy is kept on the server's volume for the next start,
+  checked against the release's manifest whenever that can be read; the
+  chart's README says the published image is amd64.
+- `./sidenote up` names the next steps when the port is taken (a capture program started before a port change keeps
+  the old port); the messages that stop a capture program name the tray's **Quit** first; `doctor` reads
+  `SIDENOTE_LOG_DAYS` as the server does. The desktop shortcut's starter passes the panel's language on to the capture
+  program, shows PowerShell's own error, prints an argument error where it was typed, and prints the command that
+  starts the capture from a Windows terminal.
 - The panel shows its version beside the name in the top bar, where a version is looked for, as a link to that
-  release's notes. It was only at the foot of the gear menu.
+  release's notes, and no longer as a line of its own at the foot of the gear menu.
+- The setup guide's words and the notices made of two sentences are short phrases, as the rest of the panel's are, in
+  Korean and in English.
+- A click on the desktop shortcut while the capture program runs opens the panel, as `./sidenote capture --up` now does on
+  a Linux desktop or a Mac too. It ended in a failure saying the capture was running.
+- A face covered on the screen (**Cover faces**) is painted as the panel's own window is: dark gray, with the name and
+  its highlighter stroke in the middle where there is room and a font to draw it (a Pillow without FreeType leaves it
+  plain). It was a plain gray box.
+- The capture program, its tray menu, the desktop shortcut's windows and the app speak English unless
+  `SIDENOTE_LANG=ko`. They followed the system's language.
+- The capture program has a logo of its own: Sidenote's wordmark as it is, and "capture" after it in the same face. The
+  tray menu and the desktop shortcut's windows show it with the release beside it, as the panel shows its own.
+- The desktop shortcut's window is frosted glass: the desktop behind it shows through, blurred, with its colours. It
+  shows the start as the panel's bar in three parts (the server, the capture program, ready): the part under way fills
+  with a light running along it, and under the bar are the steps' names, the time taken and the launcher's last line as
+  it prints it. It comes up from the corner and goes the same way. A failed start shows the same bar stopped in red at
+  the step it failed at, with the launcher's last lines and a flat **Close** key. It was a dark board with the steps as
+  pills over a groove.
+- The tray menu is drawn the same way: frosted glass, the logo, **Open the panel** as a key, the state in the panel's
+  pill with its light, flat switches. It opens with a short fade.
+- The panel's download bar and the step a model's load is at run a gradient with a light along them, as the capture's
+  window does.
+- A passing notice stands in the top bar, where it covers nothing: in its free middle, or over the status signals while
+  it shows. The bands go in the bar whenever they fit, scrolled too; when they do not, they head the thread's column and
+  stick to the bar's foot once scrolled. The gear menu opens as a sheet from the bar to the window's foot over the right
+  column, the whole width in one column. Each lay over the cards' edges before. The veil behind a sheet is darker.
+- An English date in the panel reads Mon, Nov 2: 11.02(Mon) reads as the 11th of February to much of the world.
 
 ### Fixed
 
+- A panel that stopped reading (a tab frozen in the background, a socket half gone) held every broadcast from then on:
+  every panel's updates, every API write that sends one, the analysis worker, and the server's shutdown, which never
+  ended. Each panel has its own line out, and one that does not take a message within 5 s is closed and connects again;
+  the server's start gives it a 5 s shutdown wait.
+- With the history's file locked by another program (or unreadable), the panel did not open and every API read was a
+  500 in plain text. Each read gives what an empty store gives, and the log says so once a minute. A route's unexpected
+  error under `/api/` is a JSON 500.
+- An analysis worker started again after an error left the analysis it ran going beside the next one, which a pause
+  did not stop. The new worker takes it over.
+- A clock set back stopped the automatic analysis for as long as it went back.
+- Through the API: a body nested a few hundred levels deep was a 500 (a 400 now), `OPTIONS` and `HEAD` got the
+  framework's own answers (a 405 naming the methods now), and `set_lang` through `/commands` on a server with speech off
+  said ok and changed nothing (a notice says why). A box of `true` and `false` was taken as the screen's region, and
+  `2.0` as the monitor once the capture program had said which there are.
+- A line of the event log with a number written as text made every status a 500.
+- A desktop app whose capture program was restarted from its tray five times in ten minutes ended itself, the server
+  and Ollama with it, as if the program kept failing.
 - On a WSL whose `/etc/wsl.conf` leaves the Windows folders off the PATH (`[interop] appendWindowsPath=false`),
   `./sidenote capture` did not start, and `install` and `doctor` said Windows Python was missing when it was there:
   `cmd.exe` and `powershell.exe` were called by name. They are found on the Windows drive by their paths, wherever
-  `[automount] root` puts it. With interop off, or no Windows drive, `capture`, `setup-capture`, `shortcut`, `install`
-  and `doctor` say so and what to change, and the capture program can be started in Windows with the command shown.
+  `[automount] root` puts it. With interop off, or no Windows drive, the commands that need Windows say so with the
+  command that sets the capture up from Windows; a WSL 2 with no `binfmt_misc` mounted is told from WSL 1 by its kernel.
+- A spoken problem whose answer was done while a panel was slow to take it could be cut by a newer screen and asked
+  again, and an automatic retry or continuation cut the same way stayed half written on its card. An answer that is
+  done is let end; a newer screen, a pause or Reanalyze stop only one still being written, and what they stop does not
+  start after it.
+- A card a pause or a newer screen stopped after the agent answered still stood for its problem: for 30 minutes the
+  same problem was "already solved", pointing at a card with no answer. So did a card where the agent declined. The
+  words and the picture a problem went out in are kept once its card is done, and only for an answer.
+- Turning on **Solve spoken problems** or **Keep what is heard** took in what had been said before, the last 20 seconds
+  or so. Both start from the moment they are switched on.
+- The live line counted in the vote on the speech language, about seven times over, so one short Korean remark read as
+  English could turn a Korean session to English. Only the sentences count, as the decision notes say.
+- An hourly cost limit or a GPU idle time set in `.env` outside the panel's choices could not be chosen again once
+  moved, and **Reset** failed on it. It is one of the choices.
+- Through the API: a body holding `NaN`, `Infinity`, a number past a float or a lone surrogate was taken, and ended in
+  a 500; one put in a setting made every answer showing the settings a 500, and one in a question ended the events
+  streams. They are a 400. The speech language set by `PUT /api/v1/language/speech` held only until the speech model
+  was loaded again, and while it loaded it was refused, as was `set_lang`, which said ok (it is the setting now,
+  refused only where speech is off). **Confirm before sending** refused when only a program following `/api/v1/events`
+  could answer; `POST /api/v1/settings/reset` returns what it did (409 with `error` when some setting could not go
+  back); a second download asked while one is under way is a 409, where both were accepted; a run follows the **Run**
+  key's switch (422 when it is off); a capture restart or quit from the panel's own page on a moved port is done;
+  `true` is refused for a number's setting, and one an older server saved is not brought back; an answer id too large
+  for the record is a 404.
+- A two-minute rate limit was said as a usage limit, with a setting to turn on that does nothing then. It is said as
+  too many requests.
+- A Codex turn that failed with no message said "None"; a timeout always said 120 s; `inf` or `nan` in a number's
+  variable stopped the server at the start; the screen card said "No screen received" with no capture program
+  connected.
+- `SIDENOTE_LOG_DAYS` of 0 or less deleted the live logs at every start; it is at least 1, and `doctor` says so. The
+  watch that frees the GPU when the model is idle and looks at the agent's sign-in again ended for good at an
+  unexpected error; it starts again.
+- `./sidenote shortcut` ended with no word when PowerShell failed, `uninstall` said the shortcut was removed when
+  Windows could not be reached, `capture --list-monitors` without Windows Python printed cmd.exe's own line and ended
+  well, and `down` said "Already stopped." when `docker compose` itself failed. The capture program's log names
+  `./sidenote capture-stop` alone when it has no tray icon, and the desktop app reads `SIDENOTE_ANALYZER` as the server
+  does.
+- The panel's keys: a double click on **Clear history** or **Reset to defaults** did it with nothing asked; a double
+  click on **Reanalyze** asked twice. The keyboard's focus fell to the page when a key it was on went busy or away
+  (**Run**, the follow-up keys, the GPU keys, **Previous**, a Copy where the clipboard is refused) and went to the star
+  after **Problem text**; a part of an answer's strip left it on the strip, out of sight.
+- The panel's reading: an answer ending while it was read further up moved the words read down by 144 px, as its
+  scale, strip and boxed sections came in above them; they stay where they are. A chain in bold in a list item drawn
+  as its own paragraph was drawn a second time, cut short; a picture's alt text and a task's tick were dropped; an
+  identifier in a table (`ap-northeast-2`) broke at its hyphens; an empty `1.` drew a lone step circle.
+- The panel for screen readers: the page behind an open sheet was still read; the top bar's signals changed their names
+  every second, with the ages in them; the bands at the top (Server disconnected and the like) were never said; the
+  gear menu's rows of choices and the setup guide's steps had no names or states; the transcript card read each
+  sentence again with every new one.
+- The panel's look: a Korean particle after a setting's name in bold took the wrong form; the setup guide's first step
+  ran under its keys where the window had the room for it, and its state box, steps and picture were rounded; on a
+  window taller than the right column the question box stood in the middle of it; in English the agent card's state
+  ran under its switch and its "Takes" value was cut; a multiple-choice answer to "which is NOT correct?" marked the
+  true statements and not the answer; on a window 481 to 1000 px wide the answers' dates stood at as many places as
+  there were types; the **Free GPU** key was short of 4.5:1 in the dark theme; the Solver settings choices gave no sign
+  of the pointer.
+- `./sidenote status` and `up` printed values the server keeps as they were, a terminal's escape codes included, and a
+  settings file from elsewhere brought back any text as the local model's name. The values are printed without their
+  control characters, a model's name and the monitor come back only in their own shape, and an answer's id is always
+  the number the history keeps it under.
 
 ## [0.5.2] - 2026-11-08
 

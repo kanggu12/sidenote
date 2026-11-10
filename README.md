@@ -198,7 +198,8 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
   fits.
 - **Checks code answers.** With Docker or Kubernetes, code runs on the problem's examples in a sandbox with no network.
 - **Lets you try first.** **Practice** shows the question, then one hint at a time, and the answer when you ask.
-- **Keeps what you learn.** Star an answer, find it in the history, and export it as Markdown or as Anki notes.
+- **Keeps what you learn.** Star an answer, find it in the history, and export it as Markdown or as Anki notes. Delete
+  one with **Undo**, and it waits a week in **Recently deleted** in case you want it back.
 - **Private by design.** Faces are covered before any model sees the screen, the windows you name (a password manager,
   a private browser window) stop the capture while they show, and each answer lists what left your PC.
 - **Open source.** MIT licensed, with the test suite run on every push.
@@ -315,6 +316,10 @@ setting offers `opus`, `sonnet` and `haiku`, each its newest release.
   (on Kubernetes, through `kubectl port-forward`).
 - Web searches go through SearXNG, and once a day the server asks GitHub whether a newer release is out, sending only
   Sidenote's version (`SIDENOTE_UPDATE_CHECK=0` turns that off).
+- What it keeps (the answers, and with **Keep what is heard** on, the sentences heard) is on this PC only, readable by
+  your user alone. Clear the history, or delete an answer for good, and its words are removed from the file, not only
+  hidden.
+  `./sidenote backup` copies it, and `./sidenote uninstall --yes --data` removes it with the rest.
 
 The details are in [Security and privacy](docs/README.md#14-security-and-privacy).
 
@@ -332,8 +337,9 @@ The details are in [Security and privacy](docs/README.md#14-security-and-privacy
   there.
 - [Changelog](CHANGELOG.md): what changed in each release.
 
-The panel, the server's messages and the command line speak English, or Korean when your browser or system is set to
-Korean. **Language** in the panel's gear menu picks one by hand. To add a language, see
+The panel, the server's messages and the command line speak English, or Korean when your browser or terminal is set
+to Korean; the capture program does with `SIDENOTE_LANG=ko`. **Language** in the panel's gear menu picks one by hand. To
+add a language, see
 [Contributing](CONTRIBUTING.md#add-a-language).
 
 ## Contributing

@@ -14,9 +14,10 @@ It runs in one of three ways:
 - **On Kubernetes**: the Helm chart (section 16).
 
 The panel, the server's messages and the commands speak English, or Korean when the browser (for the panel) or the
-system (for the commands and the capture program) is set to Korean. **Language** in the panel's gear menu picks one by
-hand, and `SIDENOTE_LANG=en` or `ko` fixes one for the server's messages and the commands. This guide calls each control
-by its English label; section 18 gives the Korean label of each.
+terminal's locale (for the commands) is set to Korean. The capture program and the app speak English unless
+`SIDENOTE_LANG=ko`. **Language** in the panel's gear menu picks one by hand, and `SIDENOTE_LANG=en` or `ko` fixes one for
+the server's messages, the commands and the capture program. This guide calls each control by its English label;
+section 18 gives the Korean label of each.
 
 In this guide:
 
@@ -66,8 +67,8 @@ README's [What it runs on](../README.md#what-it-runs-on).
 - **The app**: Windows 10 or 11; macOS 14 or newer on Apple silicon; or Linux with an X11 session and glibc 2.35 or
   newer (Ubuntu 22.04 or newer, Debian 12 or newer). [Ollama](https://ollama.com/download) runs the local model. On a
   Mac the sound needs a loopback input such as BlackHole.
-- **Docker**: Docker with `docker compose` and `python3` (both inside WSL on Windows), and for an NVIDIA GPU on Linux
-  the NVIDIA Container Toolkit. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
+- **Docker**: Docker with its Compose plugin, `docker compose` 2.24 or newer, and `python3` (both inside WSL on Windows),
+  and for an NVIDIA GPU on Linux the NVIDIA Container Toolkit. `./sidenote doctor` checks the Compose version. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
   installs the capture program's packages into it.
 - **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
   local model on Apple silicon's GPU (Docker on a Mac has none): the README's
@@ -267,6 +268,12 @@ When you are done, `./sidenote down` stops the server and the capture program. T
 change to `.env` or to the code. The server does not start by itself when
 the PC or Docker restarts.
 
+A server, model server or code runner that ends by itself in failure is started again inside its container, at most 5
+starts in 10 minutes (the first included); past that its container stays ended until `./sidenote up`. `./sidenote status`
+says why the server is off (its exit code, a memory kill, the watchdog, or the starts given up on) and why the model
+server's container is off (its exit code or a memory kill); of the code runner it says only that it is off. A code runner
+that could not clean up after a run ends itself and starts again clean.
+
 `./sidenote capture-stop` also stops a capture program left behind (one started with `--console` whose terminal was
 closed, for example), and if some are still left, it says how many.
 
@@ -286,6 +293,11 @@ The icon needs `pystray`, which `./sidenote setup-capture` installs. Without it 
 says so once. Started windowless it then has neither a window nor an icon, so `./sidenote capture` says so before it starts
 it, with `./sidenote capture-stop` as the way to end it. `./sidenote install` installs the package, and `./sidenote doctor`
 reports it missing.
+
+One capture program runs for a server. `./sidenote capture` typed again finds the one that runs and says so, and the
+desktop shortcut clicked while one runs opens the panel. A second capture program started anyway (one the launcher
+could not see) says one is running and ends with exit code 76 before it captures anything. After `SIDENOTE_PORT` changes, stop the capture program and start it again
+(`./sidenote capture-stop`, then `./sidenote capture`); on WSL make the desktop shortcut again too (`./sidenote shortcut`).
 
 The capture program reads its code when it starts. After `./sidenote up` deploys new code for it, it restarts itself
 into that code at a quiet moment (the screen at rest for 20 seconds, nothing being analyzed or listened to, no answer
@@ -324,16 +336,22 @@ the capture program, in one click and with no window. Windows Python's windowles
 up, a small window by the clock shows the start, and the tray icon is what stays.
 
 <p align="center">
-  <img alt="The shortcut's window by the clock: sidenote capture, the three steps Server, Capture and Ready with the bar at the second, and Starting the capture program. Beside it a failed start in the same window: Capture did not start, Cannot connect to Docker. Check that Docker is running, and a Close key" src="assets/shortcut-windows.png" width="760">
+  <img alt="The shortcut's window over a light window on the desktop, which shows through its glass: the sidenote capture logo with v0.6.0, Starting in a yellow pill, a bar in three parts with the server done and the capture under way, the names Server, Capture and Ready under it with 9s, and the launcher's last line, Container sidenote Started. Beside it a failed start in the same window: Capture did not start in a red pill, the bar stopped in red at Server, Cannot connect to Docker. Check that Docker is running, and a Close key" src="assets/shortcut-windows.png" width="760">
 </p>
 
-- A small window beside the notification area shows the start's steps (the server, the capture program, ready). The
-  first start after an update builds the server image for a few minutes, and a second click meanwhile says that a
-  start is still going.
-- When a start fails (Docker off, the port taken, the capture program already running), the same window shows the
-  launcher's last lines, to select and copy (Windows' own message box where Python has no tkinter).
+- A small window beside the notification area shows the start as a bar in three parts (the server, the capture
+  program, ready), with the time it has taken and the launcher's last line under it. The first start after an update
+  builds the server image for a few minutes, and a second click meanwhile says that a start is still going.
+- A click while the capture program runs opens the panel.
+- When a start fails (Docker off, the port taken), the same window shows the launcher's last lines, to select and copy
+  (Windows' own message box where Python has no tkinter).
   `./sidenote capture --up` in a WSL terminal prints all of it.
 - `./sidenote shortcut --remove` takes the shortcut away, with the icon it keeps in `%LOCALAPPDATA%\Sidenote`.
+- On a WSL that cannot start Windows programs (`[interop] enabled=false`, or no Windows drive mounted), `./sidenote`
+  cannot make the shortcut, and says so with a command for a Windows terminal:
+  `py -3 "...\client\launch.pyw" --setup --distro ... --repo ...`. Run once, it installs the capture packages into
+  Windows Python and makes the same shortcut. The shortcut then brings the server up in WSL and starts the capture
+  program from Windows itself, which asks nothing of WSL's interop.
 
 ### Lending the GPU to other work
 
@@ -393,8 +411,10 @@ notebook carry the same readings.
   - **Solver settings** (section 12).
   - **Setup guide**: the four steps of a first start, again ([The setup guide](#the-setup-guide)).
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
+  - **Recently deleted**, with how many it holds, while it holds any: the answers deleted in the last 7 days
+    ([The notebook](#the-notebook)).
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
-    rest.
+    rest, and so does **Recently deleted**.
   - At its foot, the version of Sidenote the server runs, such as **Version 0.1.6**.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
@@ -435,6 +455,13 @@ marks the current one, whose screen the right column shows.
   is kept past the history's 90 days and size limit until it is unstarred, and the contents' **Starred** lists it.
   Press the star again to unstar it. An answer the server did not keep (with **Keep answers** off) cannot be starred,
   and a notice says so.
+- **Delete**, the bin at the end of an answer's head, takes the answer off the page in every panel that is open, and a
+  notice says so with **Undo** (`z` does the same while the notice shows). A deleted answer waits in **Recently
+  deleted** in the gear menu for 7 days (`SIDENOTE_DELETED_DAYS`), with its star and its follow-ups: **Restore** puts it
+  back where it was, **Delete for good** takes it from the file at once, and **Empty** takes them all; both ask for a
+  second press. A card the server did not keep (an error, an answer stopped part way, any with **Keep answers** off)
+  only leaves the page, and **Undo** is the way back. A follow-up still being written about a deleted answer stops,
+  and with the last answer deleted the question box waits for the next one, or for **Undo**.
 - Headings, and a line that is only bold (a step such as "1. ..."), are written in the color of the problem's type,
   so the parts of a long solution can be found by eye. Bold words in the text are what the answer stresses, and wear
   the same yellow highlighter as the answer line. A table column of numbers is right-aligned. A range written with a
@@ -614,7 +641,9 @@ the window and stays there, and going up it moves back until its head is under t
 The answers stay after a reload or a restart: the server keeps them, each with a small picture of its screen, in
 `history.sqlite` in the log folder, for 90 days and 200 MB at most, the oldest going first (`SIDENOTE_HISTORY_DAYS`,
 `SIDENOTE_HISTORY_MB`). A starred answer stays past both until it is unstarred: the 200 MB counts the answers that are
-not starred. **Keep answers** stops it, and **Clear history** in the menu empties it, starred answers included.
+not starred. **Keep answers** stops it, and **Clear history** in the menu empties it, starred answers and
+**Recently deleted** included. An answer in **Recently deleted** is listed nowhere else and comes back with
+**Restore**; past the 200 MB, what was deleted goes before any answer still shown.
 
 ### Keyboard shortcuts
 
@@ -632,6 +661,7 @@ the one the contents' ribbon marks, whose screen the right column shows.
 | `/` | the contents' search, **Find an answer** |
 | `h` | with **Practice** on, the current answer's next hint |
 | `a` | with **Practice** on, the current answer's whole answer |
+| `z` | **Undo** of a delete, while its notice shows |
 | `?` | the list of keys |
 | `Esc` | closes the list, a menu or **Solver settings**; leaves the search and keeps its words |
 
@@ -1121,9 +1151,11 @@ For the app, set the same variables in the environment it starts with; those onl
 do nothing there: the app keeps its logs in its data folder, and the Ollama it starts takes Ollama's own
 `OLLAMA_NUM_PARALLEL` and `OLLAMA_KEEP_ALIVE`. An empty value runs that setting with its default, and a value that is
 not a number also falls back to the default, with a warning in the server's startup output (`./sidenote logs`). The log
-caps cannot be turned off with 0: at least 64 KB per file and at least 1 old file. `.env` is read with the same rules as
-docker compose: an `export` prefix, quotes, and a ` # comment` after the value. Finer settings not in the table (the
-change thresholds, the local model's context size and so on) are in `server/config.py`, with explanations.
+caps cannot be turned off with 0: at least 64 KB per file (1 MB for the launcher's `capture.log`, which it counts in
+whole MB) and at least 1 old file. `.env` is read with the same rules as
+docker compose: an `export` prefix, quotes, and a ` # comment` after the value. Finer settings not in the table are
+explained where they are read: the change thresholds and the like in `server/config.py`, the local model's context size
+(`SIDENOTE_LOCAL_CONTEXT`) and picture budget (`SIDENOTE_LOCAL_IMAGE_TOKENS`) in `compose.yaml`.
 
 | Setting | Default | Meaning |
 |:---|:---:|:---|
@@ -1151,7 +1183,7 @@ change thresholds, the local model's context size and so on) are in `server/conf
 | `ANTHROPIC_API_KEY` | (none) | The key the Anthropic API agent uses |
 | `CLAUDE_CODE_OAUTH_TOKEN` | (none) | A long-lived Claude Code token, which the server signs in with when it is set. With Docker on a Mac `./sidenote login` writes it here: the server there cannot read the Mac's own login from the Keychain |
 | `SIDENOTE_SPEECH_LANG` | `auto` | Speech language `auto`, `ko` or `en`. Also **Speech language** in the panel |
-| `SIDENOTE_LANG` | (not set) | The language of the server's messages, the commands and the capture program: `en` or `ko`; the panel's own words still follow the browser or **Language**. Not set, the server follows the last panel that connected, and the commands and the capture program follow the system's language. With English, the models are asked to write the whole answer in English |
+| `SIDENOTE_LANG` | (not set) | The language of the server's messages, the commands, the capture program and the app: `en` or `ko`; the panel's own words still follow the browser or **Language**. Not set, the server follows the last panel that connected, the commands follow the terminal's locale, and the capture program and the app speak English. With English, the models are asked to write the whole answer in English |
 | `SIDENOTE_AUDIO` | `1` | `0` makes the server ignore sound |
 | `SIDENOTE_VOICE_TRIGGER` | `1` | `0` stops solving problems given by voice automatically (live speech is still shown) |
 | `SIDENOTE_WHISPER_MODEL` | `small` | The speech model to start with. `base` is lighter but makes more than twice as many errors on Korean. Also **Speech model** in the panel, which offers this one too |
@@ -1183,11 +1215,11 @@ change thresholds, the local model's context size and so on) are in `server/conf
 | `SIDENOTE_RUNNER_TIMEOUT` | `10` | Time limit for one code run (seconds) |
 | `SIDENOTE_RUNNER_TOKEN` | (empty) | The token sent with every run, for a runner reached over TCP that takes runs only with it (`RUNNER_TOKEN`). The Helm chart makes one; compose's Unix socket needs none |
 | `SIDENOTE_TRUST_GATEWAY` | `1` | Whether connections from the container's default gateway are let in, as Docker's published port makes them. The Helm chart sets `0`: loopback only, where `kubectl port-forward` arrives |
-| `SIDENOTE_PORT` | `8777` | Port of the panel address. `./sidenote` uses the same value |
+| `SIDENOTE_PORT` | `8777` | Port of the panel address. `./sidenote` uses the same value. A capture program started before a change keeps the old port: `./sidenote capture-stop`, then `./sidenote capture` (on WSL, `./sidenote shortcut` too) |
 | `SIDENOTE_DATA_DIR` | (the system's data folder) | The app's data folder: its logs, the panel's settings, the kept answers and the speech model (section 3) |
 | `SIDENOTE_LOG_MAX_MB` | `5` | Maximum size of one log file (MB, whole number) |
 | `SIDENOTE_LOG_FILES` | `4` | Number of old log files kept |
-| `SIDENOTE_LOG_DAYS` | `14` | Days before old log files are deleted |
+| `SIDENOTE_LOG_DAYS` | `14` | Days before old log files are deleted (at least 1) |
 | `SIDENOTE_LOG_PATH` | `~/.local/state/sidenote/logs` | Log folder. Write an absolute path when you change it |
 | `TZ` | (this PC's time zone, else `UTC`) | The time zone of the log times and of the days in the panel and `./sidenote report`, such as `Europe/Berlin`. `./sidenote` finds this PC's by itself |
 | `SIDENOTE_UID`, `SIDENOTE_GID` | (the user running `./sidenote`; `0` under rootless Docker) | Who the server's container runs as. It has to be able to read the login files in `~/.claude` and `~/.codex` |
@@ -1225,7 +1257,8 @@ change thresholds, the local model's context size and so on) are in `server/conf
 | `SIDENOTE_CLAUDE_VERSION` | (this PC's Claude Code, else `2.1.307`) | The Claude Code version built into the server image. `./sidenote up` sets it from this PC's `claude --version` |
 | `SIDENOTE_CODEX_VERSION` | (this PC's Codex, else `0.165.0`) | The Codex CLI version built into the server image. `./sidenote up` sets it from this PC's `codex --version` |
 | `SIDENOTE_HISTORY_DAYS` | `90` | Days the answers are kept; a starred answer stays until it is unstarred (section 5) |
-| `SIDENOTE_HISTORY_MB` | `200` | Size the kept answers that are not starred may reach; past it the oldest of them go first |
+| `SIDENOTE_HISTORY_MB` | `200` | Size the kept answers that are not starred may reach; past it what was deleted goes first, then the oldest |
+| `SIDENOTE_DELETED_DAYS` | `7` | Days a deleted answer waits in **Recently deleted**, where it can be put back, its age in the history aside; `0` keeps it there until it is emptied (the size cap still takes what was deleted first) |
 | `SIDENOTE_CPUS` | `8` | Cores the server may use (fewer on a machine with fewer: `./sidenote` brings this and `SIDENOTE_LLM_CPUS` down to what is there) |
 | `SIDENOTE_LLM_CPUS` | `8` | Cores the model server may use. Answers run on the GPU; this caps loading a model and any fallback to the CPU, and the model download (`./sidenote llm pull`) too |
 
@@ -1271,8 +1304,8 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | `up` says it cannot connect to Docker | Start Docker and run `./sidenote up` again |
 | `up` says the server stopped while starting | The last line of the log shown with it is the cause. Check the `.env` value you changed last |
 | `up` says another program is using port 8777 | Stop that program, or put another port in `.env`, such as `SIDENOTE_PORT=8778`, and run `./sidenote up` |
-| On WSL, `capture`, `install` or `doctor` says Windows cannot be found from WSL | WSL has not mounted the drive Windows is on: `[automount]` in `/etc/wsl.conf` must not say `enabled=false`. Change it, run `wsl --shutdown` in Windows and open WSL again. `[interop] appendWindowsPath=false` is fine: `./sidenote` finds `cmd.exe` and `powershell.exe` on the Windows drive by their paths |
-| On WSL, `capture`, `install` or `doctor` says WSL cannot start Windows programs | `[interop] enabled=false` in `/etc/wsl.conf`: set it to `true` or remove the line, run `wsl --shutdown` in Windows and open WSL again. Or start the capture program in Windows with the `py -3 ...` command the message gives |
+| On WSL, `capture`, `install` or `doctor` says Windows cannot be found from WSL | WSL has not mounted the drive Windows is on: `[automount]` in `/etc/wsl.conf` must not say `enabled=false`. Change it, run `wsl --shutdown` in Windows and open WSL again, or set the capture up from Windows with the command the message gives, as below. `[interop] appendWindowsPath=false` is fine: `./sidenote` finds `cmd.exe` and `powershell.exe` on the Windows drive by their paths |
+| On WSL, `capture`, `install` or `doctor` says WSL cannot start Windows programs | `[interop] enabled=false` in `/etc/wsl.conf`. The setting can stay: run the `py -3 "...\client\launch.pyw" --setup ...` command the message gives once, in a Windows terminal. It installs the capture packages into Windows Python and makes the desktop shortcut, and the shortcut then brings the server up in WSL and starts the capture program from Windows. `./sidenote capture-stop` still ends it, through the server. Or turn interop on: set it to `true` or remove the line, run `wsl --shutdown` in Windows and open WSL again |
 | A solution says "Stopped: connection lost" | It was cut off while the server restarted. Solve it again with **Reanalyze** |
 | The panel says "Model … missing" | `./sidenote llm pull` (the default model), or `./sidenote llm pull <model>` for the one the panel names. The server notices it within 20 seconds |
 | The panel says "The local model does not respond" | `./sidenote llm logs`. `./sidenote up` starts it again |
@@ -1349,12 +1382,12 @@ What leaves this PC, what can reach what, and what is kept.
 - Each answer's **Details** list the search words and the pages read for it, and `events.jsonl` records every item
   that left the PC (`outbound`: where to, and what: the search words, the page address, or the kind and size of what
   went to the agent, never the screen itself).
-- Faces on the screen (a video call, a video, a photo, a profile picture) are painted gray as each screen arrives,
-  before the change detector, the local model, the cloud agent, the crops or the panel's thumbnail see it (**Screen** >
-  **Cover faces**, on by default). The finder runs on this PC's CPU (about 50 ms a screen at 1080p, 120 ms at 4K). It
-  covers most faces from about 64 px wide up and about half of the 32 px ones (an avatar), and leaves drawn figures
-  alone, which also leaves a face in a black-and-white photo uncovered. For a screen that must not be read at all,
-  switch the screen off or pause.
+- Faces on the screen (a video call, a video, a photo, a profile picture) are painted over as each screen arrives, in
+  the dark gray with the name that covers the panel's own window, before the change detector, the local model, the cloud
+  agent, the crops or the panel's thumbnail see it (**Screen** > **Cover faces**, on by default). The finder runs on
+  this PC's CPU (about 50 ms a screen at 1080p, 120 ms at 4K). It covers most faces from about 64 px wide up and about
+  half of the 32 px ones (an avatar), and leaves drawn figures alone, which also leaves a face in a black-and-white
+  photo uncovered. For a screen that must not be read at all, switch the screen off or pause.
 - While a window named in **Skip windows** is on screen (a password manager or a private browser window by default,
   section 12), no screenshot is taken at all, so nothing of that screen reaches the server, a model or the agent. The
   capture program reads the windows' titles and their programs' names on this PC and keeps them there: they go neither
@@ -1427,8 +1460,12 @@ What leaves this PC, what can reach what, and what is kept.
   held. Everything the PC plays passes through, including other people's voices in a call, so the words are written
   to a file that lives for days only when asked for (`SIDENOTE_LOG_SPEECH=full`). The panel shows the live
   transcript either way, from memory.
-- **Clear history** in the menu deletes the kept answers (`history.sqlite`), starred ones too, and what was heard. It
-  does not touch the log files: delete those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data
+- **Delete** puts an answer in **Recently deleted**, still in `history.sqlite`, for 7 days. **Delete for good** and
+  **Empty** remove it from the file at once, its words overwritten there, not only unlisted (SQLite's secure delete,
+  with its write-ahead log folded back at once). One whose days run out goes at the next look, its words left in the
+  file and its log until SQLite next folds the log back.
+- **Clear history** in the menu deletes the kept answers (`history.sqlite`), starred ones too, those in **Recently
+  deleted**, and what was heard. It does not touch the log files: delete those in the log folder (`~/.local/state/sidenote/logs/` with Docker, the data
   folder's `logs` with the app).
 - The browser keeps the panel's own choices (**Theme**, **Motion**, **Language**, **Practice**), and for **Practice**
   the numbers of the 400 newest answers it kept back, with how far each was opened, never their words. **Clear
@@ -1482,12 +1519,22 @@ What is pinned, so that a rebuild gives the same thing:
 server image, the panel build the running server serves, Claude Code and Codex on this PC and in the container, the
 image tags, the models pulled and the log folder.
 
-`./sidenote uninstall` lists what this project put on the PC (the containers, the images, among them the Ollama and
-SearXNG ones, the volumes, the desktop shortcut on Windows, the capture packages on Linux and macOS) and removes it only
-with `--yes`. The models live in a volume of tens of gigabytes, so nothing is removed by a command typed by accident. An
-image another project is using stays, as Docker refuses to remove it. The logs are left behind on purpose, and so are
-`~/.claude` and `~/.codex`, the login folders Claude Code and Codex use on this PC too, and the capture packages in
-Windows Python, which other programs there may use.
+`./sidenote uninstall` lists what this project put on the PC and what it keeps, and removes it only with `--yes`. It
+removes the containers, the images (among them the Ollama and SearXNG ones), the volumes (the models' volume holds tens
+of gigabytes, downloaded again once removed), the desktop shortcut and its icon on Windows, and the capture packages on
+Linux and macOS. An image another project is using stays, as Docker refuses to remove it. It keeps the history, the
+settings and the logs in the log folder, so installing again goes on with them; `--yes --data` removes them too, and
+names what is left in that folder (the first six). It also keeps `~/.claude` and `~/.codex`, the login folders Claude Code and Codex
+use on this PC too, and the capture packages in Windows Python, which other programs there may use. On a WSL that cannot
+start Windows programs, `py -3 "<the repository>\client\launch.pyw" --remove` in a Windows terminal removes the
+shortcut and its icon.
+
+`./sidenote backup [FILE]` writes the history and the settings into one file (`.tar.gz`), and never over a file that is
+there. Recently deleted is left out of it, and a link among those files is refused. `./sidenote restore FILE` puts them
+back: it stops a running server for the swap and starts it again, and keeps what was there in a `before-restore-<when>`
+folder in the log folder, each one until `./sidenote uninstall --data`. `./sidenote llm rm MODEL` removes
+a model from the models' volume, and says so when it was the one set for solving. `restore` and `llm rm` ask first, and
+with no terminal to ask in they take `--yes` instead.
 
 ### Checks
 
@@ -1517,7 +1564,7 @@ Some of them:
 | `stall_guard.py` | The stall watchdog (including a stall that holds the GIL) and the fork guard |
 | `scroll_auto.py`, `audio_path.py` | Reading a scroll, and the sound path |
 | `launcher_args.sh` | What `./sidenote` hands to Windows (each capture option as typed, a value with spaces whole), how it reads `SIDENOTE_ANALYZER`, works without Claude Code and finds the capture program; every outside program is stood in for |
-| `launch_window.py` | The desktop shortcut's windows (`client/launch.pyw`): the start's steps, and a failure or a note in the same window, in the tray menu's colours and in both languages, drawn on a virtual display where Xvfb is at hand |
+| `launch_window.py` | The desktop shortcut's windows (`client/launch.pyw`): the start's bar in three parts with the launcher's last line, and a failure or a note in the same window, in the tray menu's colours and in both languages, drawn on a virtual display where Xvfb is at hand: over a white, a dark and a blue desk the glass shows each, and every word on it keeps 4.5:1 |
 | `panel_*.py` | The panel in headless Chromium: the scroller and the rail, the run box, the follow-up buttons, the settings sheet, charts and diagrams, redraws while the page is read |
 
 A few checks need a real GPU, a Windows desktop or a signed-in agent; they are not part of CI.
@@ -1569,13 +1616,13 @@ PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.
 ## 18. Panel labels
 
 The Korean label for each English label this guide uses, and where it appears. The panel shows Korean when the
-browser is set to Korean, or when **Language** in the gear menu picks it; the tray menu and `./sidenote` follow the
-system's language. The agent is **Agent** (에이전트) in every label, whichever agent the server uses.
+browser is set to Korean, or when **Language** in the gear menu picks it; `./sidenote` follows the terminal's locale,
+and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** (에이전트) in every label, whichever agent the server uses.
 
 | Korean | English | Where |
 |:---|:---|:---|
 | 서버 | Server | top bar, a signal |
-| 이 PC의 모델 | Local model | the top bar's signal, its card, and its switch in **Solving** |
+| 이 PC의 모델 | Local model | the top bar's signal, its card, and its switch in **Solving**, and the engine named under an answer |
 | 에이전트 | Agent | the agent's signal, card and settings section, whichever agent the server uses |
 | 화면 | Screen | top bar, a signal |
 | 소리 | Sound | top bar, a signal |
@@ -1588,6 +1635,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 밝게 | Light | **Settings** menu |
 | 어둡게 | Dark | **Settings** menu |
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
+| 최근 삭제 | Recently deleted | **Settings** menu, and its sheet |
 | 기록 지우기 | Clear history | **Settings** menu |
 | 버전 … | Version … | **Settings** menu, at its foot; and as v… beside the name in the top bar, a link to that release's notes |
 | 새로고침 | Reload | alert bar, when a new version of the panel is ready |
@@ -1600,6 +1648,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 캡처 프로그램 꺼짐 | Capture program off | alert bar |
 | 모델 … 없음 | Model … missing | alert bar |
 | 아직 이 PC의 모델 없음 | No local model yet | alert bar, in the app |
+| Ollama가 응답하지 않음 | Ollama does not answer | alert bar, in the app |
 | 이 PC의 모델 응답 없음 | The local model does not respond | alert bar |
 | 풀 엔진이 모두 꺼짐 | Every engine is off | alert bar |
 | 풀 엔진 없음 | No engine to solve | error cards |
@@ -1660,7 +1709,6 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 질문 | Ask | the button beside the question box |
 | 보내기 | Send | **Confirm before sending** |
 | 보내지 않기 | Don't send | **Confirm before sending** |
-| 이 PC | This PC | the engine named under an answer |
 | 선다형 | MCQ (the margin), Multiple choice (**Types the agent solves**) | a problem's type |
 | 단답형 | Short (the margin), Short answer (**Types the agent solves**) | a problem's type |
 | 서술형 | Essay | a problem's type |
@@ -1690,7 +1738,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 단축키 | Keyboard shortcuts | **Settings** menu; the list of keys |
 | 다음 답, 이전 답 | Next answer, Previous answer | the list of keys (`j`, `k`) |
 | 일시정지 또는 계속하기 | Pause or continue | the list of keys (`p`) |
-| 연습 모드에서 | In practice mode | the list of keys (`h`, `a`) |
+| 연습 모드에서, 목차에 표시된 답 | In practice mode, the marked answer | the list of keys (`h`, `a`) |
 | 정답 한 줄 복사됨 | Answer line copied | the `c` key |
 | Markdown, Anki | Markdown, Anki | the menu of **Export** in **Contents** |
 | 확인 중 | Checking | a state of a source |
@@ -1754,6 +1802,14 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 다시 보냄 | Sends again | the agent's card |
 | 답 찾기 | Find an answer | **Contents**, the search box |
 | 별표 | Starred | **Contents**, the day list: the starred answers of every day |
+| 삭제 | Delete | an answer's head: the bin at its end |
+| 화면에서 지우기 | Remove from the page | an error's or a stopped answer's head: the bin's tooltip |
+| 되돌리기 | Undo | the notice after **Delete** |
+| 화면에서 지움 | Removed from the page | the notice after **Delete** on a card the history did not keep |
+| 삭제 되돌리기 | Undo a delete | **Keyboard shortcuts** (`z`) |
+| 되살리기 | Restore | **Recently deleted** |
+| 완전히 삭제 | Delete for good | **Recently deleted** |
+| 비우기 | Empty | **Recently deleted**, at its foot |
 | 저장된 기록에 없는 답이라 별표 못 함 | Not starred: this answer is not in the saved history | notice, after **Star** |
 | 답 기록 남기기 | Keep answers | **Screen** |
 | 기록 지우기 | Clear history | the menu |
@@ -1788,7 +1844,7 @@ system's language. The agent is **Agent** (에이전트) in every label, whichev
 | 캡처 중: 화면 · 소리 | Capturing: Screen · Sound | the tray menu's state line |
 | Docker에 연결할 수 없습니다 | Cannot connect to Docker | `./sidenote up` |
 | 서버가 시작 중에 멈췄습니다 | The server stopped while starting | `./sidenote up` |
-| 포트(8777)를 다른 프로그램이 쓰고 있습니다 | Another program is using port 8777 | `./sidenote up` |
+| 다른 프로그램이 포트(8777)를 쓰고 있습니다 | Another program is using port 8777 | `./sidenote up` |
 | 캡처가 이미 실행 중입니다 | The capture is already running | `./sidenote capture` |
 | 코드 실행기: 응답 없음 | Code runner: not responding | `./sidenote status` |
 | 예제 없음 | no examples | `./sidenote report`, the example checks |
