@@ -49,7 +49,28 @@
 #   the Windows drive the mount table names, and capture starts; with interop off, or no Windows drive, that is what is
 #   said (not "no Windows Python"), and nothing is run;
 # - the time zone comes from the PC, .env first; what PowerShell prints is read as UTF-8; no python3 is said;
-# - a first install ends well with what is left to do, and uninstall takes the images it pulled.
+# - a first install ends well with what is left to do, and uninstall takes the images it pulled;
+# - uninstall lists what goes and what stays (the history, settings and logs, with their size), and --data removes
+#   what Sidenote wrote in the log folder by name, leaving the folder with anything else in it;
+# - where WSL cannot start Windows programs, uninstall prints the launch.pyw --remove command, and that command with
+#   --dry-run removes nothing;
+# - backup copies the history (the server's own SQLite copy while it runs) and the settings into a 600 tar.gz of plain
+#   names, never over a file that is there;
+# - restore refuses what is no backup, asks first, keeps what was there in a before-restore folder (each one kept), stops and starts a
+#   running server, and puts everything back when it fails halfway;
+# - llm rm removes a model with its tuned copy after a yes, and says one that is not there;
+# - the GPU picks compose.amd.yaml only for an AMD GPU a model runs on, with /dev/kfd there and its group by number;
+# - with the server off, bash 3.2 says why instead of ending with curl's status (open, capture-restart, capture);
+# - the setup command for Windows is on a line of its own, and WSL 1 is said as WSL 1;
+# - Docker without the Compose plugin, or with one older than 2.24, is said before up starts anything, and doctor names
+#   the version; doctor reads the log's days as the server does;
+# - a port taken: up says what a port change leaves behind;
+# - status says why the server is off (exit code, memory, its own loop giving up), a restart within ten minutes, and a
+#   local model whose container is off;
+# - capture-stop names the tray icon's Quit first, and within down Windows out of reach is one quiet line;
+# - capture --console refused by a capture program already running ends 1 and stops nothing;
+# - interop off: the language and the launcher's own setup command reach launch.pyw, and with a capture program
+#   holding its guard for the server, launch.pyw opens the panel and starts no second one.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
 
 here="$(cd "$(dirname "$0")" && pwd)"             # this script's folder, whatever the caller's cwd
@@ -118,7 +139,12 @@ case "$1" in
       -c) [ -f "$FAKE/state/no-packages" ] && exit 1   # an import failed
           cat "$FAKE/state/tray" 2>/dev/null || echo tray ;;
       -m) echo "Successfully installed pystray" ;;    # setup-windows
-      *) echo "[main] the capture program would run here" ;;   # --console, --list-monitors
+      # --console, --list-monitors. With state/capture-busy the program finds another one running for the server and
+      # ends as capture.py does then (CAPTURE_BUSY): its first line, and exit code 76
+      *) if [ -f "$FAKE/state/capture-busy" ]; then
+           echo "[main] Another capture program is already running for this server, so this one ends."; exit 76
+         fi
+         echo "[main] the capture program would run here" ;;
     esac ;;
   start) touch "$FAKE/state/running" ;;           # the windowless start: the program is now there
 esac
@@ -175,6 +201,9 @@ cat > "$work/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\0' "$@" > "$FAKE/calls/docker.$(date +%s%N)"
 echo "${COMPOSE_PROFILES:-}" >> "$FAKE/state/profiles"
+# `ollama list`: with state/llm-models the models in $FAKE/ollama-list, otherwise the header alone, as an Ollama with no
+# model prints it
+ollama_list() { if [ -f "$FAKE/state/llm-models" ]; then cat "$FAKE/ollama-list"; else echo 'NAME    ID    SIZE    MODIFIED '; fi; }
 case "$1" in
   info) [ -f "$FAKE/state/docker-off" ] && exit 1
         [ -f "$FAKE/state/rootless" ] && echo '["name=seccomp,profile=builtin","name=rootless","name=cgroupns"]'
@@ -182,16 +211,45 @@ case "$1" in
           echo "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock" >&2; exit 1
         fi ;;
   version) [ -f "$FAKE/state/docker-off" ] || [ -f "$FAKE/state/docker-denied" ] || echo "29.0.0" ;;
-  ps) [ -f "$FAKE/state/server-running" ] && echo sidenote ;;   # the server's container, with state/server-running
-  # the token the server's container was made with, from state/served-token (none: printenv fails)
-  exec) [[ " $* " == *" printenv CLAUDE_CODE_OAUTH_TOKEN "* ]] && { cat "$FAKE/state/served-token" 2>/dev/null || exit 1; } ;;
-  inspect) echo true ;;
-  compose) if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
+  # the server's container with state/server-running, the local model's with state/llm-running
+  ps) [ -f "$FAKE/state/server-running" ] && echo sidenote
+      [ -f "$FAKE/state/llm-running" ] && echo sidenote-llm
+      exit 0 ;;
+  # the token the server's container was made with, from state/served-token (none: printenv fails). The server's copy of
+  # the history for a backup: the Python it is given, run here with the log folder where the container has /data/logs.
+  # The local model server's models: the list in $FAKE/ollama-list, as `ollama list` prints it; `ollama rm` is written down.
+  exec) if [[ " $* " == *" printenv CLAUDE_CODE_OAUTH_TOKEN "* ]]; then cat "$FAKE/state/served-token" 2>/dev/null || exit 1
+        elif [ "${2:-}" = sidenote ] && [ "${3:-}" = python ] && [ "${4:-}" = -c ]; then python3 -c "${5//\/data\/logs/$FAKE/logs}" || exit 1
+        elif [ "${2:-}" = sidenote-llm ] && [ "${4:-}" = list ]; then ollama_list
+        fi ;;
+  # a container that runs; with state/container-ended one that ended, its "<status> <exit code> <OOM killed>" in that file
+  inspect) if [ -f "$FAKE/state/container-ended" ]; then
+             case "$*" in *State.Status*State.ExitCode*) cat "$FAKE/state/container-ended" ;; *State.Status*) echo exited ;; *) echo false ;; esac
+           else echo true; fi ;;
+  # state/no-compose: a Docker without the Compose plugin (a distribution's docker.io), in Docker's own words; the
+  # version from state/compose-version when a check wrote one. state/port-taken: up fails as when the port is taken.
+  # state/compose-warn: the warning compose writes to stderr for a variable .env leaves unset, on every call; with
+  # state/compose-broken, `ps` fails after it, with compose's own last line
+  compose) if [ -f "$FAKE/state/no-compose" ]; then printf "docker: 'compose' is not a docker command.\nSee 'docker --help'\n" >&2; exit 1; fi
+           if [ "${2:-}" = version ]; then cat "$FAKE/state/compose-version" 2>/dev/null || echo 2.29.7; exit 0; fi
+           if [ -f "$FAKE/state/port-taken" ] && printf '%s\n' "$@" | grep -qx up; then
+             echo 'Error response from daemon: driver failed programming external connectivity on endpoint sidenote: Bind for 127.0.0.1:8777 failed: port is already allocated' >&2
+             exit 1
+           fi
+           [ -f "$FAKE/state/compose-warn" ] && echo 'WARN[0000] The "SIDENOTE_X" variable is not set. Defaulting to a blank string.' >&2
+           if [ -f "$FAKE/state/compose-broken" ] && printf '%s\n' "$@" | grep -qx ps; then
+             echo 'no configuration file provided: not found' >&2; exit 1
+           fi
+           if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
              echo 'Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu]]' >&2; exit 1
            fi
            # what compose.yaml would be filled in with, for the checks of the server's user and the time zone
            if printf '%s\n' "$@" | grep -qx up; then
              printf '%s:%s %s' "${SIDENOTE_UID:-}" "${SIDENOTE_GID:-}" "${TZ:-}" > "$FAKE/state/compose-env"
+           fi
+           # the tools container's Ollama, with no llm container running: the list, or nothing for `ollama rm`
+           if printf '%s\n' "$@" | grep -qx llm-pull && [[ $* == *"; ollama list" ]]; then
+             ollama_list
            fi ;;
   # With state/image-in-use, the way Docker refuses to remove an image a container of another project runs
   image) if [ "$2" = rm ] && [ -f "$FAKE/state/image-in-use" ] && [[ $* == *ollama/ollama* ]]; then exit 1; fi
@@ -227,6 +285,12 @@ cat > "$work/bin/pkill" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\0' "$@" > "$FAKE/calls/pkill.$(date +%s%N)"
 rm -f "$FAKE/state/linux-capture"
+STUB
+# xdg-open, for the runs as a Linux desktop that open the panel: it writes down what it was given. This PC has a real one,
+# which in WSL can open a browser on the desktop the user is looking at, and no run may reach it
+cat > "$work/bin/xdg-open" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$FAKE/calls/xdg.$(date +%s%N)"
 STUB
 # python3, on the PATH of the Linux setup checks alone: `-m venv` makes a .venv-capture whose python has pip or, with
 # state/no-ensurepip, fails halfway as Debian's python3 does without python3-venv, leaving a python and no pip.
@@ -291,14 +355,36 @@ done
 exit 1
 STUB
 chmod +x "$work/bin/"*
+# Another bash for the launcher and the stand-ins, when SIDENOTE_TEST_BASH names one (macOS ships bash 3.2): first on the
+# PATH of every run below, so `bash` there is that one
+if [ -n "${SIDENOTE_TEST_BASH:-}" ]; then ln -sf "$SIDENOTE_TEST_BASH" "$work/bin/bash"; fi
+# The local model server's models, as `ollama list` prints them (its header read from ollama/ollama 0.40.5, columns
+# padded with spaces and a space at each line's end; SIZE is two words)
+printf '%s\n' 'NAME                   ID              SIZE      MODIFIED     ' \
+  'gemma4:e4b             c6eb396dbd59    9.6 GB    2 days ago      ' \
+  'sidenote-gemma4:e4b    0d1b2c3a4e5f    9.6 GB    2 days ago      ' \
+  'gemma4:e2b             a2af6cc3eb7f    7.2 GB    5 days ago      ' \
+  'qwen3:8b               500a1f067a9f    5.2 GB    3 weeks ago     ' > "$work/ollama-list"
+# mv, for the restore that fails halfway: it fails to move the restore's last file into place, as a disk that fills up
+# would, and moves everything else as mv does. On the PATH of that one run alone.
+mkdir -p "$work/mvbin"
+cat > "$work/mvbin/mv" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in */.restore.*/.switches.json) echo "mv: cannot move '$a': No space left on device" >&2; exit 1 ;; esac
+done
+exec /bin/mv "$@"
+STUB
+chmod +x "$work/mvbin/mv"
 
-# One run of the launcher copy, everything outside it stood in for. HOME and the log folder are scratch, the
+# One run of the launcher copy, everything outside it stood in for. HOME, the log folder and the temporary folder
+# (TMPDIR: a capture program's guard file, mktemp) are scratch, the
 # PATH holds the stand-ins and the system's own tools only (no claude, no Windows folders), stdin is empty
 # (no terminal, so nothing waits for a key) and the output is kept for the checks. In Korean unless EXTRA_ENV says
 # otherwise (a later SIDENOTE_LANG= wins, and an empty one leaves the choice to the locale).
 run() {
   rm -rf "$work/calls"/* && mkdir -p "$work/calls"
-  env -i PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-Ubuntu}" \
+  env -i TMPDIR="$work" PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-Ubuntu}" \
       SIDENOTE_LOG_PATH="$work/logs" SIDENOTE_LANG=ko ${EXTRA_ENV:-} \
       timeout 60 bash "$work/repo/sidenote" "$@" > "$work/out" 2>&1 < /dev/null
   echo $? > "$work/rc"
@@ -309,7 +395,7 @@ state() { rm -f "$work/state"/*; for s in "$@"; do touch "$work/state/$s"; done;
 # only for the box itself, the no-window flag and its one-at-a-time lock. WSL_BIN names another wsl.exe.
 run_launch() {
   rm -rf "$work/calls"/* && mkdir -p "$work/calls"
-  env -i PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="$distro" \
+  env -i TMPDIR="$work" PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="$distro" \
       SIDENOTE_LOG_PATH="$work/logs" SIDENOTE_LANG=ko ${EXTRA_ENV:-} \
       timeout 60 python3 "$launch_pyw" --dry-run --wsl "${WSL_BIN:-$work/bin/wsl.exe}" --distro "$distro" \
       --repo "$work/repo" "$@" > "$work/out" 2>&1 < /dev/null
@@ -542,7 +628,9 @@ cases=("|help" "|bogus" "|up --bogus" "running|status" "ps-broken|status" "serve
        "notray|capture" "|capture --audio-device R&B" "|capture --once" "server-down docker-off|capture --up" "|shortcut"
        "no-pyw|shortcut" "|shortcut --remove" "|login" "|login codex" "|login anthropic-api" "|llm" "|open" "|install"
        "|qa" "|down" "|restart" "|logs" "|gpu off" "|stats" "|setup-capture" "|setup-windows" "no-py|setup-capture"
-       "|llm pull" "docker-denied|up" "no-toolkit|up" "|up --when-green" "|gpu status")
+       "|llm pull" "docker-denied|up" "no-toolkit|up" "|up --when-green" "|gpu status"
+       "|uninstall --data" "|uninstall --bogus" "|backup $work/never.tar.gz" "|backup --bogus" "|restore" "|llm rm"
+       "llm-running llm-models|llm rm nosuch:1b")   # (backup with a file named: one made with no name would land in this folder)
 korean=() silent=()
 for c in ${cases[@]+"${cases[@]}"}; do
   read -r -a mood <<<"${c%%|*}"; read -r -a cmd <<<"${c#*|}"
@@ -583,13 +671,16 @@ if ! hangul "$work/boxes" && grep -qx '\[dry-run\] title: Capture did not start'
   ok "launch.pyw speaks English with SIDENOTE_LANG=en"
 else bad "launch.pyw speaks English with SIDENOTE_LANG=en" "$(grep -F 'title:' "$work/boxes" | tr '\n' ' ') $(grep -m2 -P '[\x{AC00}-\x{D7A3}]' "$work/boxes" | tr '\n' ' ')"; fi
 
-# 29. ...hands SIDENOTE_LANG on to the launcher in WSL when it is set on Windows, so the box is in one language, and
-#     with nothing set follows the locale (on Windows, the display language).
+# 29. ...hands SIDENOTE_LANG on to the launcher in WSL when it is set on Windows, so the box is in one language; with
+#     nothing set it speaks English whatever the locale (the system's language is not read), and Korean with ko.
 state; EXTRA_ENV="SIDENOTE_LANG=en" run_launch; wait_started; crossed="$(cat "$work/state/wsl-wslenv" 2>/dev/null)"
-state server-down docker-off; EXTRA_ENV="SIDENOTE_LANG= LANG=ko_KR.UTF-8" run_launch
-if [[ ":$crossed:" == *:SIDENOTE_LANG:* ]] && grep -qx '\[dry-run\] title: 캡처를 시작하지 못함' "$work/out"; then
-  ok "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it"
-else bad "launch.pyw hands SIDENOTE_LANG on, and follows the locale without it" "WSLENV: ${crossed:-none}, $(grep -F 'title:' "$work/out")"; fi
+state server-down docker-off; EXTRA_ENV="SIDENOTE_LANG= LANG=ko_KR.UTF-8" run_launch; unset_title="$(grep -m1 -F 'title:' "$work/out")"
+state server-down docker-off; EXTRA_ENV="SIDENOTE_LANG=ko" run_launch; ko_title="$(grep -m1 -F 'title:' "$work/out")"
+if [[ ":$crossed:" == *:SIDENOTE_LANG:* ]] && [ "$unset_title" = "[dry-run] title: Capture did not start" ] \
+   && [ "$ko_title" = "[dry-run] title: 캡처를 시작하지 못함" ]; then
+  ok "launch.pyw hands SIDENOTE_LANG on, speaks English without it whatever the locale, and Korean with ko"
+else bad "launch.pyw hands SIDENOTE_LANG on, speaks English without it whatever the locale, and Korean with ko" \
+  "WSLENV: ${crossed:-none}, unset: ${unset_title:-none}, ko: ${ko_title:-none}"; fi
 
 # 30. With no COMPOSE_FILE set, the GPU picks compose.yaml's companion file (server/hardware.py: nvidia, amd, or cpu
 #     when there is neither); one that is set, in the environment or in .env, is left as it is.
@@ -933,6 +1024,18 @@ if ! grep -qF "X11" <<<"$mac_capture$mac_doctor" && grep -qF "The server is off"
 else bad "on a Mac capture needs no X11 display, doctor asks for none, and open uses macOS's open" \
          "mac capture: $(tail -1 <<<"$mac_capture"); linux: $(tail -1 <<<"$linux_capture"); X11 in doctor: $(grep -c X11 <<<"$mac_doctor"); open calls: $opened"; fi
 
+# On a Linux desktop too, capture --up with the capture running opens the panel and ends well, as on WSL; a plain capture is
+# told and fails (xdg-open is the stand-in: no browser opens anywhere)
+lnx="WSL_DISTRO_NAME= SIDENOTE_LANG=en DISPLAY=:0 PATH=$work/venvbin:$work/bin:/usr/bin:/bin"   # xdg-open: the stand-in in bin
+state linux-capture; EXTRA_ENV="$lnx" run capture --up; lup="$(cat "$work/out")"; lup_rc="$(cat "$work/rc")"
+last_call xdg "http://127.0.0.1:8777"; lopened=${#CALL[@]}
+state linux-capture; EXTRA_ENV="$lnx" run capture; lplain="$(cat "$work/out")"; lplain_rc="$(cat "$work/rc")"
+if [ "$lup_rc" = 0 ] && grep -qF "already running" <<<"$lup" && [ "$lopened" -gt 0 ] \
+   && [ "$lplain_rc" != 0 ] && grep -qF "already running" <<<"$lplain"; then
+  ok "on Linux, capture --up with the capture running opens the panel and ends well; a plain capture is told and fails"
+else bad "on Linux, capture --up with the capture running opens the panel and ends well; a plain capture is told and fails" \
+         "--up rc $lup_rc, opened $lopened: $(tail -1 <<<"$lup") | plain rc $lplain_rc: $(tail -1 <<<"$lplain")"; fi
+
 # 46. Claude Code on a Mac keeps its login in the Keychain, which the server in Docker cannot read, so there the login that
 #     counts is a token in .env. With the Mac's own Claude Code signed in and no token, doctor says the agent is not signed
 #     in (it used to say "the server uses this login"). login makes a token with `claude setup-token` and reads it pasted
@@ -957,7 +1060,7 @@ chmod +x "$work/macclaude/claude"
 run_tty() {
   local typed="$1" asked="$2"; shift 2
   rm -rf "$work/calls"/* && mkdir -p "$work/calls"
-  env -i PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-Ubuntu}" \
+  env -i TMPDIR="$work" PATH="$work/bin:/usr/bin:/bin" HOME="$work/home" FAKE="$work" WSL_DISTRO_NAME="${WSL_DISTRO_NAME:-Ubuntu}" \
       SIDENOTE_LOG_PATH="$work/logs" SIDENOTE_LANG=ko ${EXTRA_ENV:-} \
       python3 -c '
 import os, select, subprocess, sys, time
@@ -1058,16 +1161,32 @@ else bad "...a token the server rejected is made again, and the server is starte
 if grep -qF "signed in (claude.ai), and the server uses this login" <<<"$linux_claude"; then ok "...and on Linux the PC's own Claude Code login is the server's, as before"
 else bad "...and on Linux the PC's own Claude Code login is the server's, as before" "$(grep -F "Claude Code" <<<"$linux_claude")"; fi
 
+# The desktop shortcut clicked while its capture program runs opens the panel and ends well (it ended in a failure box
+# saying the capture was running); the terminal's capture, with no --up, is told and fails, as before.
+state running; EXTRA_ENV="SIDENOTE_LANG=en" run capture --up; again="$(cat "$work/out")"; again_rc="$(cat "$work/rc")"
+last_call_with cmd "127.0.0.1:"; opened="${CALL[*]-}"
+state running; EXTRA_ENV="SIDENOTE_LANG=en" run capture; term="$(cat "$work/out")"; term_rc="$(cat "$work/rc")"
+if [ "$again_rc" = 0 ] && grep -qF "The capture is already running" <<<"$again" && [[ $opened == *start* ]] \
+   && [ "$term_rc" != 0 ] && grep -qF "Quit it from the tray icon" <<<"$term"; then
+  ok "capture --up with the capture running opens the panel and ends well; the terminal's capture is told and fails"
+else bad "capture --up with the capture running opens the panel and ends well; the terminal's capture is told and fails" \
+         "--up rc $again_rc, open call: ${opened:-none}: $(tail -1 <<<"$again") | plain rc $term_rc: $(tail -1 <<<"$term")"; fi
+
 # --- Windows off WSL's PATH ([interop] appendWindowsPath=false), interop off, no Windows drive -----------------------
 # The stand-ins move from the PATH to a Windows drive the mount table names, as on a WSL whose wsl.conf leaves the Windows
 # folders off the PATH: the launcher finds cmd.exe and powershell.exe there by their full paths (it said "no Windows
 # Python" and capture did not start). With a real cmd.exe (a PE file) and no WSLInterop entry, and with no Windows drive
 # at all, it says why Windows is out of reach, ends with a failing status and asks nothing of it.
-mkdir -p "$work/nowin" "$work/drive/Windows/System32/WindowsPowerShell/v1.0" "$work/pe/Windows/System32" "$work/binfmt"
+mkdir -p "$work/nowin" "$work/drive/Windows/System32/WindowsPowerShell/v1.0" "$work/pe/Windows/System32" "$work/binfmt" "$work/wsl1"
+: > "$work/binfmt/register"   # binfmt_misc mounted, as on WSL 2; $work/wsl1 has none, as on WSL 1
 for f in "$work/bin/"*; do case "$(basename "$f")" in cmd.exe|powershell.exe) ;; *) ln -sf "$f" "$work/nowin/" ;; esac; done
 cp "$work/bin/cmd.exe" "$work/drive/Windows/System32/cmd.exe"
 cp "$work/bin/powershell.exe" "$work/drive/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 printf 'MZ\220\0' > "$work/pe/Windows/System32/cmd.exe"                         # a Windows program's first bytes
+# Never executable: on WSL an executable file that starts with MZ is handed to Windows, which cannot run these four bytes
+# and puts "Unsupported 16-Bit Application" on the user's screen. The launcher only reads its first bytes here
+chmod 0644 "$work/pe/Windows/System32/cmd.exe"
+[ ! -x "$work/pe/Windows/System32/cmd.exe" ] || { echo "the stand-in Windows program is executable: stopped before anything runs it"; exit 2; }
 printf 'C:\\134 %s 9p rw,aname=drvfs 0 0\n' "$work/drive" > "$work/mounts"     # as /proc/mounts lists a WSL drive
 printf 'C:\\134 %s 9p rw,aname=drvfs 0 0\n' "$work/pe" > "$work/mounts-pe"
 nowin="PATH=$work/nowin:/usr/bin:/bin SIDENOTE_BINFMT=$work/binfmt"
@@ -1082,14 +1201,45 @@ else bad "Windows off WSL's PATH: cmd.exe and powershell.exe are found on the Wi
          "$(grep -F "Python" <<<"$nowin_doctor" | head -2 | tr '\n' '|') list call: ${nowin_list:-none}, capture rc $nowin_start"; fi
 state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture; off="$(cat "$work/out")"; off_rc="$(cat "$work/rc")"
 off_calls="$(calls_of cmd | wc -l)"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run shortcut --remove; off_short="$(cat "$work/out")"; off_short_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture-stop; off_stop="$(cat "$work/out")"; off_stop_rc="$(cat "$work/rc")"
+state running; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture-stop; off_stopped="$(cat "$work/out")"; off_stopped_rc="$(cat "$work/rc")"
+state running unkillable; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture-stop; off_left="$(cat "$work/out")"; off_left_rc="$(cat "$work/rc")"
+state server-down; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture-stop; off_down="$(cat "$work/out")"; off_down_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="PATH=$work/nowin:/usr/bin:/bin SIDENOTE_BINFMT=$work/wsl1 SIDENOTE_KERNEL=4.4.0-19041-Microsoft SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run doctor; wsl1="$(cat "$work/out")"
+state; EXTRA_ENV="PATH=$work/nowin:/usr/bin:/bin SIDENOTE_BINFMT=$work/wsl1 SIDENOTE_KERNEL=5.15.167.4-microsoft-standard-WSL2 SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run doctor; unmounted="$(cat "$work/out")"
 echo enabled > "$work/binfmt/WSLInterop"
 state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run doctor; on_doctor="$(cat "$work/out")"
 rm -f "$work/binfmt/WSLInterop"
-if grep -qF "[interop] enabled=false in /etc/wsl.conf" <<<"$off" && grep -qF -- '--server ws://127.0.0.1:' <<<"$off" \
-   && [ "$off_rc" != 0 ] && [ "$off_calls" = 0 ] && ! grep -qF "[interop]" <<<"$on_doctor"; then
-  ok "...interop off: said with what to change and how to start the capture in Windows, nothing run, and not said when on"
-else bad "...interop off: said with what to change and how to start the capture in Windows, nothing run, and not said when on" \
+if grep -qF "interop is off" <<<"$off" && grep -qF -- "launch.pyw\" --setup --distro $distro --repo \"" <<<"$off" \
+   && [ "$off_rc" != 0 ] && [ "$off_calls" = 0 ] && ! grep -qF "interop" <<<"$on_doctor"; then
+  ok "...interop off: said with the one command that sets the capture up from Windows, nothing run, and not said when on"
+else bad "...interop off: said with the one command that sets the capture up from Windows, nothing run, and not said when on" \
          "rc $off_rc, cmd calls $off_calls: $(tail -1 <<<"$off")"; fi
+if grep -qF "interop is off" <<<"$off_short" && [ "$off_short_rc" != 0 ]; then
+  ok "...and shortcut --remove says it too (it ended silently)"
+else bad "...and shortcut --remove says it too (it ended silently)" "shortcut rc $off_short_rc: $(tail -1 <<<"$off_short")"; fi
+# capture-stop reads the server's count, which interop does not touch: a program started from Windows is asked to end and
+# is gone (it said "failed" and pointed at the setting), one that stays is said with where to end it, and with the server
+# off, that nothing can be known from here
+if grep -qF "No capture program is connected" <<<"$off_stop" && [ "$off_stop_rc" = 0 ] \
+   && grep -qF "Capture stopped" <<<"$off_stopped" && [ "$off_stopped_rc" = 0 ] \
+   && grep -qF "still connected" <<<"$off_left" && grep -qF "Task Manager" <<<"$off_left" && [ "$off_left_rc" != 0 ] \
+   && grep -qF "not known" <<<"$off_down" && [ "$off_down_rc" != 0 ] && ! grep -qF "by force" <<<"$off_down"; then
+  ok "...and capture-stop asks through the server and reads its count: stopped, none, one left, or not known"
+else bad "...and capture-stop asks through the server and reads its count: stopped, none, one left, or not known" \
+         "none rc $off_stop_rc: $(tail -1 <<<"$off_stop") | one rc $off_stopped_rc: $(tail -1 <<<"$off_stopped") | left rc $off_left_rc: $(tail -1 <<<"$off_left") | down rc $off_down_rc: $(tail -1 <<<"$off_down")"; fi
+if ! grep -qF "interop is off" <<<"$wsl1" && grep -qF "interop is off" <<<"$unmounted"; then
+  ok "...WSL 1 (its kernel) is not judged, and WSL 2 with no binfmt_misc mounted is judged off"
+else bad "...WSL 1 (its kernel) is not judged, and WSL 2 with no binfmt_misc mounted is judged off" \
+         "WSL 1: $(grep -F interop <<<"$wsl1" | head -1) | WSL 2 unmounted: $(grep -cF "interop is off" <<<"$unmounted")"; fi
+state no-py; EXTRA_ENV="SIDENOTE_LANG=en" run capture --list-monitors; nopy_list="$(cat "$work/out")"; nopy_rc="$(cat "$work/rc")"
+if grep -qF "No Python (py) on Windows" <<<"$nopy_list" && [ "$nopy_rc" != 0 ] && ! grep -qF "is not recognized" <<<"$nopy_list"; then
+  ok "capture --list-monitors without Windows Python says so and fails (cmd.exe's own line, with status 0, was all)"
+else bad "capture --list-monitors without Windows Python says so and fails (cmd.exe's own line, with status 0, was all)" "rc $nopy_rc: $nopy_list"; fi
+state ps-broken; EXTRA_ENV="SIDENOTE_LANG=en" run shortcut; broken_short="$(cat "$work/out")"
+if grep -qF "Could not find the Windows desktop folder" <<<"$broken_short"; then ok "shortcut with PowerShell failing says it found no desktop folder (it ended with no word)"
+else bad "shortcut with PowerShell failing says it found no desktop folder (it ended with no word)" "$broken_short"; fi
 state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=/dev/null SIDENOTE_LANG=en" run setup-capture; gone="$(cat "$work/out")"; gone_rc="$(cat "$work/rc")"
 state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=/dev/null SIDENOTE_LANG=en" run doctor; gone_doctor="$(cat "$work/out")"
 if grep -qF "Windows cannot be found from WSL" <<<"$gone" && [ "$gone_rc" != 0 ] && grep -qF "Windows cannot be found from WSL" <<<"$gone_doctor" \
@@ -1097,6 +1247,505 @@ if grep -qF "Windows cannot be found from WSL" <<<"$gone" && [ "$gone_rc" != 0 ]
   ok "...no Windows drive: setup-capture and doctor say Windows cannot be found, not that Python is missing"
 else bad "...no Windows drive: setup-capture and doctor say Windows cannot be found, not that Python is missing" \
          "rc $gone_rc: $(tail -1 <<<"$gone") | $(grep -F "Windows" <<<"$gone_doctor" | head -1)"; fi
+
+# down reads compose's container list from its stdout alone: the warning compose writes to stderr was taken for a
+# container, and "stopped" was said with nothing running; a compose that fails says its error, its last line
+state compose-warn; EXTRA_ENV="SIDENOTE_LANG=en" run down; warned="$(cat "$work/out")"
+warned_down="$(for f in $(calls_of docker); do tr '\0' ' ' < "$f"; echo; done | grep -c ' down' || true)"
+state compose-warn compose-broken; EXTRA_ENV="SIDENOTE_LANG=en" run down; broken="$(cat "$work/out")"; broken_rc="$(cat "$work/rc")"
+if grep -qF "Already stopped" <<<"$warned" && [ "$warned_down" = 0 ] \
+   && grep -qF "docker compose failed: no configuration file provided" <<<"$broken" && [ "$broken_rc" != 0 ]; then
+  ok "down: a warning compose prints is no container, and a failing compose says its error, not the warning"
+else bad "down: a warning compose prints is no container, and a failing compose says its error, not the warning" \
+         "warned: $(tail -1 <<<"$warned") (down calls $warned_down) | broken rc $broken_rc: $(tail -1 <<<"$broken")"; fi
+
+# With interop off the desktop shortcut still starts the capture: WSL brings the server up and hands the start back, and
+# client/launch.pyw starts the program with its own Windows Python (starting a Windows program from Windows asks nothing of
+# WSL's interop). A capture program connected already: the panel to open. Nothing is asked of Windows from WSL.
+offwin="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en"
+state; EXTRA_ENV="$offwin" run capture --up --from-windows --monitor 2; handed="$(cat "$work/out")"; handed_rc="$(cat "$work/rc")"
+handed_calls="$(calls_of cmd | wc -l)$(calls_of ps | wc -l)"
+start_line="$(grep -a $'^SIDENOTE-START\t' <<<"$handed" | tail -1)"
+state running; EXTRA_ENV="$offwin" run capture --up --from-windows; open_line="$(grep -a $'^SIDENOTE-OPEN\t' "$work/out" | tail -1)"
+if [ "$handed_rc" = 0 ] && [[ $start_line == *$'\t--server\tws://127.0.0.1:8777/ingest\t--log\t'*$'\t--monitor\t2' ]] \
+   && [ "$handed_calls" = 00 ] && [ "$open_line" = $'SIDENOTE-OPEN\thttp://127.0.0.1:8777' ]; then
+  ok "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)"
+else bad "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)" \
+         "rc $handed_rc, Windows calls $handed_calls, start: ${start_line:-none} | open: ${open_line:-none} | $(tail -1 <<<"$handed")"; fi
+mkdir -p "$work/pymods"   # stand-ins for the capture packages, which launch.pyw looks up (never imports) in its own Python
+for m in mss soundcard numpy PIL websocket; do mkdir -p "$work/pymods/$m"; : > "$work/pymods/$m/__init__.py"; done
+state; EXTRA_ENV="$offwin PYTHONPATH=$work/pymods" run_launch; chain="$(cat "$work/out")"; chain_rc="$(cat "$work/rc")"
+if [ "$chain_rc" = 0 ] && grep -qF -- "-X utf8 " <<<"$chain" && grep -qF "capture.py --server ws://127.0.0.1:8777/ingest --log" <<<"$chain" \
+   && grep -q '^\[dry-run\] start: ' <<<"$chain" && grep -qF "[dry-run] box: none" <<<"$chain"; then
+  ok "...and launch.pyw starts it with its own Python, windowless, and shows no box"
+else bad "...and launch.pyw starts it with its own Python, windowless, and shows no box" "rc $chain_rc: $(grep -a '\[dry-run\]' <<<"$chain" | tr '\n' '|')"; fi
+state; EXTRA_ENV="$offwin PYTHONPATH=$work/nopymods" run_launch; nopkg="$(box_text)"; nopkg_rc="$(cat "$work/rc")"
+if [ "$nopkg_rc" != 0 ] && grep -qF "mss" <<<"$nopkg" && grep -qF -- "--setup --distro $distro --repo \"$work/repo\" --port 8777" <<<"$nopkg" \
+   && ! grep -q '^\[dry-run\] start: ' "$work/out"; then
+  ok "...without the capture packages in that Python it starts nothing and its box gives the setup command"
+else bad "...without the capture packages in that Python it starts nothing and its box gives the setup command" "rc $nopkg_rc: $(tr '\n' '|' <<<"$nopkg")"; fi
+state; EXTRA_ENV="$offwin" run_launch --setup; setup_out="$(cat "$work/out")"; setup_rc="$(cat "$work/rc")"
+if [ "$setup_rc" = 0 ] && grep -qF -- "-m pip install --user -r $(dirname "$launch_pyw")/requirements.txt" <<<"$setup_out" \
+   && grep -qF -- "\"$launch_pyw\" --distro $distro --repo \"$work/repo\" --port 8777" <<<"$setup_out" \
+   && ! ls "$work/calls"/wsl.* >/dev/null 2>&1; then
+  ok "launch.pyw --setup (from Windows): the packages into its own Python and the shortcut the launcher makes, WSL not asked"
+else bad "launch.pyw --setup (from Windows): the packages into its own Python and the shortcut the launcher makes, WSL not asked" \
+         "rc $setup_rc: $(tr '\n' '|' <<<"$setup_out")"; fi
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run capture --up; term_off="$(cat "$work/out")"
+if grep -qF "interop is off" <<<"$term_off" && ! grep -q $'^SIDENOTE-START\t' <<<"$term_off"; then
+  ok "...from a terminal (no --from-windows) it is said, with nothing handed on"
+else bad "...from a terminal (no --from-windows) it is said, with nothing handed on" "$(tail -2 <<<"$term_off" | tr '\n' '|')"; fi
+
+# --- the history and settings: uninstall --data, backup, restore, llm rm ---------------------------------------------
+logs="$work/logs"
+here="$work/here"                     # the folder a backup is typed in: a file made with no name lands here
+mkdir -p "$here"
+# The log folder's files and folders, each with its content's hash: what "nothing changed" is checked against
+logsum() { (cd "$logs" 2>/dev/null && find . -type d | LC_ALL=C sort && find . -type f -exec sha256sum {} + | LC_ALL=C sort); }
+# A history as the server keeps it (an SQLite file) with one answer in it, and the answer read back from one
+mkdb() { python3 -c 'import sqlite3, sys
+c = sqlite3.connect(sys.argv[1]); c.execute("create table answers (id integer, text text)")
+c.execute("insert into answers values (1, ?)", (sys.argv[2],)); c.commit(); c.close()' "$1" "$2"; }
+answer_in() { python3 -c 'import sqlite3, sys; print(sqlite3.connect(sys.argv[1]).execute("select text from answers").fetchone()[0])' "$1" 2>&1; }
+# The log folder as a server leaves it: the history with the two files SQLite keeps beside it, the settings, the
+# switches, what the server measured, its logs and their rotated copies, the frames it keeps, and the folders a restore
+# and an ended backup leave
+fill_logs() {
+  rm -rf "$logs" && mkdir -p "$logs/before-restore-20260101-000000" "$logs/.backup.AbC123"
+  mkdb "$logs/history.sqlite" "the answer there now"
+  local f
+  for f in history.sqlite-wal history.sqlite-shm .settings.json .switches.json .pace.json .spend.json .speed.json \
+           .account.json .restart.npz stall.txt server.log server.log.1 events.jsonl events.jsonl.3 capture.log capture.log.2 \
+           none_7.png none_7_frame.png .ended .settings.tmp; do
+    printf 'there now: %s\n' "$f" > "$logs/$f"
+  done
+  printf 'older\n' > "$logs/before-restore-20260101-000000/history.sqlite"
+  printf 'half\n' > "$logs/.backup.AbC123/history.sqlite"
+}
+
+# 51. uninstall says in two blocks what goes and what stays: the history and settings stay, with their folder's size,
+#     and how to keep a copy or remove them too; --data moves them to what goes. An unknown option removes nothing, and
+#     without --yes, --data changes the list alone.
+fill_logs; before_sum="$(logsum)"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall; u_plain="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --data; u_data="$(cat "$work/out")"; u_data_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="SIDENOTE_LANG=ko" run uninstall; u_ko="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --bogus; u_bogus="$(cat "$work/out")"; u_bogus_rc="$(cat "$work/rc")"; last_call docker down
+u_bogus_down=${#CALL[@]}
+kept_block() { sed -n '/^  Kept:/,$p' <<<"$1"; }                  # what the list says stays
+gone_block() { sed -n '/Removed with --yes:/,/^  Kept:/p' <<<"$1"; }  # and what goes
+if grep -qF "History, settings and logs: $logs (" <<<"$(kept_block "$u_plain")" \
+   && ! grep -qF "History, settings" <<<"$(gone_block "$u_plain")" && grep -qF "./sidenote backup" <<<"$u_plain" \
+   && grep -qF -- "--data" <<<"$u_plain" && grep -qF "Images:" <<<"$(gone_block "$u_plain")" \
+   && grep -qF "~/.claude" <<<"$(kept_block "$u_plain")"; then
+  ok "uninstall lists what goes and what stays: the history, settings and logs stay, with their size, a copy and --data named"
+else bad "uninstall lists what goes and what stays: the history, settings and logs stay, with their size, a copy and --data named" \
+         "$(tr '\n' '|' <<<"$u_plain" | head -c 900)"; fi
+if grep -qF "History, settings and logs: $logs (" <<<"$(gone_block "$u_data")" \
+   && ! grep -qF "History, settings" <<<"$(kept_block "$u_data")" && grep -qF "./sidenote uninstall --yes --data" <<<"$u_data" \
+   && [ "$u_data_rc" = 0 ] && [ "$(logsum)" = "$before_sum" ] \
+   && grep -qF "남기는 것:" <<<"$u_ko" && grep -qF "기록, 설정, 로그: $logs (" <<<"$u_ko"; then
+  ok "...--data moves them to what goes, and without --yes changes nothing; the same list in Korean"
+else bad "...--data moves them to what goes, and without --yes changes nothing; the same list in Korean" \
+         "rc $u_data_rc, changed: $([ "$(logsum)" = "$before_sum" ] && echo no || echo yes) | $(tr '\n' '|' <<<"$u_data" | head -c 600)"; fi
+if [ "$u_bogus_rc" != 0 ] && grep -qF "Unknown option: --bogus" <<<"$u_bogus" && [ "$u_bogus_down" = 0 ]; then
+  ok "...and an option it does not know is said, with nothing removed"
+else bad "...and an option it does not know is said, with nothing removed" "rc $u_bogus_rc, down calls $u_bogus_down: $(tail -1 <<<"$u_bogus")"; fi
+
+# 52. uninstall --yes --data removes what Sidenote wrote in the log folder, by name, and the folders a backup and a
+#     restore leave there; a file of the user's stays, and the folder with it. With nothing else in it the folder goes
+#     too, and a server still running keeps all of it.
+fill_logs; printf 'mine\n' > "$logs/notes.txt"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --data --yes; d_out="$(cat "$work/out")"; d_rc="$(cat "$work/rc")"
+d_left="$(cd "$logs" 2>/dev/null && find . | LC_ALL=C sort | tr '\n' ' ')"
+fill_logs
+state; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --yes --data; d2_out="$(cat "$work/out")"
+d2_gone=yes; if [ -e "$logs" ]; then d2_gone=no; fi
+fill_logs; d3_before="$(logsum)"
+state server-running; EXTRA_ENV="SIDENOTE_LANG=en" run uninstall --yes --data; d3_out="$(cat "$work/out")"; d3_after="$(logsum)"
+if [ "$d_rc" = 0 ] && [ "$d_left" = ". ./notes.txt " ] && grep -qF "The folder stays, with what is still in it: notes.txt" <<<"$d_out" \
+   && [ "$d2_gone" = yes ] && grep -qF "Removed the history, settings and logs, and their folder: $logs" <<<"$d2_out" \
+   && [ "$d3_after" = "$d3_before" ] && grep -qF "The server is still running" <<<"$d3_out"; then
+  ok "uninstall --yes --data removes Sidenote's files by name and the folder when empty; a user's file stays, a running server keeps all"
+else bad "uninstall --yes --data removes Sidenote's files by name and the folder when empty; a user's file stays, a running server keeps all" \
+         "rc $d_rc, left: $d_left | empty run: $(tail -1 <<<"$d2_out") | running: $(tail -1 <<<"$d3_out")"; fi
+
+# 53. Where WSL cannot start Windows programs, uninstall --yes prints the command that removes the shortcut and its icon
+#     from Windows (launch.pyw --remove), on a line of its own, and asks nothing of Windows. launch.pyw --remove --dry-run
+#     says what it would remove (the shortcut under each name it has had, the icon, the folder if empty) and removes nothing.
+state; EXTRA_ENV="$offwin" run uninstall --yes; off_un="$(cat "$work/out")"; off_un_calls="$(calls_of cmd | wc -l | tr -d ' ')$(calls_of ps | wc -l | tr -d ' ')"
+off_remove="py -3 \"$(wslpath -w "$work/repo/client/launch.pyw" 2>/dev/null)\" --remove"
+mkdir -p "$work/local/Sidenote" && : > "$work/local/Sidenote/sidenote.ico"
+state; EXTRA_ENV="LOCALAPPDATA=$work/local SIDENOTE_LANG=en" run_launch --remove; rm_dry="$(cat "$work/out")"; rm_dry_rc="$(cat "$work/rc")"
+if grep -qxF "      $off_remove" <<<"$off_un" && grep -qF "In a Windows terminal this removes them:" <<<"$off_un" && [ "$off_un_calls" = 00 ]; then
+  ok "interop off, uninstall prints the command that removes the shortcut from Windows, and asks nothing of Windows"
+else bad "interop off, uninstall prints the command that removes the shortcut from Windows, and asks nothing of Windows" \
+         "Windows calls $off_un_calls, want '$off_remove': $(grep -F "launch.pyw" <<<"$off_un" | head -2 | tr '\n' '|')"; fi
+if [ "$rm_dry_rc" = 0 ] && grep -qxF "[dry-run] remove shortcut: Sidenote Capture.lnk" <<<"$rm_dry" \
+   && grep -qxF "[dry-run] remove icon: $work/local/Sidenote/sidenote.ico" <<<"$rm_dry" \
+   && grep -qF "pip uninstall -y -r" <<<"$rm_dry" && [ -f "$work/local/Sidenote/sidenote.ico" ] && [ -z "$(calls_of ps)" ]; then
+  ok "launch.pyw --remove --dry-run says what it would remove and the pip line, and removes nothing"
+else bad "launch.pyw --remove --dry-run says what it would remove and the pip line, and removes nothing" "rc $rm_dry_rc: $(tr '\n' '|' <<<"$rm_dry")"; fi
+
+# 54. backup: with nothing to back up it ends 1; with the server off it takes the files, the history one file with its -wal
+#     merged in, with the server running the server's own SQLite copy; the members by plain name, the archive this
+#     user's alone, a file already there never written over, and with no name one in the folder it was typed in.
+rm -rf "$logs" && mkdir -p "$logs"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/none.tar.gz"; b_none_rc="$(cat "$work/rc")"; b_none="$(cat "$work/out")"
+# the history as SQLite leaves one a server was writing: its latest answer still in the -wal beside it
+python3 -c 'import os, sqlite3, sys
+c = sqlite3.connect(sys.argv[1]); c.execute("pragma journal_mode=wal"); c.execute("pragma wal_autocheckpoint=0")
+c.execute("create table answers (id integer, text text)"); c.execute("insert into answers values (1, ?)", (sys.argv[2],)); c.commit()
+os._exit(0)' "$logs/history.sqlite" "the answer kept"
+rm -f "$logs/history.sqlite-shm"
+printf '{"lang": "en"}\n' > "$logs/.settings.json"
+printf '{"screen": true}\n' > "$logs/.switches.json"
+printf 'a log line\n' > "$logs/server.log"
+state; (cd "$here" && EXTRA_ENV="SIDENOTE_LANG=en" run backup); b_off_rc="$(cat "$work/rc")"; b_off="$(cat "$work/out")"
+b_off_file="$(ls "$here"/sidenote-backup-*.tar.gz 2>/dev/null | head -1)"
+b_off_members="$(tar -tzf "$b_off_file" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+b_off_mode="$(stat -c %a "$b_off_file" 2>/dev/null)"
+b_off_txt="$(tar -xzOf "$b_off_file" sidenote-backup.txt 2>/dev/null)"
+rm -rf "$work/off" && mkdir -p "$work/off" && tar -xzf "$b_off_file" -C "$work/off" 2>/dev/null
+b_off_wal="$(answer_in "$work/off/history.sqlite")"
+last_call_with docker "python"; b_off_exec=${#CALL[@]}
+if [ "$b_none_rc" = 1 ] && grep -qF "Nothing to back up yet" <<<"$b_none" && [ ! -e "$here/none.tar.gz" ]; then
+  ok "backup with no history and no settings says so, ends 1 and makes no file"
+else bad "backup with no history and no settings says so, ends 1 and makes no file" "rc $b_none_rc: $(tail -1 <<<"$b_none")"; fi
+if [ "$b_off_rc" = 0 ] && [ "$b_off_members" = ".settings.json .switches.json history.sqlite sidenote-backup.txt " ] \
+   && [ "$b_off_mode" = 600 ] && [[ $b_off_txt =~ ^sidenote\ [^\ ]+\ [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+   && [ "$b_off_wal" = "the answer kept" ] && [ -f "$logs/history.sqlite-wal" ] && [ "$b_off_exec" = 0 ] && [ -z "$(ls -A "$logs" | grep -F .backup)" ] \
+   && grep -qF "Backed up: $b_off_file" <<<"$b_off"; then
+  ok "...server off: the history one file with its -wal merged in (the log folder's left as it is), plain names, mode 600, named for the time in the folder typed in"
+else bad "...server off: the history one file with its -wal merged in (the log folder's left as it is), plain names, mode 600, named for the time in the folder typed in" \
+         "rc $b_off_rc, file ${b_off_file:-none} mode $b_off_mode, members: $b_off_members, txt: $b_off_txt, exec calls $b_off_exec, $(tail -2 <<<"$b_off" | tr '\n' '|')"; fi
+# a server that runs has its history open, with its own -wal: the server's copy (the stand-in copies the file) is one file
+rm -f "$logs/history.sqlite" "$logs/history.sqlite-wal" && mkdb "$logs/history.sqlite" "the answer kept"
+state server-running; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/running.tar.gz"; b_run_rc="$(cat "$work/rc")"; b_run="$(cat "$work/out")"
+last_call_with docker "python"; b_run_exec="${CALL[*]:0:4}"
+mkdir -p "$work/unpacked" && rm -f "$work/unpacked/"* && tar -xzf "$here/running.tar.gz" -C "$work/unpacked" 2>/dev/null
+b_run_members="$(tar -tzf "$here/running.tar.gz" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')"
+if [ "$b_run_rc" = 0 ] && [ "$b_run_exec" = "exec sidenote python -c" ] && [ "$(answer_in "$work/unpacked/history.sqlite")" = "the answer kept" ] \
+   && [ "$b_run_members" = ".settings.json .switches.json history.sqlite sidenote-backup.txt " ] && [ ! -e "$logs/.backup.sqlite" ] \
+   && [ -z "$(ls -A "$logs" | grep -F .backup)" ]; then
+  ok "...server running: the history is the server's own SQLite copy, and nothing of the copy is left in the log folder"
+else bad "...server running: the history is the server's own SQLite copy, and nothing of the copy is left in the log folder" \
+         "rc $b_run_rc, exec: $b_run_exec, answer: $(answer_in "$work/unpacked/history.sqlite"), members: $b_run_members, $(tail -1 <<<"$b_run")"; fi
+printf 'keep me\n' > "$here/taken.tar.gz"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/taken.tar.gz"; b_taken_rc="$(cat "$work/rc")"
+if [ "$b_taken_rc" = 1 ] && [ "$(cat "$here/taken.tar.gz")" = "keep me" ] && said "is there already"; then
+  ok "...and a file already there is not written over"
+else bad "...and a file already there is not written over" "rc $b_taken_rc: $(tail -1 "$work/out")"; fi
+# ...a history with an answer in Recently deleted: it is left out of the backup's copy, which says so, and the history in
+# the log folder keeps it
+python3 -c 'import sqlite3, sys
+c = sqlite3.connect(sys.argv[1]); c.execute("create table answers (id integer, text text, deleted real)")
+c.execute("insert into answers values (1, ?, null)", ("the answer kept",)); c.execute("insert into answers values (2, ?, 1.0)", ("a deleted one",))
+c.commit(); c.close()' "$logs/history.sqlite.new" && mv "$logs/history.sqlite.new" "$logs/history.sqlite"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/left.tar.gz"; b_left_rc="$(cat "$work/rc")"; b_left="$(cat "$work/out")"
+rm -rf "$work/left" && mkdir -p "$work/left" && tar -xzf "$here/left.tar.gz" -C "$work/left" 2>/dev/null
+rows_of() { python3 -c 'import sqlite3, sys; print("|".join(r[0] for r in sqlite3.connect(sys.argv[1]).execute("select text from answers order by id")))' "$1" 2>&1; }
+if [ "$b_left_rc" = 0 ] && [ "$(rows_of "$work/left/history.sqlite")" = "the answer kept" ] && grep -qF "Recently deleted is left out of it: 1" <<<"$b_left" \
+   && [ "$(rows_of "$logs/history.sqlite")" = "the answer kept|a deleted one" ] && ! tar -tzf "$here/left.tar.gz" | grep -qx history.sqlite-wal; then
+  ok "...an answer in Recently deleted is left out of the backup's copy, which says so, and stays in the history itself"
+else bad "...an answer in Recently deleted is left out of the backup's copy, which says so, and stays in the history itself" \
+         "rc $b_left_rc, copy: $(rows_of "$work/left/history.sqlite"), log folder: $(rows_of "$logs/history.sqlite"), $(tail -2 <<<"$b_left" | tr '\n' '|')"; fi
+# ...a link among the files (one the server's container could leave there) is refused, and no archive made
+printf 'not for the backup\n' > "$work/someone-elses"
+mv "$logs/.settings.json" "$logs/.settings.json.real" && ln -s "$work/someone-elses" "$logs/.settings.json"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/linked.tar.gz"; b_link_rc="$(cat "$work/rc")"
+rm -f "$logs/.settings.json" && mv "$logs/.settings.json.real" "$logs/.settings.json"
+if [ "$b_link_rc" = 1 ] && said "is a link, not a file of Sidenote's" && [ ! -e "$here/linked.tar.gz" ]; then
+  ok "...and a link among its files is refused, with no archive made"
+else bad "...and a link among its files is refused, with no archive made" "rc $b_link_rc: $(tail -1 "$work/out")"; fi
+
+# 55. restore: what is no backup is refused with nothing changed (not gzip, ../x, /etc/x, a link, a name a backup does
+#     not have, no sidenote-backup.txt); with no terminal it asks for --yes, and n keeps everything; y and --yes put the
+#     backup in place: what was there in one before-restore folder, no -wal or -shm of the old history beside the new
+#     one, .restart.npz gone, the files this user's alone; a running server stopped and started again, one that is off
+#     left off; and a failure halfway puts everything back as it was.
+good="$here/running.tar.gz"
+python3 - "$work/bad" "$work" <<'BAD'
+import io, os, sys, tarfile
+out, work = sys.argv[1], sys.argv[2]
+os.makedirs(out, exist_ok=True)
+def make(name, members):
+    with tarfile.open(os.path.join(out, name), "w:gz") as tar:
+        for member, kind in members:
+            info = tarfile.TarInfo(member)
+            if kind == "link":
+                info.type, info.linkname = tarfile.SYMTYPE, os.path.join(work, "elsewhere")
+                tar.addfile(info)
+            else:
+                data = b"sidenote 0.6.0 2026-11-10T00:00:00Z\n"
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+make("dotdot.tar.gz", [("sidenote-backup.txt", "file"), ("../x", "file")])
+make("absolute.tar.gz", [("sidenote-backup.txt", "file"), ("/etc/x", "file")])
+make("link.tar.gz", [("sidenote-backup.txt", "file"), ("history.sqlite", "link")])
+make("other.tar.gz", [("sidenote-backup.txt", "file"), (".settings.json", "file"), ("notes.txt", "file")])
+make("no-txt.tar.gz", [("history.sqlite", "file")])
+open(os.path.join(out, "not-gzip.tar.gz"), "w").write("not an archive\n")
+BAD
+# the log folder as a restore finds it: a history of its own with both SQLite files beside it, settings, switches, the
+# problems the server remembered, a log, and the folder an earlier restore left
+now_logs() {
+  rm -rf "$logs" && mkdir -p "$logs/before-restore-20260101-000000"
+  mkdb "$logs/history.sqlite" "the answer there now"
+  printf 'old wal\n' > "$logs/history.sqlite-wal"; printf 'old shm\n' > "$logs/history.sqlite-shm"
+  printf '{"now": 1}\n' > "$logs/.settings.json"; printf '{"screen": false}\n' > "$logs/.switches.json"
+  printf 'remembered\n' > "$logs/.restart.npz"; printf 'a log line\n' > "$logs/server.log"
+  printf 'older\n' > "$logs/before-restore-20260101-000000/history.sqlite"
+}
+now_logs; r_sum="$(logsum)"; refused=""
+for f in not-gzip dotdot absolute link other no-txt; do
+  state; EXTRA_ENV="SIDENOTE_LANG=en" run restore --yes "$work/bad/$f.tar.gz"
+  if [ "$(cat "$work/rc")" = 0 ] || ! said "Not a Sidenote backup" || [ "$(logsum)" != "$r_sum" ]; then refused="$refused $f:$(tail -1 "$work/out")"; fi
+done
+if [ -z "$refused" ] && [ ! -e "$work/x" ] && [ ! -e "$work/elsewhere" ]; then
+  ok "restore refuses what is no backup (not gzip, ../x, /etc/x, a link, another name, no sidenote-backup.txt), with nothing changed"
+else bad "restore refuses what is no backup (not gzip, ../x, /etc/x, a link, another name, no sidenote-backup.txt), with nothing changed" "accepted or changed:$refused"; fi
+state; EXTRA_ENV="SIDENOTE_LANG=en" run restore "$good"; r_notty_rc="$(cat "$work/rc")"; r_notty="$(cat "$work/out")"; r_notty_sum="$(logsum)"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run_tty $'n\n' "Restore it?" restore "$good"; r_no_rc="$(cat "$work/rc")"; r_no="$(cat "$work/out")"
+if [ "$r_notty_rc" = 1 ] && grep -qF "./sidenote restore $good --yes" <<<"$r_notty" && [ "$r_notty_sum" = "$r_sum" ] \
+   && [ "$r_no_rc" = 1 ] && grep -qF "Nothing changed." <<<"$r_no" && [ "$(logsum)" = "$r_sum" ]; then
+  ok "...with no terminal it names the line with --yes, and n at the question keeps everything"
+else bad "...with no terminal it names the line with --yes, and n at the question keeps everything" "no terminal rc $r_notty_rc: $(tail -1 <<<"$r_notty") | n rc $r_no_rc: $(tail -1 <<<"$r_no")"; fi
+state; EXTRA_ENV="SIDENOTE_LANG=en" run_tty $'y\n' "Restore it?" restore "$good"; r_yes_rc="$(cat "$work/rc")"; r_yes="$(cat "$work/out")"
+r_folders="$(cd "$logs" && ls -d before-restore-* 2>/dev/null | tr '\n' ' ')"
+r_new="$(cd "$logs" && ls -d before-restore-* 2>/dev/null | tail -1)"   # this restore's: the last by name
+r_kept="$(cd "$logs/$r_new" 2>/dev/null && ls -A | LC_ALL=C sort | tr '\n' ' ')"
+r_old_answer="$(answer_in "$logs/$r_new/history.sqlite")"
+last_call_with docker stop; r_yes_stop=${#CALL[@]}
+if [ "$r_yes_rc" = 0 ] && [ "$(answer_in "$logs/history.sqlite")" = "the answer kept" ] && [ "$(cat "$logs/.settings.json")" = '{"lang": "en"}' ] \
+   && [ ! -e "$logs/history.sqlite-wal" ] && [ ! -e "$logs/history.sqlite-shm" ] && [ ! -e "$logs/.restart.npz" ] \
+   && [ -f "$logs/server.log" ] && [ "$(stat -c %a "$logs/history.sqlite")" = 600 ] && [ "$(stat -c %a "$logs/.settings.json")" = 600 ] \
+   && [[ $r_folders =~ ^before-restore-20260101-000000\ before-restore-[0-9]{8}-[0-9]{6}\ $ ]] \
+   && [ "$(cat "$logs/before-restore-20260101-000000/history.sqlite")" = older ] \
+   && [ "$r_kept" = ".settings.json .switches.json history.sqlite history.sqlite-shm history.sqlite-wal " ] \
+   && [ "$r_old_answer" = "the answer there now" ] && [ "$r_yes_stop" = 0 ] && grep -qF "The server is off" <<<"$r_yes" \
+   && [ -z "$(ls -A "$logs" | grep -F .restore)" ]; then
+  ok "...y restores: what was there in a before-restore folder, the earlier one kept, no old -wal or -shm beside the new history, .restart.npz gone, 600"
+else bad "...y restores: what was there in a before-restore folder, the earlier one kept, no old -wal or -shm beside the new history, .restart.npz gone, 600" \
+         "rc $r_yes_rc, folders: $r_folders, kept: $r_kept, now: $(ls -A "$logs" | tr '\n' ' '), stop calls $r_yes_stop, $(tail -3 <<<"$r_yes" | tr '\n' '|')"; fi
+now_logs
+state server-running; EXTRA_ENV="SIDENOTE_LANG=en" run restore "$good" --yes; r_run_rc="$(cat "$work/rc")"; r_run="$(cat "$work/out")"
+r_order="$(for f in $(calls_of docker); do tr '\0' ' ' < "$f"; echo; done | grep -E '^compose (stop|start) server' | tr '\n' '|')"
+r_run_folders="$(cd "$logs" && ls -d before-restore-* 2>/dev/null | wc -l | tr -d ' ')"
+if [ "$r_run_rc" = 0 ] && [ "$r_order" = "compose stop server |compose start server |" ] && [ "$r_run_folders" = 2 ] \
+   && [ "$(answer_in "$logs/history.sqlite")" = "the answer kept" ] && grep -qF "The server was started again." <<<"$r_run"; then
+  ok "...--yes with the server running stops it for the swap and starts it again, and one before-restore folder is kept"
+else bad "...--yes with the server running stops it for the swap and starts it again, and one before-restore folder is kept" \
+         "rc $r_run_rc, compose: $r_order, folders $r_run_folders, $(tail -2 <<<"$r_run" | tr '\n' '|')"; fi
+now_logs; r_fail_sum="$(logsum)"
+state server-running; EXTRA_ENV="SIDENOTE_LANG=en PATH=$work/mvbin:$work/bin:/usr/bin:/bin" run restore "$good" --yes
+r_fail_rc="$(cat "$work/rc")"; r_fail="$(cat "$work/out")"
+r_fail_order="$(for f in $(calls_of docker); do tr '\0' ' ' < "$f"; echo; done | grep -E '^compose (stop|start) server' | tr '\n' '|')"
+if [ "$r_fail_rc" = 1 ] && grep -qF "nothing changed" <<<"$r_fail" && [ "$(logsum)" = "$r_fail_sum" ] \
+   && [ "$r_fail_order" = "compose stop server |compose start server |" ]; then
+  ok "...a failure halfway puts back what was there, says nothing changed, and starts the server again"
+else bad "...a failure halfway puts back what was there, says nothing changed, and starts the server again" \
+         "rc $r_fail_rc, compose: $r_fail_order, same files: $([ "$(logsum)" = "$r_fail_sum" ] && echo yes || echo no) | $(tail -2 <<<"$r_fail" | tr '\n' '|')"; fi
+
+# 56. llm rm removes a model with its tuned copy after a yes, showing their sizes; a model that is not there is said and
+#     ends 1 with nothing removed; no terminal asks for --yes; the model set for solving gets a line naming llm pull,
+#     another does not; with the llm container off the tools container removes them; another model server is left alone.
+rm_calls() { for f in $(calls_of docker); do tr '\0' ' ' < "$f"; echo; done | grep -E 'ollama rm|llm-pull' | grep -v '; ollama list *$' | tr '\n' '|'; }
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_LOCAL_MODEL=gemma4:e4b" run llm rm gemma4:e4b --yes; m_rc="$(cat "$work/rc")"; m_out="$(cat "$work/out")"; m_calls="$(rm_calls)"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_LOCAL_MODEL=gemma4:e4b" run llm rm qwen3:8b --yes; m_other="$(cat "$work/out")"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run llm rm nosuch:1b --yes; m_none_rc="$(cat "$work/rc")"; m_none="$(cat "$work/out")"; m_none_calls="$(rm_calls)"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run llm rm gemma4:e4b; m_notty_rc="$(cat "$work/rc")"; m_notty="$(cat "$work/out")"; m_notty_calls="$(rm_calls)"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run_tty $'n\n' "Remove them?" llm rm gemma4:e4b; m_n_calls="$(rm_calls)"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run_tty $'y\n' "Remove them?" llm rm gemma4:e4b; m_y_calls="$(rm_calls)"
+state llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run llm rm gemma4:e2b --yes; m_tools_rc="$(cat "$work/rc")"; m_tools_calls="$(rm_calls)"
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_LOCAL_URL=http://model-server.internal:8000/v1" run llm rm gemma4:e4b --yes
+m_url_rc="$(cat "$work/rc")"; m_url_calls="$(rm_calls)"
+pair="exec sidenote-llm ollama rm gemma4:e4b |exec sidenote-llm ollama rm sidenote-gemma4:e4b |"
+if [ "$m_rc" = 0 ] && [ "$m_calls" = "$pair" ] && grep -qF "9.6 GB" <<<"$m_out" \
+   && grep -qF "gemma4:e4b is the model set for solving here: ./sidenote llm pull downloads it again." <<<"$m_out" \
+   && ! grep -qF "set for solving" <<<"$m_other"; then
+  ok "llm rm removes a model with its tuned copy, shows their sizes, and names llm pull for the model set for solving"
+else bad "llm rm removes a model with its tuned copy, shows their sizes, and names llm pull for the model set for solving" \
+         "rc $m_rc, calls: $m_calls | $(tr '\n' '|' <<<"$m_out")"; fi
+if [ "$m_none_rc" = 1 ] && grep -qF "Not on this PC: nosuch:1b" <<<"$m_none" && [ -z "$m_none_calls" ] \
+   && [ "$m_notty_rc" = 1 ] && grep -qF "./sidenote llm rm gemma4:e4b --yes" <<<"$m_notty" && [ -z "$m_notty_calls" ] \
+   && [ -z "$m_n_calls" ] && [ "$m_y_calls" = "$pair" ]; then
+  ok "...a model not there is said and ends 1; with no terminal it names --yes; n removes nothing, y removes"
+else bad "...a model not there is said and ends 1; with no terminal it names --yes; n removes nothing, y removes" \
+         "none rc $m_none_rc calls '$m_none_calls' | no terminal rc $m_notty_rc calls '$m_notty_calls' | n '$m_n_calls' | y '$m_y_calls'"; fi
+if [ "$m_tools_rc" = 0 ] && [[ $m_tools_calls == *"llm-pull -c "*"ollama rm \"\$m\""*" sh gemma4:e2b |" ]] \
+   && [ "$m_url_rc" = 1 ] && [ -z "$m_url_calls" ]; then
+  ok "...with the llm container off the tools container removes it, and another model server's models are left alone"
+else bad "...with the llm container off the tools container removes it, and another model server's models are left alone" \
+         "tools rc $m_tools_rc: $m_tools_calls | other server rc $m_url_rc: $m_url_calls"; fi
+
+# 57. help names backup, restore, llm rm and uninstall --data, in both languages
+missing=""
+for lang in en ko; do
+  EXTRA_ENV="SIDENOTE_LANG=$lang" run help
+  for w in "./sidenote backup [" "./sidenote restore " "./sidenote llm rm " "--data"; do said "$w" || missing="$missing $lang:$w"; done
+done
+if [ -z "$missing" ]; then ok "help names backup, restore, llm rm and uninstall --data"
+else bad "help names backup, restore, llm rm and uninstall --data" "missing:$missing"; fi
+
+# --- the GPU, Docker Compose, a port taken, why a server stopped, the capture's guard ---------------------------------
+# 58. The GPU picks compose.amd.yaml only for an AMD GPU a model can run on (one that fits, or a model named) and only
+#     with its ROCm device there, and then hands the device's group to compose by number: an integrated Radeon with
+#     512 MB, or no /dev/kfd, picked the ROCm image, whose container cannot start. compose.amd.yaml takes the number.
+top > "$work/repo/top.sh"
+vendor_of() {   # $1 = the GPU as state/gpu holds it ("" for none), $2 = the device node's path, $3 = SIDENOTE_LOCAL_MODEL
+  rm -f "$work/state/gpu"; if [ -n "$1" ]; then printf '%s' "$1" > "$work/state/gpu"; fi
+  (cd "$work/repo" && env -u COMPOSE_FILE -u SIDENOTE_RENDER_GID FAKE="$work" SIDENOTE_KFD="$2" SIDENOTE_LOCAL_MODEL="$3" \
+     bash -c 'source ./top.sh >/dev/null 2>&1; printf "%s %s" "${COMPOSE_FILE#compose.yaml:docker/compose.}" "${SIDENOTE_RENDER_GID:-none}"')
+}
+: > "$work/kfd"; kfd_gid="$(stat -c %g "$work/kfd")"
+picks="$(vendor_of "amd,Radeon 780M,0.5" "$work/kfd" "") | $(vendor_of "amd,Radeon 780M,0.5" "$work/kfd" gemma4:e2b) | $(vendor_of "amd,Radeon RX 7900 XTX,24" "$work/no-kfd" "") | $(vendor_of "amd,Radeon RX 7900 XTX,24" "$work/kfd" "") | $(vendor_of "nvidia,GeForce RTX 4090,24" "$work/no-kfd" "") | $(vendor_of "nvidia,GeForce GT 710,1" "$work/no-kfd" "")"
+rm -f "$work/state/gpu"
+want="cpu.yaml none | amd.yaml $kfd_gid | cpu.yaml none | amd.yaml $kfd_gid | nvidia.yaml none | cpu.yaml none"
+if [ "$picks" = "$want" ] && grep -qF -- '- ${SIDENOTE_RENDER_GID:-0}' "$tree/docker/compose.amd.yaml" && ! grep -qxF '      - render' "$tree/docker/compose.amd.yaml"; then
+  ok "AMD only for a GPU a model runs on and with /dev/kfd there, with the device's group by number for compose.amd.yaml"
+else bad "AMD only for a GPU a model runs on and with /dev/kfd there, with the device's group by number for compose.amd.yaml" "got:  $picks | want: $want"; fi
+
+# 59. bash 3.2 (a Mac's /bin/bash) ended the whole launcher with curl's status 7 and no word when the server did not
+#     answer: open, capture-restart and capture said nothing. Each says why, and ends 1. (Run under 3.2 by
+#     SIDENOTE_TEST_BASH; under bash 5 it never failed.)
+quiet_end=""
+for c in open capture-restart capture; do
+  state server-down; EXTRA_ENV="SIDENOTE_LANG=en" run $c
+  if [ "$(cat "$work/rc")" != 1 ] || ! grep -qF "The server is off" "$work/out"; then quiet_end="$quiet_end $c:rc $(cat "$work/rc") '$(tail -1 "$work/out")'"; fi
+done
+if [ -z "$quiet_end" ]; then ok "with the server off, open, capture-restart and capture say so and end 1 (bash 3.2 ended them with curl's 7)"
+else bad "with the server off, open, capture-restart and capture say so and end 1 (bash 3.2 ended them with curl's 7)" "$quiet_end"; fi
+
+# 60. Where WSL cannot start Windows programs the command that sets the capture up from Windows is on a line of its own,
+#     nothing after it (copied out of a sentence it took the next words along, which launch.pyw refused as arguments);
+#     on WSL 1 that is said as WSL 1, not as interop turned off.
+state; EXTRA_ENV="$nowin SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run setup-capture; own_line="$(cat "$work/out")"
+setup_re="^      py -3 \"[^\"]*launch\.pyw\" --setup --distro [^ ]+ --repo \"[^\"]*\" --port 8777$"
+state; EXTRA_ENV="PATH=$work/nowin:/usr/bin:/bin SIDENOTE_BINFMT=$work/wsl1 SIDENOTE_KERNEL=4.4.0-19041-Microsoft SIDENOTE_MOUNTS=$work/mounts-pe SIDENOTE_LANG=en" run setup-capture
+wsl1_said="$(cat "$work/out")"
+if grep -qE "$setup_re" <<<"$own_line" && grep -qF "WSL 1 cannot start Windows programs here: cmd.exe does not run (exit code 126)." <<<"$wsl1_said" \
+   && grep -qE "$setup_re" <<<"$wsl1_said" && ! grep -qF "interop is off" <<<"$wsl1_said"; then
+  ok "interop off and WSL 1: the setup command on a line of its own, and WSL 1 said as WSL 1"
+else bad "interop off and WSL 1: the setup command on a line of its own, and WSL 1 said as WSL 1" \
+         "off: $(grep -F "launch.pyw" <<<"$own_line" | head -1) | WSL 1: $(head -2 <<<"$wsl1_said" | tr '\n' '|')"; fi
+
+# 61. Docker without the Compose plugin, or with one older than 2.24, is said with what to install before up starts
+#     anything (every command ended on Docker's "See 'docker --help'"); doctor names the version, or the reason.
+state no-compose; EXTRA_ENV="SIDENOTE_LANG=en" run up; nc_rc="$(cat "$work/rc")"; nc="$(cat "$work/out")"; last_call docker up; nc_up=${#CALL[@]}
+state; echo 2.20.2 > "$work/state/compose-version"; EXTRA_ENV="SIDENOTE_LANG=en" run up; old_rc="$(cat "$work/rc")"; old_c="$(cat "$work/out")"
+state; echo 2.24.0-desktop.1 > "$work/state/compose-version"; EXTRA_ENV="SIDENOTE_LANG=en" run doctor; new_c="$(cat "$work/out")"
+state no-compose; EXTRA_ENV="SIDENOTE_LANG=en" run doctor; nc_doctor="$(cat "$work/out")"
+if [ "$nc_rc" = 1 ] && grep -qF "Docker has no Compose here (docker compose)" <<<"$nc" && [ "$nc_up" = 0 ] \
+   && [ "$old_rc" = 1 ] && grep -qF "Docker Compose is older than 2.24 (it is 2.20.2)" <<<"$old_c" \
+   && grep -qF "docker compose 2.24.0-desktop.1" <<<"$new_c" && grep -qF "Docker has no Compose here" <<<"$nc_doctor"; then
+  ok "no Compose plugin, or one older than 2.24, is said before up starts anything; doctor names the version"
+else bad "no Compose plugin, or one older than 2.24, is said before up starts anything; doctor names the version" \
+         "none rc $nc_rc up calls $nc_up: $(tail -1 <<<"$nc") | 2.20 rc $old_rc: $(tail -1 <<<"$old_c") | doctor: $(grep -F "compose" <<<"$new_c" | head -1)"; fi
+
+# 62. doctor reads the log's days as the server does (server/config.py): +30, 1e2 and .5 as numbers, nan as the default,
+#     at least a day, and one day as "1 day".
+days_said=""
+for d in "+30|kept 30 days" "1e2|kept 100 days" ".5|kept 1 day)" "nan|kept 14 days" "7|kept 7 days"; do
+  state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_LOG_DAYS=${d%%|*}" run doctor
+  said "${d#*|}" || days_said="$days_said ${d%%|*}:'$(grep -F "Log folder" "$work/out")'"
+done
+if [ -z "$days_said" ]; then ok "doctor reads the log's days as the server does (+30, 1e2, .5, nan), and says 1 day"
+else bad "doctor reads the log's days as the server does (+30, 1e2, .5, nan), and says 1 day" "$days_said"; fi
+
+# 63. A port another program holds: up says so, and that a capture program started before a port change keeps asking
+#     the old port (and on WSL the shortcut holds it too).
+state port-taken; EXTRA_ENV="SIDENOTE_LANG=en" run up; pt_rc="$(cat "$work/rc")"; pt="$(cat "$work/out")"
+state port-taken; EXTRA_ENV="WSL_DISTRO_NAME= SIDENOTE_LANG=en PATH=$work/venvbin:$work/bin:/usr/bin:/bin" run up; pt_lx="$(cat "$work/out")"
+if [ "$pt_rc" = 1 ] && grep -qF "Another program is using port 8777" <<<"$pt" \
+   && grep -qF "keeps asking the old one: ./sidenote capture-stop, then ./sidenote capture." <<<"$pt" \
+   && grep -qF "./sidenote shortcut makes it again" <<<"$pt" && grep -qF "keeps asking the old one" <<<"$pt_lx" \
+   && ! grep -qF "shortcut" <<<"$pt_lx"; then
+  ok "a port taken: up says what a port change leaves behind (the capture program, and on WSL the shortcut)"
+else bad "a port taken: up says what a port change leaves behind (the capture program, and on WSL the shortcut)" \
+         "rc $pt_rc: $(tail -2 <<<"$pt" | tr '\n' '|') | Linux: $(tail -2 <<<"$pt_lx" | tr '\n' '|')"; fi
+
+# 64. status says why a server is off when that can be known: its container's exit code, Docker ending it for memory, or
+#     its own loop giving up (with the stacks of one that stopped answering); a server its loop started again in the
+#     last ten minutes is said once; a local model whose container is off says so, and that up starts it.
+state server-down container-ended; echo "exited 1 false" > "$work/state/container-ended"; EXTRA_ENV="SIDENOTE_LANG=en" run status; st_code="$(cat "$work/out")"
+state server-down container-ended; echo "exited 137 true" > "$work/state/container-ended"; EXTRA_ENV="SIDENOTE_LANG=en" run status; st_oom="$(cat "$work/out")"
+printf '%s 1 5 stopped stall\n' "$(date +%s)" > "$logs/.ended"
+state server-down; EXTRA_ENV="SIDENOTE_LANG=en" run status; st_gave="$(cat "$work/out")"
+printf '%s 1 2 restarted -\n' "$(date +%s)" > "$logs/.ended"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run status; st_again="$(cat "$work/out")"
+rm -f "$logs/.ended"
+state container-ended; echo "exited 1 false" > "$work/state/container-ended"
+health_with '{"present": true, "on": true, "ok": false, "model": "sidenote-gemma4:26b", "loaded": null}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; st_llm="$(cat "$work/out")"
+if grep -qF "Server: off: its container ended (exit code 1)" <<<"$st_code" \
+   && grep -qF "Server: off: it went over its memory limit and Docker ended it" <<<"$st_oom" \
+   && grep -qF "it ended 5 times within 10 minutes and was not started again (last exit code 1), it had stopped answering: the stacks are in $logs/stall.txt" <<<"$st_gave" \
+   && grep -qF "Server: it ended by itself (exit code 1) and was started again just now" <<<"$st_again"; then
+  ok "status says why the server is off: its exit code, memory, or its own loop giving up; and a restart within 10 minutes"
+else bad "status says why the server is off: its exit code, memory, or its own loop giving up; and a restart within 10 minutes" \
+         "code: $(grep -F "Server" <<<"$st_code") | oom: $(grep -F "Server" <<<"$st_oom") | gave up: $(grep -F "Server" <<<"$st_gave") | again: $(grep -F "Server" <<<"$st_again")"; fi
+if grep -qF "Local model: its container is off: its container ended (exit code 1)" <<<"$st_llm" && grep -qF "./sidenote up starts it" <<<"$st_llm"; then
+  ok "...and of a local model whose container is off, that up starts it"
+else bad "...and of a local model whose container is off, that up starts it" "$(grep -F "Local model" <<<"$st_llm")"; fi
+
+# 65. capture-stop's words for a capture program it could not end name the tray icon's Quit first and Task Manager for
+#     one without an icon; within down, with the server off and Windows out of reach, it is one dim line, no "!".
+state running unkillable; EXTRA_ENV="SIDENOTE_LANG=en" run capture-stop; cs_left="$(cat "$work/out")"
+state server-down; EXTRA_ENV="$offwin" run down; cs_down="$(cat "$work/out")"
+if grep -qF "1 capture program still running. Right-click its tray icon > Quit. With no icon, end python.exe or pythonw.exe in Task Manager." <<<"$cs_left" \
+   && grep -qF "(with the server off and Windows out of reach, a capture program that is left cannot be seen from here: its tray icon > Quit ends it)" <<<"$cs_down" \
+   && ! grep -qF "!" <<<"$(grep -F "Windows out of reach" <<<"$cs_down")"; then
+  ok "capture-stop names the tray icon's Quit, then Task Manager; within down, Windows out of reach is one quiet line"
+else bad "capture-stop names the tray icon's Quit, then Task Manager; within down, Windows out of reach is one quiet line" \
+         "left: $(tail -1 <<<"$cs_left") | down: $(grep -F "Windows" <<<"$cs_down" | head -1)"; fi
+
+# 66. capture --console with another capture program running for the server: the program ends with 76 (its guard), and
+#     the launcher ends 1 without stopping the one that runs and without saying the capture ended.
+state capture-busy; EXTRA_ENV="SIDENOTE_LANG=en" run capture --console; cb_rc="$(cat "$work/rc")"; cb="$(cat "$work/out")"; last_call_with curl "/capture/quit"
+cb_quit=${#CALL[@]}
+if [ "$cb_rc" = 1 ] && grep -qF "Another capture program is already running for this server" <<<"$cb" && ! grep -qF "Capture ended." <<<"$cb" \
+   && [ "$cb_quit" = 0 ]; then
+  ok "capture --console refused by a running capture program ends 1, stops nothing and does not say the capture ended"
+else bad "capture --console refused by a running capture program ends 1, stops nothing and does not say the capture ended" "rc $cb_rc, quit asked $cb_quit: $(tail -2 <<<"$cb" | tr '\n' '|')"; fi
+
+# 67. Interop off, from the shortcut: the launcher hands launch.pyw the language set for Sidenote and its own setup
+#     command (with the wheels folder of a PC without internet), and launch.pyw starts the program with that language;
+#     with a capture program already holding its guard for the server (reconnecting, so the server does not count it),
+#     launch.pyw opens the panel and starts no second one.
+state; EXTRA_ENV="$offwin SIDENOTE_WHEELS=/mnt/c/bundle/wheels" run capture --up --from-windows; marks="$(grep -aE $'^SIDENOTE-(LANG|SETUP|START)\t' "$work/out" | cut -f1 | tr '\n' ' ')"
+setup_line="$(grep -a $'^SIDENOTE-SETUP\t' "$work/out" | cut -f2)"
+state; EXTRA_ENV="$offwin PYTHONPATH=$work/pymods" run_launch; lang_chain="$(cat "$work/out")"
+state; EXTRA_ENV="$offwin SIDENOTE_WHEELS=/mnt/c/bundle/wheels PYTHONPATH=$work/nopymods" run_launch; wheels_box="$(box_text)"
+if [ "$marks" = "SIDENOTE-LANG SIDENOTE-SETUP SIDENOTE-START " ] && [[ $setup_line == *' --setup --distro '*' --port 8777 --wheels "'* ]] \
+   && grep -qxF "[dry-run] env: SIDENOTE_LANG=en" <<<"$lang_chain" && grep -q '^\[dry-run\] start: ' <<<"$lang_chain" \
+   && grep -qF -- "--wheels \"" <<<"$wheels_box"; then
+  ok "interop off: the language and the launcher's own setup command (with --wheels) reach launch.pyw, and the program gets the language"
+else bad "interop off: the language and the launcher's own setup command (with --wheels) reach launch.pyw, and the program gets the language" \
+         "marks: $marks | setup: $setup_line | $(grep -a '\[dry-run\] env\|\[dry-run\] start' <<<"$lang_chain" | tr '\n' '|') | box: $(tr '\n' '|' <<<"$wheels_box")"; fi
+# a capture program for the server, as far as its guard goes: a lock held on the file launch.pyw looks for, until this
+# script closes the program's input (a FIFO); its process id is kept, and only that process is ever ended
+holder_py='import fcntl, importlib.machinery, importlib.util, os, sys
+loader = importlib.machinery.SourceFileLoader("launch_guard", sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader); m = importlib.util.module_from_spec(spec); loader.exec_module(m)
+fd = os.open(m.guard_file(m.instance_name(sys.argv[2])), os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.read()'
+rm -f "$work/hold" "$work/held" && mkfifo "$work/hold"
+env -i TMPDIR="$work" PATH=/usr/bin:/bin python3 -c "$holder_py" "$launch_pyw" "ws://127.0.0.1:8777/ingest" < "$work/hold" > "$work/held" 2>&1 &
+holder_pid=$!
+exec 9> "$work/hold"                  # the program's input, open until the check is done
+for _ in $(seq 1 50); do grep -q held "$work/held" 2>/dev/null && break; sleep 0.1; done
+state; EXTRA_ENV="$offwin PYTHONPATH=$work/pymods" run_launch; guarded="$(cat "$work/out")"
+exec 9>&-                             # its input closes: it lets the lock go and ends
+for _ in $(seq 1 50); do kill -0 "$holder_pid" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$holder_pid" 2>/dev/null; then kill "$holder_pid"; fi   # (the one process started here, by its id)
+wait "$holder_pid" 2>/dev/null
+if grep -q held "$work/held" && grep -qxF "[dry-run] open: http://127.0.0.1:8777" <<<"$guarded" && ! grep -q '^\[dry-run\] start: ' <<<"$guarded"; then
+  ok "...and with a capture program holding its guard for the server, launch.pyw opens the panel and starts no second one"
+else bad "...and with a capture program holding its guard for the server, launch.pyw opens the panel and starts no second one" \
+         "holder: $(cat "$work/held" | tr '\n' '|') | $(grep -a '\[dry-run\]' <<<"$guarded" | tr '\n' '|')"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

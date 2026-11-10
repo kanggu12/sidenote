@@ -48,7 +48,14 @@ spec:
       initContainers:
       {{- end }}
       {{- if $claudeFetch }}
-        # Claude Code into the pod: the image's own when it has one, else the pinned release, checked against its manifest
+        # Claude Code into the pod: the image's own when it has one, else the pinned release for the node's processor,
+        # checked against its manifest. The agent is one engine of several: a download that fails (no route to
+        # downloads.claude.ai, a release that is gone) leaves no file and ends well, so the server starts without it
+        # and the panel shows the agent as not installed. It used to hold the whole pod in Init, the panel and the
+        # local model with it, and a download that stalled held it there for good: each request now gives up after
+        # 10 s without a connection and 300 s in all. A download is kept on the server's volume with the checksum it
+        # was checked against, so a pod started again (a node's restart, an eviction, an upgrade) has the agent with
+        # no download; a copy that no longer matches its checksum is downloaded again.
         - name: claude-code
           image: {{ include "sidenote.image" (dict "context" . "image" .Values.server.image) | quote }}
           imagePullPolicy: {{ .Values.server.image.pullPolicy }}
@@ -56,13 +63,51 @@ spec:
             - sh
             - -c
             - |
-              set -eu
-              if [ -x /usr/local/bin/claude ]; then cp /usr/local/bin/claude /opt/agent-bin/claude; exit 0; fi
+              set -u
+              if [ -x /usr/local/bin/claude ]; then cp /usr/local/bin/claude /opt/agent-bin/claude && exit 0; fi
+              # the build for this node's processor, read as docker/Dockerfile reads it at a build
+              case "$(uname -m)" in
+                x86_64|amd64) plat=linux-x64 ;;
+                aarch64|arm64) plat=linux-arm64 ;;
+                *) echo "Claude Code has no Linux build for $(uname -m): the server starts without the agent"; exit 0 ;;
+              esac
+              keep="/cache/claude-{{ .Values.agent.claudeCodeVersion }}-$plat"
               base="https://downloads.claude.ai/claude-code-releases/{{ .Values.agent.claudeCodeVersion }}"
-              sum="$(curl -fsSL --retry 3 "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"]["linux-x64"]["checksum"])')"
-              curl -fsSL --retry 3 -o /opt/agent-bin/claude "$base/linux-x64/claude"
-              echo "$sum  /opt/agent-bin/claude" | sha256sum -c -
-              chmod 755 /opt/agent-bin/claude
+              fetch() { curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 "$@"; }
+              # The release's own checksum for this build, from its manifest, when it can be read (python's own error is
+              # left out: with nothing downloaded it is a traceback about empty input, and curl has said why already)
+              sum="$(fetch "$base/manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["platforms"][sys.argv[1]]["checksum"])' "$plat" 2>/dev/null)" || sum=""
+              # The copy an earlier start kept, this version and this processor's: checked against the manifest's checksum
+              # when there is one, so a copy changed on the volume with its own checksum file beside it is not run; with
+              # no route out, against the checksum written when it was kept
+              whole=""
+              if [ -f "$keep" ]; then
+                if [ -n "$sum" ]; then echo "$sum  $keep" | sha256sum -c - > /dev/null 2>&1 && whole=1
+                elif [ -f "$keep.sha256" ]; then sha256sum -c "$keep.sha256" > /dev/null 2>&1 && whole=1
+                fi
+              fi
+              if [ -n "$whole" ] && cp "$keep" /opt/agent-bin/claude.part && chmod 755 /opt/agent-bin/claude.part \
+                 && mv /opt/agent-bin/claude.part /opt/agent-bin/claude; then
+                echo "Claude Code {{ .Values.agent.claudeCodeVersion }} ($plat) from the copy kept on the server's volume"
+                exit 0
+              fi
+              rm -f /opt/agent-bin/claude.part
+              if [ -n "$sum" ] && fetch -o /opt/agent-bin/claude.part "$base/$plat/claude" \
+                 && echo "$sum  /opt/agent-bin/claude.part" | sha256sum -c - \
+                 && chmod 755 /opt/agent-bin/claude.part && mv /opt/agent-bin/claude.part /opt/agent-bin/claude; then
+                # kept for the next start, this version alone (an older one goes), whole or not at all; a volume that
+                # cannot take it only means the next start downloads it again
+                rm -f /cache/claude-* 2> /dev/null
+                if cp /opt/agent-bin/claude "$keep.part" 2> /dev/null && mv "$keep.part" "$keep"; then
+                  echo "$sum  $keep" > "$keep.sha256"
+                else
+                  rm -f "$keep.part"
+                fi
+                exit 0
+              fi
+              rm -f /opt/agent-bin/claude.part   # nothing half downloaded or unchecked is left for the server to run
+              echo "Could not download Claude Code {{ .Values.agent.claudeCodeVersion }} ($plat): the server starts without the agent"
+              exit 0
           securityContext:
             {{- toYaml .Values.server.securityContext | nindent 12 }}
           resources:
@@ -77,6 +122,9 @@ spec:
               mountPath: /opt/agent-bin
             - name: tmp
               mountPath: /tmp
+            - name: data          # the copy kept from an earlier start (the server's volume, beside its logs)
+              mountPath: /cache
+              subPath: agent
       {{- end }}
       {{- if $codexCopy }}
       # Codex writes into its home as it works (a refreshed sign-in, its own records), which a Secret mount cannot

@@ -8,6 +8,9 @@ set -euo pipefail
 # This script's folder, through any links to it: by hand, as macOS before 12.3 has no readlink -f
 self="$0"
 while [ -L "$self" ]; do link="$(readlink "$self")"; case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac; done
+# The folder this was started from, kept before the cd below: a file named on the command line (backup, restore) is
+# read from it, and a backup made without a name is written there
+CALLER_PWD="$PWD"
 cd "$(dirname "$self")"
 
 # Settings in .env apply here too (compose reads the same file); the environment wins. Read the
@@ -31,7 +34,7 @@ URL="http://127.0.0.1:${PORT}"
 LOG_PATH="$(setting SIDENOTE_LOG_PATH "$HOME/.local/state/sidenote/logs")"
 LOG_MAX_MB="$(setting SIDENOTE_LOG_MAX_MB 5)"    # same caps as the server's own logs (server/telemetry.py)
 LOG_FILES="$(setting SIDENOTE_LOG_FILES 4)"
-LOG_MAX_MB="${LOG_MAX_MB%%.*}"   # whole MB here (bash arithmetic); at least 1 file of 1 MB, like the server
+LOG_MAX_MB="${LOG_MAX_MB%%.*}"   # whole MB here (bash arithmetic); at least 1 file of 1 MB (the server, in bytes, allows 64 KB)
 [[ $LOG_MAX_MB =~ ^[0-9]+$ ]] || LOG_MAX_MB=5; (( LOG_MAX_MB >= 1 )) || LOG_MAX_MB=1
 LOG_FILES="${LOG_FILES%%.*}"; [[ $LOG_FILES =~ ^[0-9]+$ ]] || LOG_FILES=4; (( LOG_FILES >= 1 )) || LOG_FILES=1
 # Who solves, read the way the server reads it (server/config.py), so the two always agree on whether the local
@@ -61,18 +64,41 @@ esac
 # or docker/compose.cpu.yaml when there is neither (server/hardware.py finds it). docker compose reads COMPOSE_FILE itself,
 # so one set in the environment or in .env stays as it is; otherwise the one found here is exported for every compose
 # command.
+# A GPU counts only when a model can run on it: one named in the settings (SIDENOTE_LOCAL_MODEL), or for "auto" one
+# that fits its memory (server/models.py: fits). An integrated Radeon with 512 MB picked compose.amd.yaml, whose ROCm
+# image is several GB and whose container does not start without /dev/kfd, for a GPU no model would be loaded on.
+# And amd only where that device is: compose.amd.yaml hands /dev/kfd to the container, and Docker refuses to start
+# one whose device is missing (no ROCm driver here). SIDENOTE_KFD stands in for the device in tests/launcher_args.sh.
+KFD="${SIDENOTE_KFD:-/dev/kfd}"
 gpu_vendor() {
-  python3 - <<'PY' 2>/dev/null || echo cpu
-import sys
+  python3 - "$(setting SIDENOTE_LOCAL_MODEL auto)" "$KFD" <<'PY' 2>/dev/null || echo cpu
+import os, sys
 sys.path.insert(0, "server")
-import hardware
+import hardware, models
+named, kfd = sys.argv[1].strip().lower() not in ("", "auto"), sys.argv[2]
 gpu = hardware.best(hardware.detect())
-print(gpu.vendor if gpu and gpu.vendor in ("nvidia", "amd") else "cpu")
+vendor = gpu.vendor if gpu and gpu.vendor in ("nvidia", "amd") else "cpu"
+if vendor != "cpu" and not named and models.fits(gpu.memory_gb) is None:
+    vendor = "cpu"   # too small for the smallest model, and none is named: nothing would be loaded on it
+if vendor == "amd" and not os.path.exists(kfd):
+    vendor = "cpu"   # no ROCm device node: the container could not be started with it
+print(vendor)
 PY
 }
 COMPOSE_FILE="$(setting COMPOSE_FILE "")"
 [ -n "$COMPOSE_FILE" ] || COMPOSE_FILE="compose.yaml:docker/compose.$(gpu_vendor).yaml"
 export COMPOSE_FILE
+# AMD: the ROCm device nodes belong to the host's render group, whose number differs from one distribution to the next
+# and which the Ollama image has no name for (Docker does not start a container given a group name its image lacks).
+# The number of the group that owns /dev/kfd on this PC goes to compose.amd.yaml, unless the settings name one.
+# stat -c is GNU's, and ROCm is Linux only; where it prints nothing the file's own default stands.
+case "$COMPOSE_FILE" in
+  *compose.amd.yaml*)
+    if [ -z "$(setting SIDENOTE_RENDER_GID "")" ]; then
+      render_gid="$(stat -c %g "$KFD" 2>/dev/null || true)"
+      case "$render_gid" in ''|*[!0-9]*) ;; *) export SIDENOTE_RENDER_GID="$render_gid" ;; esac   # a number, or left alone
+    fi ;;
+esac
 # A PC with no way to the internet (docs/air-gapped.md): SIDENOTE_OFFLINE=1 in .env. The images came with a bundle, so nothing is
 # built or pulled, a build's apt and pip being the first things to fail there, and a model is brought, not downloaded.
 offline() { case "$(setting SIDENOTE_OFFLINE "" | tr '[:upper:]' '[:lower:]')" in 1|true|yes|on) return 0 ;; esac; return 1; }
@@ -116,13 +142,22 @@ CLIENT_WIN="$(wslpath -w "$PWD/client/capture.py" 2>/dev/null || true)"   # this
 # On WSL the capture program, the browser and the desktop shortcut are Windows' own, reached through interop. On a Linux
 # desktop of its own (no WSL_DISTRO_NAME, which WSL sets in every session) they are this desktop's: the capture program
 # runs here, with the packages of client/requirements.txt in a virtual environment of its own (CAPTURE_VENV).
-if [ -n "${WSL_DISTRO_NAME:-}" ]; then ON_WSL=1; else ON_WSL=0; fi
+# sudo takes WSL_DISTRO_NAME out of the environment, and WSL was then taken for a Linux desktop: under sudo the kernel's
+# release says whether this is WSL, and the Windows path of / (\\wsl.localhost\<name>\) names the distribution
+DISTRO="${WSL_DISTRO_NAME:-}"
+if [ -z "$DISTRO" ] && [ -n "${SUDO_USER:-}" ]; then
+  case "$(uname -r)" in *[Mm]icrosoft*) DISTRO="$(wslpath -w / 2>/dev/null | sed -n 's|^\\\\[^\\]*\\\([^\\]*\)\\*$|\1|p')" ;; esac
+fi
+if [ -n "$DISTRO" ]; then ON_WSL=1; else ON_WSL=0; fi
 if [ "$(uname -s)" = Darwin ]; then ON_MAC=1; else ON_MAC=0; fi   # a Mac reads its own screen, with no X11 display to check
 CAPTURE_VENV="$PWD/.venv-capture"
 # Docker refuses a CPU limit above the machine's cores, and the server would not start on a 6-core WSL: the defaults come
 # down to what is there. What .env or the environment sets is left as it is.
-CORES="$(nproc 2>/dev/null || echo 8)"
-if [ "$CORES" -lt 8 ]; then
+# nproc is Linux's. A Mac has none, and there Docker runs in a VM with fewer CPUs than the Mac has (Docker Desktop's
+# setting): Docker itself says how many it has. With neither answering, the limits stay as compose.yaml has them
+CORES="$(nproc 2>/dev/null || docker info --format '{{.NCPU}}' 2>/dev/null || true)"
+case "$CORES" in ''|*[!0-9]*) CORES=8 ;; esac
+if [ "$CORES" -gt 0 ] && [ "$CORES" -lt 8 ]; then
   export SIDENOTE_CPUS="$(setting SIDENOTE_CPUS "$CORES")" SIDENOTE_LLM_CPUS="$(setting SIDENOTE_LLM_CPUS "$CORES")"
 fi
 
@@ -167,6 +202,15 @@ ENGINE_SOFT=0
 bad()  { printf '  %s✗%s %s\n' "$R" "$N" "$*"; FAILS=$((FAILS + 1)); }
 warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*"; }
 die()  { printf '%s%s%s\n' "$R" "$*" "$N" >&2; exit 1; }
+# A yes asked at the terminal before what is not undone (restore, llm rm): y or yes goes on, anything else does not,
+# Enter alone and the end of input included. The callers ask only where there is a terminal to answer at.
+ask_yes() {
+  local answer=""
+  printf '  %s [y/N] ' "$1"
+  read -r answer || true   # Ctrl+D: no answer, which is a no
+  case "$answer" in y|Y|yes|Yes|YES) return 0 ;; esac
+  return 1
+}
 # Reading /health, the GPU and the model list all go through python3. Without it the GPU above silently counted as none
 # and `up` ended in the middle of its status with status 127 and no word of why, so it is said first. help needs nothing.
 if ! command -v python3 >/dev/null 2>&1; then
@@ -190,7 +234,7 @@ term_title() { [ -t 1 ] && printf '\033]0;%s\007' "$1"; return 0; }
 WIN_DRIVE=""                                     # the WSL folder of the drive with Windows on it, such as /mnt/c
 if [ "$ON_WSL" = 1 ]; then
   while read -r _ mnt fstype _; do
-    case "$fstype" in 9p|drvfs) ;; *) continue ;; esac   # Windows drives only: no Linux file system is looked into
+    case "$fstype" in 9p|drvfs|virtiofs) ;; *) continue ;; esac   # Windows drives only (virtiofs on newer WSL): no Linux file system is looked into
     mnt="$(printf '%b' "$mnt")"                            # the table writes a space in a folder name as \040
     if [ -f "$mnt/Windows/System32/cmd.exe" ]; then WIN_DRIVE="$mnt"; break; fi
   done 2>/dev/null < "${SIDENOTE_MOUNTS:-/proc/mounts}"
@@ -207,23 +251,61 @@ CMD_EXE="$(win_exe cmd.exe Windows/System32/cmd.exe)"
 PS_EXE="$(win_exe powershell.exe Windows/System32/WindowsPowerShell/v1.0/powershell.exe)"
 # Why Windows cannot be reached from here, or nothing when it can: what is said instead of cmd.exe's "command not found",
 # or of "no Windows Python" when Python is there. [interop] enabled=false takes away the entry that starts Windows
-# programs (WSLInterop, WSLInterop-late on newer WSL), and then no path helps; the capture program can still be started
-# from Windows itself, by the path printed. Only a real Windows program is held to that (a PE file starts with MZ): the
-# tests' stand-ins are scripts.
+# programs (WSLInterop, WSLInterop-late on newer WSL), and then no path helps. Either way the capture can be set up from
+# Windows itself, with the command printed (win_setup_command), and the desktop shortcut then starts it from there. Only
+# a real Windows program is held to that (a PE file starts with MZ): the tests' stand-ins are scripts.
+# The first line is the reason (status and install print its words before the colon alone), and the command to type is
+# on a line of its own with nothing after it: copied out of the middle of a sentence it took the sentence's next words
+# along, and launch.pyw refused them as arguments.
 win_problem() {
   [ "$ON_WSL" = 1 ] || return 0
+  local nl=$'\n' setup
   if [ ! -f "$CMD_EXE" ]; then
-    L "Windows cannot be found from WSL: cmd.exe is neither on the PATH nor in Windows\\System32 on a drive WSL mounted. Check [automount] in /etc/wsl.conf (enabled must not be false)." \
-      "WSL에서 Windows를 찾지 못했습니다: cmd.exe가 PATH에도, WSL이 붙인 드라이브의 Windows\\System32에도 없습니다. /etc/wsl.conf의 [automount]를 확인하세요 (enabled=false가 아니어야 합니다)."
+    setup="$(win_setup_command)"
+    L "Windows cannot be found from WSL: cmd.exe is neither on the PATH nor in Windows\\System32 on a drive WSL mounted.${nl}    Check [automount] in /etc/wsl.conf (enabled must not be false), or set the capture up from Windows once, in a Windows terminal:${nl}      ${setup}" \
+      "WSL에서 Windows를 찾지 못했습니다: cmd.exe가 PATH에도, WSL에 연결된 드라이브의 Windows\\System32에도 없습니다.${nl}    /etc/wsl.conf의 [automount]를 확인하거나 (enabled=false가 아니어야 합니다), Windows 터미널에서 한 번 실행해 캡처를 Windows 쪽에서 설정하세요:${nl}      ${setup}"
     return 0
   fi
   [ "$(head -c 2 "$CMD_EXE" 2>/dev/null)" = MZ ] || return 0
-  local f
-  for f in "${SIDENOTE_BINFMT:-/proc/sys/fs/binfmt_misc}"/WSLInterop*; do
+  # WSL 1 (its kernel release ends in -Microsoft) starts Windows programs without binfmt_misc, so there is no entry to
+  # read: whether they start is known by starting one. cmd.exe that is not executable, or that the kernel refuses to
+  # run (exit code 126), is Windows out of reach ([interop] enabled=false); it used to be said as "no Windows Python".
+  # WSL 2 starts them through an entry in binfmt_misc, and with interop off binfmt_misc need not be mounted at all (no
+  # systemd to mount it), so a missing register file is no sign of WSL 1. SIDENOTE_KERNEL stands in for uname -r in the tests
+  case "${SIDENOTE_KERNEL:-$(uname -r)}" in
+    *-Microsoft)
+      local ran=0
+      if [ -x "$CMD_EXE" ]; then (cd "$WIN_CWD" && "$CMD_EXE" /c ver) >/dev/null 2>&1 || ran=$?; else ran=126; fi
+      [ "$ran" = 126 ] || return 0   # it ran (whatever cmd.exe then answered): Windows is in reach
+      L "WSL 1 cannot start Windows programs here: cmd.exe does not run (exit code 126)." \
+        "여기서는 WSL 1이 Windows 프로그램을 실행할 수 없습니다: cmd.exe가 실행되지 않습니다(종료 코드 126)."
+      win_ways_on
+      return 0 ;;
+  esac
+  local f bin="${SIDENOTE_BINFMT:-/proc/sys/fs/binfmt_misc}"
+  for f in "$bin"/WSLInterop*; do
     [ -f "$f" ] && [ "$(head -1 "$f" 2>/dev/null)" = enabled ] && return 0
   done
-  L "WSL cannot start Windows programs here: [interop] enabled=false in /etc/wsl.conf. Set it to true (or remove the line), run wsl --shutdown in Windows and open WSL again. Or start the capture program in Windows: py -3 \"${CLIENT_WIN}\" --server ws://127.0.0.1:${PORT}/ingest" \
-    "여기서는 WSL이 Windows 프로그램을 실행할 수 없습니다: /etc/wsl.conf에 [interop] enabled=false. true로 바꾸거나 그 줄을 지우고, Windows에서 wsl --shutdown 뒤 WSL을 다시 여세요. 또는 Windows에서 캡처 프로그램을 직접 시작하세요: py -3 \"${CLIENT_WIN}\" --server ws://127.0.0.1:${PORT}/ingest"
+  L "WSL cannot start Windows programs here: interop is off (no WSLInterop entry in /proc/sys/fs/binfmt_misc)." \
+    "여기서는 WSL이 Windows 프로그램을 실행할 수 없습니다: interop이 꺼져 있습니다(/proc/sys/fs/binfmt_misc에 WSLInterop 없음)."
+  win_ways_on
+}
+# What win_problem says after its reason, whichever it is: the two ways on, set the capture up from Windows once, or turn
+# interop on. One wording for both reasons, which had a copy each in both languages
+win_ways_on() {
+  local setup nl=$'\n'
+  setup="$(win_setup_command)"
+  L "${nl}    Set the capture up from Windows once, in a Windows terminal (it installs the capture packages and makes the desktop shortcut, which then starts the server and the capture):${nl}      ${setup}${nl}    Or turn interop on: remove [interop] enabled=false from /etc/wsl.conf or set it to true, run wsl --shutdown in Windows and open WSL again." "${nl}    Windows 터미널에서 한 번 실행해 캡처를 Windows 쪽에서 설정하세요 (캡처 패키지를 설치하고 바탕화면 바로가기를 만듭니다. 그 뒤로는 바로가기가 서버와 캡처를 함께 시작합니다):${nl}      ${setup}${nl}    또는 interop을 켜세요: /etc/wsl.conf의 [interop] enabled=false를 지우거나 true로 바꾸고, Windows에서 wsl --shutdown을 실행한 뒤 WSL을 다시 여세요."
+}
+# The command that sets the capture up from Windows, for a WSL that cannot start Windows programs: client/launch.pyw
+# --setup installs the capture packages into Windows Python and makes the desktop shortcut, as setup-capture and shortcut
+# do from here, and the shortcut then brings the server up here and starts the capture program there (windows_starts).
+# With SIDENOTE_WHEELS (no internet here: docs/air-gapped.md) the packages come from that folder, as setup-capture takes them
+win_setup_command() {
+  local launch wheels="" w; launch="$(wslpath -w "$PWD/client/launch.pyw" 2>/dev/null)" || launch="$PWD/client/launch.pyw"
+  w="$(setting SIDENOTE_WHEELS "")"
+  [ -z "$w" ] || wheels=" --wheels \"$(wslpath -w "$w" 2>/dev/null || printf '%s' "$w")\""
+  printf 'py -3 "%s" --setup --distro %s --repo "%s" --port %s%s' "$launch" "$DISTRO" "$PWD" "$PORT" "$wheels"
 }
 # A command that cannot go on without Windows stops with the reason
 need_win() { local p; p="$(win_problem)"; [ -z "$p" ] || die "$p"; }
@@ -239,7 +321,10 @@ ps_quote() { printf '%s' "${1//\'/\'\'}"; }
 
 # Every curl here talks to this PC's own server: a proxy set in WSL would send 127.0.0.1 to the proxy, and up then waited
 # four minutes to say the server was unreachable.
-curl() { command curl --noproxy '*' "$@"; }
+# By its path, not `command curl`: bash 3.2 (macOS's /bin/bash) ends the whole script when a program run through the
+# `command` builtin fails inside a function called from `||`, `if` or `until`, as health is while the server starts
+CURL_BIN="$(command -v curl 2>/dev/null || echo curl)"
+curl() { "$CURL_BIN" --noproxy '*' "$@"; }
 health() { curl -fsS --max-time 3 "$URL/health" 2>/dev/null; }
 # The cloud agent signs in with this PC's own login: Claude Code's (~/.claude) or Codex's (~/.codex), each mounted
 # into the container. Claude Code on a Mac keeps its login in the Keychain, which the container cannot read: there the
@@ -267,7 +352,10 @@ codex_version() {
   command -v codex >/dev/null 2>&1 || return 0
   codex --version 2>/dev/null | sed -n 's/^codex-cli \([0-9][0-9.]*\).*/\1/p' | head -1 || true
 }
-json()   { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+# A value of the server's JSON, printed with no control character but tab and newline: a setting's name or an error the
+# server repeats could hold a carriage return (a line of its own to the shortcut's starter, which acts on marked lines)
+# or a terminal's escape codes, and these are printed to the terminal and read by the starter
+json()   { python3 -c "import json,re,sys; d=json.load(sys.stdin); print(re.sub(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]', '', str($1)))"; }
 running() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx sidenote; }
 
 # Monitoring runs inside the image too: in the running server, or a throwaway container
@@ -343,21 +431,54 @@ rotate_capture_log() {
   for ((i = LOG_FILES - 1; i >= 1; i--)); do [ -f "$f.$i" ] && mv -f "$f.$i" "$f.$((i + 1))"; done
   mv -f "$f" "$f.1"
 }
+# printf's %(...)T came with bash 4.2: macOS's bash 3.2 refused it on every line, and nothing reached capture.log
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 402 )); then stamped() { printf '%(%F %T)T %s\n' -1 "$1"; }
+else stamped() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"; }; fi
 log_capture() {   # stdin -> terminal and capture.log, checking the size every 100 lines
   local n=0 line
   while IFS= read -r line; do
     printf '%s\n' "$line"
-    printf '%(%F %T)T %s\n' -1 "$line" >> "$LOG_PATH/capture.log"
+    stamped "$line" >> "$LOG_PATH/capture.log"
     n=$((n + 1)); (( n % 100 )) || rotate_capture_log
   done
 }
 
+# What compose.yaml needs of Docker Compose: the plugin itself, which a distribution's own Docker package (Ubuntu's
+# docker.io, Debian 12's) comes without, and 2.24 or newer, the first to read `env_file` with `required: false`.
+# Without the plugin every command ended on Docker's "Run 'docker --help' for more information", and an older one on a
+# complaint about env_file. Prints the reason and what to install and fails; prints nothing when it will do. A version
+# that does not read as numbers (a build of one's own) is let through.
+COMPOSE_MIN="2.24"
+compose_why() {
+  local v major minor
+  if ! v="$(docker compose version --short 2>/dev/null)"; then
+    L "Docker has no Compose here (docker compose). Install the Compose plugin, ${COMPOSE_MIN} or newer: the docker-compose-plugin package from Docker's own repository, or Docker Desktop, which has it." \
+      "Docker에 Compose가 없습니다 (docker compose). Compose 플러그인 ${COMPOSE_MIN} 이상을 설치하세요: Docker 저장소의 docker-compose-plugin 패키지, 또는 Compose가 들어 있는 Docker Desktop."
+    return 1
+  fi
+  v="${v#v}"                                                           # early 2.x printed it with a "v" in front
+  case "$v" in *.*) ;; *) return 0 ;; esac                             # no dot in it: not a version to compare
+  major="${v%%.*}"; minor="${v#*.}"; minor="${minor%%[!0-9]*}"         # 2.24.0-desktop.1 -> 2 and 24
+  case "$major" in ''|*[!0-9]*) return 0 ;; esac
+  case "$minor" in '') return 0 ;; esac
+  # 10#: a number with a zero in front is not read as octal
+  if (( 10#$major < ${COMPOSE_MIN%%.*} || (10#$major == ${COMPOSE_MIN%%.*} && 10#$minor < ${COMPOSE_MIN#*.}) )); then
+    L "Docker Compose is older than ${COMPOSE_MIN} (it is $v), and compose.yaml cannot be read by it. Update the docker-compose-plugin package from Docker's own repository, or Docker Desktop." \
+      "Docker Compose가 ${COMPOSE_MIN}보다 오래되어 (지금 $v) compose.yaml을 읽지 못합니다. Docker 저장소의 docker-compose-plugin 패키지나 Docker Desktop을 업데이트하세요."
+    return 1
+  fi
+}
+
 # Why Docker cannot be used, as one line in this terminal's language, read from what `docker info` writes to stderr:
 # a user outside the docker group gets "permission denied" on the socket, which no restart of Docker mends; anything
-# else is said with Docker's own first line. Prints nothing and succeeds when Docker answers.
+# else is said with Docker's own first line. With Docker answering, Compose is asked for too (compose_why): nearly
+# every command here is a `docker compose` one. Prints nothing and succeeds when both will do.
 docker_why() {
   local err
-  err="$(docker info 2>&1 >/dev/null)" && return 0                     # stdout is the client's own details: not wanted
+  if err="$(docker info 2>&1 >/dev/null)"; then                        # stdout is the client's own details: not wanted
+    compose_why || return 1
+    return 0
+  fi
   if grep -qi "permission denied" <<<"$err"; then
     L "Docker refuses this user (permission denied on its socket). Add it to the docker group: sudo usermod -aG docker \$USER, then log out and in again." \
       "Docker가 이 사용자를 거부합니다 (소켓 권한 없음). 이 사용자를 docker 그룹에 추가하고(sudo usermod -aG docker \$USER) 로그아웃했다가 다시 로그인하세요."
@@ -530,8 +651,18 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
     # without its port. A server that was already running is left alone.
     [ "$(docker inspect -f '{{.State.Running}}' sidenote 2>/dev/null)" = false ] && docker rm -f sidenote >/dev/null 2>&1
     if grep -qiE "address already in use|port is already allocated" "$out"; then
+      # The second line is what a new port leaves behind: a capture program started before the change holds the old
+      # address in its command line and asks it every 2 s for good, while status counted it as "reconnecting" and capture
+      # refused a second one as "already running". The desktop shortcut holds the port too (for the window that waits
+      # on the server), so on WSL it is made again; a Linux or macOS desktop has no shortcut to name.
+      local moved
+      moved="$(L "A capture program started before the port changed keeps asking the old one: ./sidenote capture-stop, then ./sidenote capture." \
+                 "포트를 바꾸기 전에 시작한 캡처 프로그램은 옛 포트로만 연결합니다: ./sidenote capture-stop 뒤 ./sidenote capture를 실행하세요.")"
+      [ "$ON_WSL" = 0 ] || moved="$moved $(L "The desktop shortcut holds the port as well: ./sidenote shortcut makes it again." \
+                                             "바탕화면 바로가기에도 포트가 들어 있습니다: ./sidenote shortcut으로 다시 만드세요.")"
       rm -f "$out"; die "$(L "Another program is using port ${PORT}. Close it, or set another port in .env (SIDENOTE_PORT=8778, say) and run ./sidenote up" \
-                             "다른 프로그램이 포트(${PORT})를 쓰고 있습니다. 그 프로그램을 끄거나, .env에 다른 포트를 적은 뒤(예: SIDENOTE_PORT=8778) ./sidenote up을 실행하세요")"
+                             "다른 프로그램이 포트(${PORT})를 쓰고 있습니다. 그 프로그램을 끄거나, .env에 다른 포트를 적은 뒤(예: SIDENOTE_PORT=8778) ./sidenote up을 실행하세요")
+$moved"
     fi
     # The local model's container asks for the NVIDIA GPU (docker/compose.nvidia.yaml), and Docker on Linux reaches it
     # only through the NVIDIA Container Toolkit: without it compose says only this, and exits 1
@@ -551,7 +682,10 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
       echo; docker logs --tail 15 sidenote 2>&1 | sed 's/^/  /'
       die "$(L "The server stopped while starting. See the log above." "서버가 시작 중에 멈췄습니다. 위 로그를 확인하세요.")"
     fi
-    if (( SECONDS - t0 > 240 )); then   # the first start loads the speech model: well under four minutes
+    # /health answers as soon as the server listens: the speech model is fetched and loaded in the background after
+    # that, so this wait is for the container and the app alone, seconds on a PC that is not swapping. Four minutes is
+    # the limit of patience, not a measure of the start.
+    if (( SECONDS - t0 > 240 )); then
       echo
       [ "$(docker inspect -f '{{.State.Health.Status}}' sidenote 2>/dev/null)" = healthy ] \
         && die "$(L "The server is up, but this PC cannot reach $URL. Start it again with ./sidenote down and ./sidenote up." \
@@ -583,11 +717,80 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
 cmd_down() {
   cmd_capture_stop quiet || true   # first: it is outside docker, and docker being off is no reason to leave it running
   docker_up
+  # (docker_up has said by now a Docker that does not answer, one without the compose plugin and a Compose too old)
   # Every profile, whatever .env says now: with the analyzer changed since up, the model's container was not looked at,
-  # "already off" was said, and it kept the GPU
-  if [ -z "$(docker compose --profile '*' ps -q 2>/dev/null)" ]; then ok "$(L "Already stopped." "이미 꺼져 있습니다.")"; return 0; fi
+  # "already off" was said, and it kept the GPU.
+  # compose's own failure (no compose file, a COMPOSE_FILE in .env that is not there) is said: it was hidden, and "already
+  # stopped" was said with the containers running.
+  # Its stderr apart: a warning compose prints there (a variable .env leaves unset) is no container, and read as one it said
+  # "stopped" with nothing running. Of a failure the first line that is neither such a warning nor Docker's own "Run
+  # 'docker --help'" hint is said: the error comes before the hint, and the last line alone was the hint. Only when every
+  # line is one of those two is the last line said as it is.
+  local ids err why; err="$(mktemp)"
+  if ! ids="$(docker compose --profile '*' ps -q 2>"$err")"; then
+    why="$(grep -v '^[[:space:]]*$' "$err" | grep -viE '^(WARN\[|time=.*level=warning)|docker --help' | head -1)"
+    [ -n "$why" ] || why="$(grep -v '^[[:space:]]*$' "$err" | tail -1)"; rm -f "$err"
+    die "$(L "docker compose failed: $why" "docker compose 실행 실패: $why")"
+  fi
+  rm -f "$err"
+  if [ -z "$ids" ]; then ok "$(L "Already stopped." "이미 꺼져 있습니다.")"; return 0; fi
   docker compose --profile '*' down 2>&1 | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /'
   ok "$(L "Server stopped." "서버를 멈췄습니다.")"
+}
+
+# Why a container that is still there is not running, in a few words, or nothing: one that was never made, one that runs
+# and one that ended with exit code 0 (asked to: `docker stop`, Docker closing down) have no reason to give. Docker is
+# asked, because only Docker knows that a container went over its memory limit. The three values come on one line, and a
+# Docker that answers something else (or nothing) is read as "no reason".
+ended_why() {
+  local st code oom
+  read -r st code oom <<<"$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$1" 2>/dev/null </dev/null || true)" || true
+  case "$st" in exited|dead) ;; *) return 0 ;; esac   # created, running, restarting, paused: it did not end
+  if [ "$oom" = true ]; then L "it went over its memory limit and Docker ended it" "메모리 한도를 넘어 Docker가 끝냈습니다"
+  elif [[ $code =~ ^[1-9][0-9]*$ ]]; then L "its container ended (exit code $code)" "컨테이너가 끝났습니다 (종료 코드 $code)"; fi
+}
+
+# What the server's own restart loop last wrote (docker/entrypoint.sh): a server that ended by itself is started again
+# inside its container, up to 5 times in 10 minutes, and each time one line goes to .ended in the log folder:
+#   <when, seconds since 1970> <exit code> <starts in the last 10 minutes> <restarted|stopped> <stall|->
+# The loop removes the file when a container starts, so a line here is about the container that is there now. Prints the
+# five fields when the line is whole, and nothing for a file that is missing or holds anything else.
+ended_note() {
+  local when="" code="" n="" what="" stall=""
+  [ -r "$LOG_PATH/.ended" ] || return 0   # no note: the server never ended by itself in this container
+  read -r when code n what stall < "$LOG_PATH/.ended" || true   # a line without its newline is still read
+  [[ $when =~ ^[0-9]+$ ]] && [[ $code =~ ^[0-9]+$ ]] && [[ $n =~ ^[0-9]+$ ]] || return 0
+  case "$what" in restarted|stopped) printf '%s %s %s %s %s' "$when" "$code" "$n" "$what" "${stall:--}" ;; esac
+}
+
+# The words after "Server: off" when there is a reason to give, or nothing. The loop's own note first: it says more than
+# Docker's exit code does (how often it tried, and that the watchdog ended a server that had stopped answering, whose
+# stacks are in stall.txt). Without a note that says it gave up, what Docker says of the container.
+server_ended_why() {
+  local when code n what stall why
+  read -r when code n what stall <<<"$(ended_note)" || true
+  if [ "$what" = stopped ]; then
+    why="$(L "it ended $n times within 10 minutes and was not started again (last exit code $code)" \
+             "10분 안에 ${n}번 끝나 다시 켜지 않았습니다 (마지막 종료 코드 $code)")"
+    [ "$stall" != stall ] || why="$why$(L ", it had stopped answering: the stacks are in $LOG_PATH/stall.txt" ", 응답이 멈춰 있었습니다: 스택은 $LOG_PATH/stall.txt")"
+    printf '%s' "$why"; return 0
+  fi
+  ended_why sidenote
+}
+
+# The local model's line when the model server does not answer. With the container that serves it off, "not responding"
+# sent the reader to its log and nowhere else, and nothing started it again: this says the container is off, why when
+# Docker knows, and that up starts it (compose starts a service that ended, with the server left running). A model
+# server of one's own (SIDENOTE_LOCAL_URL) and a container that runs keep the old line. $1 is the level to print it at.
+llm_down() {
+  local why=""
+  if own_llm && [ "$(docker inspect -f '{{.State.Running}}' sidenote-llm 2>/dev/null </dev/null || true)" != true ]; then
+    why="$(ended_why sidenote-llm)"
+    "$1" "$(L "Local model: its container is off${why:+: $why}  ${D}(./sidenote up starts it, ./sidenote llm logs shows its last lines)${N}" \
+              "이 PC의 모델: 컨테이너가 꺼져 있습니다${why:+: $why}  ${D}(./sidenote up으로 켜고, 마지막 로그는 ./sidenote llm logs)${N}")"
+    return 0
+  fi
+  "$1" "$(L "Local model: not responding (./sidenote llm logs)" "이 PC의 모델: 응답 없음 (./sidenote llm logs)")"
 }
 
 cmd_status() {
@@ -595,10 +798,35 @@ cmd_status() {
   echo
   if [ -z "$h" ]; then
     if running; then warn "$(L "Server: starting  ${D}(./sidenote status again in a moment)${N}" "서버: 시작 중  ${D}(잠시 뒤 다시 ./sidenote status)${N}")"
-    else bad "$(L "Server: off (./sidenote up)" "서버: 꺼짐 (./sidenote up)")"; fi
+    else
+      # Off, and why when that can be known: a server that ended by itself looked the same as one never started, and
+      # the one line there was pointed at `up` with no word about what had happened
+      local why; why="$(server_ended_why)"
+      if [ -n "$why" ]; then
+        bad "$(L "Server: off: $why  ${D}(./sidenote logs shows its last lines, ./sidenote up starts it)${N}" \
+                 "서버: 꺼짐: $why  ${D}(마지막 로그는 ./sidenote logs, 켜기는 ./sidenote up)${N}")"
+      else bad "$(L "Server: off (./sidenote up)" "서버: 꺼짐 (./sidenote up)")"; fi
+    fi
     return 0
   fi
   ok "$(L "Server: running" "서버: 실행 중")  ${B}${URL}${N}"
+  # A server that ended and was started again by its own loop in the last 10 minutes: it answers now, and what it was
+  # solving when it ended was cut short, so the fact and where to read why are said once here
+  local e_when e_code e_n e_what e_stall e_ago e_said
+  read -r e_when e_code e_n e_what e_stall <<<"$(ended_note)" || true
+  if [ "$e_what" = restarted ]; then
+    e_ago=$(( ($(date +%s) - e_when) / 60 ))   # whole minutes: the note's time is the container's clock, which is this PC's
+    if [ "$e_ago" -ge 0 ] && [ "$e_ago" -lt 10 ]; then
+      if [ "$e_ago" = 0 ]; then e_said="$(L "just now" "방금")"; else e_said="$(L "$e_ago min ago" "${e_ago}분 전에")"; fi
+      if [ "$e_stall" = stall ]; then
+        warn "$(L "Server: it had stopped answering and was started again $e_said  ${D}(the stacks are in $LOG_PATH/stall.txt)${N}" \
+                  "서버: 응답이 멈춰 $e_said 다시 켜졌습니다  ${D}(스택은 $LOG_PATH/stall.txt)${N}")"
+      else
+        warn "$(L "Server: it ended by itself (exit code $e_code) and was started again $e_said  ${D}(./sidenote logs)${N}" \
+                  "서버: 스스로 끝나(종료 코드 $e_code) $e_said 다시 켜졌습니다  ${D}(./sidenote logs)${N}")"
+      fi
+    fi
+  fi
   # What is running against what is here
   local built here
   built="$(echo "$h" | json 'd.get("build") or ""' 2>/dev/null)"
@@ -655,7 +883,8 @@ if L.get("present"):
     elif L.get("missing") and L.get("fits") is False: print("%s|NOFIT" % down)
     elif L.get("missing"): print(T("%s|Local model: %s not downloaded (./sidenote llm pull)",
                                    "%s|이 PC의 모델: %s 없음 (./sidenote llm pull)") % (down, model))
-    else: print(T("%s|Local model: not responding (./sidenote llm logs)", "%s|이 PC의 모델: 응답 없음 (./sidenote llm logs)") % down)
+    # the model server does not answer: the launcher's llm_down says whether its container is off, which only Docker knows
+    else: print("%s|LLMDOWN" % down)
 if C.get("present"):
     how = {"claude.ai": T("this PC's %s login", "이 PC의 %s 로그인") % (product or name),
            "chatgpt": T("this PC's %s login (ChatGPT)", "이 PC의 %s 로그인(ChatGPT)") % (product or name),
@@ -679,6 +908,7 @@ ENGINES
   while IFS='|' read -r level line; do
     if [ "$ENGINE_SOFT" = 1 ] && [ "$level" = bad ]; then level=warn; fi   # install: what is left to do next, not a failure
     if [ "$line" = NOFIT ]; then no_fit "$level"; continue; fi   # the one no-GPU line, at the level the server's state calls for
+    if [ "$line" = LLMDOWN ]; then llm_down "$level"; continue; fi   # not answering: off (and why), or only silent
     case "$level" in ok) ok "$line" ;; warn) warn "$line" ;; *) bad "$line" ;; esac
   done < <(echo "$h" | python3 -c "$engines" "$UI_LANG" 2>/dev/null)
   local n screen audio server_audio; n="$(echo "$h" | json 'd["capture"]["clients"]')"
@@ -695,8 +925,13 @@ ENGINES
   elif [ "$procs" = "?" ]; then
     # Windows gave no process list. Nothing is connected, which is what the server knows; whether one is
     # running and reconnecting cannot be said, so it is not claimed.
-    warn "$(L "Capture program: not connected (./sidenote capture)  ${D}(could not read the Windows process list)${N}" \
-              "캡처 프로그램: 연결 안 됨 (./sidenote capture)  ${D}(Windows 프로세스 목록을 읽지 못함)${N}")"
+    local winp; winp="$(win_problem)"
+    if [ -n "$winp" ]; then   # Windows out of reach is why: that is said, not the process list
+      warn "$(L "Capture program: not connected (the desktop shortcut starts it)" "캡처 프로그램: 연결 안 됨 (바탕화면 바로가기로 시작)")  ${D}(${winp%%:*})${N}"   # the reason's first clause: the whole of it is said once, elsewhere
+    else
+      warn "$(L "Capture program: not connected (./sidenote capture)  ${D}(could not read the Windows process list)${N}" \
+                "캡처 프로그램: 연결 안 됨 (./sidenote capture)  ${D}(Windows 프로세스 목록을 읽지 못함)${N}")"
+    fi
   elif [ "$procs" != "0" ]; then
     warn "$(L "Capture program: reconnecting  ${D}(one that is running connects within seconds)${N}" \
               "캡처 프로그램: 다시 연결 중  ${D}(실행 중이면 몇 초 안에 연결됨)${N}")"
@@ -716,7 +951,14 @@ ENGINES
 
 cmd_logs() {
   docker_up
-  running || die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼져 있던 동안의 이벤트는 ./sidenote events)")"
+  if ! running; then
+    # A server that ended by itself left its container, and the container its last lines: they are what says why it
+    # ended, and status points here for them. Shown without -f (nothing more will come), then the same end as before.
+    case "$(docker inspect -f '{{.State.Status}}' sidenote 2>/dev/null </dev/null || true)" in
+      exited|dead) docker compose logs --tail 60 server || true ;;
+    esac
+    die "$(L "The server is off. ./sidenote up (what happened while it was off: ./sidenote events)" "서버가 꺼져 있습니다. ./sidenote up (꺼져 있던 동안의 이벤트는 ./sidenote events)")"
+  fi
   docker compose logs -f --tail 60 server
 }
 
@@ -904,16 +1146,25 @@ cmd_capture_restart() {
   else warn "$(L "No capture program is connected. Start one with ./sidenote capture" "연결된 캡처 프로그램이 없습니다. ./sidenote capture로 시작하세요")"; fi
 }
 
+# How a user ends a capture program this launcher could not end, the same words wherever that is said: its tray icon
+# first (the program closes its connection and takes the icon with it), and Task Manager for one that has no icon
+# (--no-tray, or no pystray in Windows Python) or does not answer its menu.
+tray_quit() {
+  L "Right-click its tray icon > Quit. With no icon, end python.exe or pythonw.exe in Task Manager." \
+    "트레이 아이콘을 오른쪽 클릭해 끝내기를 누르세요. 아이콘이 없으면 작업 관리자에서 python.exe나 pythonw.exe를 끄세요."
+}
+
 cmd_capture_stop() {
-  local was left; was="$(capture_running)"
+  local was left had=0; was="$(capture_running)"
   if [ "$was" != "0" ]; then   # one or more running, or not known ("?"): asking costs nothing either way
     # Ask through the server first: the capture program ends itself and takes its tray icon with it.
     # Killed outright, the icon stays in the notification area until something hovers over it.
     # (A window message does not do it: the tray library answers WM_CLOSE with nothing at all.)
-    if ! health >/dev/null; then
+    if ! health >/dev/null && [ -z "$(win_problem)" ]; then   # (with Windows out of reach there is no force either: said below)
       warn "$(L "The server is off, so the capture program cannot be asked. Ending it by force ${D}(its tray icon may stay for a moment)${N}" \
                 "서버가 꺼져 있어 캡처 프로그램에 요청할 수 없습니다. 강제로 끕니다 ${D}(트레이 아이콘이 잠깐 남아 있을 수 있습니다)${N}")"
     fi
+    had="$(clients)"                   # connected before the stop: what the server's count says afterwards is read against it
     curl -fsS --max-time 3 -X POST "$URL/capture/quit" >/dev/null 2>&1 || true
     local n=0
     while [ "$n" -lt 10 ]; do          # the socket closes when it goes; about 3 s at most
@@ -925,18 +1176,47 @@ cmd_capture_stop() {
   if [ "$ON_WSL" = 0 ]; then
     pkill -f -- "[c]lient/capture[.]py --server" 2>/dev/null || true; sleep 0.3
   else
-    [ -z "$CLIENT_WIN" ] || winps "Get-CimInstance Win32_Process | Where-Object { ${CAPTURE_PROCS} } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null || true
+    # (not tried with Windows out of reach: nothing there can be ended from here, and that is said below)
+    [ -z "$CLIENT_WIN" ] || [ -n "$(win_problem)" ] || winps "Get-CimInstance Win32_Process | Where-Object { ${CAPTURE_PROCS} } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null || true
   fi
   left="$(capture_running)"
+  if [ "$left" = "?" ] && [ -n "$(win_problem)" ]; then
+    # Windows out of reach: its process list cannot be read, but the server's count can, and a capture program started
+    # from Windows (client/launch.pyw, windows_starts) ends itself when the server asks it to, as above
+    if health >/dev/null && [ "$(clients)" = 0 ]; then
+      [ "${1:-}" = quiet ] && return 0
+      if [ "$had" -gt 0 ] 2>/dev/null; then ok "$(L "Capture stopped." "캡처를 멈췄습니다.")"
+      else ok "$(L "No capture program is connected." "연결된 캡처 프로그램이 없습니다.")"; fi
+      return 0
+    fi
+    local why
+    if health >/dev/null; then   # one is still connected, and nothing here can end a Windows program
+      why="$(L "A capture program is still connected, and WSL cannot end Windows programs here." \
+               "캡처 프로그램이 아직 연결되어 있는데, 여기서는 WSL이 Windows 프로그램을 끌 수 없습니다.") $(tray_quit)"
+    else                         # the server is off: whether one is left cannot be told from here at all
+      # Within down or uninstall this is one dim line, no mark: with the server off already every down came here, and
+      # the "!" said each time that something was wrong when most often nothing was left at all.
+      if [ "${1:-}" = quiet ]; then
+        echo "  ${D}$(L "(with the server off and Windows out of reach, a capture program that is left cannot be seen from here: its tray icon > Quit ends it)" \
+                        "(서버가 꺼져 있고 Windows에 닿지 못해 남은 캡처 프로그램을 여기서 볼 수 없습니다: 남아 있으면 트레이 아이콘 > 끝내기로 끕니다)")${N}"
+        return 0
+      fi
+      why="$(L "The server is off and WSL cannot reach Windows programs here, so whether a capture program is left is not known. If one is:" \
+               "서버가 꺼져 있고 여기서는 WSL이 Windows 프로그램에 닿을 수 없어, 캡처 프로그램이 남았는지 알 수 없습니다. 남아 있으면:") $(tray_quit)"
+    fi
+    if [ "${1:-}" = quiet ]; then warn "$why"; return 0; fi   # within down or uninstall: said, and they go on
+    bad "$why"
+    return 1
+  fi
   if [ "$left" = "?" ]; then   # the stop went out, but whether it worked cannot be read
-    bad "$(L "Could not read the Windows process list, so whether a capture program is left is not known. Look for python.exe and pythonw.exe in Task Manager." \
-             "Windows 프로세스 목록을 읽지 못해 캡처 프로그램이 남았는지 확인하지 못했습니다. 작업 관리자에서 python.exe와 pythonw.exe를 확인하세요.")"
+    bad "$(L "Could not read the Windows process list, so whether a capture program is left is not known. If one is:" \
+             "Windows 프로세스 목록을 읽지 못해 캡처 프로그램이 남았는지 확인하지 못했습니다. 남아 있으면:") $(tray_quit)"
     return 1
   fi
   if [ "$left" != "0" ]; then   # how many, as the user guide says it does
-    if [ "$ON_WSL" = 1 ]; then   # Windows processes: Task Manager is where a user ends them
-      bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running. End python.exe or pythonw.exe in Task Manager." \
-               "캡처 프로그램 ${left}개가 아직 남아 있습니다. 작업 관리자에서 python.exe나 pythonw.exe를 끄세요.")"
+    if [ "$ON_WSL" = 1 ]; then   # Windows processes: the tray icon's Quit, then Task Manager, are where a user ends them
+      bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running." \
+               "캡처 프로그램 ${left}개가 아직 남아 있습니다.") $(tray_quit)"
     else                         # this desktop's own: the command line that names them
       bad "$(L "${left} capture program$([ "$left" = 1 ] || echo s) still running. End it with: pkill -9 -f 'client/capture.py --server'" \
                "캡처 프로그램 ${left}개가 아직 남아 있습니다. 끄려면: pkill -9 -f 'client/capture.py --server'")"
@@ -988,29 +1268,86 @@ capture_started() {
   [[ $p =~ ^[1-9] ]]
 }
 
+# For client/launch.pyw when WSL cannot start Windows programs: the server brought up here, then one line for the starter to
+# act on, tab-separated, last in the output. SIDENOTE-OPEN and the panel's address: a capture program is connected
+# already, so the panel opens, as a second click does. SIDENOTE-START and the capture program with its arguments: the
+# starter runs it with its own Windows Python, windowless, and waits for it to connect.
+# SIDENOTE-LANG and the language go before that line when SIDENOTE_LANG is set (the environment or .env): WSLENV
+# carries it to a program WSL starts, and this one Windows starts, so the starter puts it in the program's environment.
+# SIDENOTE-SETUP and the command that sets the Windows side up go before it too, for the starter to show when its
+# Python lacks the capture packages: worded here it has the wheels folder of a PC without internet (SIDENOTE_WHEELS)
+# and the port set now, which the starter's own wording of it cannot know.
+# A capture program that runs and is not connected yet (the server came up a moment ago, and it connects again within
+# seconds) cannot be seen from here, Windows' process list being out of reach: the starter looks for it on its own
+# side before it starts another (client/launch.pyw, capture_alive), and the program refuses to be the second one for
+# a server (client/capture.py, OneCapture).
+windows_starts() {
+  local up="$1"; shift
+  if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
+  health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
+                                  "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
+  if [ "$(clients)" -gt 0 ]; then
+    ok "$(L "The capture is already running" "캡처가 이미 실행 중입니다")"
+    printf 'SIDENOTE-OPEN\t%s\n' "$URL"
+    return 0
+  fi
+  ensure_dirs
+  rotate_capture_log
+  local logwin; logwin="$(wslpath -w "$LOG_PATH/capture.log")"
+  ok "$(L "WSL cannot start Windows programs here: Windows starts the capture program" "여기서는 WSL이 Windows 프로그램을 실행할 수 없어 Windows 쪽에서 캡처 프로그램을 시작합니다")"
+  case "${SIDENOTE_LANG:-}" in en|ko) printf 'SIDENOTE-LANG\t%s\n' "$SIDENOTE_LANG" ;; esac   # one that is set, never the locale's pick
+  printf 'SIDENOTE-SETUP\t%s\n' "$(win_setup_command)"   # one line, no tab in it: the starter reads the first field
+  printf 'SIDENOTE-START\t%s' "$CLIENT_WIN"
+  printf '\t%s' --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${@+"$@"}
+  printf '\n'
+}
+
+# A capture program already running. From the desktop shortcut (--up) the panel opens, as a second click on a running
+# app's shortcut shows that app: it used to end in a failure box saying the capture was running. A terminal's
+# ./sidenote capture is told, as before ($2), and ends in failure.
+already_capturing() {
+  if [ "$1" = 1 ]; then
+    ok "$(L "The capture is already running" "캡처가 이미 실행 중입니다")"
+    cmd_open
+    exit 0
+  fi
+  die "$2"
+}
+
 cmd_capture() {
   if [ "$ON_WSL" = 0 ]; then cmd_capture_here "$@"; return; fi
   [ -n "$CLIENT_WIN" ] || die "$(L "Could not find the Windows path (wslpath)." "Windows 경로를 찾지 못했습니다 (wslpath).")"
-  need_win   # Windows out of reach is said as such, before anything is asked of it (not as a missing Python)
   # The options for capture.py, each one exactly the word that was typed, kept in an array so that a value
   # with spaces in it ("Realtek USB2.0 Audio", the way Windows names a sound device) stays one argument and
   # no quote character is added to any of them. The windowless start used to wrap every option
   # in quote characters of its own, which WSL hands on as part of the argument (Python received "--monitor"
   # with the quotes), so argparse refused every option and the program ended before it opened its log;
   # --console and --up rebuilt the list with `set -- $(...)`, which cut a value at every space.
-  # --up and --console are this launcher's own: they are noted here and not passed on (capture.py would
-  # refuse them). --once sends one screen and ends, so it runs in this terminal as with --console, where
+  # --up, --console and --from-windows are this launcher's own: they are noted here and not passed on (capture.py
+  # would refuse them). --once sends one screen and ends, so it runs in this terminal as with --console, where
   # what it did is printed; started windowless it could also be gone before the start was seen.
-  local a up=0 console=0 opts=()
+  local a up=0 console=0 from_win=0 opts=()
   for a in "$@"; do
     case "$a" in
       --up) up=1 ;;
       --console) console=1 ;;
+      --from-windows) from_win=1 ;;   # client/launch.pyw, which can start the capture program itself (windows_starts)
       *) opts+=("$a")
          if [ "$a" = --once ]; then console=1; fi ;;
     esac
   done
-  check_win_args ${opts[@]+"${opts[@]}"}   # before cmd.exe sees any of them
+  check_win_args ${opts[@]+"${opts[@]}"}   # before cmd.exe, or the starter on Windows, sees any of them
+  # WSL out of reach of Windows ([interop] enabled=false, no Windows drive): from the desktop shortcut the server comes up
+  # here and the starter on Windows starts the capture program, as starting a Windows program from Windows asks nothing
+  # of WSL's interop; from a terminal it is said as such, before anything is asked of Windows (not as a missing Python)
+  if [ "$from_win" = 1 ] && [ "$console" = 0 ] && [ -n "$(win_problem)" ]; then
+    windows_starts "$up" ${opts[@]+"${opts[@]}"}
+    return
+  fi
+  need_win
+  # before the monitor list or the help is asked of it too: without Python cmd.exe's own English line was all, with status 0
+  win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
+                                              "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   # Only listing the monitors, or the options: capture.py answers and ends, so it runs here and now.
   for a in ${opts[@]+"${opts[@]}"}; do
     case "$a" in --list-monitors|--help|-h)
@@ -1035,20 +1372,18 @@ cmd_capture() {
   fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
                                   "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
-  win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
-                                              "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
   local packages
   packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   # Two capture programs would send every screen twice. Windows' process list says whether one is running;
   # when it cannot be read ("?"), the server says whether one is connected, which is the one that would send.
   local procs; procs="$(capture_running)"
   if [ "$procs" = "?" ]; then
-    [ "$(clients)" -gt 0 ] && die "$(L "The capture is already running (connected to the server). Quit it from the tray icon or with ./sidenote capture-stop" \
+    [ "$(clients)" -gt 0 ] && already_capturing "$up" "$(L "The capture is already running (connected to the server). Quit it from the tray icon or with ./sidenote capture-stop" \
                                          "캡처가 이미 실행 중입니다(서버에 연결됨). 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
     warn "$(L "Could not read the Windows process list. No capture program is connected to the server, so one is started." \
               "Windows 프로세스 목록을 읽지 못했습니다. 서버에 연결된 캡처 프로그램이 없어 시작합니다.")"
   elif [ "$procs" != "0" ]; then
-    die "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
+    already_capturing "$up" "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
   fi
   ensure_dirs
   rotate_capture_log
@@ -1108,15 +1443,26 @@ cmd_capture() {
             "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C. 패널에서 화면과 소리를 따로 켜고 끌 수 있습니다)${N}")"
   echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
   term_title "Sidenote Capture"
-  trap 'cmd_capture_stop quiet || true; term_title ""; echo; echo "  $(L "Capture ended." "캡처를 끝냈습니다.")"' EXIT
+  # The stop on the way out ends a program that Ctrl+C here left running on Windows. A program that ended because
+  # another one already captures for this server (CAPTURE_REFUSED, set below) is not this capture ending: the stop
+  # would end the one that runs, which nobody asked for, and "Capture ended." would say it of a capture that goes on.
+  CAPTURE_REFUSED=0
+  trap 'if [ "$CAPTURE_REFUSED" = 0 ]; then cmd_capture_stop quiet || true; fi; term_title ""; if [ "$CAPTURE_REFUSED" = 0 ]; then echo; echo "  $(L "Capture ended." "캡처를 끝냈습니다.")"; fi' EXIT
   trap 'exit 0' INT TERM
   # -X utf8: Windows Python writes a pipe in the ANSI code page (cp949), which turns Korean
   # device names and error messages into mojibake here and in capture.log.
   # sed -u, not tr: tr holds about 4 KB before passing anything on, so lines showed up late and
   # Ctrl+C threw away what it held (also from capture.log).
   # ${opts[@]+"${opts[@]}"}: the options as typed, without --console (see the top of this function).
-  (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
-    | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture) || true
+  # The program's own exit code is kept (the first of the pipe's, which grep's and the others' would hide): 76 is
+  # the program saying another one runs for this server (CAPTURE_BUSY in client/capture.py), its two lines printed
+  # above. set +e in the subshell, so a pipe that ends in failure does not end it before the code is read.
+  local ended=0
+  (set +e; cd "$WIN_CWD" || exit 0
+   "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
+     | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture
+   exit "${PIPESTATUS[0]}") || ended=$?
+  if [ "$ended" = 76 ]; then CAPTURE_REFUSED=1; return 1; fi   # as a windowless start that finds one running ends
 }
 
 # A Linux desktop: the capture program runs here, from the virtual environment ./sidenote setup-capture makes on Linux,
@@ -1163,8 +1509,9 @@ cmd_capture_here() {
   if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
                                   "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
-  [ "$(capture_running)" = 0 ] || die "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" \
-                                            "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
+  # with --up the panel opens and it ends well, as on WSL (already_capturing): "start everything" finds it started
+  [ "$(capture_running)" = 0 ] || already_capturing "$up" "$(L "The capture is already running. Quit it from the tray icon or with ./sidenote capture-stop" \
+                                                              "캡처가 이미 실행 중입니다. 트레이 아이콘에서 끝내거나 ./sidenote capture-stop을 실행하세요")"
   if [ -n "${WAYLAND_DISPLAY:-}" ]; then
     warn "$(L "A Wayland session: the screen is read through X11 (XWayland), which may show only X11 windows. If the panel shows a blank screen, log in to an X11 session." \
               "Wayland 세션입니다: 화면을 X11(XWayland)로 읽어 X11 창만 보일 수 있습니다. 패널에 빈 화면이 보이면 X11 세션으로 로그인하세요.")"
@@ -1226,13 +1573,94 @@ cmd_llm() {   # the local LLM: pull, list, logs
       docker compose --profile tools run --rm --no-deps llm-pull ${models[@]+"${models[@]}"} 2>&1 | grep -vE "^\s*$|pulling [0-9a-f]{12}" | sed 's/^/  /'
       # an if, not &&: with the server down the pull still succeeded (set -e would end on the failed test)
       if health >/dev/null; then echo "  $(L "The server picks up the model within 20 seconds." "서버가 20초 안에 모델을 반영합니다.")"; fi ;;
-    list)
-      if docker ps --format '{{.Names}}' | grep -qx sidenote-llm; then docker exec sidenote-llm ollama list
-      else docker compose --profile tools run --rm --no-deps --entrypoint sh llm-pull -c 'ollama serve >/dev/null 2>&1 & i=0; until ollama list >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -lt 120 ] || exit 1; sleep 0.5; done; ollama list'; fi ;;
+    list) llm_list ;;
+    rm) shift; llm_rm "$@" ;;
     logs) docker compose logs -f --tail 60 llm ;;
-    *) die "$(L "Usage: ./sidenote llm pull [model ...] | list | logs   (model now: $LOCAL_MODEL, while the GPU is busy: $BUSY_MODEL)" \
-                "사용법: ./sidenote llm pull [모델 ...] | list | logs   (지금 모델: $LOCAL_MODEL, GPU가 바쁠 때: $BUSY_MODEL)")" ;;
+    *) die "$(L "Usage: ./sidenote llm pull [model ...] | list | rm model ... [--yes] | logs   (model now: $LOCAL_MODEL, while the GPU is busy: $BUSY_MODEL)" \
+                "사용법: ./sidenote llm pull [모델 ...] | list | rm 모델 ... [--yes] | logs   (지금 모델: $LOCAL_MODEL, GPU가 바쁠 때: $BUSY_MODEL)")" ;;
   esac
+}
+
+# The local model server's models, as `ollama list` prints them: asked of the running llm container, or else of an Ollama
+# started for the question in the tools container, over the same volume (nothing is downloaded either way)
+llm_list() {
+  if docker ps --format '{{.Names}}' | grep -qx sidenote-llm; then docker exec sidenote-llm ollama list
+  else docker compose --profile tools run --rm --no-deps --entrypoint sh llm-pull -c 'ollama serve >/dev/null 2>&1 & i=0; until ollama list >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -lt 120 ] || exit 1; sleep 0.5; done; ollama list'; fi
+}
+# `ollama rm` of each model named, in the same two places: one at a time, so the first that fails says which
+llm_remove() {
+  local m
+  if docker ps --format '{{.Names}}' | grep -qx sidenote-llm; then
+    for m in "$@"; do docker exec sidenote-llm ollama rm "$m" || return 1; done
+  else   # the names reach sh as its arguments ("$@" there), never as part of the script's text
+    docker compose --profile tools run --rm --no-deps --entrypoint sh llm-pull -c 'ollama serve >/dev/null 2>&1 & i=0; until ollama list >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -lt 120 ] || exit 1; sleep 0.5; done; for m in "$@"; do ollama rm "$m" || exit 1; done' sh "$@"
+  fi
+}
+# ./sidenote llm rm MODEL ... [--yes]: a downloaded model taken off the PC, with the tuned copy Sidenote makes of it
+# (sidenote-MODEL, compose.yaml: llm-pull), which shares its files: the one without the other frees nothing. Named either
+# way, the two go together. The sizes are shown and a yes is asked first; a model that is not there is said, and ends 1.
+llm_rm() {
+  local usage yes=0 asked=() a
+  usage="$(L "Usage: ./sidenote llm rm model ... [--yes]" "사용법: ./sidenote llm rm 모델 ... [--yes]")"
+  for a in "$@"; do
+    case "$a" in
+      --yes) yes=1 ;;
+      -*) die "$usage" ;;   # an option this command does not have: said, nothing removed
+      *) asked+=("$a") ;;
+    esac
+  done
+  [ ${#asked[@]} -gt 0 ] || die "$usage"
+  local listed; listed="$(llm_list 2>&1)" \
+    || die "$(L "Could not list the models: $(tail -1 <<<"$listed")" "모델 목록을 읽지 못했습니다: $(tail -1 <<<"$listed")")"
+  # Each name asked for, and its pair: the base model and sidenote-<base>, each as listed (":latest" when pulled
+  # without a tag), with its size from the same line (SIZE is two words: "9.6 GB")
+  local gone=() bases=() missing=() shown="" m base cand line name hit g dup
+  for m in "${asked[@]}"; do
+    base="${m#sidenote-}"
+    hit=0
+    for cand in "$base" "sidenote-$base"; do
+      line="$(awk -v n="$cand" 'NR > 1 && ($1 == n || $1 == n ":latest") { print $1 "|" $3 " " $4; exit }' <<<"$listed")"
+      [ -n "$line" ] || continue
+      hit=1
+      name="${line%%|*}"
+      dup=0; for g in ${gone[@]+"${gone[@]}"}; do if [ "$g" = "$name" ]; then dup=1; fi; done
+      if [ "$dup" = 1 ]; then continue; fi   # asked for twice, under both names
+      gone+=("$name")
+      shown="$shown    $name  ${D}${line#*|}${N}"$'\n'
+    done
+    if [ "$hit" = 1 ]; then bases+=("$base"); else missing+=("$m"); fi
+  done
+  for m in ${missing[@]+"${missing[@]}"}; do
+    bad "$(L "Not on this PC: $m  (./sidenote llm list shows what is)" "이 PC에 없는 모델입니다: $m  (있는 모델은 ./sidenote llm list)")"
+  done
+  [ ${#gone[@]} -gt 0 ] || exit 1
+  echo "$(L "${B}Models to remove${N}" "${B}지울 모델${N}")"
+  printf '%s' "$shown"
+  if [ "$yes" != 1 ]; then
+    # No terminal to answer at: the line that removes them without the question
+    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To remove them: ./sidenote llm rm ${asked[*]} --yes" \
+                         "답할 터미널이 없습니다. 지우려면: ./sidenote llm rm ${asked[*]} --yes")"
+    if ! ask_yes "$(L "Remove them?" "지울까요?")"; then
+      echo "  $(L "Nothing removed." "아무것도 지우지 않았습니다.")"
+      exit 1
+    fi
+  fi
+  llm_remove "${gone[@]}" >/dev/null || die "$(L "Ollama did not remove them. ./sidenote llm list shows what is left." "Ollama가 지우지 못했습니다. 남은 모델은 ./sidenote llm list로 확인하세요.")"
+  ok "$(L "Removed: ${gone[*]}" "지웠습니다: ${gone[*]}")"
+  # The one set for solving or for a busy GPU (with "auto", the ones this PC's GPU picks) is downloaded again by llm pull
+  local wanted=" $LOCAL_MODEL $BUSY_MODEL " picked
+  if [ "$LOCAL_MODEL" = auto ] || [ "$BUSY_MODEL" = auto ]; then
+    picked="$(models_to_pull 2>/dev/null | tr '\n' ' ')" || picked=""
+    wanted="$wanted $picked "
+  fi
+  for base in ${bases[@]+"${bases[@]}"}; do
+    case "$wanted" in
+      *" $base "*|*" sidenote-$base "*)
+        echo "  $(L "$base is the model set for solving here: ./sidenote llm pull downloads it again." \
+                    "이 PC에서 풀이에 쓰도록 정한 모델입니다($base). ./sidenote llm pull로 다시 받습니다.")" ;;
+    esac
+  done
+  [ ${#missing[@]} -eq 0 ] || exit 1
 }
 
 cmd_gpu() {   # give the GPU back while you need it yourself, and take it again
@@ -1274,8 +1702,8 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   if [ "$ON_WSL" = 1 ] && { [ -n "$winp" ] || ! win py -3 --version >/dev/null; }; then winpy=0; fi
   if [ "$ON_WSL" = 0 ]; then packages="$(here_packages)" || packages=""
   elif [ "$winpy" = 1 ]; then packages="$(win_packages 2>/dev/null)" || packages=""; fi
-  if [ -n "$winp" ]; then
-    bad "$winp"
+  if [ -n "$winp" ]; then   # its first clause: the whole of it, with what to do, is in the checks at the end
+    bad "${winp%%:*} ${D}($(L "what to do: in the checks below" "할 일은 아래 점검에"))${N}"
   elif [ "$winpy" = 0 ]; then
     bad "$(L "No Python for Windows (py). Install it from python.org, then ./sidenote setup-capture" \
              "Windows용 Python(py) 없음: python.org에서 설치한 뒤 ./sidenote setup-capture")"
@@ -1318,7 +1746,8 @@ cmd_install() {   # everything a first run needs, in the order it needs it
     ok "$(L "Made on WSL only. Here ${B}./sidenote capture --up${N} starts the server and the capture together" \
             "WSL에서만 만듦. 여기서는 ${B}./sidenote capture --up${N}이 서버와 캡처를 함께 시작")"
   elif [ "$winpy" = 0 ]; then
-    warn "$(L "Skipped: the shortcut runs Python for Windows (step 2)" "건너뜀: 바로가기는 Windows용 Python으로 실행 (2단계)")"
+    if [ -n "$winp" ]; then warn "$(L "Skipped: Windows cannot be reached from WSL (step 2)" "건너뜀: WSL에서 Windows를 쓸 수 없음 (2단계)")"
+    else warn "$(L "Skipped: the shortcut runs Python for Windows (step 2)" "건너뜀: 바로가기는 Windows용 Python으로 실행 (2단계)")"; fi
   else
     ( cmd_shortcut ) || true   # a shortcut that cannot be made says why; doctor still runs
   fi
@@ -1343,7 +1772,13 @@ install_next() {
   echo "${B}$(L "Next" "다음 할 일")${N}"
   if [ "$1" = 1 ]; then echo "  ${B}./sidenote llm pull${N}        $(L "the local model for this GPU" "이 GPU에 맞는 모델 받기")"; fi
   if [ -n "$login" ]; then echo "  ${B}${login}${N}   $(L "the agent's login, for the hard problems" "어려운 문제를 맡길 에이전트 로그인")"; fi
-  echo "  ${B}./sidenote capture --up${N}    $(L "start the server and the capture" "서버와 캡처 시작")"
+  if [ "$ON_WSL" = 1 ] && [ -n "$(win_problem)" ]; then
+    echo "  $(L "In a Windows terminal, once (the capture packages and the desktop shortcut):" "Windows 터미널에서 한 번 (캡처 패키지와 바탕화면 바로가기):")"
+    echo "    ${B}$(win_setup_command)${N}"
+    echo "  $(L "Then the desktop shortcut starts the server and the capture" "그다음 바탕화면 바로가기가 서버와 캡처를 함께 시작")"
+  else
+    echo "  ${B}./sidenote capture --up${N}    $(L "start the server and the capture" "서버와 캡처 시작")"
+  fi
 }
 
 cmd_version() {   # what is actually installed and running, in one place
@@ -1387,39 +1822,142 @@ cmd_version() {   # what is actually installed and running, in one place
   printf '  %s%s\n' "$(L 'Log folder      ' '로그 폴더       ')" "$LOG_PATH"
 }
 
+# ---- the history and settings in the log folder: uninstall --data, backup, restore ----
+# What Sidenote writes in the log folder ($LOG_PATH), by name: the history (with the two files SQLite keeps beside it),
+# the panel's settings and the screen and sound switches (each with the temporary file it is saved through), what the
+# server measured and noted (.pace, .speed, .spend, .account, .restart and their temporary files, stall.txt, the
+# folder's write test, .ended), the copy of the history a backup has the server make (.backup.sqlite), and the live
+# logs. Their rotated copies and the frames kept with SIDENOTE_DEBUG_FRAMES are found by their patterns
+# (remove_own_files). Anything else in the folder is not Sidenote's, and stays.
+SIDENOTE_FILES="history.sqlite history.sqlite-wal history.sqlite-shm .settings.json .settings.tmp .switches.json .switches.tmp
+.pace.json .pace.tmp .speed.json .speed.tmp .spend.json .spend.tmp .account.json .restart.npz .restart.npz.tmp.npz stall.txt
+.write-test .ended .backup.sqlite server.log events.jsonl capture.log"
+# What a backup holds, and the only names a restore takes from one: the history (with its write-ahead log when it was
+# copied as a file, with the server off), the settings, the switches, and the line that says what made the backup
+BACKUP_NAMES="history.sqlite history.sqlite-wal .settings.json .switches.json sidenote-backup.txt"
+# A backup's copy of the history made one file (cmd_backup): its -wal merged in (SQLite merges it as it opens the copy, and
+# takes it away as it closes it), and Recently deleted taken out, the file rebuilt then; prints how many went (0 for a
+# history with none, or from before answers could be deleted)
+LEAVE_DELETED_OUT='import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+if "deleted" not in [r[1] for r in db.execute("PRAGMA table_info(answers)")]:
+    db.execute("PRAGMA journal_mode=DELETE")
+    db.close()
+    print(0)
+    sys.exit()
+n = db.execute("SELECT COUNT(*) FROM answers WHERE deleted IS NOT NULL").fetchone()[0]
+if n:
+    db.execute("DELETE FROM answers WHERE deleted IS NOT NULL")
+    db.commit()
+    db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    db.execute("VACUUM")
+db.execute("PRAGMA journal_mode=DELETE")
+db.close()
+print(n)'
+# What a restore moves aside before the backup's files go in: the history with both files SQLite keeps beside it (a -wal
+# or -shm of the old history left beside the new one would be read as part of it), the settings and the switches
+RESTORE_ASIDE="history.sqlite history.sqlite-wal history.sqlite-shm .settings.json .switches.json"
+
+# The size of a file or a folder as people read it, from du -sk, which GNU and BSD print alike (their -h does not)
+size_of() {
+  local kb; kb="$(du -sk "$1" 2>/dev/null | awk 'NR == 1 { print $1 }')" || true   # a file du may not read: the rest is counted
+  awk -v k="${kb:-0}" 'BEGIN { if (k < 1024) printf "%d KB", k; else if (k < 1048576) printf "%.1f MB", k / 1024; else printf "%.1f GB", k / 1048576 }'
+}
+
+# A path typed on the command line, read from the folder it was typed in (this script works from its own, CALLER_PWD)
+from_caller() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$CALLER_PWD" "$1" ;; esac; }
+
+# Removes from folder $1 the names after it, each one by itself: a file, or a link (never what it points to). A folder
+# under one of the names is left as it is.
+remove_named() {
+  local d="$1" n; shift
+  for n in "$@"; do
+    if [ -f "$d/$n" ] || [ -L "$d/$n" ]; then rm -f -- "$d/$n" 2>/dev/null || true; fi   # one that will not go stays, and is listed after
+  done
+}
+
+# uninstall --data: what Sidenote wrote in the log folder goes, each file by its name (SIDENOTE_FILES), the rotated logs and
+# the kept frames by their patterns, and the folders backup and restore make there by theirs, each emptied of the names
+# it holds and then removed with rmdir. The log folder goes the same way, last: rmdir removes a folder only when it is
+# empty, so the folder stays, with anything in it that is not Sidenote's. Nothing is removed with whatever it holds.
+remove_own_files() {
+  local d="$LOG_PATH" f sub
+  [ -d "$d" ] || return 0
+  # shellcheck disable=SC2086  # split on purpose: the names hold no spaces and no pattern characters
+  remove_named "$d" $SIDENOTE_FILES
+  for f in "$d"/server.log.[0-9]* "$d"/events.jsonl.[0-9]* "$d"/capture.log.[0-9]* "$d"/none_*.png; do
+    if [ -f "$f" ] || [ -L "$f" ]; then rm -f -- "$f" 2>/dev/null || true; fi   # (a pattern that matched nothing is no file)
+  done
+  for sub in "$d"/before-restore-* "$d"/.restore.* "$d"/.backup.*; do
+    if [ ! -d "$sub" ] || [ -L "$sub" ]; then continue; fi   # (.backup.sqlite is a file, and went above)
+    # shellcheck disable=SC2086
+    remove_named "$sub" $RESTORE_ASIDE $BACKUP_NAMES
+    rmdir -- "$sub" 2>/dev/null || true
+  done
+  rmdir -- "$d" 2>/dev/null || true
+}
+
+# The command that takes the desktop shortcut and its icon away from Windows itself (client/launch.pyw --remove), for a
+# WSL that cannot start Windows programs, worded as the setup command is (win_setup_command)
+win_remove_command() {
+  local launch; launch="$(wslpath -w "$PWD/client/launch.pyw" 2>/dev/null)" || launch="$PWD/client/launch.pyw"
+  printf 'py -3 "%s" --remove' "$launch"
+}
+
 cmd_uninstall() {   # take back everything this project put on the PC
-  # Listed first, removed only on --yes: volumes hold the models (tens of GB) and the logs, and
-  # nothing here is worth losing to a typed command.
-  local purge=0
-  [ "${1:-}" = "--yes" ] && purge=1
-  echo "${B}$(L "What Sidenote made on this PC" "Sidenote가 이 PC에 만든 것")${N}"
-  echo "  $(L "Containers: " "컨테이너: ")$(docker ps -a --filter name=sidenote --format '{{.Names}}' | paste -sd' ' - || true)"
-  local ollama search
+  # Listed first, removed only on --yes: volumes hold the models (tens of GB), and nothing here is worth losing to a
+  # typed command. The history, the settings and the logs in the log folder stay unless --data says otherwise: installing
+  # again goes on with them.
+  local purge=0 data=0 a
+  for a in "$@"; do
+    case "$a" in
+      --yes) purge=1 ;;
+      --data) data=1 ;;
+      *) die "$(L "Unknown option: $a (./sidenote uninstall [--yes] [--data])" "알 수 없는 옵션입니다: $a (./sidenote uninstall [--yes] [--data])")" ;;
+    esac
+  done
+  local ollama search size="" datum again="./sidenote uninstall --yes"
   ollama="ollama/ollama:$(setting SIDENOTE_OLLAMA_VERSION 0.40.5)"
   search="searxng/searxng:$(setting SIDENOTE_SEARXNG_VERSION 2026.10.7-6671d89be)"
-  echo "  $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local, $ollama, $ollama-rocm, $search"
-  echo "  $(L "Volumes:    " "볼륨:     ")$(docker volume ls --format '{{.Name}}' | grep '^sidenote_' | paste -sd' ' - || true)"
+  if [ -d "$LOG_PATH" ]; then size=" ($(size_of "$LOG_PATH"))"; fi
+  datum="$(L "History, settings and logs: " "기록, 설정, 로그: ")$LOG_PATH$size"
+  if [ "$data" = 1 ]; then again="$again --data"; fi
+  echo "${B}$(L "What Sidenote made on this PC" "Sidenote가 이 PC에 만든 것")${N}"
+  echo "  $(L "Removed with --yes:" "--yes로 지우는 것:")"
+  echo "    $(L "Containers: " "컨테이너: ")$(docker ps -a --filter name=sidenote --format '{{.Names}}' | paste -sd' ' - || true)"
+  echo "    $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local, $ollama, $ollama-rocm, $search"
+  echo "    $(L "Volumes:    " "볼륨:     ")$(docker volume ls --format '{{.Name}}' | grep '^sidenote_' | paste -sd' ' - || true)"
+  echo "      ${D}$(L "(the models are in the volume sidenote_llm-models: tens of GB, downloaded again once removed)" "(모델은 볼륨 sidenote_llm-models 안에 있습니다: 수십 GB, 지우면 다시 받아야 합니다)")${N}"
   # the shortcut is made on WSL only, on the Windows desktop; the capture packages of a Linux desktop are in a venv here
-  if [ "$ON_WSL" = 1 ]; then echo "  $(L "Shortcut:   Sidenote Capture.lnk on the Windows desktop" "바로가기: Windows 바탕화면의 Sidenote Capture.lnk")"; fi
-  if [ -d "$CAPTURE_VENV" ]; then echo "  $(L "Capture packages: " "캡처 패키지: ")$CAPTURE_VENV"; fi
-  echo "  $(L "Logs:       " "로그:     ")$LOG_PATH"
-  echo "  ${D}$(L "(the models are in the volume sidenote_llm-models: tens of GB, downloaded again once removed)" "(모델은 볼륨 sidenote_llm-models 안에 있습니다: 수십 GB, 지우면 다시 받아야 합니다)")${N}"
+  if [ "$ON_WSL" = 1 ]; then echo "    $(L "Shortcut:   Sidenote Capture.lnk on the Windows desktop, and its icon" "바로가기: Windows 바탕화면의 Sidenote Capture.lnk와 그 아이콘")"; fi
+  if [ -d "$CAPTURE_VENV" ]; then echo "    $(L "Capture packages: " "캡처 패키지: ")$CAPTURE_VENV"; fi
+  if [ "$data" = 1 ]; then echo "    $datum"; fi
+  echo "  $(L "Kept:" "남기는 것:")"
+  if [ "$data" != 1 ]; then
+    echo "    $datum"
+    echo "      ${D}$(L "(installing again goes on with them. A copy: ./sidenote backup. Removed too with --data)" "(다시 설치하면 이어서 씁니다. 사본은 ./sidenote backup, 함께 지우려면 --data)")${N}"
+  fi
   # ~/.claude and ~/.codex are mounted into the server, but they are Claude Code's and Codex's own: their login and
   # settings on this PC, which those CLIs keep using after Sidenote is gone
-  echo "  ${D}$(L "(kept either way: ~/.claude and ~/.codex, the login folders Claude Code and Codex use on this PC too)" \
-                  "(어느 쪽이든 그대로 둠: ~/.claude, ~/.codex. 이 PC의 Claude Code와 Codex도 쓰는 로그인 폴더)")${N}"
+  echo "    $(L "~/.claude and ~/.codex: the login folders Claude Code and Codex use on this PC too" "~/.claude, ~/.codex: 이 PC의 Claude Code와 Codex도 쓰는 로그인 폴더")"
   # the capture packages on Windows went into a Python this project does not own, beside whatever else uses their libraries
-  if [ "$ON_WSL" = 1 ]; then echo "  ${D}$(L "(kept either way: the capture packages in Windows Python, client/requirements.txt lists them)" \
-                                            "(어느 쪽이든 그대로 둠: Windows Python의 캡처 패키지. 목록은 client/requirements.txt)")${N}"; fi
+  if [ "$ON_WSL" = 1 ]; then echo "    $(L "The capture packages in Windows Python (client/requirements.txt lists them)" "Windows Python의 캡처 패키지 (목록은 client/requirements.txt)")"; fi
   if [ "$purge" != 1 ]; then
     echo
-    warn "$(L "Nothing removed. To remove it all: ${B}./sidenote uninstall --yes${N}" "아무것도 지우지 않았습니다. 정말 지우려면 ${B}./sidenote uninstall --yes${N}")"
+    warn "$(L "Nothing removed. To remove it: ${B}$again${N}" "아무것도 지우지 않았습니다. 지우려면 ${B}$again${N}")"
     return 0
   fi
   echo
   cmd_capture_stop quiet || true          # the capture program first: it is the only thing outside docker
-  # cmd_shortcut ends the script (die) where there is no WSL, which stopped the removal here on Linux
-  if [ "$ON_WSL" = 1 ]; then ( cmd_shortcut --remove >/dev/null 2>&1 ) || true; fi
+  # The shortcut and its icon, on the Windows side: removed from here where WSL can start Windows programs, and named
+  # with the command that removes them from Windows where it cannot (interop off, WSL 1, no Windows drive). cmd_shortcut
+  # ends the script (die) where there is no WSL, which stopped the removal here on Linux: it is not asked there.
+  local shortcut=none   # removed, failed, out-of-reach; none on a Linux desktop or a Mac
+  if [ "$ON_WSL" = 1 ]; then
+    if [ -n "$(win_problem)" ]; then shortcut=out-of-reach
+    elif ( cmd_shortcut --remove >/dev/null 2>&1 ); then shortcut=removed
+    else shortcut=failed; fi
+  fi
   local rc=0
   docker compose --profile '*' down -v --remove-orphans 2>&1 | sed 's/^/  /' || rc=$?
   docker image rm -f sidenote:local sidenote-runner:local >/dev/null 2>&1 || true
@@ -1429,24 +1967,334 @@ cmd_uninstall() {   # take back everything this project put on the PC
   for image in "$ollama" "$ollama-rocm" "$search"; do docker image rm "$image" >/dev/null 2>&1 || true; done
   local venv=0; if [ -d "$CAPTURE_VENV" ]; then rm -rf "$CAPTURE_VENV" && venv=1; fi
   if [ "$rc" = 0 ]; then
-    if [ "$ON_WSL" = 1 ]; then ok "$(L "Removed the containers, images, volumes and shortcut." "컨테이너, 이미지, 볼륨, 바로가기를 지웠습니다.")"
-    elif [ "$venv" = 1 ]; then ok "$(L "Removed the containers, images, volumes and capture packages." "컨테이너, 이미지, 볼륨, 캡처 패키지를 지웠습니다.")"
-    else ok "$(L "Removed the containers, images and volumes." "컨테이너, 이미지, 볼륨을 지웠습니다.")"; fi
+    local parts; parts="$(L "the containers, images and volumes" "컨테이너, 이미지, 볼륨")"
+    if [ "$shortcut" = removed ]; then parts="$parts$(L ", the shortcut and its icon" ", 바로가기와 아이콘")"; fi
+    if [ "$venv" = 1 ]; then parts="$parts$(L ", the capture packages" ", 캡처 패키지")"; fi
+    ok "$(L "Removed $parts." "지웠습니다: $parts")"
   else
     warn "$(L "Could not remove the containers and volumes (Docker may be off). Start Docker and run this again." \
               "컨테이너와 볼륨을 지우지 못했습니다(Docker가 꺼져 있을 수 있습니다). Docker를 켠 뒤 다시 실행하세요.")"
   fi
-  echo "  $(L "Logs kept: $LOG_PATH ${D}(delete them yourself if they are not needed)${N}" "로그는 남겼습니다: $LOG_PATH ${D}(필요 없으면 직접 지우세요)${N}")"
+  case "$shortcut" in
+    failed) warn "$(L "The shortcut could not be reached: delete Sidenote Capture.lnk from the Windows desktop yourself." \
+                      "바로가기에는 접근하지 못했습니다: Windows 바탕화면의 Sidenote Capture.lnk를 직접 지우세요.")" ;;
+    out-of-reach)   # the command on a line of its own, nothing after it: copied whole
+      echo "  $(L "WSL cannot start Windows programs here, so the desktop shortcut and its icon stay. In a Windows terminal this removes them:" \
+                  "여기서는 WSL이 Windows 프로그램을 실행할 수 없어 바탕화면 바로가기와 아이콘이 남아 있습니다. Windows 터미널에서 이 명령으로 지웁니다:")"
+      echo "      $(win_remove_command)" ;;
+  esac
+  if [ "$data" != 1 ]; then
+    echo "  $(L "History, settings and logs kept: " "기록, 설정, 로그는 남겼습니다: ")$LOG_PATH$size"
+    echo "  ${D}$(L "(installing again goes on with them. A copy: ./sidenote backup. To remove them too: ./sidenote uninstall --yes --data)" \
+                    "(다시 설치하면 이어서 씁니다. 사본은 ./sidenote backup, 함께 지우려면 ./sidenote uninstall --yes --data)")${N}"
+  elif running; then   # still up (Docker refused the down): its files are open, and it would write them again
+    warn "$(L "The server is still running, so the history, settings and logs stay. ./sidenote down, then $again" \
+              "서버가 아직 실행 중이라 기록, 설정, 로그는 남겼습니다. ./sidenote down 뒤에 $again")"
+  elif [ ! -d "$LOG_PATH" ]; then
+    ok "$(L "No history, settings or logs: $LOG_PATH is not there" "기록, 설정, 로그가 없습니다: $LOG_PATH 폴더가 없습니다")"
+  else
+    remove_own_files
+    if [ ! -d "$LOG_PATH" ]; then
+      ok "$(L "Removed the history, settings and logs, and their folder: $LOG_PATH" "기록, 설정, 로그와 그 폴더를 지웠습니다: $LOG_PATH")"
+    else   # something in it is not Sidenote's, or would not go: named, and the folder left with it
+      # (awk, not head: head ends early, and with pipefail the ls it cut off would fail the whole line)
+      local left; left="$(ls -A "$LOG_PATH" 2>/dev/null | awk 'NR <= 6' | paste -sd' ' -)" || left=""
+      ok "$(L "Removed the history, settings and logs in $LOG_PATH" "$LOG_PATH의 기록, 설정, 로그를 지웠습니다")"
+      echo "  $(L "The folder stays, with what is still in it: $left" "폴더는 남았습니다. 그 안에 남은 것: $left")"
+    fi
+  fi
+}
+
+# ---- backup and restore ----
+# The copy of the history the server's container makes while the server writes it: SQLite's own backup, which reads the
+# database whole and consistent however it is being written, into the log folder (the container's /data/logs) for the
+# archive. Made in the container, where the database is open: a copy of the file taken from outside could catch it
+# halfway through a write.
+SQLITE_BACKUP='import os, sqlite3
+os.umask(0o077)
+src, dst = "/data/logs/history.sqlite", "/data/logs/.backup.sqlite"
+if os.path.exists(dst):
+    os.remove(dst)
+a = sqlite3.connect(src, timeout=30)
+b = sqlite3.connect(dst)
+a.backup(b)
+b.close()
+a.close()'
+
+# ./sidenote backup [FILE]: the history and the settings in one file, to keep, or to take to another PC (restore puts them
+# back). A tar.gz with plain names: history.sqlite, .settings.json and .switches.json (each when it is there) and
+# sidenote-backup.txt (what made it, and when). It holds the answers and, with Keep what is heard, what people said: it
+# is this user's alone (umask 077), and a file already there is never written over.
+cmd_backup() {
+  local usage; usage="$(L "Usage: ./sidenote backup [file]   (by default ./sidenote-backup-<date>-<time>.tar.gz, in this folder)" \
+                          "사용법: ./sidenote backup [파일]   (기본은 이 폴더의 ./sidenote-backup-<날짜>-<시각>.tar.gz)")"
+  [ $# -le 1 ] || die "$usage"
+  case "${1:-}" in -*) die "$usage" ;; esac   # an option where the file's name goes: this command has none
+  local file; file="$(from_caller "${1:-sidenote-backup-$(date +%Y%m%d-%H%M%S).tar.gz}")"
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    die "$(L "$file is there already, and a backup writes over no file. Name another one." "$file 파일이 이미 있습니다. 백업은 있는 파일에 덮어쓰지 않으니 다른 이름을 적으세요.")"
+  fi
+  [ -d "$(dirname "$file")" ] || die "$(L "No such folder: $(dirname "$file")" "그런 폴더가 없습니다: $(dirname "$file")")"
+  if [ ! -f "$LOG_PATH/history.sqlite" ] && [ ! -f "$LOG_PATH/.settings.json" ]; then
+    die "$(L "Nothing to back up yet: no history and no settings in $LOG_PATH" "아직 백업할 것이 없습니다: $LOG_PATH에 기록도 설정도 없습니다")"
+  fi
+  umask 077   # everything made from here on, the archive too, is this user's alone
+  # A link among the files is refused: the server's container can write the log folder, and a link it left there (to a
+  # file of this PC's user) would have put that file in the backup. The copies below follow none either (cp -P)
+  local n
+  for n in history.sqlite history.sqlite-wal .settings.json .switches.json; do
+    if [ -L "$LOG_PATH/$n" ]; then
+      die "$(L "$LOG_PATH/$n is a link, not a file of Sidenote's: no backup is made. Remove it and back up again." \
+               "$LOG_PATH/$n 항목이 링크라 Sidenote의 파일이 아닙니다: 백업하지 않았습니다. 지운 뒤 다시 백업하세요.")"
+    fi
+  done
+  # The archive is put together in a folder inside the log folder: the server's copy of the history is made in the log
+  # folder (the one the container sees), and moving it from there is a rename, not a second copy. Whatever happens, that
+  # folder and the server's copy go again, and an archive begun and not finished with them (backup_cleanup).
+  BACKUP_STAGE="$(mktemp -d "$LOG_PATH/.backup.XXXXXX")" || die "$(L "Could not make a folder in $LOG_PATH" "$LOG_PATH에 폴더를 만들지 못했습니다")"
+  BACKUP_FILE=""
+  trap backup_cleanup EXIT
+  local held=() n out
+  if [ -f "$LOG_PATH/history.sqlite" ]; then
+    if running; then   # open in the server, and written now and then: the server's own copy (SQLITE_BACKUP)
+      rm -f -- "$LOG_PATH/.backup.sqlite"   # one an earlier backup left when it was ended
+      out="$(docker exec sidenote python -c "$SQLITE_BACKUP" 2>&1)" && [ -f "$LOG_PATH/.backup.sqlite" ] \
+        || die "$(L "The server could not copy the history: $(tail -1 <<<"$out")" "서버가 기록을 복사하지 못했습니다: $(tail -1 <<<"$out")")"
+      mv -- "$LOG_PATH/.backup.sqlite" "$BACKUP_STAGE/history.sqlite"
+    else   # nothing has it open: the file as it is, and its write-ahead log, which holds the latest answers until merged in
+      cp -P -- "$LOG_PATH/history.sqlite" "$BACKUP_STAGE/history.sqlite"
+      if [ -f "$LOG_PATH/history.sqlite-wal" ]; then
+        cp -P -- "$LOG_PATH/history.sqlite-wal" "$BACKUP_STAGE/history.sqlite-wal"
+        held+=(history.sqlite-wal)
+      fi
+    fi
+    held=(history.sqlite ${held[@]+"${held[@]}"})
+  fi
+  for n in .settings.json .switches.json; do
+    if [ -f "$LOG_PATH/$n" ]; then cp -P -- "$LOG_PATH/$n" "$BACKUP_STAGE/$n"; held+=("$n"); fi
+  done
+  # The copy of the history made one file, and Recently deleted left out of it: deleting an answer was asked for, and a
+  # backup taken to another PC or handed on carried it for its days. In the copy only: its -wal merged in, the deleted
+  # answers gone and the file rebuilt (VACUUM), so nothing of them is left in its pages
+  local left=0
+  if [ -f "$BACKUP_STAGE/history.sqlite" ]; then
+    left="$(python3 -c "$LEAVE_DELETED_OUT" "$BACKUP_STAGE/history.sqlite" 2>/dev/null)" \
+      || die "$(L "Could not leave Recently deleted out of the backup" "백업에서 최근 삭제를 빼지 못했습니다")"
+    case "$left" in ''|*[!0-9]*) die "$(L "Could not leave Recently deleted out of the backup" "백업에서 최근 삭제를 빼지 못했습니다")" ;; esac
+    rm -f -- "$BACKUP_STAGE/history.sqlite-wal" "$BACKUP_STAGE/history.sqlite-shm"   # in the history now
+    local keep=() h
+    for h in ${held[@]+"${held[@]}"}; do [ "$h" = history.sqlite-wal ] || keep+=("$h"); done
+    held=(${keep[@]+"${keep[@]}"})
+  fi
+  # what made it and when: this code's version, read as cmd_version reads it, and the time in UTC
+  local version; version="$(sed -n 's/^VERSION = "\([^"]*\)".*$/\1/p' server/version.py 2>/dev/null | head -1)" || true
+  printf 'sidenote %s %s\n' "${version:-unknown}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$BACKUP_STAGE/sidenote-backup.txt"
+  held+=(sidenote-backup.txt)
+  # The archive's file made with noclobber first, so one that appeared under the name meanwhile is not written over; from
+  # then on the file is this backup's, removed again should the archive not be finished
+  ( set -C; : > "$file" ) 2>/dev/null \
+    || die "$(L "$file is there already, and a backup writes over no file. Name another one." "$file 파일이 이미 있습니다. 백업은 있는 파일에 덮어쓰지 않으니 다른 이름을 적으세요.")"
+  BACKUP_FILE="$file"
+  tar -czf - -C "$BACKUP_STAGE" ${held[@]+"${held[@]}"} > "$file" || die "$(L "Could not write $file" "$file 파일을 쓰지 못했습니다")"
+  BACKUP_FILE=""   # finished: it stays
+  ok "$(L "Backed up: $file ($(size_of "$file"))" "백업했습니다: $file ($(size_of "$file"))")"
+  echo "  $(L "It holds: " "담은 것: ")${held[*]}"
+  if [ "$left" -gt 0 ]; then
+    echo "  ${D}$(L "Recently deleted is left out of it: $left" "최근 삭제는 넣지 않았습니다: ${left}개")${N}"
+  fi
+  echo "  ${D}$(L "(to put it back: ./sidenote restore $file)" "(되돌리려면: ./sidenote restore $file)")${N}"
+}
+backup_cleanup() {   # backup's temporary files, by name, whatever ended it
+  rm -f -- "$LOG_PATH/.backup.sqlite" 2>/dev/null || true   # the server's copy: never left in the folder
+  if [ -n "${BACKUP_STAGE:-}" ] && [ -d "$BACKUP_STAGE" ]; then
+    # shellcheck disable=SC2086
+    remove_named "$BACKUP_STAGE" $BACKUP_NAMES
+    rmdir -- "$BACKUP_STAGE" 2>/dev/null || true
+  fi
+  if [ -n "${BACKUP_FILE:-}" ]; then rm -f -- "$BACKUP_FILE" 2>/dev/null || true; fi   # begun here and not finished
+}
+
+# Why a file is no Sidenote backup, or nothing when it is one. tar reads it; every entry is a plain file under one of the
+# names a backup has (no folder, no link, no path: nothing a restore could write outside its own folder, nor through a
+# link), none twice; sidenote-backup.txt is among them, and the history or the settings.
+backup_problem() {
+  local list types n m known
+  list="$(tar -tzf "$1" 2>/dev/null)" || { L "tar cannot read it" "tar로 읽을 수 없음"; return 0; }
+  [ -n "$list" ] || { L "it is empty" "비어 있음"; return 0; }
+  while IFS= read -r n; do
+    known=0
+    for m in $BACKUP_NAMES; do if [ "$n" = "$m" ]; then known=1; fi; done   # the whole name, nothing about it in part
+    if [ "$known" = 0 ]; then L "it holds a name a backup does not have: $n" "백업에 없는 이름이 들어 있음: $n"; return 0; fi
+  done <<<"$list"
+  if [ -n "$(sort <<<"$list" | uniq -d)" ]; then L "it holds a name twice" "같은 이름이 두 번 들어 있음"; return 0; fi
+  if ! grep -qx 'sidenote-backup.txt' <<<"$list"; then L "it has no sidenote-backup.txt" "sidenote-backup.txt가 없음"; return 0; fi
+  if ! grep -qx -e 'history.sqlite' -e '.settings.json' <<<"$list"; then L "it holds neither a history nor settings" "기록도 설정도 없음"; return 0; fi
+  # the kind of each entry, the first letter of its mode as tar lists it (GNU and BSD alike): "-" for a plain file alone
+  types="$(tar -tvzf "$1" 2>/dev/null | cut -c1 | sort -u | tr -d '\n')" || types=""
+  if [ "$types" != "-" ]; then L "it holds a link or a folder" "링크나 폴더가 들어 있음"; return 0; fi
+  return 0
+}
+
+# Waits for the server to answer after a start, as up does: up to four minutes, a dot a second. Fails when the
+# container stops or the time runs out.
+wait_health() {
+  local t0=$SECONDS dots=0
+  until health >/dev/null; do
+    if ! running || (( SECONDS - t0 > 240 )); then
+      if [ "$dots" = 1 ]; then echo; fi
+      return 1
+    fi
+    printf '.'; dots=1; sleep 1
+  done
+  if [ "$dots" = 1 ]; then echo; fi
+  return 0
+}
+
+# ./sidenote restore FILE [--yes]: a backup's history and settings put in place of the ones there. Those are kept, moved
+# into before-restore-<date>-<time> in the log folder (each kept until uninstall --data), and a running server is stopped for
+# the swap and started again after it, so no file changes under it. A server that was off stays off.
+cmd_restore() {
+  local usage file="" yes=0 a
+  usage="$(L "Usage: ./sidenote restore file [--yes]" "사용법: ./sidenote restore 파일 [--yes]")"
+  for a in "$@"; do
+    case "$a" in
+      --yes) yes=1 ;;
+      -*) die "$usage" ;;
+      *) if [ -n "$file" ]; then die "$usage"; fi; file="$a" ;;
+    esac
+  done
+  [ -n "$file" ] || die "$usage"
+  file="$(from_caller "$file")"
+  [ -f "$file" ] || die "$(L "No such file: $file" "그런 파일이 없습니다: $file")"
+  local why; why="$(backup_problem "$file")"
+  [ -z "$why" ] || die "$(L "Not a Sidenote backup ($why): $file. Nothing changed." "Sidenote 백업이 아닙니다($why): $file. 바꾼 것은 없습니다.")"
+  # "sidenote <version> <time>", as backup wrote it; printed to the terminal, so no control character of a file from elsewhere
+  local made; made="$(tar -xzOf "$file" sidenote-backup.txt 2>/dev/null | head -1 | LC_ALL=C tr -d '\000-\010\013-\037\177' | cut -c1-120)" || made=""
+  echo "${B}$(L "Restoring" "복원합니다")${N}: $file ${D}(${made:-sidenote-backup.txt})${N}"
+  echo "  $(L "It replaces the history and settings in $LOG_PATH. What is there now is kept, in a before-restore folder beside them." \
+              "$LOG_PATH의 기록과 설정을 백업의 것으로 바꿉니다. 지금 있는 것은 그 옆 before-restore 폴더에 남깁니다.")"
+  if [ "$yes" != 1 ]; then
+    # no terminal to answer at: the line that restores without the question
+    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To restore it: ./sidenote restore $file --yes" \
+                         "답할 터미널이 없습니다. 복원하려면: ./sidenote restore $file --yes")"
+    if ! ask_yes "$(L "Restore it?" "복원할까요?")"; then
+      echo "  $(L "Nothing changed." "바꾼 것은 없습니다.")"
+      exit 1
+    fi
+  fi
+  [ -d "$LOG_PATH" ] || mkdir -p -m 700 "$LOG_PATH"   # a PC where the server never ran has none yet
+  umask 077
+  # Out of the archive first, into a folder inside the log folder, before anything there changes: on the same file system,
+  # so each file then goes into place with a rename. The folder goes again whatever happens, and a server stopped here is
+  # started again (restore_cleanup).
+  RESTORE_TMP="$(mktemp -d "$LOG_PATH/.restore.XXXXXX")" || die "$(L "Could not make a folder in $LOG_PATH. Nothing changed." "$LOG_PATH에 폴더를 만들지 못했습니다. 바꾼 것은 없습니다.")"
+  RESTORE_STOPPED=0
+  trap restore_cleanup EXIT
+  tar --no-same-owner -xzf "$file" -C "$RESTORE_TMP" 2>/dev/null \
+    || die "$(L "Could not unpack $file. Nothing changed." "$file 파일을 풀지 못했습니다. 바꾼 것은 없습니다.")"
+  # What came out is what was listed, each a plain file (backup_problem read the list; this reads the files)
+  local n count=0
+  for n in $BACKUP_NAMES; do
+    if [ -L "$RESTORE_TMP/$n" ] || { [ -e "$RESTORE_TMP/$n" ] && [ ! -f "$RESTORE_TMP/$n" ]; }; then
+      die "$(L "Not a Sidenote backup ($n is not a plain file): $file. Nothing changed." "Sidenote 백업이 아닙니다($n 항목이 일반 파일이 아님): $file. 바꾼 것은 없습니다.")"
+    fi
+    if [ -f "$RESTORE_TMP/$n" ]; then count=$((count + 1)); fi
+  done
+  if [ "$(ls -A "$RESTORE_TMP" | wc -l | tr -d ' ')" != "$count" ]; then
+    die "$(L "Not a Sidenote backup (more came out of it than it lists): $file. Nothing changed." "Sidenote 백업이 아닙니다(목록에 없는 것이 나옴): $file. 바꾼 것은 없습니다.")"
+  fi
+  local was_up=0 out
+  if running; then
+    was_up=1
+    echo "  $(L "Stopping the server for the swap" "바꾸는 동안 서버를 멈춥니다")"
+    out="$(docker compose stop server 2>&1)" \
+      || die "$(L "Could not stop the server: $(tail -1 <<<"$out"). Nothing changed." "서버를 멈추지 못했습니다: $(tail -1 <<<"$out"). 바꾼 것은 없습니다.")"
+    RESTORE_STOPPED=1
+  fi
+  # The files that came out, checked again now that the server is stopped: they lay in the log folder, which its container
+  # can write, between the first look and the stop, and a link put in their place would have been moved in and made 600
+  for n in $BACKUP_NAMES; do
+    if [ -L "$RESTORE_TMP/$n" ] || { [ -e "$RESTORE_TMP/$n" ] && [ ! -f "$RESTORE_TMP/$n" ]; }; then
+      die "$(L "Not a Sidenote backup ($n is not a plain file): $file. Nothing changed." "Sidenote 백업이 아닙니다($n 항목이 일반 파일이 아님): $file. 바꾼 것은 없습니다.")"
+    fi
+  done
+  # Named for the time; a second restore within the same second gets -2, -3 after it
+  local stamp before i=1; stamp="$LOG_PATH/before-restore-$(date +%Y%m%d-%H%M%S)"; before="$stamp"
+  until mkdir -m 700 -- "$before" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -le 9 ] || die "$(L "Could not make $before. Nothing changed." "$before 폴더를 만들지 못했습니다. 바꾼 것은 없습니다.")"
+    before="$stamp-$i"
+  done
+  # What is there now goes aside, then the backup's files go in. A step that fails undoes the ones before it: what was
+  # moved in is removed (the archive still has it), what was moved aside is moved back.
+  local moved=() placed=() failed="" err=""
+  for n in $RESTORE_ASIDE; do
+    if [ -e "$LOG_PATH/$n" ] || [ -L "$LOG_PATH/$n" ]; then
+      if ! err="$(mv -- "$LOG_PATH/$n" "$before/$n" 2>&1)"; then failed="$n"; break; fi
+      moved+=("$n")
+    fi
+  done
+  if [ -z "$failed" ]; then
+    for n in $BACKUP_NAMES; do                       # the backup's files, by the one list of them
+      if [ "$n" = sidenote-backup.txt ] || [ ! -f "$RESTORE_TMP/$n" ]; then continue; fi
+      if ! err="$(mv -- "$RESTORE_TMP/$n" "$LOG_PATH/$n" 2>&1)"; then failed="$n"; break; fi
+      placed+=("$n")
+      if ! err="$(chmod 600 "$LOG_PATH/$n" 2>&1)"; then failed="$n"; break; fi   # the history is this user's alone
+    done
+  fi
+  if [ -n "$failed" ]; then
+    local back=1
+    for n in ${placed[@]+"${placed[@]}"}; do rm -f -- "$LOG_PATH/$n" || back=0; done
+    for n in ${moved[@]+"${moved[@]}"}; do mv -- "$before/$n" "$LOG_PATH/$n" || back=0; done
+    if [ "$back" = 1 ]; then
+      rmdir -- "$before" 2>/dev/null || true
+      die "$(L "Could not put $failed in place ($(tail -1 <<<"$err")). What was there is back in place: nothing changed." \
+               "$failed 파일을 제자리에 두지 못했습니다($(tail -1 <<<"$err")). 있던 것을 제자리로 돌려 두었습니다: 바꾼 것은 없습니다.")"
+    fi
+    die "$(L "Could not put $failed in place ($(tail -1 <<<"$err")), nor all that was there back: it is in $before" \
+             "$failed 파일을 제자리에 두지 못했고($(tail -1 <<<"$err")), 있던 것도 다 돌려 두지 못했습니다: $before 폴더에 있습니다")"
+  fi
+  # The problems the server remembered across its restarts, by the ids of the answers that were there: not these
+  rm -f -- "$LOG_PATH/.restart.npz" "$LOG_PATH/.restart.npz.tmp.npz"
+  # The folder of what was there: none when nothing was. Each one stays, until ./sidenote uninstall --data takes them:
+  # one taken by the next restore was a history with no other copy (the right backup after a wrong one, say)
+  local kept=1
+  if [ -z "$(ls -A "$before")" ]; then kept=0; rmdir -- "$before"; fi
+  local started=0
+  if [ "$was_up" = 1 ]; then
+    RESTORE_STOPPED=0   # started here, and not again by restore_cleanup
+    echo "  $(L "Starting the server again" "서버를 다시 시작합니다")"
+    if docker compose start server >/dev/null 2>&1 && wait_health; then started=1; fi
+  fi
+  ok "$(L "Restored from $file: " "복원했습니다: $file, ")${placed[*]:-}"
+  if [ "$kept" = 1 ]; then echo "  $(L "What was there before: " "전에 있던 것: ")$before"
+  else echo "  $(L "Nothing was there before." "전에 있던 것은 없었습니다.")"; fi
+  if [ "$was_up" = 0 ]; then echo "  $(L "The server is off. ./sidenote up starts it with these." "서버는 꺼져 있습니다. ./sidenote up으로 켜면 이것으로 시작합니다.")"
+  elif [ "$started" = 1 ]; then echo "  $(L "The server was started again." "서버를 다시 시작했습니다.")"
+  else warn "$(L "The server did not start again. ./sidenote up starts it, and says why if it cannot." "서버가 다시 시작되지 않았습니다. ./sidenote up으로 시작하면 안 될 때 그 이유를 보여 줍니다.")"; fi
+}
+restore_cleanup() {   # restore's temporary folder, by the names it may hold, and the server it stopped, whatever ended it
+  if [ -n "${RESTORE_TMP:-}" ] && [ -d "$RESTORE_TMP" ]; then
+    # shellcheck disable=SC2086
+    remove_named "$RESTORE_TMP" $BACKUP_NAMES
+    rmdir -- "$RESTORE_TMP" 2>/dev/null || true
+  fi
+  if [ "${RESTORE_STOPPED:-0}" = 1 ]; then   # stopped for the swap and not started again yet: started now
+    RESTORE_STOPPED=0
+    docker compose start server >/dev/null 2>&1 || true
+  fi
 }
 
 cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it takes one click
-  local distro="${WSL_DISTRO_NAME:-}"
+  local distro="$DISTRO"
   # a Windows shortcut, which runs this checkout through wsl.exe: there is none to make on a Linux desktop
   [ -n "$distro" ] || die "$(L "The desktop shortcut is a Windows one, made from WSL. Here ./sidenote capture --up starts the server and the capture." \
                                "바탕화면 바로가기는 WSL에서 만드는 Windows용입니다. 여기서는 ./sidenote capture --up이 서버와 캡처를 함께 시작합니다.")"
+  need_win   # before PowerShell is asked anything, --remove too: without Windows it ended with no word
   local name="Sidenote Capture.lnk"
   local old_names=("Sidenote 캡처.lnk")   # names this command used before
-  local desktop; desktop="$(winps "[Environment]::GetFolderPath('Desktop')" | tr -d '\r' | head -1)"
+  # || "": a PowerShell that fails ended the script here (pipefail) before the line below could say what was wrong
+  local desktop; desktop="$(winps "[Environment]::GetFolderPath('Desktop')" | tr -d '\r' | head -1)" || desktop=""
   [ -n "$desktop" ] || die "$(L "Could not find the Windows desktop folder." "Windows 바탕화면 경로를 찾지 못했습니다.")"
   desktop="$(ps_quote "$desktop")"   # a path can hold a quote; PowerShell wants it doubled
   local lnk="$desktop\\$name"
@@ -1474,7 +2322,6 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   # the last lines the launcher printed, and says so when a second click comes while a start is still going.
   # --up starts the server first when it is not running: after a reboot nothing is.
   # pyw.exe by its full path: the shortcut runs with Explorer's PATH, which need not be the one seen here.
-  need_win
   local pyw; pyw="$(winps "(Get-Command pyw.exe -ErrorAction SilentlyContinue).Source" | head -1)"
   # Without it the shortcut would have nothing to run, and a double click would do nothing at all.
   [ -n "$pyw" ] || die "$(L "No Python launcher (pyw.exe) on Windows, so no shortcut can be made. Install Python for Windows from python.org, then ./sidenote setup-capture and ./sidenote shortcut" \
@@ -1541,7 +2388,14 @@ cmd_doctor() {
   local v
   FAILS=0
   if ! command -v docker >/dev/null; then bad "$(L "docker not installed" "docker 설치 안 됨")"
-  elif v="$(docker version --format '{{.Server.Version}}' 2>/dev/null)" && [ -n "$v" ]; then ok "docker $v"
+  elif v="$(docker version --format '{{.Server.Version}}' 2>/dev/null)" && [ -n "$v" ]; then
+    ok "docker $v"
+    # Compose beside it: the plugin is a package of its own, and compose.yaml needs 2.24 (compose_why says what to install)
+    local cwhy
+    if cwhy="$(compose_why)"; then
+      v="$(docker compose version --short 2>/dev/null || true)"
+      ok "docker compose ${v#v}"
+    else bad "$cwhy"; fi
   else local why; why="$(docker_why)" || true; bad "${why:-$(L "Cannot connect to Docker" "Docker에 연결할 수 없음")}"; fi
   docker image inspect sidenote:local >/dev/null 2>&1 && ok "$(L "Image sidenote:local" "이미지 sidenote:local")" \
     || warn "$(L "No image (./sidenote up builds it)" "이미지 없음 (./sidenote up이 빌드)")"
@@ -1598,7 +2452,11 @@ PY
     esac
     [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || warn "$(L "No X11 display in this shell (DISPLAY): start the capture from the desktop session" "이 셸에 X11 화면 없음 (DISPLAY): 캡처는 데스크톱 세션에서 시작")"
   elif [ -n "$(win_problem)" ]; then
-    bad "$(win_problem)"
+    # set up from Windows (launch.pyw --setup): a capture program connected now, or one that connected before (its log)
+    if [ "$(clients)" -gt 0 ] 2>/dev/null || grep -qs '\[conn\] connected' "$LOG_PATH/capture.log"; then
+      ok "$(L "Capture: set up from Windows ${D}(WSL cannot start Windows programs here: the desktop shortcut starts it)${N}" \
+              "캡처: Windows 쪽에서 설정함 ${D}(여기서는 WSL이 Windows 프로그램을 실행할 수 없어 바탕화면 바로가기로 시작)${N}")"
+    else bad "$(win_problem)"; fi
   elif win py -3 --version >/dev/null; then
     ok "Windows Python: $(win py -3 --version | tail -1)"
     local packages; packages="$(win_packages)" || packages=""   # "tray", "notray", or nothing when one is missing
@@ -1614,8 +2472,25 @@ PY
              "Windows Python(py) 없음 (python.org에서 Windows용 Python 설치 뒤 ./sidenote setup-capture)")"
   fi
   if [ -d "$LOG_PATH" ]; then
-    local used days; used="$(du -sh "$LOG_PATH" 2>/dev/null | cut -f1)"; days="$(setting SIDENOTE_LOG_DAYS 14)"
-    ok "$(L "Log folder: $LOG_PATH ($used, ${LOG_MAX_MB} MB × $((LOG_FILES + 1)) files, kept ${days} days)" \
+    local used days unit=days; used="$(du -sh "$LOG_PATH" 2>/dev/null | cut -f1)"
+    # The days as the server reads them (server/config.py env_float, server/telemetry.py KEEP_DAYS): whatever Python
+    # reads as a number (+30, 1e2, 7., .5), the default for what it does not and for inf and nan, and at least a day.
+    # A pattern of its own here called those four 14 days while the server kept 30, 100, 7 and 1.
+    days="$(python3 - "$(setting SIDENOTE_LOG_DAYS "")" <<'DAYS' 2>/dev/null || echo 14
+import math, sys
+raw = sys.argv[1].strip()
+try:
+    days = float(raw) if raw else 14.0
+except ValueError:
+    days = 14.0
+if not math.isfinite(days):
+    days = 14.0
+days = max(1.0, days)
+print(int(days) if days == int(days) else round(days, 1))
+DAYS
+)"
+    [ "$days" != 1 ] || unit=day                                        # "kept 1 day"
+    ok "$(L "Log folder: $LOG_PATH ($used, ${LOG_MAX_MB} MB × $((LOG_FILES + 1)) files, kept ${days} ${unit})" \
             "로그 폴더: $LOG_PATH ($used, 파일당 ${LOG_MAX_MB} MB × $((LOG_FILES + 1))개, ${days}일 보관)")"
   fi
   cmd_status
@@ -1655,6 +2530,11 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote shortcut       On WSL, make a Windows desktop shortcut that starts the capture (--remove removes it)
     ./sidenote llm pull       Download the model that fits this PC's GPU, or the ones named (a few GB to tens of GB)
     ./sidenote llm list|logs  Downloaded models, the model server's log
+    ./sidenote llm rm MODEL   Remove a downloaded model, with its tuned copy (asks first; --yes does not)
+
+  ${B}History and settings${N}
+    ./sidenote backup [FILE]  Copy the history and settings into one file (by default ./sidenote-backup-<date>-<time>.tar.gz)
+    ./sidenote restore FILE   Put a backup's history and settings in place (what was there is kept beside; asks first, --yes does not)
 
   ${B}Status and logs${N}
     ./sidenote status         Server, local model, agent, capture and code runner status
@@ -1664,7 +2544,7 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote logs           Follow the server log
     ./sidenote doctor         Check the install
     ./sidenote capture-stop   End a capture program that is left running
-    ./sidenote uninstall      List what was made on this PC (--yes removes it)
+    ./sidenote uninstall      List what was made on this PC and what stays (--yes removes it, --data the history and settings too)
     ./sidenote gpu status     Whether the local model holds the GPU now
     ./sidenote gpu off|on     Free the GPU for other work, and take it back (while off the agent solves everything, and a limit does not load the model again)
 
@@ -1689,7 +2569,7 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote version        설치된 구성 요소의 버전
     ./sidenote up             서버 시작 (처음에는 이미지 빌드). 사용 중이면 쉴 때까지 기다린 뒤 다시 시작
     ./sidenote up --now       기다리지 않고 바로 다시 시작
-    ./sidenote capture        화면과 소리 캡처 시작: WSL에서는 Windows Python으로, Linux에서는 이 데스크톱에서 실행.
+    ./sidenote capture        화면과 소리 캡처 시작: WSL에서는 Windows Python으로, Linux와 맥에서는 이 데스크톱에서 실행.
                               트레이 아이콘으로 실행되고 이 명령은 바로 끝남.
                               끝내기: 트레이 아이콘의 끝내기, 또는 ./sidenote capture-stop
                               옵션: --up (서버부터 시작)   --monitor 2   --list-monitors
@@ -1705,11 +2585,16 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
 
   ${B}처음 한 번${N}
     ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 사용, 맥은 .env의 토큰)
-    ./sidenote setup-capture  캡처 패키지 설치: WSL에서는 Windows Python에, Linux에서는 .venv-capture에
+    ./sidenote setup-capture  캡처 패키지 설치: WSL에서는 Windows Python에, Linux와 맥에서는 .venv-capture에
                               (setup-windows도 같은 명령)
     ./sidenote shortcut       WSL에서 캡처를 시작하는 Windows 바탕화면 바로가기 만들기 (--remove로 삭제)
     ./sidenote llm pull       이 PC의 GPU에 맞는 모델 받기, 이름을 적으면 그 모델 (수 GB에서 수십 GB)
     ./sidenote llm list|logs  받아 둔 모델, 모델 서버 로그
+    ./sidenote llm rm 모델    받아 둔 모델과 그 조정본 지우기 (먼저 묻고, --yes면 묻지 않음)
+
+  ${B}기록과 설정${N}
+    ./sidenote backup [파일]  기록과 설정을 파일 하나로 복사 (기본: ./sidenote-backup-<날짜>-<시각>.tar.gz)
+    ./sidenote restore 파일   백업의 기록과 설정으로 바꾸기 (있던 것은 옆에 남김. 먼저 묻고, --yes면 묻지 않음)
 
   ${B}상태와 로그${N}
     ./sidenote status         서버, 이 PC의 모델, 에이전트, 캡처, 코드 실행기 상태
@@ -1719,7 +2604,7 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote logs           서버 로그 실시간 보기
     ./sidenote doctor         설치 점검
     ./sidenote capture-stop   남아 있는 캡처 프로그램 끄기
-    ./sidenote uninstall      이 PC에 만든 것 목록 (--yes를 붙이면 삭제)
+    ./sidenote uninstall      이 PC에 만든 것과 남기는 것 목록 (--yes를 붙이면 삭제, --data면 기록과 설정까지)
     ./sidenote gpu status     이 PC의 모델이 지금 GPU를 쓰는지 보기
     ./sidenote gpu off|on     다른 작업을 위해 GPU 비우기, 다시 쓰기 (끈 동안은 에이전트가 모두 풀고, 한도에 닿아도 모델을 다시 올리지 않음)
 
@@ -1738,6 +2623,8 @@ case "${1:-help}" in
   install) shift; cmd_install "$@" ;;
   version|--version) cmd_version ;;
   uninstall) shift; cmd_uninstall "$@" ;;
+  backup) shift; cmd_backup "$@" ;;
+  restore) shift; cmd_restore "$@" ;;
   up|start) shift
     for a in "$@"; do
       case "$a" in

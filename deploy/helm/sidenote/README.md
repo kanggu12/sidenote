@@ -1,7 +1,7 @@
 # Sidenote Helm chart
 
 This chart runs on Kubernetes the stack that the repository's `compose.yaml` runs, with the same hardening. The
-capture program (`client/capture.py`, on Windows or a Linux desktop with X11) stays on your PC and connects to the
+capture program (`client/capture.py`, on Windows, a Mac or a Linux desktop with X11) stays on your PC and connects to the
 server's WebSocket, as it does with compose.
 
 ```bash
@@ -33,6 +33,9 @@ and no `SIDENOTE_LOCAL_URL` of your own, the chart sets `SIDENOTE_ANALYZER=agent
 ## Requirements
 
 - Kubernetes 1.25 or later and Helm 3.
+- Nodes with x86-64 (amd64) processors for the published images, which are built for linux/amd64 only. On arm64
+  nodes build the two images yourself on an arm64 machine (see Images): the Claude Code CLI the server pod downloads
+  follows the node's processor.
 - A network plugin that enforces NetworkPolicy, such as Calico, Cilium, or k3s with its built-in policy
   controller. flannel alone does not enforce it. Without enforcement the policies are accepted and do nothing,
   and the code runner, which runs code a model read off your screen, can reach the network.
@@ -66,7 +69,10 @@ An image you build yourself carries the Claude Code CLI at the version of its `C
 (`--build-arg CLAUDE_VERSION=...`); the published images carry none (`WITH_CLAUDE_CODE=0`), as Claude Code is
 Anthropic's to distribute. With `agent.provider: claude-code` an init container copies the image's CLI into the
 pod, or downloads release `agent.claudeCodeVersion` and checks it against that release's manifest when the image has
-none. A private registry needs `imagePullSecrets`. On a single-node cluster you can instead load the images into
+none. A download is kept on the server's volume (`agent/` beside `logs/`) with that checksum, so a pod started again
+has the agent without downloading it. A kept copy is checked against the release's manifest whenever the manifest can be
+read, and against the checksum kept beside it only when it cannot; one that no longer matches is downloaded again, and
+another version replaces it. A private registry needs `imagePullSecrets`. On a single-node cluster you can instead load the images into
 the node's container runtime, for k3s with `docker save -o sidenote.tar <image>` and
 `sudo k3s ctr images import sidenote.tar`.
 
@@ -248,10 +254,10 @@ What the chart cannot reproduce:
   dumpable, so a run cannot read it. `/health` answers without it.
 - `pids_limit` and `ulimits` have no pod field. The node's kubelet sets a process limit per pod (`podPidsLimit`).
   The runner still gives every run its own process, CPU, memory, file size and core dump limits.
-- An emptyDir lives as long as the pod: when the liveness probe restarts a runner that could not clean up after
-  a run, the same folders (and `/dev/shm` and the pod's IPC objects) come back with whatever was left. The runner
-  cleans them up when it starts, as it does after every run. If it still reports itself unhealthy, delete the pod:
-  `kubectl --namespace sidenote delete pod -l app.kubernetes.io/component=runner`.
+- An emptyDir lives as long as the pod: a runner that could not clean up after a run ends a second later (exit
+  code 3) and the kubelet starts it again, and the same folders (and `/dev/shm` and the pod's IPC objects) come back
+  with whatever was left. The runner cleans them up when it starts, as it does after every run. If it keeps ending
+  (the pod in `CrashLoopBackOff`), delete the pod: `kubectl --namespace sidenote delete pod -l app.kubernetes.io/component=runner`.
 
 ## Security compared with compose
 
@@ -287,6 +293,10 @@ authentication of its own. Use `kubectl port-forward` ("Open the panel and conne
 `helm upgrade` stops the old server and LLM pods before it starts their replacements (strategy `Recreate`, since
 their volumes are ReadWriteOnce), and runs the model-pull Job again while `llm.pull.enabled` is true; with the
 models in place that takes seconds.
+
+The server's claim is 4Gi from this release on (it was 2Gi). An upgrade asks Kubernetes to grow a claim made
+before, which a StorageClass without `allowVolumeExpansion: true` refuses, and the upgrade with it. There, keep the
+old size: `--set server.persistence.size=2Gi`.
 
 `helm uninstall` leaves both claims in place (`helm.sh/resource-policy: keep`): the models are tens of GB, and
 the server's claim holds the logs and the panel's saved settings. Delete them yourself when you want them gone:
@@ -330,6 +340,9 @@ tests/k3d_check.sh            # needs docker, k3d, helm and kubectl
   app.kubernetes.io/component=runner`, and see the last point of "Code runner isolation".
 - The panel shows the agent signed out: `kubectl --namespace sidenote exec deploy/sidenote-server --
   /opt/agent-bin/claude auth status` shows what the CLI sees.
-- The server pod waits in `Init`: the first container could not download Claude Code. `kubectl --namespace sidenote
-  logs deploy/sidenote-server -c claude-code` shows why; the pod needs to reach downloads.claude.ai on port 443.
+- The panel's agent card says **Optional**, with `agent.provider: claude-code`: the server's first container could
+  not download Claude Code, and the server started without it. `kubectl --namespace sidenote logs
+  deploy/sidenote-server -c claude-code` shows why; the pod needs to reach downloads.claude.ai on port 443 once, as
+  a copy is kept after that. Once it can, `kubectl --namespace sidenote rollout restart deploy/sidenote-server`
+  downloads it again.
 - SearXNG does not start on nodes without IPv6: set `search.env.GRANIAN_HOST: "0.0.0.0"`.
