@@ -70,13 +70,12 @@ hints = [agents.login_hint(SimpleNamespace(agent=a, desktop=d)) for a, d in
 check("the panel's sign-in direction is the CLI's own in the app, the launcher's otherwise",
       hints == ["claude", "codex login", "./sidenote login"], hints)
 
-with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8"}, clear=True):
+with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8", "SIDENOTE_LANG": "ko"}, clear=True):
     ko = app.t("The Sidenote server did not start. The end of its log:")
-with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8", "SIDENOTE_LANG": "en"},
-                                                                   clear=True):
+with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8"}, clear=True):
     en = app.t("The Sidenote server did not start. The end of its log:")
-check("the app's message boxes follow the system's language, and SIDENOTE_LANG wins", ko.startswith("Sidenote 서버를")
-      and en.startswith("The Sidenote server"), (ko, en))
+check("the app's message boxes are in English, and in Korean when SIDENOTE_LANG says ko: a Korean locale alone is not read",
+      ko.startswith("Sidenote 서버를") and en.startswith("The Sidenote server"), (ko, en))
 check("every message box the app can show has its Korean", all(
     app.KO.get(m) for m in ("Another program is using the port Sidenote needs ({port}). Close that program, then start "
                             "Sidenote again.", "Sidenote's server keeps stopping. The end of its log:",
@@ -300,18 +299,13 @@ if os.name != "nt":
     if alive(inner):
         os.kill(inner, signal.SIGKILL)
 
-print("[the Mac app's language]")
-app.mac_language.cache_clear()
-listed = mock.Mock(stdout='(\n    "ko-KR",\n    "en-US"\n)\n')
-with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {}, clear=True), \
-        mock.patch.object(app.subprocess, "run", return_value=listed):
-    check("opened from the Finder, with no locale, it speaks the first of macOS's languages", app.ui_lang() == "ko",
-          app.ui_lang())
-app.mac_language.cache_clear()
-with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {}, clear=True), \
-        mock.patch.object(app.subprocess, "run", side_effect=OSError("no defaults")):
-    check("...and English when they cannot be read", app.ui_lang() == "en")
-app.mac_language.cache_clear()
+print("[the app's language]")
+# SIDENOTE_LANG, else English, whatever the system speaks: the Mac's own list of languages is not read
+with mock.patch.object(sys, "platform", "darwin"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8"}, clear=True), \
+        mock.patch.object(app.subprocess, "run", side_effect=AssertionError("the system's languages are not read")):
+    check("with no SIDENOTE_LANG it speaks English, a Korean Mac or locale aside", app.ui_lang() == "en", app.ui_lang())
+with mock.patch.dict(os.environ, {"SIDENOTE_LANG": "ko"}, clear=True):
+    check("...and Korean when SIDENOTE_LANG says so", app.ui_lang() == "ko", app.ui_lang())
 
 print("[python -c, as the Windows app runs it for the tray menu]")
 out = io.StringIO()

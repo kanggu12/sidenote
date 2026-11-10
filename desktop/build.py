@@ -253,6 +253,7 @@ def main() -> int:
         args += ["--add-data", f"{ROOT / source}{SEP}{dest}"]
     args += COLLECT + EXCLUDE
     args += ["--add-data", f"{ROOT / 'client' / 'capture.py'}{SEP}client"]
+    args += ["--add-data", f"{ROOT / 'client' / 'logo.png'}{SEP}client"]   # the capture's logo, which its tray menu shows beside the program
     for name in CAPTURE_IMPORTS:
         args += ["--hidden-import", name]
     if WINDOWS:
