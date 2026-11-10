@@ -220,6 +220,12 @@ Server and capture (`PY`):
 | `launcher_args.sh` | what `./sidenote` hands to Windows, and how it behaves when a program it calls is missing or broken; with interop off, the start handed to `client/launch.pyw` and its `--setup`, and `capture-stop` through the server; `uninstall` saying what it removes and keeps, and `--data`; `backup` and `restore` (never over a file that is there, the server stopped for the swap, what was there kept); `llm rm`; why `status` says the server is off (`.ended`, its exit code); the GPU file picked for AMD and its render group; the Compose plugin and its version in `doctor` |
 | `entrypoint_loop.sh` | the loop a container's program runs in (`docker/keep-running.sh`) and the server's entrypoint: a program that keeps failing started 5 times and then left ended with `.ended` saying so, one that ends well not started again, the watchdog's `stall.txt` in the note, TERM and INT ending it and USR1 reaching it, and the shutdown wait; under `/bin/sh` with stand-ins for uvicorn |
 
+What only a real system draws is looked at on one, by `.github/look/`: `windows.py` draws the capture's windows on a
+Windows runner's desktop and ends 1 when one has a taskbar button, takes the focus, draws no shadow or has a word under
+4.5:1 (the desktop workflow's Windows job runs it), and `safari.py` measures the panel's top layers in Safari on a
+macOS runner (the look workflow, run by hand). Both end at once anywhere but a runner: one draws over the whole
+screen, the other drives Safari's own windows.
+
 Panel (`PW`):
 
 | Suite | What it checks |
