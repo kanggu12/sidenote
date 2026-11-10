@@ -71,6 +71,8 @@ jobs:
           python -m pip install -r desktop/requirements-build.txt
       - name: The panel's libraries, checked against their checksums
         run: python docker/fetch_vendor.py docker/vendor.json panel/vendor
+      - name: The shortcut's start window reading the launcher's output, on this system (Windows' own handle, POSIX's pread)
+        run: python tests/start_output.py
       - name: The desktop suite, from the checkout
         run: python tests/desktop_check.py
       - name: The Mac's GPU, as the server reads it to pick a model
