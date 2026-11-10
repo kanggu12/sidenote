@@ -6,6 +6,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- The capture program's zip (`sidenote-capture-<version>.zip`) carries its logo, the shortcut's icon and its version.
+  Unpacked from 0.6.0's, its windows wrote their name in words where the logo stands and showed no version.
+
 ## [0.6.0] - 2026-11-10
 
 ### Added

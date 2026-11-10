@@ -122,7 +122,10 @@ jobs:
       - name: The capture program on its own
         run: |
           mkdir -p dist/sidenote-capture
-          cp client/capture.py client/launch.pyw client/requirements.txt dist/sidenote-capture/
+          # the programs with what they read beside themselves: their logo, the shortcut's icon, and their version (in a
+          # checkout they read it from ../server/version.py, which the zip has no room for); tests/version_check.py runs this step
+          cp client/capture.py client/launch.pyw client/logo.png client/sidenote.ico client/requirements.txt dist/sidenote-capture/
+          cp server/version.py dist/sidenote-capture/
           cp docs/capture-client.md dist/sidenote-capture/README.md
           # the one picture that page shows, at the path it names
           mkdir -p dist/sidenote-capture/assets
