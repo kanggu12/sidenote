@@ -23,6 +23,7 @@ import json
 import os
 import queue
 import re
+import secrets
 import socket
 import sys
 import threading
@@ -78,6 +79,7 @@ LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
 
 KO = {
     "The server asked this program to quit (./sidenote capture-stop)": "서버가 종료를 요청했습니다 (./sidenote capture-stop)",
+    "Another capture program now feeds this server ({by}): this one stops": "다른 캡처 프로그램이 이제 이 서버에 보냅니다 ({by}): 이쪽은 멈춥니다",
     "New code was deployed: restarting at a quiet moment (./sidenote up)": "새 코드가 배포되어 한가할 때 다시 시작합니다 (./sidenote up)",
     "The server asked this program to restart (./sidenote capture-restart)": "서버가 다시 시작을 요청했습니다 (./sidenote capture-restart)",
     "Not connected to the server, so nothing can be sent (--once)": "서버에 연결되지 않아 보낼 수 없습니다 (--once)",
@@ -1244,6 +1246,15 @@ class ScrollStitcher:
         return out
 
 
+# This program's run: a random word it keeps while it runs, and through a restart of its own (the next one starts with
+# this environment), said in its hello. By it the server tells this program's own earlier connection (one a sleep left
+# open there) from another capture program's (take_over in server/app.py).
+RUN = os.environ.get("SIDENOTE_CAPTURE_RUN", "")
+if not re.fullmatch(r"[0-9a-f]{16}", RUN):
+    RUN = secrets.token_hex(8)
+os.environ["SIDENOTE_CAPTURE_RUN"] = RUN
+
+
 class Sender:
     """Thread-safe WebSocket sender with lazy reconnect. Also carries what the panel asked
     for (screen / sound capture on or off, `wants`) and what this client can do (`caps`)."""
@@ -1268,6 +1279,7 @@ class Sender:
         # `./sidenote capture-stop` asks through the server rather than killing this process, so it
         # ends itself and takes its tray icon with it (a killed program leaves the icon behind).
         self.quit_asked = False
+        self.taken_over = False      # that quit was for another capture program, which feeds the server now
         self.restart_asked = False   # the tray's Restart, ./sidenote capture-restart, or a deploy's (Updater)
         self.restart_pending = False # a deploy asked for one at a quiet moment (Updater)
         self.last_frame_ts = 0.0     # when a screen last went out: a restart waits for the screen to rest
@@ -1299,7 +1311,7 @@ class Sender:
                 # platform rather than assuming one: the server takes any program that speaks this
                 # protocol, and the Windows parts of this one (the window list, the display metrics,
                 # the notification icon) are extras it does without elsewhere.
-                ws.send(json.dumps({"type": "hello", "info": f"capture/{sys.platform}", **self.caps}))
+                ws.send(json.dumps({"type": "hello", "info": f"capture/{sys.platform}", "run": RUN, **self.caps}))
             except Exception:
                 ws.close()
                 raise
@@ -1322,8 +1334,8 @@ class Sender:
         """Reconnect even when nothing is being sent (switches off, a still screen): after a server
         restart the panel could otherwise not reach this program, and it would look switched off."""
         with self._lock:
-            if self._ws is not None or time.time() - self._last_try < 2.0:
-                return
+            if self._ws is not None or self.quit_asked or time.time() - self._last_try < 2.0:
+                return   # (asked to quit: never connect again, as send says)
             self._last_try = time.time()
             try:
                 self._ensure()
@@ -1352,10 +1364,17 @@ class Sender:
         except Exception:
             return
         if msg.get("type") == "quit":
-            print("[control] " + t("The server asked this program to quit (./sidenote capture-stop)"))
+            if msg.get("reason") == "taken_over":   # another capture program connected to this server: it feeds it now
+                by = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", str(msg.get("by") or "?"))[:80]   # its words, no terminal codes
+                print("[control] " + t("Another capture program now feeds this server ({by}): this one stops", by=by))
+                self.taken_over = True
+            else:
+                print("[control] " + t("The server asked this program to quit (./sidenote capture-stop)"))
             self.quit_asked = True
             return
         if msg.get("type") == "restart":
+            if self.taken_over:   # another program feeds the server: a copy of this one would take it back
+                return
             if msg.get("quiet"):           # a deploy with new code for this program: at a quiet moment (Updater)
                 print("[control] " + t("New code was deployed: restarting at a quiet moment (./sidenote up)"))
                 self.restart_pending = True
@@ -1389,6 +1408,10 @@ class Sender:
             self.last_frame_ts = time.time()
         text = json.dumps(message)   # made outside the lock: a sound frame is 64 KB of base64 to encode
         with self._lock:
+            if self._ws is None and self.quit_asked:
+                # Asked to quit: no connecting again on the way out, where another capture program may feed the
+                # server now (take_over in server/app.py) and a connection from this one would take it back.
+                return
             try:
                 self._ensure().send(text)
             except Exception as exc:
@@ -2936,6 +2959,10 @@ SUPERVISED_RESTART = 75
 # The exit code of a start that found another capture program running for the same server and ended (OneCapture).
 # client/launch.pyw reads it: the program it started is not the one that runs, and the one that runs is no failure.
 CAPTURE_BUSY = 76
+# The exit code of a program that ended because another capture program connected to its server and feeds it now
+# (take_over in server/app.py). The desktop app starts its own again on it, to take its server back, where an end with
+# 0 (a quit) would have ended the app and the server with it (desktop/app.py, CAPTURE_TAKEN_OVER).
+CAPTURE_TAKEN_OVER = 77
 ERROR_ALREADY_EXISTS = 183    # what GetLastError says after CreateMutexW opened a mutex another process had made
 START_WAIT = 0.5              # seconds a start keeps asking: a starter looking whether one runs holds the guard for a moment
 RESUME_WAIT = 5.0             # seconds one that restarted itself keeps asking: the program before it may still be ending
@@ -3151,6 +3178,8 @@ def main() -> None:
     # the panel can change them again while this runs.
     if args.once:          # one screen and out: no sound, and the panel's switch cannot hold it back
         args.no_audio = True
+        # its hello says so: the server takes its screen beside the program that runs and leaves that one feeding it
+        sender.caps["once"] = True
     # One that restarted itself (a deploy, the tray's Restart) is the same sitting: its hello carries no options, or the
     # server would clear the drawn region and put the panel's monitor back to what this was first started with.
     flags = {k: v for k, v in (("monitor", args.monitor), ("stitch", args.stitch)) if v is not None and not args.resumed}
@@ -3234,7 +3263,7 @@ def main() -> None:
     # os._exit, not a plain return: a tray library that could not start leaves a thread of its own
     # waiting on something that will never come, and the interpreter would wait for it for ever.
     sys.stdout.flush()
-    os._exit(0)
+    os._exit(CAPTURE_TAKEN_OVER if getattr(sender, "taken_over", False) else 0)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ check("the code's mark is its file's sha256, 12 digits",
 s = capture.Sender.__new__(capture.Sender)
 s.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1}
 s.told = threading.Event()
-s.quit_asked = s.restart_asked = s.restart_pending = False
+s.quit_asked = s.restart_asked = s.restart_pending = s.taken_over = False   # what _on_message reads of the real Sender
 s._on_message(json.dumps({"type": "restart", "quiet": True}))
 check("a deploy's restart waits for a quiet moment", s.restart_pending and not s.quit_asked and not s.restart_asked)
 s._on_message(json.dumps({"type": "restart"}))

@@ -237,7 +237,7 @@ one is logged as lost (code 1009).
 
 | Type | When | Main fields |
 |:---|:---|:---|
-| `hello` | first, on every connection | `info` (`capture/win32`, `capture/linux`, `capture/darwin`), `screen`, `audio`, `no_audio`, `monitor`, `monitors` (what the panel offers), `flags` (the options it was started with, which win over the panel's last choice, sent once per start), `code` (the sha256 of the `capture.py` it runs) |
+| `hello` | first, on every connection | `info` (`capture/win32`, `capture/linux`, `capture/darwin`), `screen`, `audio`, `no_audio`, `monitor`, `monitors` (what the panel offers), `flags` (the options it was started with, which win over the panel's last choice, sent once per start), `code` (the sha256 of the `capture.py` it runs), `run` (a random word for this run of the program, kept through a restart of its own: by it the server tells the program's own earlier connection from another capture program's), `once` (true for a `--once` run, which sends one screen beside the program that runs) |
 | `caps` | when it knows whether the sound device opened, and when a skip starts or ends | `screen`, `audio`, `audio_device`, `no_audio` (started with `--no-audio`), `monitors`, `skipping` (a window named in **Skip windows** is on screen, so no frame comes; never which window), `skip_limit` (`none` or `front`: what **Skip windows** can go by on this desktop, empty when it can read all the windows) |
 | `frame` | when the screen changed and settled, and no window named in **Skip windows** is on screen | `data` (PNG, base64), `windows` (the visible top-level windows over the captured area, front to back, in fractions of it, without the desktop, the taskbar and tool windows), `extra` (with `--stitch`: the joined problem) |
 | `audio` | each second while sound is on | `sr` (16000), `data` (16-bit mono PCM, base64) |
@@ -248,6 +248,19 @@ one is logged as lost (code 1009).
 | Type | When | Main fields |
 |:---|:---|:---|
 | `control` | on connect and on every change | `screen`, `audio`, `stitch`, `monitor`, `skip_windows` (the words of **Skip windows**: no frame is sent while a window on screen has one in its title or its program's name) |
+| `quit` | `./sidenote capture-stop` (`POST /capture/quit`, `POST /api/v1/capture/quit`), and when another capture program connects | `reason` (`taken_over` for the latter), `by` (the newer one's `info`) |
+| `restart` | `./sidenote capture-restart` (`POST /capture/restart`, `POST /api/v1/capture/restart`), and a deploy with new code for it | `quiet` (a deploy's: at a quiet moment) |
+
+One capture program feeds a server. The PC's own guard keeps a second one off that PC (it ends with exit code 76); one
+that connects from elsewhere, another PC or another account, takes over when its hello comes. The one before is sent `quit` with
+`reason: taken_over`, nothing more it sends is taken, and its connection is closed if it has not ended 10 s on
+(`TAKEN_OVER_SEC`): closed any sooner, its sound thread would connect again on its way out and take the server back. A
+capture program asked to quit never connects again, and ends with exit code 77: on it the desktop app starts its own
+again, since that app's server listens on the PC alone and is its own capture program's. A program's own earlier
+connection, one a sleep left open on the server, says the same `run` and is closed at once, with nothing said to the
+panels. A connection that never says hello takes nothing over, nor does one taken over before its hello came. A
+`--once` run neither takes over nor is taken over: it sends its screen beside the program that runs and leaves the
+card and the drawn region to it.
 
 ### Server to panel, on `/panel`
 
@@ -286,6 +299,10 @@ Each panel has its own line out (`PanelOut` in `server/app.py`): a broadcast put
 waits on none, and one writer a panel sends them in order. A panel that stops reading (a frozen tab, a socket half
 gone) is closed with `1013` once a message has waited 5 s on it, or 1,000 messages or 16 MB wait; the page connects again
 and is sent the state afresh. One such panel used to hold every broadcast, and the server's shutdown with it.
+At most 32 panels are open at once (`MAX_PANELS`): the next is refused at its handshake (`403`) until one closes,
+as the API's readers of events are past 32 (`429`). A panel's place is taken before its handshake waits, so panels
+opening together cannot pass the count. At most 8 questions are answered at once (`MAX_ASKS`): one more is refused
+before it takes an id, with a warning to the panel that asked (`429` from `POST /api/v1/ask`).
 
 ### Panel to server, on `/panel`
 

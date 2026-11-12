@@ -76,6 +76,18 @@ try:
         code = app.watch(server, mixed, None, log)
         check("four failures with restarts asked for between them: not given up, the quit ends it with 0",
               code == 0 and runs(counter) == 9, f"watch {code} after {runs(counter)} runs")
+
+    # 4. A capture program another one took over from (CAPTURE_TAKEN_OVER, 77): started again to take the app's server
+    # back, where an end with 0 would have ended the app and the server the other one feeds; the quit after it ends it
+    said = []
+    with mock.patch.object(app.time, "sleep", lambda s: None), mock.patch.object(app, "tell", lambda *a, **k: None), \
+            mock.patch.object(app, "say", lambda text, *a, **k: said.append(text)):
+        taken, counter = capture_child([app.CAPTURE_TAKEN_OVER, 0], app.CAPTURE_RESTART)
+        taken.start()
+        code = app.watch(server, taken, None, log)
+        check("a capture program another one took over from is started again, and the app goes on until a quit",
+              code == 0 and runs(counter) == 2, f"watch {code} after {runs(counter)} runs")
+        check("...and the log says why", any("gave way to another capture program" in s for s in said), said)
 finally:
     for child in (server,):
         if child.proc is not None and child.proc.poll() is None:   # the one long-lived process started here
