@@ -57,9 +57,10 @@ until docker logs sidenote 2>&1 | grep -q "speech model ready"; do sleep 10; don
 ./sidenote llm pull sidenote-gemma4:e4b sidenote-gemma4:e2b                       # the two from the table above
 ```
 
-Every model pulled on this PC goes into the bundle, so pull only the ones you want. The speech model `small` comes by
-default. To carry `medium` as well, choose it now in the panel (`./sidenote open`): **Solver settings**,
-**Speech**, **Speech model**. Wait until `docker logs sidenote` shows `speech model ready (medium)`, then stop Sidenote:
+Every model pulled on this PC goes into the bundle, so pull only the ones you want. The speech models `large-v3-turbo`
+(the sentences) and `small` (the live words) come by default, 2.1 GB. To carry `medium` as well, choose it now in the
+panel (`./sidenote open`): **Solver settings**, **Speech**, **Speech model**. Wait until `docker logs sidenote` shows
+`speech model ready (medium)`, then stop Sidenote:
 
 ```bash
 ./sidenote down

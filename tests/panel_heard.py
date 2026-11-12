@@ -277,7 +277,8 @@ def group_settings(br, s):
     sent = p.js("() => (window.__sent || []).filter((m) => m && m.type === 'setting' && m.key === 'speech_terms').map((m) => m.value)")
     check("its words go to the server as a list", sent and sent[-1] == ["Zabbix", "Open OnDemand"], sent)
     keys = p.js("() => [...document.querySelectorAll('#settings button[data-set=whisper_model]')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])")
-    check("the speech model is a choice of small, the default, and medium", keys == [["small", "true"], ["medium", "false"]], keys)
+    check("the speech model is a choice of small, medium and large-v3-turbo, the default (note 129)",
+          keys == [["small", "false"], ["medium", "false"], ["large-v3-turbo", "true"]], keys)
     check("...saying what the one chosen costs", "CPU" in words and "초" in words, words)
     p.page.locator("#settings button[data-set=whisper_model]", has_text="medium").click()
     p.wait(150)

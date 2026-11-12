@@ -1154,17 +1154,23 @@ default, and with `SIDENOTE_UPDATE_CHECK=0` it is off and grayed out, with the r
 The **Speech** section holds what shapes what is written down:
 
 - **Technical term hints** gives the speech model a list of technical terms before each sentence, one list for Korean
-  and one for English, chosen by the language the sentence is written down in.
+  and one for English, chosen by the language the sentence is written down in. Each ends on today's AI and
+  infrastructure names (vLLM, SGLang, LangChain, LangGraph, Dify, n8n and the like), which a speech model writes wrong
+  most often.
 - **Extra terms** is a box of your own words, with commas between them, such as a product's name. They go ahead of the
   built-in list, and also go when **Technical term hints** is off. The speech model keeps 223 tokens of hint and the
-  built-in lists take 173 (Korean) and 156 (English), so past about 15 words of your own the end of the built-in list is
-  cut, and past about 60 your own last words, and the log says so. The box holds up to 50 words of up to 60 characters
-  each.
-- **Speech model** picks **small** (the default) or **medium**, both on the CPU. On the test PC `medium` costs about
-  16 s of CPU for each pass over the last 15 seconds of speech against about 8 s for `small`, and a sentence of 5 s
-  reaches the panel about 2.5 s later. It writes technical terms better: 133 of 146 right against 124.
-  A model not downloaded yet (about 1.5 GB for `medium`) is fetched the first time it is chosen, as `small` is at the
-  first start, while the model in use goes on hearing. If it cannot be had, the choice goes back and the panel says so.
+  built-in lists take 209 (Korean) and 191 (English), so with words of your own the start of the built-in list is cut,
+  its common words first, and past about 60 your own last words, and the log says so. A word the list has too is said
+  once. The box holds up to 50 words of up to 60 characters each.
+- **Speech model** picks the model that writes down each sentence: **large-v3-turbo** (the default), **medium** or
+  **small**, all on the CPU. The live words are read with `small` whichever is chosen, about 8 s of CPU for each pass
+  over the last 15 seconds of speech. On the test PC a spoken question was written down about 10 s after it ended with
+  `large-v3-turbo` and 6.5 s with `small`, the live words the same. On Korean and English mixed as people speak them
+  `large-v3-turbo` made 15.9% character errors against 20.2% for `small`, and on interview questions full of technical
+  terms wrote 89% of the terms right against 86%. A model not
+  downloaded yet (1.6 GB for `large-v3-turbo`, 1.5 GB for `medium`, 0.5 GB for `small`) is fetched the first time it is
+  chosen, as the default and `small` are at the first start, while the model in use goes on hearing. If it cannot be
+  had, the choice goes back and the panel says so.
 - **Keep what is heard** (off by default) saves every sentence that ends, with its time, its length and its language, in
   `history.sqlite`. Everything heard passes through, other people and whatever is playing included. It stays on this PC.
   It keeps working with **Solve spoken problems** off. It goes by the same age as the answers (`SIDENOTE_HISTORY_DAYS`)
@@ -1242,7 +1248,8 @@ explained where they are read: the change thresholds and the like in `server/con
 | `SIDENOTE_LANG` | (not set) | The language of the server's messages, the commands, the capture program and the app: `en` or `ko`; the panel's own words still follow the browser or **Language**. Not set, the server follows the last panel that connected, the commands follow the terminal's locale, and the capture program and the app speak English. With English, the models are asked to write the whole answer in English |
 | `SIDENOTE_AUDIO` | `1` | `0` makes the server ignore sound |
 | `SIDENOTE_VOICE_TRIGGER` | `1` | `0` stops solving problems given by voice automatically (live speech is still shown) |
-| `SIDENOTE_WHISPER_MODEL` | `small` | The speech model to start with. `base` is lighter but makes more than twice as many errors on Korean. Also **Speech model** in the panel, which offers this one too |
+| `SIDENOTE_WHISPER_MODEL` | `large-v3-turbo` | The speech model that writes down each sentence, to start with. `small` is lighter and writes technical terms worse. Also **Speech model** in the panel, which offers this one too |
+| `SIDENOTE_WHISPER_LIVE_MODEL` | `small` | The speech model that reads the live words beside a heavier one for the sentences; a sentence model no heavier is used for both |
 | `SIDENOTE_SPEECH_GAP` | `6` | A pause longer than this (seconds) starts a new problem |
 | `SIDENOTE_UTTER_END` | `1.5` | This much quiet (seconds) ends an utterance |
 | `SIDENOTE_UTTER_MIN` | `0.8` | Shorter than this and the sound was a blip, not speech: it is never transcribed (the speech model writes a sentence anyway) |

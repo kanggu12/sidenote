@@ -63,6 +63,10 @@ class Model:
         lang = language or self.said
         return iter([types.SimpleNamespace(text=f"<{lang}>")]), Info(lang)
 
+    def detect_language(self, audio=None, vad_filter=False, **how):
+        self.calls.append(("detect", None))
+        return self.said, 0.9, [(self.said, 0.9)]
+
 
 def make(language="auto", hint=None):
     t = tr.FasterWhisperTranscriber.__new__(tr.FasterWhisperTranscriber)
@@ -129,6 +133,9 @@ t.set_hints(WHISPER_HINTS, ["Zabbix", " Open OnDemand "])
 t.transcribe(PCM, 16000)
 check("the person's words go in front of the list", t._model.calls[-1][1].startswith("Zabbix, Open OnDemand, " + WHISPER_HINTS["en"].split(",")[0]), t._model.calls[-1][1][:60])
 check("...once each, the list's words still there", t.prompt("en").count("Zabbix") == 1 and "kubectl" in t.prompt("en"), t.prompt("en")[:80])
+t.set_hints(WHISPER_HINTS, ["vLLM", "Jira"])
+check("...and a word of theirs the list has too said once, where they put it", t.prompt("en").count("vLLM") == 1
+      and t.prompt("en").startswith("vLLM, Jira, "), t.prompt("en")[:60])
 t.set_hints(None, ["Zabbix"])
 check("with the hints off, the person's words alone", t.prompt("en") == "Zabbix." and t.prompt("ko") == "Zabbix.", t.prompt("en"))
 t.set_hints(None, [])
@@ -154,7 +161,9 @@ logging.getLogger("sidenote.transcriber").addHandler(Said())
 t.set_hints(long_list, ["mine1", "mine2"])
 p = t.prompt("en")
 check("a list past the limit is cut to it", t._tokens(p) <= tr.PROMPT_TOKENS, t._tokens(p))
-check("...from its end: the person's words and the list's first stay", p.startswith("mine1, mine2, word0, word1,") and "word399" not in p, p[:40])
+# The list ends on the words Whisper most often gets wrong (config.py), so its first words are the ones that go
+check("...from its front: the person's words and the list's last words stay", p.startswith("mine1, mine2, word")
+      and "word0," not in p and p.endswith("word399."), [p[:40], p[-20:]])
 check("...each word whole, ended as a sentence", p.endswith(".") and all(w.strip() for w in p.rstrip(".").split(",")), p[-20:])
 check("nothing is said while the person's words all fit", not said, said)
 many = [f"mine{i}" for i in range(300)]
@@ -223,12 +232,14 @@ async def settings_act_at_once():
 async def model_choice():
     print("[the speech model]")
     item = SETTINGS.defs["whisper_model"]
-    check("a choice of the Speech section, small by default, medium beside it",
-          item.kind == "choice" and item.section == "speech" and item.default == "small" and [o[0] for o in item.options] == ["small", "medium"], item.options)
+    check("a choice of the Speech section, large-v3-turbo by default (note 129), small and medium beside it",
+          item.kind == "choice" and item.section == "speech" and item.default == "large-v3-turbo"
+          and [o[0] for o in item.options] == ["small", "medium", "large-v3-turbo"], [item.default, item.options])
     help_words = next(i for i in SETTINGS.meta()["items"] if i["key"] == "whisper_model")
-    check("what each costs is in the line for the choice", all(any(c.isdigit() for c in help_words["opt_help"][k]) for k in ("small", "medium")), help_words["opt_help"])
+    check("what each costs is in the line for the choice", all(any(c.isdigit() for c in help_words["opt_help"][k])
+                                                               for k in ("small", "medium", "large-v3-turbo")), help_words["opt_help"])
     ok, _ = SETTINGS.set("whisper_model", "tiny-nonsense")
-    check("a model not offered is refused", not ok and SETTINGS.get("whisper_model") == "small")
+    check("a model not offered is refused", not ok and SETTINGS.get("whisper_model") == "large-v3-turbo")
     was = A.CONFIG.whisper_model
     A.CONFIG.whisper_model = "base"
     offered = [o[0] for o in SETTINGS.options("whisper_model")]
@@ -249,6 +260,60 @@ async def model_choice():
     tr.make_transcriber(cfg, "medium")
     tr.FasterWhisperTranscriber = real
     check("the transcriber is made with the model named, else the environment's", asked == ["small", "medium"], asked)
+    # The live line is read every two seconds, a sentence once: a model heavier than small for the sentences reads the live
+    # line with small (SIDENOTE_WHISPER_LIVE_MODEL), and one no heavier is one model for both
+    lc = Config()
+    check("the live line's model is small by default", lc.whisper_live_model == "small", lc.whisper_live_model)
+    picks = {m: tr.live_model(lc, m) for m in ("large-v3-turbo", "large-v3", "medium", "small", "base", "/models/my-whisper")}
+    check("...beside a heavier one: large-v3-turbo, large-v3 and medium read it with small; small, base and a folder alone",
+          picks == {"large-v3-turbo": "small", "large-v3": "small", "medium": "small", "small": "small", "base": "base",
+                    "/models/my-whisper": "/models/my-whisper"}, picks)
+    lc.whisper_live_model = ""
+    check("...and with none named, the one model reads both", tr.live_model(lc, "large-v3-turbo") == "large-v3-turbo")
+    lc.whisper_live_model = "small"
+    made = []
+
+    class Two:
+        available = True
+
+        def __init__(self, model, compute, lang, hint, threads, live=""):
+            made.append((model, live))
+    tr.FasterWhisperTranscriber = Two
+    lc.transcriber, lc.audio_enabled = "auto", True
+    tr.make_transcriber(lc, "large-v3-turbo")
+    tr.make_transcriber(lc, "small")
+    tr.FasterWhisperTranscriber = real
+    check("...which is what the transcriber is made with", made == [("large-v3-turbo", "small"), ("small", "small")], made)
+    # read with the one it is for: the live line with the live line's model, a sentence with the sentence model
+    t2 = make("ko")
+    t2._live_model = Model()
+    t2.transcribe_live(PCM, 16000)
+    t2.transcribe(PCM, 16000)
+    check("the live line is read with the live line's model, a sentence with the sentence model",
+          len(t2._live_model.calls) == 1 and len(t2._model.calls) == 1, [t2._live_model.calls, t2._model.calls])
+    # On auto the sentence model would read the sound twice to tell its language: the live line's model tells it, and the
+    # sentence model is asked once, in that language, with that language's list (note 129)
+    t3 = make("auto")
+    t3._live_model = Model()
+    t3._live_model.said = "en"
+    t3.transcribe(PCM, 16000)
+    check("on auto the live line's model tells a sentence's language, and the sentence model reads it once, in it",
+          t3._live_model.calls == [("detect", None)] and t3._model.calls == [("en", WHISPER_HINTS["en"])] and t3.last_language == "en",
+          [t3._live_model.calls, t3._model.calls])
+    t3._live_model.said = "ko"
+    t3._model.calls.clear()
+    t3._live_model.calls.clear()
+    t3.transcribe(PCM, 16000)
+    check("...Korean the same", t3._model.calls == [("ko", WHISPER_HINTS["ko"])], t3._model.calls)
+
+    class Deaf(Model):
+        def detect_language(self, *a, **k):
+            raise RuntimeError("no speech")
+    t4 = make("auto")
+    t4._live_model = Deaf()
+    t4.transcribe(PCM, 16000)
+    check("...and one that cannot tell leaves it to the sentence model, as with one model", t4._model.calls[0][0] is None,
+          t4._model.calls)
 
     # The download of a model not there yet, outside the lock the model in use and every agent's process wait on
     import faster_whisper
@@ -340,8 +405,9 @@ async def model_choice():
     was_tr, was_audio = A.CONFIG.transcriber, A.CONFIG.audio_enabled
     A.CONFIG.transcriber, A.CONFIG.audio_enabled = "auto", True
     await A.load_speech(APP)
-    check("a saved model that cannot be had gives way to the environment's at the next start", tried == ["medium", "small"] and model_in_use() == "small", tried)
-    check("...and the choice says which runs", SETTINGS.get("whisper_model") == "small", SETTINGS.get("whisper_model"))
+    envs = A.CONFIG.whisper_model   # the environment's own (large-v3-turbo unless SIDENOTE_WHISPER_MODEL names another)
+    check("a saved model that cannot be had gives way to the environment's at the next start", tried == ["medium", envs] and model_in_use() == envs, tried)
+    check("...and the choice says which runs", SETTINGS.get("whisper_model") == envs, SETTINGS.get("whisper_model"))
     SETTINGS.values["whisper_model"] = "medium"
     tried.clear()
 
@@ -352,7 +418,7 @@ async def model_choice():
         return Stand(model)
     A.make_transcriber = raising
     await A.load_speech(APP)
-    check("so does one that raises", tried == ["medium", "small"] and model_in_use() == "small" and SETTINGS.get("whisper_model") == "small", tried)
+    check("so does one that raises", tried == ["medium", envs] and model_in_use() == envs and SETTINGS.get("whisper_model") == envs, tried)
     # A choice made while the start's load runs: that choice's own load settles it
     SETTINGS.values["whisper_model"] = "small"
     mine = Stand("medium")
@@ -379,7 +445,7 @@ async def model_choice():
     SETTINGS.values["whisper_model"] = "medium"
     A.make_transcriber = lambda cfg, model="": tr.NullTranscriber() if model == "medium" else Stand(model)
     await A.load_speech(APP)
-    check("a panel open at the start hears that the saved model gave way", any(m.get("type") == "settings" and m.get("values") == {"whisper_model": "small"} for m in BROADCAST), BROADCAST)
+    check("a panel open at the start hears that the saved model gave way", any(m.get("type") == "settings" and m.get("values") == {"whisper_model": envs} for m in BROADCAST), BROADCAST)
     SETTINGS.values["whisper_model"] = "medium"
     tried.clear()
     A.make_transcriber = lambda cfg, model="": (tried.append(model), Stand(model))[1]

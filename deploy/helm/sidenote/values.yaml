@@ -90,10 +90,11 @@ server:
     port: 8777
 
   # One volume for the server's logs, the panel's saved settings (.settings.json, kept beside the
-  # logs) and the speech model it downloads on its first start (about 0.5 GB for the default "small";
-  # choosing "medium" in the panel downloads 1.5 GB more, and the small one stays). With the history
-  # (up to 200 MB) and the logs, 2Gi ran out after a change to medium, and then the history and the
-  # logs were no longer written: 4Gi leaves room for both models.
+  # logs) and the speech models it downloads on its first start (about 2.1 GB: "large-v3-turbo" for the
+  # sentences and "small" for the live words; choosing "medium" in the panel downloads 1.5 GB more, and
+  # the others stay). With the history (up to 200 MB) and the logs, 2Gi ran out after a change to
+  # medium, and then the history and the logs were no longer written: 4Gi holds the two defaults and the
+  # history; a third model wants 6Gi.
   # enabled: false uses an emptyDir instead, and all of that starts over whenever the pod is replaced.
   # helm uninstall leaves the claim in place; delete it with kubectl when you no longer want it.
   persistence:
@@ -107,11 +108,12 @@ server:
     size: 4Gi
 
   # compose.yaml caps the server at 8 CPUs and 8 GB of memory. The memory-backed scratch folders
-  # (/tmp 512 MiB, /root 256 MiB) count against the memory limit, as tmpfs does in compose.
+  # (/tmp 512 MiB, /root 256 MiB) count against the memory limit, as tmpfs does in compose. The
+  # request holds the two speech models (1.8 GB between them) and the server beside them.
   resources:
     requests:
       cpu: 500m
-      memory: 2Gi
+      memory: 3Gi
     limits:
       cpu: "8"
       memory: 8Gi
