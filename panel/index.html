@@ -544,6 +544,11 @@
   /* An answer's star key: its outline filled with the highlighter once the answer is starred, a mark on the answer as the
      highlighter is. The outline keeps the key's ink, so the star reads on the light sheet, where the yellow alone does not */
   .tools .btn[data-star][aria-pressed="true"] svg { fill: var(--hl-yellow); }
+  /* Right and Wrong beside it (app.js, verdictKey): the one pressed stays pressed in, its mark in the colour of what it says, the
+     tick in that of what worked and the cross in that of what failed. Neither pressed, both are in the key's ink as the others are */
+  .tools .btn:is([data-right], [data-wrong])[aria-pressed="true"] { box-shadow: var(--sunken); }
+  .tools .btn[data-right][aria-pressed="true"] svg { stroke: var(--ok); }
+  .tools .btn[data-wrong][aria-pressed="true"] svg { stroke: var(--bad); }
   /* The delete key (app.js, deleteKey): last of an answer's keys and a little apart from Copy all beside it, in the colour of what
      breaks only under the pointer, where it says what a press does */
   .tools .btn[data-delete] { margin-left: 4px; }
@@ -1245,7 +1250,7 @@
   @keyframes pane-in { from { opacity: 0; transform: translateX(6px); } }
   /* Sections down the left, one section at a time on the right: every setting is one click away
      instead of a scroll through two dozen. Under 720px they stack and the tabs become a row. */
-  #settings-body { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 0 18px;
+  #settings-body, #maint-body { display: grid; grid-template-columns: 148px minmax(0, 1fr); gap: 0 18px;
     min-height: 0; margin-top: 10px; flex: 1 1 auto; }
   .set-nav { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--rule);
     padding: 3px 10px 3px 3px; overflow-y: auto; }   /* the padding keeps a focus ring from being cut */
@@ -1257,7 +1262,7 @@
   .set-pane { overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; margin-right: -8px; }
   .set-pane > .set:first-of-type { padding-top: 0; }
   @media (max-width: 720px) {
-    #settings-body { grid-template-columns: minmax(0, 1fr); }
+    #settings-body, #maint-body { grid-template-columns: minmax(0, 1fr); }
     /* Two even rows of tabs (renderSettings sets --tab-cols to half the count, rounded up): left to wrap
        by itself, seven tabs at 420 px went six and one, with GPU alone on the second row. */
     .set-nav { display: grid; grid-template-columns: repeat(var(--tab-cols, 4), minmax(0, 1fr));
@@ -1346,6 +1351,35 @@
   .set textarea.words:focus-visible { outline: none; border-color: var(--pen); }   /* inside its own edge: the pane would cut a ring outside it */
   .set textarea.words:disabled { opacity: .45; box-shadow: none; }
   :root[data-skin="classic"] .set textarea.words { border-radius: 5px; }           /* the Classic corners of the dropdown beside it */
+  /* Pick from text, under Extra terms (app.js, termsHtml): its key under the row's help, and the area it opens across the
+     row, inside an edge of its own. The text box is the box of words above it, taller, and drawn out by hand; the terms
+     found are a list's ticks (.seg.checks), each as wide as its word, wrapping onto the next line at any width (the
+     narrow sheet's even columns are for a row of choices, not for words); a term held already is the disabled one, and
+     one with no room left is dimmed while it cannot be pressed */
+  .set .terms-key { grid-column: 1 / -1; display: flex; margin: 6px 0 2px; }
+  .set .terms-key .btn[aria-expanded="true"] { box-shadow: var(--sunken); }        /* pressed in while its area is open, as a dropdown's */
+  .set .terms-area { grid-column: 1 / -1; display: grid; gap: 10px; min-width: 0; margin: 4px 0 2px; padding: 10px;
+    border: 1px solid var(--rule); border-radius: 8px; }
+  .set textarea.terms-text { display: block; width: 100%; min-height: 96px; max-height: 40vh; padding: 6px 11px;
+    border-radius: 8px; border: 1px solid var(--rule); background: var(--sheet-2); color: var(--ink); box-shadow: var(--sunken);
+    font: inherit; font-size: 13px; line-height: 18px; resize: vertical; }
+  .set textarea.terms-text:focus-visible { outline: none; border-color: var(--pen); }   /* inside its own edge, as the box of words */
+  .set textarea.terms-text:disabled { opacity: .45; box-shadow: none; }
+  :root[data-skin="classic"] .set :is(.terms-area, textarea.terms-text) { border-radius: 5px; }
+  .set .terms-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .set .terms-said { font-size: 12.5px; line-height: 1.5; color: var(--graphite); word-break: keep-all; }
+  .set .terms-said.warn { color: var(--warn); }                                    /* past the size the server reads */
+  .set .terms-h { margin: 0 0 5px; font-size: 12px; font-weight: 650; color: var(--graphite); }
+  .set .terms-h .n { margin-left: 5px; font-weight: 500; }                          /* how many the group holds */
+  .set .seg.terms { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 4px; margin: 0; }
+  /* A row of its own inside the key, the tick, the word and its count side by side: a word too long for the line wraps beside
+     its tick, where as text the tick stood alone on the first line */
+  .set .seg.terms button { flex: none; display: flex; align-items: center; min-width: 0; max-width: 100%; height: auto;
+    min-height: 28px; padding: 3px 9px; white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.4; }
+  .set .seg.terms button::before { flex: none; }                                    /* the tick keeps its size beside a long word */
+  .set .seg.terms button .n { margin-left: 5px; font-size: 11.5px; font-weight: 500; color: var(--graphite); }   /* times in the text */
+  .set .seg.terms button[aria-disabled="true"] { opacity: .45; cursor: default; }
+  .set .terms-line { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
 
   /* confirm before sending: what would go to the agent, in the foot of the page */
   /* A row of the sheet like the others, not a bordered, tinted, raised card inside it (a card in a card, and its
@@ -1412,13 +1446,23 @@
     .turn .row { margin-left: 0; }
     .short .hl { font-size: 30px; }
   }
-  @media (max-width: 420px) {
-    /* On a phone the newest answer's four keys (Problem text, the star, Copy all, Delete) keep the head one line beside the kind and
-       the time: the date's trailing margin and 4 px of the gap go to them, and today's date itself, which every answer of the
-       day would repeat (app.js, entryWhen; an older day's stays, and its keys take a line of their own) */
+  @media (max-width: 540px) {
+    /* On a phone the newest answer's six keys (Problem text, Right, Wrong, the star, Copy all, Delete) keep the head one line beside
+       the kind and the time: the date's trailing margin and 4 px of the gap go to them, and today's date itself, which every
+       answer of the day would repeat (app.js, entryWhen; an older day's stays, and its keys take a line of their own) */
     .row.head:not(.err) { column-gap: 8px; }
     .row.head:not(.err) > .mg time { margin-right: 0; }
     .row.head .stamped .day.today { display: none; }
+    /* ...and so do the kind's own margin (the margin column's gap stays between it and the time) and 2 px each side of its word, the
+       time's calendar mark, and 4 px of each key and 3 px of each gap: 24 px keys, 3 px apart, Delete still 4 px further off. With
+       the 28 px keys Right and Wrong took the head to two lines, 47 px short in English (Algorithm, 04:42 AM) and 26 px in Korean at
+       390 px. Up to 540 px, where six keys of 28 px beside an older day's date first fit (530 px in English): when this stopped at
+       420 px, they took two lines from there to 516 px, and an older day's to 528, where four had kept one */
+    .row.head:not(.err) > .mg .kind { margin-right: 0; }
+    :root[data-skin="classic"] .row.head:not(.err) > .mg .kind { padding: 1px 6px; }
+    :root[data-skin="classic"] .row.head:not(.err) > .mg time.stamped::before { display: none; }
+    :root[data-skin="classic"] .entry > .row.head:not(.err) .tools { gap: 3px; }
+    :root[data-skin="classic"] .entry > .row.head:not(.err) .tools > .btn:has(svg) { width: 24px; height: 24px; }
   }
   /* Narrower than the bar's one row (754 px since the signals sit in their well; it is 780 here for a margin): the
      brand and the buttons keep the first row and the signals take a second one of their own. Left to wrap by itself
@@ -1906,6 +1950,10 @@
        figures are all one width), where 146 px ran its AM into "Solving" */
     :root[data-skin="classic"] .row.head .headline { justify-content: flex-end; padding-left: 146px; }
     :root[data-skin="classic"][lang="en"] .row.head .headline { padding-left: 162px; }
+    /* How a problem came (heard by voice, gathered by scrolling) takes the room the keys leave, at the right of it as before, and
+       its words wrap there when they do not fit, so the keys stay on the date's line: with Right and Wrong a spoken problem's keys
+       went to a line of their own under its words from 1002 to 1064 px in English */
+    :root[data-skin="classic"] .row.head:not(.err) .headline > span:not(.tools):not([data-elapsed]) { flex: 1 1 0; text-align: right; }
   }
   /* The contents' margin: a date and a time, one over the other */
   :root[data-skin="classic"] .h time { display: grid; font-size: 11px; line-height: 1.3; }
@@ -1985,6 +2033,8 @@
   :root[data-skin="classic"] :is(.tools, .answer, .runtools, .shot-tools, .hist-tools, .src-top, .codebar, .row.asks) .btn:not(:hover):not(:active):not([aria-expanded="true"]), :root[data-skin="classic"] .rail .combo-btn:not(:hover):not(:active), :root[data-skin="classic"] .codebar .copy:not(:hover):not(:active), :root[data-skin="classic"] .meta-more:not(:hover):not(:active),
   :root[data-skin="classic"] .actions :is(#reanalyze, #pause):not(:hover):not(:active) { background: var(--key-bg); border: 1px solid var(--rule-2); box-shadow: var(--key); }
   :root[data-skin="classic"] .alert:not(.confirm) .btn:not(:hover):not(:active) { box-shadow: var(--key); }
+  /* ...but Right or Wrong pressed stays pressed in, under the pointer too (app.js, verdictKey) */
+  :root[data-skin="classic"] .entry > .row.head .tools .btn:is([data-right], [data-wrong])[aria-pressed="true"] { box-shadow: var(--sunken); }
   /* The bar's buttons stand on one line, the same height */
   :root[data-skin="classic"] .actions { align-items: center; }
   :root[data-skin="classic"] .actions .btn { box-sizing: border-box; width: 36px; height: 34px; min-height: 34px; margin: 0; vertical-align: middle; flex: none; }
@@ -3152,6 +3202,46 @@
   .way-cmd > .btn { flex: none; }
   .setup-note.with-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
   .way-cmd var { font-style: italic; color: var(--graphite); }
+  /* Maintenance (app.js, renderMaint): a section's keys over it, a check's fix under what it found, the events a line each with
+     the failures in the bad colour (the one colour that means something here), the server's log as it is written, and the
+     local models with their marks beside the name */
+  .maint-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 10px; }
+  .maint-tools .seg { padding: 0; }
+  .maint-tools .seg button { flex: none; padding: 0 12px; }
+  .maint-tools .when { font-size: 12px; color: var(--graphite); }
+  .set .help.fix { color: var(--ink-2); }
+  .set .help.fix .btn { margin-left: 6px; vertical-align: baseline; }
+  .set .help.fix .way-cmd { display: flex; margin-top: 6px; }
+  .maint-events { list-style: none; margin: 0 0 14px; padding: 0; }
+  .maint-events li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline;
+    padding: 6px 0; border-bottom: 1px dashed var(--rule); font-size: 12.5px; }
+  .maint-events time { color: var(--graphite); white-space: nowrap; }
+  .maint-events .ev { font-family: var(--mono); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .maint-events .ev.err { color: var(--bad); }
+  .maint-events .kv { font-family: var(--mono); font-size: 11.5px; color: var(--graphite); overflow-wrap: anywhere; min-width: 0; }
+  pre.maint-log { margin: 0 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--code-bar); box-shadow: var(--sunken);
+    font: 11.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+  .maint-model .lbl { font-size: 13px; overflow-wrap: anywhere; }
+  .maint-model .lbl .name { font-family: var(--mono); }      /* the model's name as Ollama writes it; its marks in the panel's own letters */
+  .maint-model .marks { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; }
+  .maint-check .pill, .maint-model .pill { font-size: 11.5px; }
+  /* the report: a period's number on the right of its row, the days in a table of figures lined up by their digits */
+  .maint-sum .ctl .num { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--ink); }
+  table.maint-days { width: 100%; border-collapse: collapse; margin: 0 0 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.maint-days th, table.maint-days td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px dashed var(--rule); }
+  table.maint-days thead th { font-size: 12px; font-weight: 600; color: var(--graphite); border-bottom: 1px solid var(--rule); }
+  table.maint-days :is(th, td):first-child { text-align: left; padding-left: 0; }
+  table.maint-days :is(th, td):last-child { padding-right: 0; }
+  table.maint-days tbody th { font-weight: 500; color: var(--ink-2); }
+  @media (max-width: 560px) {
+    /* a phone's width: the cells closer, so English's longer days ("Fri, Nov 13") leave the five columns room */
+    table.maint-days th, table.maint-days td { padding-left: 4px; padding-right: 4px; }
+  }
+  @media (max-width: 400px) {
+    table.maint-days { font-size: 12px; }   /* 360 px: the five columns a little smaller, still inside the pane in English */
+    .maint-events li { grid-template-columns: auto minmax(0, 1fr); }
+    .maint-events .kv { grid-column: 1 / -1; }
+  }
   .ways-more { margin: 6px 0 4px; }
   .ways-more > summary { cursor: pointer; width: max-content; padding: 4px 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .ways-more > summary:hover { color: var(--ink); }
@@ -3181,7 +3271,7 @@
   .alert .msg a { white-space: nowrap; }
   /* The settings sheet's rows one height whatever their control: a switch's row was 62 px, a key's 66 and a choice's 68, and
      the first title moved 3 px between two sections */
-  :root[data-skin="classic"] #settings-body .set .ctl { min-height: 30px; }
+  :root[data-skin="classic"] :is(#settings-body, #maint-body) .set .ctl { min-height: 30px; }
   /* Every card's title in the column on one line from the card's top: those with no key beside them (What is heard, the
      contents) sat 3.5 px higher than the others */
   :root[data-skin="classic"] .rail .card > h2 { min-height: 30px; }
@@ -3212,6 +3302,8 @@
     .switch[aria-checked="true"] { forced-color-adjust: none; background: Highlight; }
     .switch[aria-checked="true"]::after { background: HighlightText; }
     .seg button[aria-pressed="true"], .set-tab[aria-selected="true"], .setup-step[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+    /* Right or Wrong pressed: its shadow and its mark's colour are both taken away here */
+    .tools .btn:is([data-right], [data-wrong])[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
     .signal .dot { forced-color-adjust: none; }
     .md tr.v-right > td:first-child { outline: 2px solid Highlight; outline-offset: -2px; }
   }
@@ -3271,6 +3363,7 @@
         <button class="item" id="open-capture" type="button" data-t>Capture connection</button>
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>
         <button class="item" id="open-setup" type="button" data-t>Setup guide</button>
+        <button class="item" id="open-maint" type="button" data-t>Maintenance</button>
         <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
         <button class="item" id="open-heard" type="button" data-t hidden>What was heard</button>
         <!-- the answers deleted, for their days (app.js, openDeleted): there while it holds some, with how many -->
@@ -3383,6 +3476,16 @@
     <p class="lede" data-t>Applies from the next problem and stays after a restart</p>
     <div id="settings-body"></div>
     <footer class="set-foot"><button class="btn sm ghost" id="settings-reset" type="button" data-t>Reset to defaults</button></footer>
+  </section>
+</div>
+<!-- Maintenance (app.js, openMaint; the server's /api/v1/check, /log, /models and /backup): the settings sheet's look, a section a
+     tab: how each part stands with what to do, the latest events and the server's log, the local models, and a backup -->
+<div class="overlay" id="maint-overlay" hidden>
+  <section class="card settings" id="maint" role="dialog" aria-modal="true" aria-labelledby="maint-title">
+    <header><h2 id="maint-title" data-t>Maintenance</h2>
+      <button class="btn icon" id="maint-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" data-t>How each part stands, what the days held, the log, the models and backups</p>
+    <div id="maint-body"></div>
   </section>
 </div>
 <!-- The keyboard shortcuts (app.js, SHORTCUTS): the settings sheet's look, a row a key, each key in the command chip. The list takes the keyboard (tabindex): its only other key is Close, and arrows on that would not scroll it -->

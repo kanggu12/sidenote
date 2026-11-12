@@ -37,6 +37,7 @@ try:
     import resource  # the core-dump limit the CLIs inherit (Linux and macOS; a Windows host has no core dumps to stop)
 except ImportError:
     resource = None
+import shutil
 import signal
 import socket
 import struct
@@ -54,13 +55,14 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.websockets import WebSocketState
 from PIL import Image
 
-from . import faces, forksafe, history as answers_log, i18n, models, repeats, telemetry, watchdog
+from . import faces, forksafe, history as answers_log, i18n, maintenance, models, report, repeats, telemetry, terms, watchdog
 from . import agents
 from .analyzer import (LOCAL_SEEN, LoadStopped, busy_model, error_hint, error_words, local_models, local_status,
                        main_model, make_engines)
@@ -74,8 +76,8 @@ from .ocr_gate import make_ocr
 from .pipeline import (CONFIRM_TIMEOUT, GpuBusy, Hooks, NoSolver, NotSent, Pipeline, Repeat, answer_code, check_code, shown_box, checkable,
                        followup_engine,
                        followup, retry_request)
-from .settings import SETTINGS
-from .transcriber import NullTranscriber, UtteranceTracker, make_transcriber
+from .settings import SETTINGS, WORDS_MAX
+from .transcriber import NullTranscriber, UtteranceTracker, hint_words, make_transcriber
 from .updates import RELEASES
 from .version import VERSION
 
@@ -392,6 +394,10 @@ class AppState:
     screen_on: bool = True
     audio_on: bool = True
     capture_caps: dict = field(default_factory=dict)   # what the client can do: screen, audio, device
+    # The monitor the capture program last said it reads while following the changing screen (caps `following`; None on
+    # the chosen one). Kept past its connection: a program back after a dropped connection that reads the same monitor
+    # has moved nowhere, and one restarted on the chosen monitor has
+    capture_following: int | None = None
     ingest_ws: set = field(default_factory=set)
     # Each capture connection's run (a random word a capture program keeps while it runs: RUN in client/capture.py);
     # the connections a newer capture program took over (take_over in /ingest), from which nothing more is taken, to
@@ -968,10 +974,12 @@ def capture_status() -> dict:
 
 
 def control_message() -> str:
-    """What the capture program should do: the panel's switches, scroll stitching, the monitor, and the words of Skip
-    windows (it reads the windows itself, and their titles never come here)."""
+    """What the capture program should do: the panel's switches, scroll stitching, the monitor and whether to follow the
+    changing screen off it, and the words of Skip windows (it reads the windows itself, and their titles never come
+    here)."""
     return json.dumps({"type": "control", "screen": STATE.screen_on, "audio": STATE.audio_on,
                        "stitch": bool(SETTINGS.get("stitch")), "monitor": int(SETTINGS.get("monitor")),
+                       "monitor_follow": bool(SETTINGS.get("monitor_follow")),
                        "skip_windows": list(SETTINGS.get("skip_windows"))})
 
 
@@ -1695,6 +1703,60 @@ async def pull_model(name: str) -> None:
         PULL.clear()
         STATE.local = await check_local()
         await broadcast_engines()
+
+
+def ollama_root() -> str:
+    """The local server's own address (Ollama's API), from the OpenAI-compatible one the engines use"""
+    return re.sub(r"/v1/?$", "", CONFIG.local_url.rstrip("/"))
+
+
+def models_in_use() -> set:
+    """The models this server answers with now: the main one and the one a busy GPU switches to"""
+    if ENGINES is None or ENGINES.local is None:
+        return set()
+    main = main_model(CONFIG)                          # the one chosen in Solver settings, or the one that fits the GPU
+    return {m for m in (main, busy_model(CONFIG, main)) if m}
+
+
+async def local_model_rows() -> list | None:
+    """The local server's models with what the Maintenance sheet shows of each (maintenance.model_rows), and the ones the
+    panel would download that are not there; None when the local server is not Ollama or does not answer."""
+    if ENGINES is None or ENGINES.local is None or getattr(ENGINES.local, "native", None) is False:
+        return None
+    import httpx2
+    try:
+        async with httpx2.AsyncClient(timeout=5.0) as client:
+            tags = (await client.get(f"{ollama_root()}/api/tags")).json()
+            ps = (await client.get(f"{ollama_root()}/api/ps")).json()
+    except Exception:          # not answering, or not Ollama: the sheet says the list cannot be read
+        return None
+    offered = {}
+    if pull_allowed():         # what the panel's Download offers: the profiles' models, each with its size
+        for prof in models.PROFILES:
+            if prof.name:
+                offered[prof.name] = prof.size_gb or None
+    return maintenance.model_rows(tags, ps, models_in_use(), offered)
+
+
+async def delete_local_model(name: str) -> tuple[str, str]:
+    """Remove `name` from the local server: ("", "") when it went, else why not in words and as a word the API maps to a
+    status ("busy", "missing", "down", "refused"). Not one a download is writing"""
+    if PULL:
+        return t("A download is under way"), "busy"
+    import httpx2
+    try:
+        async with httpx2.AsyncClient(timeout=30.0) as client:
+            r = await client.request("DELETE", f"{ollama_root()}/api/delete", json={"model": name})
+            if r.status_code == 404:
+                return t("No such model"), "missing"
+            r.raise_for_status()
+    except httpx2.HTTPStatusError as exc:          # it answered, and would not: its status said
+        return t("The local LLM server refused: {why}", why=str(exc)[:200]), "refused"
+    except Exception as exc:                       # it did not answer at all
+        return t("The local LLM server does not answer") + f" ({str(exc)[:200]})", "down"
+    telemetry.event("model_delete", model=name)
+    log.info("local model %s removed", name)
+    return "", ""
 
 
 # The local server starts beside this one (compose starts them together), and this server's first look at it comes
@@ -2749,6 +2811,16 @@ def star_answer(seq: int, on: bool) -> tuple[bool, int]:
         return False, 0
 
 
+def judge_answer(seq: int, verdict: str | None) -> dict | None:
+    """Mark a kept answer right or wrong, or take its mark off: what the verdict's event says of the answer (its engine, model,
+    type and trigger), or None when the history does not hold it."""
+    try:
+        return HISTORY.judge(seq, verdict)
+    except Exception as exc:   # a file that cannot be written is said to the panel as an answer it does not hold, as for the star
+        log.warning("analysis #%s: the verdict was not kept (%s)", seq, exc)
+        return None
+
+
 PICTURES: set = set()   # the tasks keeping answers' pictures, held so that none is collected while it runs
 
 
@@ -2933,6 +3005,37 @@ async def stage(seq: int, name: str, detail: str, restart: bool = False, thought
                      **({"thought": thought} if thought else {})})
 
 
+def maintenance_facts(app) -> dict:
+    """What the Maintenance sheet's checks are worked out from (server/maintenance.py, checks): the facts this server
+    holds already, as the cards and the status read them, and two it reads for them (the disk, the errors of the last
+    day). Read from a thread: the disk and the events are files."""
+    eng = engines_status()
+    tr = getattr(app.state, "transcriber", None)
+    now = time.time()
+    log_dir = Path(telemetry.LOG_DIR) if telemetry.LOG_DIR else None
+    disk = {}
+    if log_dir is not None and log_dir.is_dir():
+        disk["free"] = shutil.disk_usage(log_dir).free
+        hist = [log_dir / "history.sqlite", log_dir / "history.sqlite-wal"]   # the file and the latest it has not merged
+        disk["history"] = sum(f.stat().st_size for f in hist if f.is_file()) if hist[0].is_file() else None
+        disk["history_cap"] = CONFIG.history_mb
+    return {
+        "version": VERSION, "update": update_status(), "where": server_where(),
+        "capture": {"clients": STATE.captures, "who": STATE.capture_who or {}, "screen_on": STATE.screen_on,
+                    "audio_on": STATE.audio_on, "frame_age": (now - STATE.last_seen_ts) if STATE.last_seen_ts else None,
+                    "connected_for": (now - STATE.capture_since) if STATE.capture_since and STATE.captures else None,
+                    "skipping": (STATE.capture_caps or {}).get("skipping") is True},
+        "speech": {"enabled": CONFIG.audio_enabled and CONFIG.transcriber != "null", "transcriber": CONFIG.transcriber,
+                   "available": bool(getattr(tr, "available", False)), "failed": bool(getattr(app.state, "speech_failed", False)),
+                   "model": getattr(tr, "model_name", "") or "", "live": getattr(tr, "live_name", "") or ""},
+        "local": eng["local"],
+        "agent": eng["agent"], "search": eng.get("search") or {},
+        "runner": bool(CONFIG.runner_url) and STATE.runner_ok,
+        "disk": disk, "gpu": read_gpu(),
+        "errors_day": maintenance.errors_since(log_dir, now - 86400) if log_dir is not None else None,
+    }
+
+
 def update_status() -> dict | None:
     """The newer release the panels are told of (server/updates.py): none while this server may not ask, or while the
     panel's "Check for new versions" is off, whatever an earlier check found."""
@@ -2976,7 +3079,7 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
         if key in SETTINGS.defs:
             await broadcast({"type": "settings", "values": {key: SETTINGS.get(key)}})
         return False, err
-    if key in ("stitch", "monitor", "skip_windows"):   # what the capture program does itself: it is told at once
+    if key in ("stitch", "monitor", "monitor_follow", "skip_windows"):   # what the capture program does: told at once
         # A drawn region is a fraction of one screen: on another monitor, or on a screen stitched out of
         # all of them, it points somewhere else entirely. So it goes when the screen it was drawn on does.
         if key == "monitor" and old != value and SETTINGS.get("roi_box"):
@@ -3101,6 +3204,7 @@ async def load_speech(app: FastAPI) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
+        app.state.speech_failed = True   # the Maintenance sheet's check says it failed, not that it is still loading
         log.error("the speech model did not load (%s); the server goes on without speech", exc)
         await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
                      "bad")
@@ -3705,9 +3809,9 @@ def no_core_dumps() -> None:
 # The messages the panel's socket takes, each with its route in create_app's API section (tests/api_check.py holds the
 # two together, and holds panel/app.js to sending none but these)
 PANEL_COMMANDS = ("capture_set", "pause", "resume", "reanalyze", "ask", "problem_text", "run", "setting",
-                  "agent_confirm_reply", "thumb", "gpu_release", "history_clear", "star", "gpu_load", "gpu_load_cancel",
-                  "settings_reset", "llm_pull", "ui_lang", "set_lang", "answer_delete", "answer_restore", "answer_purge",
-                  "deleted_clear", "capture_restart", "capture_quit")
+                  "agent_confirm_reply", "thumb", "gpu_release", "history_clear", "star", "verdict", "gpu_load",
+                  "gpu_load_cancel", "settings_reset", "llm_pull", "ui_lang", "set_lang", "answer_delete", "answer_restore",
+                  "answer_purge", "deleted_clear", "capture_restart", "capture_quit", "model_delete", "terms_find")
 API_VERSION = 1                # /api/v1: a change that breaks a caller goes to /api/v2, beside it
 
 
@@ -3887,6 +3991,10 @@ def create_app() -> FastAPI:
         stop_watchdog = watchdog.start(asyncio.get_running_loop(), CONFIG.stall_warn_sec,
                                        CONFIG.stall_exit_sec, telemetry.LOG_DIR)
         load_switches()
+        if telemetry.LOG_DIR:   # a backup a stopped server was making or sending: its copy of the history goes
+            gone = maintenance.sweep_backups(Path(telemetry.LOG_DIR))
+            if gone:
+                log.info("removed %d backup folder(s) left from before", gone)
         global ENGINES, PIPELINE
         SETTINGS.load()
         ENGINES = make_engines(CONFIG)
@@ -4249,13 +4357,28 @@ def create_app() -> FastAPI:
                             await notice(t("Capture started anew: region cleared · sees the whole screen"))
                     # "code": which capture.py it runs (./sidenote up compares it with the file it deployed);
                     # "skipping": a window of Skip windows is on screen, so no screen comes (never which window);
-                    # "skip_limit": what that switch can do on this desktop (the panel's card says so)
-                    caps = {k: data[k] for k in ("screen", "audio", "audio_device", "monitor", "no_audio",
-                                                 "monitors", "code", "skipping", "skip_limit") if k in data}
+                    # "skip_limit": what that switch can do on this desktop (the panel's card says so);
+                    # "following": the monitor it reads while following the changing screen moved it off the chosen one;
+                    # "follow_ok": whether it can follow at all (it reads the window list that finds this tool's panel)
+                    caps = {k: data[k] for k in ("screen", "audio", "audio_device", "monitor", "no_audio", "monitors",
+                                                 "code", "skipping", "skip_limit", "following", "follow_ok") if k in data}
+                    if "follow_ok" in caps:
+                        caps["follow_ok"] = caps["follow_ok"] is True    # a yes or a no, whatever a client sends
                     if "skipping" in caps:
                         caps["skipping"] = caps["skipping"] is True   # a yes or a no, whatever a client sends
                     if "skip_limit" in caps and caps["skip_limit"] not in ("none", "front"):
                         caps["skip_limit"] = ""                       # one of two words, so nothing else can reach the panel
+                    if "following" in caps:   # a monitor's number, as the panel's Monitor takes them, or None
+                        v = caps["following"]
+                        number = isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 64
+                        caps["following"] = v if number else None
+                        # A drawn region is a fraction of the screen it was drawn on, and goes when that screen does: as
+                        # for a monitor chosen in the panel (apply_setting), so for one the program moved to by itself
+                        if not me["once"] and caps["following"] != STATE.capture_following:
+                            STATE.capture_following = caps["following"]
+                            if SETTINGS.get("roi_box"):
+                                await apply_setting(app, "roi_box", None)
+                                await notice(t("The monitor changed: region cleared · sees the whole screen"))
                     me["caps"].update(caps)
                     if caps and not me["once"]:   # a --once run's leave the card to the program that runs
                         STATE.capture_caps = {**STATE.capture_caps, **caps}
@@ -4548,6 +4671,26 @@ def create_app() -> FastAPI:
             # every panel shows it, with how many are starred for the contents' Starred choice
             await broadcast({"type": "star", "id": seq, "starred": on, "n": count})
             return True
+        elif kind == "verdict":   # Right and Wrong on an answer's head: how often each engine is right (./sidenote report)
+            # An answer's id is a number, as for the star; the verdict "right" or "wrong", or null to take it off. A message
+            # with no verdict at all is no change: one cut short does not clear the mark
+            seq, verdict = data.get("id"), data.get("verdict", "")
+            if not isinstance(seq, int) or isinstance(seq, bool) or verdict not in (None, *answers_log.VERDICTS):
+                return True
+            # On the history's own thread, after the write that keeps the answer: a key pressed as it ends is not lost
+            facts = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, judge_answer, seq, verdict)
+            if facts is None:   # refused: this panel is told why, and no panel changes
+                await reply({"type": "notice", "level": "warn", "text":
+                             t("Mark not taken off: this answer is not in the saved history") if verdict is None
+                             else t("Not marked: Keep answers is off, so this answer was not saved")
+                             if not SETTINGS.get("history_keep")
+                             else t("Not marked: this answer is not in the saved history")})
+                return True
+            # What the report counts from: the answer's last verdict, by its engine, model, type and how it came. A mark
+            # taken off is written as "none", where a field left out would read as one never written
+            telemetry.event("verdict", id=seq, verdict=verdict or "none", **facts)
+            await broadcast({"type": "verdict", "id": seq, "verdict": verdict})   # every panel shows it
+            return True
         elif kind == "answer_delete":   # the delete key on an answer's head: to Recently deleted, where it can be put back
             seq = data.get("id")
             if not isinstance(seq, int) or isinstance(seq, bool):   # an answer's id is a number, as for the star
@@ -4714,6 +4857,25 @@ def create_app() -> FastAPI:
                 PULL.update(model=name, status="pulling", completed=0, total=0)
                 spawn(pull_model(name), "llm pull")   # held, as every background task is
             return True
+        elif kind == "model_delete":
+            # One of the local server's models removed (the Maintenance sheet's Models): one it lists, and not while a
+            # download is under way. The asking panel is told how it went; every panel's cards follow (a removed model
+            # in use makes the local card say it is missing)
+            name = str(data.get("model") or "")
+            rows = await local_model_rows()
+            if rows is None:   # no local server to ask, or not Ollama: as /models says it
+                await reply({"type": "model_delete", "model": name, "ok": False, "why": "down",
+                             "error": t("The local LLM server does not answer")})
+                return True
+            if not any(r.get("present") and r.get("name") == name for r in rows):
+                await reply({"type": "model_delete", "model": name, "ok": False, "why": "missing", "error": t("No such model")})
+                return True
+            why, code = await delete_local_model(name)
+            await reply({"type": "model_delete", "model": name, "ok": not why, **({"error": why, "why": code} if why else {})})
+            if not why:
+                STATE.local = await check_local()
+                await broadcast_engines()
+            return True
         elif kind == "ui_lang":
             # The panel's own language, said once it connects: the server's words follow the last panel to
             # say one, and a change sends every panel the messages that carry them again (the settings' words,
@@ -4738,6 +4900,27 @@ def create_app() -> FastAPI:
                 return True
             await apply_setting(app, "speech_lang", lang)
             log.info("speech language -> %s", lang)
+            return True
+        elif kind == "terms_find":
+            # Pick from text, under Extra terms: the technical terms of a pasted job posting, resume or notes, to the one who
+            # asked alone. The text is read here and let go: no event, no line of the log, and no other panel or reader of
+            # events is sent it or the terms in it (docs/DECISIONS.md, note 131)
+            text = data.get("text") if isinstance(data.get("text"), str) else ""
+            said = {"type": "terms_found", "terms": [], "limit": WORDS_MAX}   # the most Extra terms hold, for the panel's count
+            ask = data.get("ask")
+            if isinstance(ask, int) and not isinstance(ask, bool):   # which Find this answers, said back as it came
+                said["ask"] = ask
+            # Its size in bytes, as it came: a character is at least one, so one past the limit in characters is past it in
+            # bytes too and is not encoded; a lone surrogate is three, as the socket's own limit counts it
+            if len(text) > terms.TEXT_MAX or len(text.encode("utf-8", "surrogatepass")) > terms.TEXT_MAX:
+                said["error"] = t("Over {kb} KB of text · paste it in parts", kb=terms.TEXT_MAX // 1024)
+            else:
+                found = await asyncio.to_thread(terms.find, text)   # up to a tenth of a second at the most it reads: off the loop
+                # Listed: in the built-in lists as speech recognition is given them now (none while Technical term hints is
+                # off); have: in Extra terms already
+                given = hint_words(CONFIG.whisper_hint if SETTINGS.get("whisper_hint") else None)
+                said["terms"] = terms.marked(found, given, SETTINGS.get("speech_terms"))
+            await reply(said)
             return True
         return False
 
@@ -4801,7 +4984,10 @@ def create_app() -> FastAPI:
     def api(method: str, path: str, about: str, command: str | None = None):
         """A route of the API: registered, and listed in its index with what it does and the panel's message it runs."""
         def wrap(fn):
-            api_routes.append({"method": method, "path": path, "about": about, **({"command": command} if command else {})})
+            # listed as a caller writes it: a part that takes the rest of the path ({name:path}, a name with slashes) is
+            # {name} there, as docs/API.md has it
+            shown = re.sub(r"\{(\w+):path\}", r"{\1}", path)
+            api_routes.append({"method": method, "path": shown, "about": about, **({"command": command} if command else {})})
             app.add_api_route(path, fn, methods=[method], include_in_schema=False)
             return fn
         return wrap
@@ -5044,6 +5230,20 @@ def create_app() -> FastAPI:
         return JSONResponse({"ok": True, "id": seq, "starred": on,
                              "count": await asyncio.to_thread(HISTORY.starred_count)})
 
+    @api("PUT", "/api/v1/answers/{seq}/verdict", 'mark an answer kept right or wrong, {"verdict": "right"}, "wrong", or null '
+                                                 "to take the mark off", "verdict")
+    async def api_verdict(request: Request, seq: int):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        # null takes the mark off, so the field has to be there: a body without it is a mistake, not a clear
+        verdict = body.get("verdict", "")
+        if verdict not in (None, *answers_log.VERDICTS):
+            return api_error(400, 'send {"verdict": "right"}, {"verdict": "wrong"}, or {"verdict": null}')
+        why = (await run({"type": "verdict", "id": seq, "verdict": verdict})).refusal()
+        if why:   # an answer the history does not hold, in the panel's words
+            return api_error(409, why)
+        return JSONResponse({"ok": True, "id": seq, "verdict": verdict})
+
     @api("POST", "/api/v1/answers/{seq}/run", 'run code in the sandbox as the answer\'s Run key, {"lang": "python", '
                                               '"code": "...", "stdin": ""}', "run")
     async def api_run(request: Request, seq: int):
@@ -5115,7 +5315,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"ok": True, "id": seq, "kept": bool(said.get("kept")), "until": said.get("until"),
                              "count": said.get("n", 0)})
 
-    @api("POST", "/api/v1/answers/{seq}/restore", "put a deleted answer back as it was, its star and follow-ups with it",
+    @api("POST", "/api/v1/answers/{seq}/restore", "put a deleted answer back as it was, its star, verdict and follow-ups with it",
          "answer_restore")
     async def api_answer_restore(request: Request, seq: int):
         if isinstance(body := await write_body(request), JSONResponse):
@@ -5195,6 +5395,104 @@ def create_app() -> FastAPI:
             return api_error(409, "a download is under way", pull=PULL)
         return JSONResponse({"ok": True, "accepted": True}, status_code=202)
 
+    # ---- the Maintenance sheet: the checks, the log, the models, a backup (server/maintenance.py)
+
+    def number(request: Request, key: str, default: int) -> int:
+        """A whole number from the query (?limit=50), else `default`; a word that is no number is the default too"""
+        raw = request.query_params.get(key, "")
+        # ASCII digits only ("²" is a digit to isdigit() and no number to int()), and nine at most (past Python's limit on
+        # a number's digits, int() raises): both were a 500
+        return int(raw) if raw.isascii() and raw.isdigit() and len(raw) <= 9 else default
+
+    @api("GET", "/api/v1/check", "how each part stands, with what to do about it: the server, the capture program, the "
+                                 "screen, speech, this PC's model, the agent, web search, the code runner, the disk, the "
+                                 "GPU and the errors of the last day")
+    async def api_check(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        facts = await asyncio.to_thread(maintenance_facts, app)   # the disk and the events are files: off the loop
+        return JSONResponse({"ok": True, "checks": maintenance.checks(facts)})
+
+    @api("GET", "/api/v1/report", "what the days held, as ./sidenote report --json prints it: ?days=N (7, today and the days "
+                                  "before it, at most 366); with the words for why analyses stopped")
+    async def api_report(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        # the words for each reason an analysis stopped, in the server's language (the panel's: ui_lang sets it)
+        names = {"cancelled": {k: t(v) for k, v in report.CANCEL_NAMES.items()}}
+        if not telemetry.LOG_DIR:                                   # no log folder: no events to count
+            return JSONResponse({"ok": True, "days": [], "period": {}, "names": names})
+        days = min(max(number(request, "days", 7), 1), 366)        # a year at most: a month of events is tens of MB
+        data = await asyncio.to_thread(report.report_data, days, Path(telemetry.LOG_DIR))   # files read off the loop
+        return JSONResponse({"ok": True, **data, "names": names})
+
+    @api("GET", "/api/v1/log", "the latest events, newest first: ?errors=1 for the failures and what held work back, "
+                               "?limit=N (200, at most 1000)")
+    async def api_log(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        if not telemetry.LOG_DIR:
+            return JSONResponse({"ok": True, "events": []})
+        errors = request.query_params.get("errors", "") in ("1", "true", "yes")
+        found = await asyncio.to_thread(maintenance.recent_events, Path(telemetry.LOG_DIR), errors, number(request, "limit", 200))
+        return JSONResponse({"ok": True, "events": found})
+
+    @api("GET", "/api/v1/log/server", "the last lines of the server's log, oldest first: ?lines=N (200, at most 2000)")
+    async def api_log_server(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        if not telemetry.LOG_DIR:
+            return JSONResponse({"ok": True, "lines": []})
+        lines = await asyncio.to_thread(maintenance.log_tail, Path(telemetry.LOG_DIR), number(request, "lines", 200))
+        return JSONResponse({"ok": True, "lines": lines})
+
+    @api("GET", "/api/v1/models", "the local server's models: each with its size, whether it is on the GPU and whether "
+                                  "this server uses it, then those the panel downloads that are not there")
+    async def api_models(request: Request):
+        if (no := api_refused(request, write=False)) is not None:
+            return no
+        rows = await local_model_rows()
+        if rows is None:
+            return api_error(503, "the local model server does not answer, or it is not Ollama")
+        return JSONResponse({"ok": True, "models": rows, "download": pull_allowed(), "pulling": dict(PULL) or None})
+
+    @api("DELETE", "/api/v1/models/{name:path}", "remove one of the local server's models, as the Maintenance sheet's "
+                                                  "Remove (a name with a slash in it, hf.co/user/model, as it is written)",
+         "model_delete")
+    async def api_model_delete(request: Request, name: str):
+        if isinstance(body := await write_body(request), JSONResponse):   # JSON only, as every change: no form can ask
+            return body
+        said = (await run({"type": "model_delete", "model": name})).first("model_delete") or {}
+        if said.get("ok"):
+            return JSONResponse({"ok": True, "model": name})
+        # by why it was not removed (the reply's "why"): no such model, a download under way, the local server not
+        # answering (as /models says it: 503), or the local server refusing
+        status = {"missing": 404, "busy": 409, "down": 503}.get(said.get("why"), 502)
+        return api_error(status, said.get("error") or "not removed", model=name)
+
+    @api("POST", "/api/v1/backup", "the history and the settings in one .tar.gz, as ./sidenote backup writes it "
+                                   "(./sidenote restore takes it), Recently deleted left out")
+    async def api_backup(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):   # JSON only: another site's page cannot ask
+            return body
+        if not telemetry.LOG_DIR:
+            return api_error(409, t("This server keeps no files"))
+        try:
+            archive, made = await asyncio.to_thread(maintenance.make_backup, Path(telemetry.LOG_DIR), VERSION)
+        except (FileNotFoundError, ValueError) as exc:     # nothing to back up, or a link where a file should be
+            return api_error(409, str(exc))
+        except Exception as exc:                           # the copy itself failed: said, and the log has why
+            log.warning("backup failed: %s", exc)
+            return api_error(500, t("The backup could not be made: {why}", why=str(exc)[:200]))
+        telemetry.event("backup", held=made["held"], left_out=made["left_out"])
+        name = time.strftime("sidenote-backup-%Y%m%d-%H%M%S.tar.gz")
+        # Streamed from the file, which goes after its last block or when the download stops first (stream_backup's
+        # finally): a FileResponse's background task ran only after a whole body was sent, and left a cancelled one's
+        return StreamingResponse(maintenance.stream_backup(archive), media_type="application/gzip",
+                                 headers={"Content-Disposition": f'attachment; filename="{name}"',
+                                          "Content-Length": str(archive.stat().st_size),
+                                          "X-Sidenote-Held": " ".join(made["held"]), "X-Sidenote-Left-Out": str(made["left_out"])})
+
     @api("PUT", "/api/v1/language/panel", 'the language of the server\'s words, as the panel\'s own, {"lang": "en"}',
          "ui_lang")
     async def api_ui_lang(request: Request):
@@ -5222,6 +5520,20 @@ def create_app() -> FastAPI:
             return api_error(409, "speech is off here (SIDENOTE_TRANSCRIBER=null or SIDENOTE_AUDIO=0)")
         await run({"type": "set_lang", "lang": lang})
         return JSONResponse({"ok": True, "lang": SETTINGS.get("speech_lang")})
+
+    @api("POST", "/api/v1/speech/terms", 'the technical terms of a text for Extra terms, {"text": "..."}: each with how often '
+                                         'it appears and whether the built-in lists or Extra terms hold it; the text is not '
+                                         'kept', "terms_find")
+    async def api_speech_terms(request: Request):
+        if isinstance(body := await write_body(request), JSONResponse):
+            return body
+        text = body.get("text")
+        if not isinstance(text, str):
+            return api_error(400, 'send {"text": "..."}, the text to find terms in')
+        said = (await run({"type": "terms_find", "text": text})).first("terms_found") or {}
+        if said.get("error"):   # past the size the server reads, in the panel's words
+            return api_error(413, said["error"])
+        return JSONResponse({"ok": True, "terms": said.get("terms", []), "limit": said.get("limit")})
 
     @api("POST", "/api/v1/capture/restart", 'restart the capture program, as its tray\'s Restart and the Capture connection\'s; '
                                             '{"quiet": true} waits for a moment when nothing runs', "capture_restart")

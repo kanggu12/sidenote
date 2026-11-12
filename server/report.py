@@ -7,6 +7,10 @@
 
 The event log is SIDENOTE_LOG_DIR/events.jsonl plus its rotated files (events.jsonl.1 ...). It prints in the terminal's
 language: SIDENOTE_LANG, else Korean for a Korean locale, else English (i18n.cli_lang).
+
+The answers marked right or wrong in the panel (its Right and Wrong keys) are counted from their `verdict` events: an
+answer marked more than once counts once, as its last mark in the period and on the day it was given, and one whose mark
+was taken off ("none") counts as not judged.
 """
 from __future__ import annotations
 
@@ -26,12 +30,28 @@ from .i18n import t
 
 LOG_DIR = Path(os.environ.get("SIDENOTE_LOG_DIR", "/data/logs"))
 PORT = os.environ.get("SIDENOTE_PORT", "8777")
+VERDICTS = ("right", "wrong")   # a verdict event's marks; "none" is a mark taken off (server/history.py, app.py)
 
 
-def _events() -> list[dict]:
-    """All events, oldest first (rotated files are older: .4 before .3 ... before the live one)."""
-    files = sorted(LOG_DIR.glob("events.jsonl.*"), key=lambda f: -int(f.suffix[1:]) if f.suffix[1:].isdigit() else 0)
-    files.append(LOG_DIR / "events.jsonl")
+def _judged(last: dict, e: dict) -> None:
+    """Keep a verdict event as its answer's latest: `last` maps an answer's id to it. Events come oldest first, so what is
+    left at the end is each answer's last mark. An event with no number for an id (a line written by hand) is left out."""
+    seq = e.get("id")
+    if isinstance(seq, int) and not isinstance(seq, bool):
+        last[seq] = e
+
+
+def _marked(last: dict) -> list[dict]:
+    """The answers judged, by their last verdict events: one taken off ("none") is not judged."""
+    return [e for e in last.values() if e.get("verdict") in VERDICTS]
+
+
+def _events(log_dir: Path | None = None) -> list[dict]:
+    """All events, oldest first (rotated files are older: .4 before .3 ... before the live one). log_dir: the server's
+    folder when the server asks (GET /api/v1/report), else the one this command was started with."""
+    folder = log_dir or LOG_DIR
+    files = sorted(folder.glob("events.jsonl.*"), key=lambda f: -int(f.suffix[1:]) if f.suffix[1:].isdigit() else 0)
+    files.append(folder / "events.jsonl")
     out = []
     for f in files:
         if not f.is_file():
@@ -99,8 +119,8 @@ def _line(e: dict) -> str:
     bits = [_when(e.get("ts", 0)), k]
     # reason, after, of and score say why an analysis was stopped and which answer a problem seen again was (they
     # were in the log and left out here, so `events` read as if no cancel said why); engine and via say who answered
-    # and why the agent got it
-    for f in ("id", "trigger", "type", "reason", "after", "of", "score", "wait", "until", "elapsed", "first_token",
+    # and why the agent got it; verdict, how an answer was marked in the panel
+    for f in ("id", "trigger", "type", "verdict", "reason", "after", "of", "score", "wait", "until", "elapsed", "first_token",
               "engine", "via", "cost_usd", "hint", "action", "screen", "audio", "sound", "paused", "no_audio", "lang",
               "frames", "ok", "method", "peer", "path", "origin"):
         if e.get(f) is not None:
@@ -128,13 +148,18 @@ def cmd_events(args) -> int:
     return 0
 
 
-def cmd_report(args) -> int:
-    # Whole calendar days: --days 7 is today and the six days before it, each from midnight.
+def report_data(n_days: int, log_dir: Path | None = None) -> dict:
+    """The report's numbers: each day's, oldest first, and the whole period's, as `report --json` prints them and the
+    panel's Report shows them (GET /api/v1/report). Whole calendar days: 7 is today and the six days before it, each from
+    midnight. log_dir: the server's folder when the server asks, else this command's."""
     now = time.localtime()
-    since = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - (args.days - 1), 0, 0, 0, 0, 0, -1))
+    since = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - (n_days - 1), 0, 0, 0, 0, 0, -1))
+    events = _events(log_dir)   # read once, for the days and for the period: a month of them is tens of megabytes
     days: dict[str, dict] = defaultdict(lambda: {"answers": 0, "empty": 0, "followups": 0, "cancelled": 0, "errors": Counter(),
-                                                 "elapsed": [], "first_token": [], "cost": 0.0, "types": Counter()})
-    for e in _events():
+                                                 "elapsed": [], "first_token": [], "cost": 0.0, "types": Counter(),
+                                                 "judged": 0, "right": 0})
+    last: dict = {}   # each answer's last verdict in the period, counted on the day it was given (below)
+    for e in events:
         if e.get("ts", 0) < since:
             continue
         d = days[time.strftime("%Y-%m-%d", time.localtime(e["ts"]))]
@@ -159,17 +184,30 @@ def cmd_report(args) -> int:
             # an answer that ended in an error: not the agent's failures this PC's model then answered (agent_error),
             # which were 20 of the 32 "errors" over a month while every one of those questions got its answer
             d["errors"][e.get("hint") or "other"] += 1
-    period = _period(since)
+        elif k == "verdict":   # an answer marked right or wrong in the panel: only its last mark counts
+            _judged(last, e)
+    for e in _marked(last):   # once each, on the day its last mark was given (a day of looking back counts what it judged)
+        d = days[time.strftime("%Y-%m-%d", time.localtime(e["ts"]))]
+        d["judged"] += 1
+        d["right"] += e["verdict"] == "right"
+    period = _period(since, events)
     rows = []
     for day in sorted(days):
         d = days[day]
         med = lambda v: round(statistics.median(v), 2) if v else None
         rows.append({"day": day, "answers": d["answers"], "empty": d["empty"], "followups": d["followups"], "cancelled": d["cancelled"],
                      "errors": dict(d["errors"]), "elapsed_median": med(d["elapsed"]),
-                     "first_token_median": med(d["first_token"]), "cost_usd": round(d["cost"], 4), "types": dict(d["types"])})
+                     "first_token_median": med(d["first_token"]), "cost_usd": round(d["cost"], 4), "types": dict(d["types"]),
+                     "judged": d["judged"], "right": d["right"]})
+    return {"days": rows, "period": period}
+
+
+def cmd_report(args) -> int:
+    data = report_data(args.days)
     if args.json:
-        print(json.dumps({"days": rows, "period": period}, ensure_ascii=False, indent=2))
+        print(json.dumps(data, ensure_ascii=False, indent=2))
         return 0
+    rows, period = data["days"], data["period"]
     if not rows:
         print(t("No records in the last {n} day(s)", n=args.days))
         return 0
@@ -177,14 +215,16 @@ def cmd_report(args) -> int:
     sec = lambda v: "-" if v is None else t("{v} s", v=v)
     # "Nothing to solve": a screen with no problem on it, or something heard that held no question (they were
     # "Empty screens", 18 of them on a day the screen capture was off)
+    # "Right/judged": of the answers marked in the panel that day, how many were right ("-" for none marked)
     cols = [("Date", 10, False), ("Answers", 4, True), ("Follow-ups", 4, True), ("Nothing to solve", 7, True),
-            ("Cancelled", 4, True), ("Errors", 4, True), ("Response (median)", 10, True),
+            ("Cancelled", 4, True), ("Errors", 4, True), ("Right/judged", 7, True), ("Response (median)", 10, True),
             ("First token (median)", 6, True), ("Cost", 9, True)]
     # each heading in the terminal's language, its column as wide as the heading where that is wider
     cols = [(t(name), max(w, _width(t(name))), right) for name, w, right in cols]
     print("  ".join(_pad(name, w, right) for name, w, right in cols) + "  " + t("Types"))
     for r in rows:
         vals = [r["day"], r["answers"], r["followups"], r["empty"], r["cancelled"], sum(r["errors"].values()),
+                f"{r['right']}/{r['judged']}" if r["judged"] else "-",
                 sec(r["elapsed_median"]), sec(r["first_token_median"]), f"${r['cost_usd']:.4f}"]
         print("  ".join(_pad(v, w, right) for v, (_, w, right) in zip(vals, cols)) + "  "
               + ", ".join(f"{k} {v}" for k, v in sorted(r["types"].items(), key=lambda x: -x[1])))
@@ -200,7 +240,7 @@ def _pct(values: list, p: float):
     return round(v[min(len(v) - 1, max(0, -(-int(p * 100) * len(v) // 100) - 1))], 2)
 
 
-def _period(since: float) -> dict:
+def _period(since: float, events: list[dict] | None = None) -> dict:
     """The whole period at once, what a day's medians hide: how long each engine took to its first word (the median
     and the slow tenth), what the agent was paid for answers and for screens with nothing to solve, how often the GPU was
     found busy and the local model gave nothing in time, how often its server answered nothing at all and was started
@@ -222,7 +262,8 @@ def _period(since: float) -> dict:
     gpu_busy = timeouts = stuck = stuck_failed = 0
     loads, load_secs, cold = 0, 0.0, 0   # the local model put on the GPU, and its first silences right after (local_cold)
     checks = Counter()
-    for e in _events():
+    last: dict = {}   # each answer's last verdict (Right or Wrong in the panel), by its id
+    for e in (_events() if events is None else events):   # the events report_data read, else the log's own
         if e.get("ts", 0) < since:
             continue
         k = e.get("event")
@@ -281,6 +322,8 @@ def _period(since: float) -> dict:
                    "skipped" if e.get("skipped") else "error" if e.get("error") else "other"] += 1
             if e.get("none") and e.get("read") and not e.get("kept"):   # read off the screen, then all left out
                 checks["left_out"] += 1
+        elif k == "verdict":
+            _judged(last, e)
     # one line for each engine and way in, in the same order in every language: sorted by the translated words, the
     # Korean put speech before screen. The agent, the local model, then what was not recorded; screens, then speech.
     label = lambda engine, voice: (
@@ -288,6 +331,9 @@ def _period(since: float) -> dict:
         f"{t('speech') if voice else t('screen')}")
     return {"first_token": {label(*way): {"n": len(v), "p50": _pct(v, .5), "p90": _pct(v, .9)}
                             for way, v in sorted(first.items())},
+            # the same, with the engine and the way in as keys: the panel names them in its own words, the agent by its name
+            "first_token_by": [{"engine": ("agent", "local", "unknown")[engine], "trigger": "voice" if voice else "screen",
+                                "n": len(v), "p50": _pct(v, .5), "p90": _pct(v, .9)} for (engine, voice), v in sorted(first.items())],
             "cost_usd": {k: round(v, 4) if isinstance(v, float) else v for k, v in cost.items()},
             "gpu_busy": gpu_busy, "local_timeouts": timeouts, "local_stuck": stuck, "local_stuck_failed": stuck_failed,
             "model_loads": loads, "model_load_secs": round(load_secs, 1), "local_cold": cold,
@@ -297,7 +343,37 @@ def _period(since: float) -> dict:
             "superseded_after": {"n": len(lost), "p50": _pct(lost, .5), "p90": _pct(lost, .9),
                                  "over_10s": sum(1 for v in lost if v > 10), "total_s": round(sum(lost))},
             "repeats": {"n": len(repeats), "answers": len(repeat_cards - {None}),
-                        "min": round(min(repeats), 3) if repeats else None, "p50": _pct(repeats, .5)}}
+                        "min": round(min(repeats), 3) if repeats else None, "p50": _pct(repeats, .5)},
+            "verdicts": _verdicts(_marked(last))}
+
+
+def _tally(marks: list[dict]) -> dict:
+    """How many answers were judged, and how many of them right."""
+    return {"judged": len(marks), "right": sum(1 for e in marks if e["verdict"] == "right")}
+
+
+def _by(marks: list[dict], key) -> dict:
+    """The verdicts in groups, by key(event): each group's tally, the larger groups first (as a day's types are)."""
+    groups: dict = defaultdict(list)
+    for e in marks:
+        groups[key(e)].append(e)
+    return {name: _tally(group) for name, group in sorted(groups.items(), key=lambda g: (-len(g[1]), g[0]))}
+
+
+def _verdicts(marks: list[dict]) -> dict:
+    """The answers judged in the period (each by its last mark), all of them and by engine, by how the problem came and by type.
+    The keys are the events' own: the engine as it is logged ("claude", how the agent's answers were logged while it could
+    only be Claude, is the agent), the trigger ("screen" or "voice"), the answer's type; "unknown" where an event has none."""
+    # (each read as text first: a line written by hand may hold anything there)
+    engine = lambda e: {"agent": "agent", "claude": "agent", "local": "local"}.get(str(e.get("engine")), "unknown")
+    trigger = lambda e: {"screen": "screen", "voice": "voice"}.get(str(e.get("trigger")), "unknown")
+    kind = lambda e: e.get("type") if isinstance(e.get("type"), str) and e.get("type") else "unknown"
+    # the agent, this PC's model, then what was not recorded, in every language, as the first tokens are listed
+    by_engine = _by(marks, engine)
+    by_engine = {k: by_engine[k] for k in ("agent", "local", "unknown") if k in by_engine}
+    by_trigger = _by(marks, trigger)
+    by_trigger = {k: by_trigger[k] for k in ("screen", "voice", "unknown") if k in by_trigger}
+    return {**_tally(marks), "by_engine": by_engine, "by_trigger": by_trigger, "by_type": _by(marks, kind)}
 
 
 # What a cancel's reason is called in the report (through t() when printed)
@@ -327,12 +403,35 @@ def _shape(sent, trigger) -> str:
     return t("not recorded")
 
 
+def _share(group: dict) -> str:
+    """A group's verdicts as the report writes them: right of judged, and the right ones' share, rounded half up. Numbers
+    alone, the same in every language, as the table's right/judged column is."""
+    return f"{group['right']}/{group['judged']} ({int(100 * group['right'] / group['judged'] + 0.5)}%)"
+
+
+def _print_verdicts(v: dict) -> None:
+    """The answers marked right or wrong in the period: all of them and each engine on one line, then by how the problem came
+    and by type; one line saying there are none, so the report says the marks are counted."""
+    if not v.get("judged"):
+        print("  " + t("Right/judged  no answer marked right or wrong"))
+        return
+    engines = {"agent": t("Agent"), "local": t("Local model"), "unknown": t("not recorded")}
+    ways = {"screen": t("screen"), "voice": t("speech"), "unknown": t("not recorded")}
+    print("  " + t("Right/judged  all {all}   {engines}", all=_share(v),
+                   engines="   ".join(f"{engines[k]} {_share(g)}" for k, g in v["by_engine"].items())))
+    print("  " + t("Right/judged by source  {list}", list="   ".join(f"{ways[k]} {_share(g)}" for k, g in v["by_trigger"].items())))
+    # the types by their own names, as a day's Types column writes them
+    print("  " + t("Right/judged by type  {list}", list="   ".join(f"{t('not recorded') if k == 'unknown' else k} {_share(g)}"
+                                                              for k, g in v["by_type"].items())))
+
+
 def _print_period(period: dict) -> None:
     print("\n  " + t("The whole period"))
     wide = max((_width(way) for way in period["first_token"]), default=0)   # Hangul takes two columns
     for way, f in period["first_token"].items():
         print("  " + t("First token  {way}   answers {n}   median {p50} s   slowest 10% {p90} s", way=_pad(way, wide),
                        n=f"{f['n']:>3}", p50=f["p50"], p90=f["p90"]))
+    _print_verdicts(period.get("verdicts") or {})   # after how fast each engine is, how often it is right
     c = period["cost_usd"]
     print("  " + t("Agent cost  answers ${answers}   follow-ups ${followups}   nothing to solve ${empty} "
                    "(count {empty_n})   answers with no head line ${headless} (count {headless_n})",

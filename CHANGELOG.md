@@ -6,6 +6,38 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- **Maintenance**, in the gear menu: what `./sidenote doctor`, `report`, `events`, `logs`, `llm` and `backup` tell, in the
+  panel. **Checks** lists each part with how it stands and what to do, a command with **Copy** or a key to where the fix
+  is, the free disk and the errors of the last day among them; **Report** has today's, the week's or the month's
+  answers, how many of those marked were right, each engine's first token, the spend and the days in a table; **Log**
+  has the latest events, the failures first, and the server's log; **Models** has the local server's models with their
+  sizes and which are in use or on the GPU, with **Remove** and **Download**; **Backup** saves the file
+  `./sidenote backup` writes, and says how to put one back. The API has the same: `GET /api/v1/check`, `/report`,
+  `/log`, `/log/server`, `/models`, `DELETE /api/v1/models/{name}` and `POST /api/v1/backup`.
+- **Pick from text** under **Extra terms** (Solver settings, Speech): paste a job posting or a resume and the server finds
+  its technical terms, the most frequent first. The new ones come pressed, the ones the built-in hints already hold are
+  shown apart, and **Add to Extra terms** puts the pressed ones in the box, never past its 50. The text is read and let go: no log,
+  event or file keeps it, and only the panel that asked gets the terms. The API has the same:
+  `POST /api/v1/speech/terms`.
+- **Right** and **Wrong** on a finished answer's head, before the star: the mark stays through a reload, a delete and its
+  Undo, Export writes it under the answer's heading, and `./sidenote report` and **Maintenance**'s **Report** count how
+  many of the marked answers were right, all of them and by engine, by screen or speech and by type. The API has the
+  same: `PUT /api/v1/answers/{seq}/verdict`.
+- **Follow the changing screen** (Solver settings, Capture; off by default): with several monitors, the capture program
+  looks at the others every 1.5 s, reads the one where a new screen settled, and comes back to the chosen one the same
+  way. A notification, a chat message or typing on another monitor does not move it, nor does a video. The screen card
+  names the monitor followed to, and a drawn region is cleared when the reading moves. On Windows and macOS: elsewhere
+  the program cannot find its own panel to leave it out. With one monitor, **All monitors** or another system the row
+  is greyed out with the reason.
+
+### Changed
+
+- Up to 540 px wide, an answer's head keeps its keys on one line: they are a little smaller and closer, and the time
+  leaves out its calendar mark and, for today, the date. On a wide window, how a problem came (heard, or joined from a
+  scroll) wraps beside the keys instead of pushing them down.
+
 ## [0.9.0] - 2026-11-13
 
 ### Changed

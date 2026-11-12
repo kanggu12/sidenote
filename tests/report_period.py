@@ -1,5 +1,6 @@
 """./sidenote report: the period's numbers by engine, the agent's cost split, the GPU and the example checks, in one
-order whatever the language, and in the terminal's words for them in English and in Korean.
+order whatever the language, and in the terminal's words for them in English and in Korean; and the answers marked right
+or wrong in the panel, each by its last mark, by engine, by how the problem came and by type, and in the table of days.
 
     .venv/bin/python tests/report_period.py
 """
@@ -63,6 +64,15 @@ with tempfile.TemporaryDirectory() as d:
     got = json.loads(out.getvalue())
     p = got.get("period") or {}
     ft = p.get("first_token", {})
+    # the panel's Report and GET /api/v1/report read the same numbers through report_data, from the folder the server names
+    report.LOG_DIR = Path(tempfile.mkdtemp(prefix="sidenote-other-"))
+    same = json.loads(json.dumps(report.report_data(1, Path(d)), ensure_ascii=False))
+    report.LOG_DIR = Path(d)
+    check("report_data gives what --json prints, read from the folder it is given", same == got, json.dumps(same, ensure_ascii=False)[:300])
+    by = {(f["engine"], f["trigger"]): f for f in p.get("first_token_by", [])}
+    check("...and the first tokens with the engine and the way in as keys, for the panel to name",
+          by.get(("agent", "screen")) == {"engine": "agent", "trigger": "screen", "n": 5, "p50": 9.0, "p90": 100.0}
+          and by.get(("local", "screen"), {}).get("p50") == 40.0, json.dumps(p.get("first_token_by"), ensure_ascii=False))
     check("first tokens by engine, the median and the slow tenth",
           ft.get("에이전트, 화면") == {"n": 5, "p50": 9.0, "p90": 100.0}
           and ft.get("이 PC의 모델, 화면") == {"n": 1, "p50": 40.0, "p90": 40.0}, json.dumps(ft, ensure_ascii=False))
@@ -126,5 +136,94 @@ with tempfile.TemporaryDirectory() as d:
     check("events --errors lists the errors, the spend brake and the stuck model server, and no answers",
           kinds.count("analysis_error") == 1 and kinds.count("agent_brake") == 1 and kinds.count("local_stuck") == 2
           and "analysis_done" not in kinds, str(kinds))
+
+print("[answers marked right or wrong]")
+# Marks as the server writes them (server/app.py, the "verdict" message), today and yesterday. Each answer counts once, by its
+# last mark, on the day that mark was given: 101 and 108 changed their minds, 104 was taken off ("none"), 105 is the agent as
+# it was logged while it could only be Claude, 106 says nothing of where it came from, and three lines are not marks at all
+yesterday = now - 86400
+mark = lambda i, v, at, engine=None, kind=None, trigger=None: {  # noqa: E731
+    "ts": at, "event": "verdict", "id": i, "verdict": v, **({"engine": engine} if engine else {}),
+    **({"type": kind} if kind else {}), **({"trigger": trigger} if trigger else {}), "model": "m"}
+marks = [mark(107, "right", yesterday, "local", "coding", "screen"), mark(108, "wrong", yesterday + 1, "agent", "mcq", "screen"),
+         mark(109, "wrong", yesterday + 2, "local", "coding", "screen"),
+         mark(101, "wrong", now - 50, "local", "coding", "screen"), mark(101, "right", now - 40, "local", "coding", "screen"),
+         mark(102, "right", now - 39, "agent", "mcq", "screen"), mark(103, "wrong", now - 38, "agent", "mcq", "voice"),
+         mark(104, "right", now - 37, "local", "essay", "voice"), mark(104, "none", now - 36, "local", "essay", "voice"),
+         mark(105, "wrong", now - 35, "claude", "algorithm", "screen"), mark(106, "right", now - 34),
+         mark(108, "right", now - 33, "agent", "mcq", "screen"),
+         {"ts": now - 32, "event": "verdict", "id": "110", "verdict": "right"}, {"ts": now - 31, "event": "verdict", "verdict": "wrong"},
+         mark(111, "maybe", now - 30, "local", "coding", "screen"),
+         {"ts": now - 29, "event": "analysis_done", "type": "coding", "engine": "local", "trigger": "screen", "elapsed": 3.0}]
+day_of = lambda ts: time.strftime("%Y-%m-%d", time.localtime(ts))  # noqa: E731
+
+
+def cell(head: str, line: str, name: str) -> str:
+    """What a row of the table holds under one heading: the word ending where the heading ends, as the table's numbers stand
+    right-aligned under theirs. Counted in terminal columns, where Hangul takes two; nothing when no word ends there."""
+    end = report._width(head[:head.find(name) + len(name)]) if name in head else 0
+    return line[:end].split()[-1] if end and line[:end].strip() and line[end:end + 1] in ("", " ") else ""
+
+
+with tempfile.TemporaryDirectory() as d:
+    Path(d, "events.jsonl").write_text("\n".join(json.dumps(e) for e in marks) + "\n", encoding="utf-8")
+    report.LOG_DIR = Path(d)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main(["report", "--days", "2", "--json"])
+    got = json.loads(out.getvalue())
+    v = (got.get("period") or {}).get("verdicts") or {}
+    check("each answer once, by its last mark: 8 judged, 5 right (one taken off, and what is not a mark, left out)",
+          v.get("judged") == 8 and v.get("right") == 5, json.dumps(v))
+    check("...by engine: the agent (as Claude too), this PC's model, and one that does not say, in that order",
+          list((v.get("by_engine") or {}).items()) == [("agent", {"judged": 4, "right": 2}), ("local", {"judged": 3, "right": 2}),
+                                                       ("unknown", {"judged": 1, "right": 1})], json.dumps(v.get("by_engine")))
+    check("...by how the problem came: the screen, speech, and one that does not say",
+          list((v.get("by_trigger") or {}).items()) == [("screen", {"judged": 6, "right": 4}), ("voice", {"judged": 1, "right": 0}),
+                                                        ("unknown", {"judged": 1, "right": 1})], json.dumps(v.get("by_trigger")))
+    check("...by type, the most judged first",
+          list((v.get("by_type") or {}).items()) == [("coding", {"judged": 3, "right": 2}), ("mcq", {"judged": 3, "right": 2}),
+                                                     ("algorithm", {"judged": 1, "right": 0}), ("unknown", {"judged": 1, "right": 1})],
+          json.dumps(v.get("by_type")))
+    days = {r["day"]: (r.get("judged"), r.get("right")) for r in got.get("days") or []}
+    check("...and each day the marks given on it: 108 changed today counts today, not yesterday",
+          days.get(day_of(yesterday)) == (2, 1) and days.get(day_of(now)) == (6, 4), days)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main(["report", "--days", "2"])
+    text = out.getvalue()
+    head = text.splitlines()[0]
+    rows = {line[:10]: line for line in text.splitlines() if re.match(r"\d{4}-\d\d-\d\d ", line)}
+    check("in Korean the table has its column, right/judged on each day, under its heading",
+          cell(head, rows.get(day_of(now), ""), "맞음/채점") == "4/6" and cell(head, rows.get(day_of(yesterday), ""), "맞음/채점") == "1/2",
+          text[:400])
+    check("...and the period says them all, by engine, by where the problem came from and by type",
+          "맞음/채점  전체 5/8 (63%)   에이전트 2/4 (50%)   이 PC의 모델 2/3 (67%)   기록 없음 1/1 (100%)" in text
+          and "맞음/채점, 출처별  화면 4/6 (67%)   음성 0/1 (0%)   기록 없음 1/1 (100%)" in text
+          and "맞음/채점, 유형별  coding 2/3 (67%)   mcq 2/3 (67%)   algorithm 0/1 (0%)   기록 없음 1/1 (100%)" in text, text[-700:])
+    en = subprocess.run([sys.executable, "-m", "server.report", "report", "--days", "2"], cwd=ROOT, capture_output=True,
+                        text=True, env={**os.environ, "SIDENOTE_LOG_DIR": d, "SIDENOTE_LANG": "en", "PYTHONIOENCODING": "utf-8"}).stdout
+    en_rows = {line[:10]: line for line in en.splitlines() if re.match(r"\d{4}-\d\d-\d\d ", line)}
+    check("in English the same",
+          cell(en.splitlines()[0], en_rows.get(day_of(yesterday), ""), "Right/judged") == "1/2"
+          and "Right/judged  all 5/8 (63%)   Agent 2/4 (50%)   Local model 2/3 (67%)   not recorded 1/1 (100%)" in en
+          and "Right/judged by source  screen 4/6 (67%)   speech 0/1 (0%)   not recorded 1/1 (100%)" in en
+          and "Right/judged by type  coding 2/3 (67%)   mcq 2/3 (67%)   algorithm 0/1 (0%)   not recorded 1/1 (100%)" in en, en[-700:])
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main(["events", "-n", "50"])
+    check("events shows each mark with its verdict, a mark taken off as none",
+          "id=101  trigger=screen  type=coding  verdict=right" in out.getvalue()
+          and "id=104  trigger=voice  type=essay  verdict=none" in out.getvalue(), out.getvalue()[-600:])
+with tempfile.TemporaryDirectory() as d:   # a period with answers and no marks
+    Path(d, "events.jsonl").write_text(json.dumps(marks[-1]) + "\n", encoding="utf-8")
+    report.LOG_DIR = Path(d)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main(["report", "--days", "1"])
+    text = out.getvalue()
+    day = next((line for line in text.splitlines() if re.match(r"\d{4}-\d\d-\d\d ", line)), "")
+    check("none marked: the period says so in a line, and the day's column has a dash",
+          "맞음/채점  채점한 답 없음" in text and cell(text.splitlines()[0], day, "맞음/채점") == "-", text)
 print(f"==== {len(PASS)} of {len(PASS) + len(FAIL)} as expected")
 sys.exit(1 if FAIL else 0)   # tests/run.sh counts a suite by its exit status

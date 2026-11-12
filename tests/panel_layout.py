@@ -390,6 +390,19 @@ def audit(p, state, size, keep=("cut", "cut-told", "spill", "overlap", "covered"
 
 
 # ---------------------------------------------------------------- the states, drawn as a server would
+# Pick from text, under Extra terms: a made-up posting pasted and the terms a server finds in it, new ones, ones the built-in
+# lists hold, one Extra terms holds, and one of 57 letters, near the longest a term may be, which wraps inside its key on a phone
+TERMS_FOUND = ([{"word": w, "count": n, "listed": False, "have": False} for w, n in
+                (("Zephyrflow", 3), ("QuokkaDB", 2), ("GitHub Actions", 1), ("Marmotq", 1), ("Q" + "uokkaFlow" * 6 + "DB", 1))]
+               + [{"word": w, "count": 1, "listed": True, "have": False} for w in ("Kubernetes", "LangGraph", "Redis", "TensorRT-LLM")]
+               + [{"word": "Argo CD", "count": 1, "listed": False, "have": True}])
+TERMS_OPEN = """(terms) => { handle({ type: 'settings', values: { speech_terms: ['Lumenstack', 'argo cd'] } });
+    document.querySelector('#settings [data-terms=open]').click();
+    const b = document.querySelector('#settings textarea.terms-text');
+    b.value = '[가상랩스] 플랫폼 엔지니어\\n- Zephyrflow, QuokkaDB, Marmotq 경험\\n- GitHub Actions와 Argo CD로 배포합니다';
+    b.dispatchEvent(new Event('input', { bubbles: true })); b.blur();
+    document.querySelector('#settings [data-terms=find]').click();
+    handle({ type: 'terms_found', terms, limit: 50 }); }"""
 EMAIL_LONG = "a.very.long.name.of.a.reader.that.goes.on.and.on@some-long-company-domain.example.com"
 MODEL_LONG = "sidenote-gemma4-with-a-very-long-model-name-26b-instruct-q4_k_m"
 ASK_LONG = "두 수열이 주어졌을 때 합이 가장 큰 연속 부분 배열의 시작과 끝을 찾고 그 합을 구하는 프로그램을 작성하고 시간 복잡도를 설명하시오 " * 2
@@ -798,6 +811,10 @@ def group_overlays(br, s):
         p.js("() => document.querySelector(\".set-tab[data-sec='speech']\").click()")
         p.wait(300)
         found += audit(p, "settings_speech", f"{w}x{hh}")
+        # and Pick from text under its box, open on a text found in: the text box, the terms in their groups, the line, the keys
+        p.js(TERMS_OPEN, TERMS_FOUND)
+        p.wait(300)
+        found += audit(p, "settings_terms", f"{w}x{hh}")
         if p.errors:
             check(f"settings_words {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()

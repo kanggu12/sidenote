@@ -8,9 +8,13 @@ starred answers included.
 
 One answer can be deleted by itself (the delete key on its head). It is not gone at once: its row is marked with the
 time it was deleted and leaves every listing, and Recently deleted in the panel's contents holds it for
-SIDENOTE_DELETED_DAYS, where it can be put back as it was, star and follow-ups included, or deleted for good. Past
-those days it goes by itself, and when the file is over its size what was deleted goes before any answer still shown.
-Clear the history takes these too, at once.
+SIDENOTE_DELETED_DAYS, where it can be put back as it was, star, verdict and follow-ups included, or deleted for good.
+Past those days it goes by itself, and when the file is over its size what was deleted goes before any answer still
+shown. Clear the history takes these too, at once.
+
+An answer can be marked right or wrong (the Right and Wrong keys on its head): its row holds the verdict, "right" or
+"wrong", or nothing while it is not judged. It changes nothing of how long the answer is kept; ./sidenote report
+counts the verdicts from the event each one writes.
 
 What was heard, with Keep what is heard on, is a table of its own in the same file: one row a closed sentence, with its
 time, its length and its language. It goes with the answers by age, and has a size limit of its own
@@ -30,6 +34,18 @@ from pathlib import Path
 log = logging.getLogger("sidenote.history")
 MAX_ROWS = 200   # what one request returns at most
 MAX_HEARD = 20000   # the lines of one day one request returns at most: its newest
+VERDICTS = ("right", "wrong")   # what an answer can be marked; no mark is NULL in the file and None here
+
+
+def _verdict(value) -> str | None:
+    """A row's verdict as it is given out: "right", "wrong" or None. A file from elsewhere (./sidenote restore) could hold any
+    text in the column, which the panel would put in its keys' state."""
+    return value if value in VERDICTS else None
+
+
+def _text(value) -> str | None:
+    """A field of what was kept of an answer, for the verdict's event: text as it is, anything else (a file from elsewhere) none."""
+    return value if isinstance(value, str) else None
 
 
 def _read(default):
@@ -101,7 +117,7 @@ class History:
             self._db.execute(f"PRAGMA journal_size_limit={8 * 1024 * 1024}")   # and the WAL does not stay large
             self._db.execute("CREATE TABLE IF NOT EXISTS answers (id INTEGER PRIMARY KEY, ts REAL NOT NULL, day TEXT NOT NULL,"
                              " kind TEXT NOT NULL, words TEXT NOT NULL, data TEXT NOT NULL,"
-                             " starred INTEGER NOT NULL DEFAULT 0, deleted REAL)")
+                             " starred INTEGER NOT NULL DEFAULT 0, deleted REAL, verdict TEXT)")
             # A file from 0.1.0 has no star: it gains the column once, here, and its rows stay as they were, unstarred
             columns = {row[1] for row in self._db.execute("PRAGMA table_info(answers)")}
             if "starred" not in columns:
@@ -112,6 +128,11 @@ class History:
             if "deleted" not in columns:
                 self._db.execute("ALTER TABLE answers ADD COLUMN deleted REAL")
                 log.info("history: the answers can be deleted one by one (a file from before Recently deleted)")
+            # And a file from before Right and Wrong has no verdict: the column comes the same way, empty, so none of its
+            # answers is judged. It holds "right" or "wrong", and nothing for an answer not judged
+            if "verdict" not in columns:
+                self._db.execute("ALTER TABLE answers ADD COLUMN verdict TEXT")
+                log.info("history: the answers can be marked right or wrong (a file from before verdicts)")
             self._db.execute("CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)")
             self._db.execute("CREATE INDEX IF NOT EXISTS answers_day ON answers (day, ts)")     # the contents' two filters
             # ...and the same for the answers shown, which every read of the days asks for (deleted IS NULL): with the
@@ -145,11 +166,12 @@ class History:
         day = time.strftime("%Y-%m-%d", time.localtime(ts))
         data = {**data, "id": seq, "ts": ts, "kind": kind}
         with self._lock:
-            # A row written again keeps its star: REPLACE deletes the old row first, and would take the star with it.
-            # And it stays deleted if it was: written again it would otherwise come back into the listings by itself
-            self._db.execute("INSERT OR REPLACE INTO answers (id, ts, day, kind, words, data, starred, deleted) VALUES (?, ?, ?, ?, ?, ?,"
-                             " COALESCE((SELECT starred FROM answers WHERE id = ?), 0), (SELECT deleted FROM answers WHERE id = ?))",
-                             (seq, ts, day, kind, self._words(data), json.dumps(data, ensure_ascii=False), seq, seq))
+            # A row written again keeps its star and its verdict: REPLACE deletes the old row first, and would take them with
+            # it. And it stays deleted if it was: written again it would otherwise come back into the listings by itself
+            self._db.execute("INSERT OR REPLACE INTO answers (id, ts, day, kind, words, data, starred, deleted, verdict) VALUES (?, ?, ?, ?,"
+                             " ?, ?, COALESCE((SELECT starred FROM answers WHERE id = ?), 0), (SELECT deleted FROM answers WHERE id = ?),"
+                             " (SELECT verdict FROM answers WHERE id = ?))",
+                             (seq, ts, day, kind, self._words(data), json.dumps(data, ensure_ascii=False), seq, seq, seq))
             self._db.commit()
         self.prune()
 
@@ -190,8 +212,8 @@ class History:
         if self._db is None or not -2**63 <= seq < 2**63:   # an id SQLite cannot hold is none it keeps (it raised, a 500)
             return None
         with self._lock:
-            row = self._db.execute("SELECT data, starred, id FROM answers WHERE id = ? AND deleted IS NULL", (seq,)).fetchone()
-        return {**json.loads(row[0]), "starred": bool(row[1]), "id": row[2]} if row else None
+            row = self._db.execute("SELECT data, starred, id, verdict FROM answers WHERE id = ? AND deleted IS NULL", (seq,)).fetchone()
+        return {**json.loads(row[0]), "starred": bool(row[1]), "verdict": _verdict(row[3]), "id": row[2]} if row else None
 
     def star(self, seq: int, on: bool) -> bool:
         """Star or unstar one answer. False when the file holds no answer of that id that is not deleted, or there is no file."""
@@ -202,6 +224,27 @@ class History:
             done = self._db.execute("UPDATE answers SET starred = ? WHERE id = ? AND deleted IS NULL", (1 if on else 0, seq)).rowcount
             self._db.commit()
         return done == 1
+
+    def judge(self, seq: int, verdict: str | None) -> dict | None:
+        """Mark one answer right or wrong ("right", "wrong"), or take its mark off (None). Gives what the verdict's event says
+        of the answer: its engine, model, type and how it came (trigger). None when the file holds no answer of that id that
+        is not deleted, or there is no file."""
+        if self._db is None or not -2**63 <= seq < 2**63 or verdict not in (None, *VERDICTS):
+            return None
+        with self._lock:
+            # not a deleted one, as for the star: no listing shows it, and put back it has the verdict it had
+            done = self._db.execute("UPDATE answers SET verdict = ? WHERE id = ? AND deleted IS NULL", (verdict, seq)).rowcount
+            self._db.commit()
+            row = self._db.execute("SELECT data, kind FROM answers WHERE id = ?", (seq,)).fetchone() if done == 1 else None
+        if row is None:
+            return None
+        try:   # what was kept of it: a row that cannot be read still takes its verdict, and its event says less
+            data = json.loads(row[0])
+        except ValueError:
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        return {"engine": _text(data.get("engine")), "model": _text(data.get("model")), "type": _text(row[1]),
+                "trigger": _text(data.get("trigger"))}
 
     @_read(0)
     def starred_count(self) -> int:
@@ -253,16 +296,16 @@ class History:
         return {"deleted": now, "until": self._until(now)} if done == 1 else None
 
     def restore(self, seq: int, now: float | None = None) -> dict | None:
-        """Put one deleted answer back as it was, its star and follow-ups with it: the answer, as query() gives each. None
-        when the file holds no deleted answer of that id (one past its days is gone), or there is no file."""
+        """Put one deleted answer back as it was, its star, verdict and follow-ups with it: the answer, as query() gives each.
+        None when the file holds no deleted answer of that id (one past its days is gone), or there is no file."""
         if self._db is None or not -2**63 <= seq < 2**63:
             return None
         with self._lock:
             self._expire(time.time() if now is None else now)
             done = self._db.execute("UPDATE answers SET deleted = NULL WHERE id = ? AND deleted IS NOT NULL", (seq,)).rowcount
             self._db.commit()
-            row = self._db.execute("SELECT data, starred, id FROM answers WHERE id = ?", (seq,)).fetchone() if done == 1 else None
-        return {**json.loads(row[0]), "starred": bool(row[1]), "id": row[2]} if row else None
+            row = self._db.execute("SELECT data, starred, id, verdict FROM answers WHERE id = ?", (seq,)).fetchone() if done == 1 else None
+        return {**json.loads(row[0]), "starred": bool(row[1]), "verdict": _verdict(row[3]), "id": row[2]} if row else None
 
     def purge(self, seq: int | None = None) -> list:
         """Delete for good: the one deleted answer of that id, or with no id all of Recently deleted. Returns the ids
@@ -302,10 +345,10 @@ class History:
             return []
         with self._lock:
             self._expire(time.time() if now is None else now)
-            rows = self._db.execute("SELECT data, starred, deleted, id FROM answers WHERE deleted IS NOT NULL"
+            rows = self._db.execute("SELECT data, starred, deleted, id, verdict FROM answers WHERE deleted IS NOT NULL"
                                     " ORDER BY deleted DESC, id DESC LIMIT ?", (max(1, min(limit, MAX_ROWS)),)).fetchall()
-        return [{**json.loads(data), "starred": bool(star), "deleted": at, "until": self._until(at), "id": seq}
-                for data, star, at, seq in rows]
+        return [{**json.loads(data), "starred": bool(star), "verdict": _verdict(mark), "deleted": at, "until": self._until(at),
+                 "id": seq} for data, star, at, seq, mark in rows]
 
     @_read(None)
     def deleted_get(self, seq: int, now: float | None = None) -> dict | None:
@@ -314,8 +357,10 @@ class History:
             return None
         with self._lock:
             self._expire(time.time() if now is None else now)   # one past its days is gone, as in the list
-            row = self._db.execute("SELECT data, starred, deleted, id FROM answers WHERE id = ? AND deleted IS NOT NULL", (seq,)).fetchone()
-        return {**json.loads(row[0]), "starred": bool(row[1]), "deleted": row[2], "until": self._until(row[2]), "id": row[3]} if row else None
+            row = self._db.execute("SELECT data, starred, deleted, id, verdict FROM answers WHERE id = ? AND deleted IS NOT NULL",
+                                   (seq,)).fetchone()
+        return {**json.loads(row[0]), "starred": bool(row[1]), "verdict": _verdict(row[4]), "deleted": row[2],
+                "until": self._until(row[2]), "id": row[3]} if row else None
 
     @_read(list)
     def deleted_ids(self, now: float | None = None) -> list:
@@ -330,7 +375,7 @@ class History:
     @_read(list)
     def query(self, day: str = "", q: str = "", kind: str = "", limit: int = 60, starred: bool = False) -> list:
         """The answers asked for, the newest first: of one day, of one kind, holding every word of `q`, starred only.
-        Each says whether it is starred."""
+        Each says whether it is starred, and its verdict."""
         if self._db is None:
             return []
         where, args = ["deleted IS NULL"], []   # a deleted answer is in Recently deleted (deleted_list) and nowhere else
@@ -344,12 +389,13 @@ class History:
             # the word as written, % and _ included
             where.append("words LIKE ? ESCAPE '\\'")
             args.append("%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
-        sql = "SELECT data, starred, id FROM answers WHERE " + " AND ".join(where) + " ORDER BY ts DESC LIMIT ?"
+        sql = "SELECT data, starred, id, verdict FROM answers WHERE " + " AND ".join(where) + " ORDER BY ts DESC LIMIT ?"
         with self._lock:
             rows = self._db.execute(sql, (*args, max(1, min(limit, MAX_ROWS)))).fetchall()
-        # The star and the id are the row's own columns, not part of what was kept of the answer: an id is a number. A file
-        # from elsewhere (./sidenote restore) could hold any text there, which the panel puts in its keys' attributes
-        return [{**json.loads(data), "starred": bool(star), "id": seq} for data, star, seq in rows]
+        # The star, the verdict and the id are the row's own columns, not part of what was kept of the answer: an id is a
+        # number. A file from elsewhere (./sidenote restore) could hold any text there, which the panel puts in its keys'
+        # attributes
+        return [{**json.loads(data), "starred": bool(star), "verdict": _verdict(mark), "id": seq} for data, star, seq, mark in rows]
 
     # ---------- what was heard (Keep what is heard) ----------
 

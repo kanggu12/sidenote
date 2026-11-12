@@ -9,9 +9,11 @@ against it.
 """
 import asyncio
 import base64
+import contextlib
 import http.client
 import io
 import json
+import logging
 import os
 import re
 import shlex
@@ -110,7 +112,9 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
     index = c.get("/api/v1").json()
     routes = {(r["method"], r["path"]) for r in index["routes"]}
     check("GET /api/v1 lists the routes, with the API's version and the server's",
-          index["ok"] is True and index["api"] == 1 and index["version"] == A.VERSION and len(routes) >= 30, index)
+          index["ok"] is True and index["api"] == 1 and index["version"] == A.VERSION and len(routes) >= 39, index)
+    check("...the verdict's among them, run as the panel's Right and Wrong are",
+          index["commands"].get("verdict") == "PUT /api/v1/answers/{seq}/verdict", index["commands"].get("verdict"))
     check("every one of the panel's messages has a route", set(index["commands"]) == set(A.PANEL_COMMANDS),
           sorted(set(A.PANEL_COMMANDS) - set(index["commands"])))
     missing = sorted(f"{m} {p}" for m, p in routes if f"`{m} {p}`" not in DOC)
@@ -315,6 +319,85 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
         check("...a type that is none of the panel's messages is a 400 listing them", r.status_code == 400
               and set(r.json()["types"]) == set(A.PANEL_COMMANDS), r.json())
 
+        print("\n[Pick from text: the terms of a pasted text]")
+        # A made-up posting naming made-up products, so that any of their names found anywhere afterwards came from it.
+        # Extra terms holds one of them already, written straight into the settings so that no event names it either
+        made_up = ["Zephyrflow", "QuokkaDB", "Marmotq", "Lumenstack"]
+        pasted = "Zephyrflow 위에서 QuokkaDB와 Kubernetes를 운영합니다. Marmotq 경험 우대, with Zephyrflow and Lumenstack"
+        SETTINGS.values["speech_terms"] = ["lumenstack"]
+        said: list = []
+
+        class Every(logging.Handler):
+            def emit(self, record):
+                said.append(record.getMessage())
+        every, root, level = Every(level=logging.DEBUG), logging.getLogger(), logging.getLogger().level
+        root.addHandler(every)
+        root.setLevel(logging.DEBUG)      # every line any part of the server writes meanwhile, a debug one too
+        reader = A.EventStream()
+        A.API_STREAMS.add(reader)         # a reader of /api/v1/events, as the stream's route adds one
+        # A second panel, open all along and asking nothing: with the one panel that asks, a reply sent to every panel looked
+        # like its own
+        second = contextlib.ExitStack()
+        other = Panel(second.enter_context(c.websocket_connect("ws://127.0.0.1:8777/panel", headers=ORIGIN)))
+        other.wait(lambda m: m.get("type") == "usage")
+        n0, o0 = len(p.msgs), len(other.msgs)
+        try:
+            logging.getLogger("sidenote.app").debug("a debug line of the server's, caught")   # the capture sees such lines
+            r = c.post("/api/v1/speech/terms", json={"text": pasted})
+            got = r.json()
+            by = {x["word"]: x for x in got.get("terms", [])}
+            check("speech/terms: the terms of the text, the most frequent first with its count, and the most Extra terms hold",
+                  r.status_code == 200 and got["ok"] is True and got["limit"] == 50
+                  and got["terms"][0] == {"word": "Zephyrflow", "count": 2, "listed": False, "have": False}, got)
+            check("...each marked when the built-in lists or Extra terms hold it, in any capitals",
+                  by.get("Kubernetes", {}).get("listed") is True and by["Kubernetes"]["have"] is False
+                  and by.get("Lumenstack", {}).get("have") is True and by.get("QuokkaDB", {}).get("listed") is False, got)
+            run_cmd = c.post("/api/v1/commands", json={"type": "terms_find", "text": pasted}).json()
+            check("...the reply the panel's message gets through /commands",
+                  run_cmd.get("replies") == [{"type": "terms_found", "terms": got.get("terms"), "limit": 50}], run_cmd)
+            n = len(p.msgs)
+            ws.send_text(json.dumps({"type": "terms_find", "text": pasted}))
+            mine = p.wait(lambda m: m.get("type") == "terms_found", after=n)
+            check("...and from the panel's socket, to the panel that asked", mine is not None and mine["terms"] == got["terms"], mine)
+            r = c.post("/api/v1/speech/terms", json={"text": "x" * (64 * 1024 + 1)})
+            check("a text over 64 KB is a 413 in the panel's words", r.status_code == 413
+                  and r.json()["error"] == t("Over {kb} KB of text · paste it in parts", kb=64), r.json())
+            r = c.post("/api/v1/speech/terms", json={"text": "가" * 21846})
+            check("...counted in bytes of UTF-8: 21,846 Korean syllables are over it", r.status_code == 413, r.status_code)
+            r = c.post("/api/v1/speech/terms", json={"text": "가" * 21845 + "x"})
+            check("...and a text of 64 KB to the byte is read", r.status_code == 200 and r.json()["terms"] == [], r.json())
+            n = len(p.msgs)
+            ws.send_text(json.dumps({"type": "terms_find", "text": "가" * 30000}))
+            over = p.wait(lambda m: m.get("type") == "terms_found", after=n)
+            check("...over it from the panel's socket, the reply says so and holds no terms", over is not None
+                  and over["terms"] == [] and over.get("error") == t("Over {kb} KB of text · paste it in parts", kb=64), over)
+            r = c.post("/api/v1/speech/terms", json={"words": pasted})
+            check("a body without a text is a 400 that says what to send", r.status_code == 400 and '"text"' in r.json()["error"],
+                  r.json())
+            r = c.post("/api/v1/speech/terms", json={"text": ""})
+            check("an empty text has no terms", r.json() == {"ok": True, "terms": [], "limit": 50}, r.json())
+            time.sleep(0.3)               # anything a panel would have been sent has come by now
+        finally:
+            root.removeHandler(every)
+            root.setLevel(level)
+            A.API_STREAMS.discard(reader)
+            SETTINGS.values.pop("speech_terms", None)
+            second.close()                # the second panel's socket
+        # Each of these with what it guards having run: the terms found and answered, the debug lines caught
+        found = bool(got.get("terms")) and mine is not None
+        replies = [m for m in p.msgs[n0:] if m.get("type") == "terms_found"]   # its two finds' replies, no more
+        told = [m for m in p.msgs[n0:] if m.get("type") != "terms_found" and any(w in json.dumps(m) for w in made_up)] \
+            + [m for m in other.msgs[o0:] if m.get("type") == "terms_found" or any(w in json.dumps(m) for w in made_up)]
+        check("the terms found go to the one who asked, and no panel is sent the text or its terms otherwise",
+              found and len(replies) == 2 and not told, [len(replies), told[:2]] if found else got)
+        check("...nor any reader of the events", found and not [m for m in reader.items if any(w in json.dumps(m) for w in made_up)],
+              list(reader.items)[:2])
+        named = [x for x in said if any(w in x for w in made_up)]
+        caught = "a debug line of the server's, caught" in said
+        check("no line of the log names any of it, a debug line included", found and caught and not named, named[:2] or said[:3] or "nothing caught")
+        kept = {f.name: [w for w in made_up if w.encode() in f.read_bytes()] for f in Path(LOGS).iterdir() if f.is_file()}
+        check(f"...and no file in the log folder holds any of it ({', '.join(sorted(kept))})", found and not any(kept.values()), kept)
+
         print("\n[the panel's socket, after the move]")
         ws.send_text("[1, 2]")                         # an array where an object belongs
         ws.send_text('"pause"')                        # and a string
@@ -461,6 +544,29 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   and r.json()["error"] == t("Not starred: this answer is not in the saved history"), r.json())
             r = c.put(f"/api/v1/answers/{seq}/star", json={"starred": "yes"})
             check("...and a star that is not true or false is a 400", r.status_code == 400)
+            mark = lambda: (c.get(f"/api/v1/answers/{seq}").json().get("answer") or {}).get("verdict", "not said")  # noqa: E731
+            judged = lambda v: (lambda m: m.get("type") == "verdict" and m.get("id") == seq and "verdict" in m and m["verdict"] == v)  # noqa: E731
+            n = len(p.msgs)
+            r = c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": "right"})
+            check("verdict: marked right, and the panel is told", r.status_code == 200
+                  and r.json() == {"ok": True, "id": seq, "verdict": "right"} and p.wait(judged("right"), after=n) is not None, r.json())
+            check("...and the answer says so, by its id and in the list", mark() == "right"
+                  and [a.get("verdict") for a in c.get("/api/v1/answers").json()["answers"]] == ["right"])
+            n = len(p.msgs)
+            r = c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": "wrong"})
+            check("...changed to wrong", r.json() == {"ok": True, "id": seq, "verdict": "wrong"} and mark() == "wrong"
+                  and p.wait(judged("wrong"), after=n) is not None, r.json())
+            n = len(p.msgs)
+            r = c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": None})
+            check("...and taken off with null", r.json() == {"ok": True, "id": seq, "verdict": None} and mark() is None
+                  and p.wait(judged(None), after=n) is not None, r.json())
+            r = c.put("/api/v1/answers/424242/verdict", json={"verdict": "right"})
+            check("a verdict on an answer not kept is a 409 in the panel's words", r.status_code == 409
+                  and r.json().get("error") == t("Not marked: this answer is not in the saved history"), r.json())
+            codes = [c.put(f"/api/v1/answers/{seq}/verdict", json=b).status_code for b in ({"verdict": "yes"}, {"verdict": True}, {}, {"starred": True})]
+            check("...and a body with no verdict, or one that is not right, wrong or null, is a 400 that changes nothing",
+                  codes == [400, 400, 400, 400] and mark() is None, codes)
+            c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": "right"})   # marked right again, for its delete and put back below
             n = len(p.msgs)
             ws.send_text(json.dumps({"type": "run", "id": seq, "lang": "python", "code": "print(1)", "stdin": ""}))
             panel_run = p.wait(lambda m: m.get("type") == "run_result", after=n)
@@ -546,6 +652,9 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             r = c.put(f"/api/v1/answers/{seq}/star", json={"starred": False})
             check("a deleted answer's star is not changed (409)", r.status_code == 409
                   and c.get("/api/v1/answers/deleted").json()["answers"][0]["starred"] is True, r.json())
+            r = c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": "wrong"})
+            check("...nor its verdict, which Recently deleted gives with it", r.status_code == 409
+                  and c.get("/api/v1/answers/deleted").json()["answers"][0].get("verdict") == "right", r.json())
             n = len(p.msgs)
             r = c.post(f"/api/v1/answers/{seq}/restore", json={})
             back = r.json()
@@ -558,6 +667,7 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   and [x.get("q") for x in row.get("turns") or []] == ["why this way?"], back)
             check("...the panel is told, with the answer for a panel that did not show it", told is not None
                   and told.get("answer") == back.get("answer") and told.get("n") == 0 and told.get("can_ask") is True, told)
+            check("...its verdict back with it", row.get("verdict") == "right" and mark() == "right", row.get("verdict", "not said"))
             check("...and it is among the answers again, starred",
                   sorted(a["id"] for a in c.get("/api/v1/answers").json()["answers"]) == sorted([seq, seq2])
                   and [a["id"] for a in c.get("/api/v1/answers", params={"starred": "true"}).json()["answers"]] == [seq]

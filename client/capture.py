@@ -150,6 +150,8 @@ KO = {
     "scroll stitching on (from the panel)": "스크롤 이어 붙이기 켬 (패널에서)",
     "scroll stitching off (from the panel)": "스크롤 이어 붙이기 끔 (패널에서)",
     "monitor {n} (from the panel)": "모니터 {n}번 (패널에서)",
+    "following the changing screen on (from the panel)": "바뀐 화면 따라가기 켬 (패널에서)",
+    "following the changing screen off (from the panel)": "바뀐 화면 따라가기 끔 (패널에서)",
     "{n} word(s) for windows to skip (from the panel)": "건너뛸 창 낱말 {n}개 (패널에서)",
     "available monitors (pass the index to --monitor):": "모니터 목록 (--monitor에 번호를 넘김):",
     "0 = all monitors combined (virtual screen): {box}": "0 = 모든 모니터를 합친 한 화면 (가상 화면): {box}",
@@ -161,6 +163,9 @@ KO = {
     "single-shot": "한 장씩",
     "capturing monitor {i}: {w}x{h} ({mode})": "모니터 {i}번 캡처: {w}x{h} ({mode})",
     "the monitors changed {before} -> {after}; reading them again": "모니터가 바뀌어 다시 읽습니다: {before} -> {after}",
+    # following the changing screen: a move says the two monitors' numbers and never what either shows
+    "a new screen came to rest on monitor {to}: reading it instead of monitor {at}": "모니터 {to}번에 새 화면이 멈춰 {at}번 대신 읽습니다",
+    "following is off: back to monitor {n}": "따라가기를 꺼서 다시 모니터 {n}번을 읽습니다",
     "{mode} mode": "{mode} 모드",
     "screen capture works again": "화면 캡처가 다시 됩니다",
     "the panel is on this screen ({n} window(s)); its area is painted over before sending": "패널이 이 화면에 있습니다 (창 {n}개). 보내기 전에 그 자리를 칠해 가립니다",
@@ -253,11 +258,20 @@ def scroll_profile(img: Image.Image) -> np.ndarray:
 def scroll_shift(prev: np.ndarray, cur: np.ndarray) -> int:
     """How far the screen's content moved between two row profiles, in profile rows (positive: the
     content moved up, so the page was scrolled down). 0 when this is not the same content moved."""
+    shift, agree, _ = scroll_votes(prev, cur)
+    return shift if agree >= SCROLL_BANDS_AGREE else 0
+
+
+def scroll_votes(prev: np.ndarray, cur: np.ndarray) -> tuple[int, int, int]:
+    """scroll_shift's reading in full: (the shift the most bands found, how many found it, how many bands changed enough
+    to say). Two polls apart two bands agreeing is a scroll; following compares looks seconds apart, where it asks more
+    of them (content_moved)."""
     if prev is None or cur is None or prev.shape != cur.shape:
-        return 0
+        return 0, 0, 0
     if not np.any(prev != cur):
-        return 0
+        return 0, 0, 0
     votes: dict[int, int] = {}
+    judged = 0   # bands whose rows changed enough to say whether they moved
     for band in range(prev.shape[1]):
         a, b = prev[:, band], cur[:, band]
         # Only the rows that changed are compared: a bar that stays put above or below what scrolls (the site's own
@@ -276,6 +290,7 @@ def scroll_shift(prev: np.ndarray, cur: np.ndarray) -> int:
         base = float(np.mean(np.abs(a - b)))
         if base < 0.5:
             continue
+        judged += 1
         best, best_k = base, 0
         for d in range(SCROLL_MIN, min(SCROLL_MAX, len(a) * 2 // 3) + 1):   # a third of the rows left to compare
             for k in (d, -d):
@@ -285,14 +300,14 @@ def scroll_shift(prev: np.ndarray, cur: np.ndarray) -> int:
         if best_k and best <= base * SCROLL_GAIN:
             votes[best_k] = votes.get(best_k, 0) + 1
     if not votes:
-        return 0
+        return 0, 0, judged
     # Bands a row or two apart found the same scroll: count them together.
     best_k, best_votes = 0, 0
     for k in votes:
         near = sum(n for j, n in votes.items() if abs(j - k) <= 2)
         if near > best_votes or (near == best_votes and abs(k) < abs(best_k)):
             best_k, best_votes = k, near
-    return best_k if best_votes >= SCROLL_BANDS_AGREE else 0
+    return best_k, best_votes, judged
 
 
 class SendGate:
@@ -1033,6 +1048,11 @@ class ScrollStitcher:
         self.emitted = False
         self.emit_sig = None
 
+    def joining(self) -> bool:
+        """Whether a scrolled problem is being joined: frames held while the scrolling part is not yet sure, or a page
+        grown by a scroll and not yet sent. Following holds the reading while it is (screen_loop)."""
+        return bool(self.pending) or (self.region is not None and not self.emitted)
+
     # --- matching primitives ---
     @staticmethod
     def _gray(img: Image.Image) -> np.ndarray:
@@ -1316,9 +1336,10 @@ class Sender:
         self.epoch = 0
         self._connected_once = False
         # What the panel asked for: the switches, scroll stitching and the monitor (the latter two start
-        # from this program's options and follow the panel's settings after that), and the words of Skip windows,
-        # the server's default list until the server says its own.
-        self.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1,
+        # from this program's options and follow the panel's settings after that), following the changing screen (off
+        # until the server says on: an older one never does), and the words of Skip windows, the server's default list
+        # until the server says its own.
+        self.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1, "monitor_follow": False,
                       "skip_windows": skip_words(SKIP_WINDOWS)}
         self.caps: dict = {"screen": True}
         self.who: dict = {}       # what the hello says of this program (who_am_i): none for a stand-in sender
@@ -1412,7 +1433,7 @@ class Sender:
 
     def _on_message(self, raw) -> None:
         """What the panel asked for: {"type": "control", "screen": bool, "audio": bool, "stitch": bool,
-        "monitor": int, "skip_windows": [str]}."""
+        "monitor": int, "monitor_follow": bool, "skip_windows": [str]}."""
         try:
             msg = json.loads(raw)
         except Exception:
@@ -1454,6 +1475,11 @@ class Sender:
         if isinstance(m, int) and not isinstance(m, bool) and m >= 0 and m != self.wants["monitor"]:
             self.wants["monitor"] = m
             print("[control] " + t("monitor {n} (from the panel)", n=m))
+        follow = msg.get("monitor_follow")    # absent from an older server's message: it stays off
+        if isinstance(follow, bool) and follow != self.wants.get("monitor_follow", False):
+            self.wants["monitor_follow"] = follow
+            print("[control] " + (t("following the changing screen on (from the panel)") if follow
+                                  else t("following the changing screen off (from the panel)")))
         words = msg.get("skip_windows")       # absent from an older server's message: the list held stays
         if (isinstance(words, list) and all(isinstance(w, str) for w in words)
                 and skip_words(words) != self.wants.get("skip_windows")):
@@ -1521,6 +1547,189 @@ def list_monitors() -> None:
     print("\n" + t("default is 1 (primary). 0 captures every monitor as one wide image."))
 
 
+# ---------- Following the changing screen (Solver settings > Capture > Follow the changing screen) ----------
+# The panel's Monitor picks one monitor, and a problem that comes up on another is never read. With this switch on
+# (off by default: most people set one monitor and keep it) the other monitors are looked at too, now and then, and
+# never sent; the reading moves to the one where a new screen came to rest (another page, the next problem, the next
+# slide), and comes back to the chosen one the same way once a new screen rests there. A look at another monitor is a
+# grab of it, as a look at the one read is, so they are few.
+FOLLOW_LOOK_SEC = 1.5      # how often each monitor not read is looked at
+# A new screen, on the signature the send gate reads (the server's in server/gate.py), as follow_reading takes it.
+# Measured on the bench's screens at 1920x1080 and 3840x2160 (docs/DECISIONS.md, note 130): another site 0.21 to 7.5
+# apart, the next problem on the same site 0.17 to 1.31 (about 0.9 in the middle), the next slide 0.84 to 3.15. The
+# server's mark of a new problem (SIDENOTE_CHANGE_THRESHOLD, 0.5) is the line here too.
+FOLLOW_NEW = 0.5
+# A notification in a corner changes about as much (up to 0.87), in a box of a few rows: 14% of the signature's rows at
+# the most changed by 0.5, three chat lines 16%, five lines typed 12%; the next problem on the same site 34% in the
+# middle, the next slide 30% and more. A new screen reaches a fifth of them at the least.
+FOLLOW_ROWS = 0.2
+# A chat that takes a message moves its pane up by that message, which is a large change over most rows (1.2 to 5.6 over
+# the screen, on 70% to 95% of the rows). The row profiles say it moved: the bands the pane covers find the same shift.
+# Between two looks seconds apart, unrelated screens line up in a band or two by chance (two agreeing, scroll_shift's
+# mark, read 37% of the bench's pairs of different sites as moved), but not in most of the bands that changed: 5 of 8 at
+# the most. A chat's pane lined up in two thirds of them or more in 71 of 72, at three sizes; a move nobody made costs
+# more than one missed, so that is the line, under the three quarters a chat drawn for the checks missed with two
+# messages at once (5 of 7).
+FOLLOW_MOVED = 2 / 3
+FOLLOW_STILL_LOOKS = 2     # looks in a row at rest, after a change, before what rests there counts
+FOLLOW_HOLD_SEC = 10.0     # after a move, the least time on the monitor moved to: no back and forth between busy screens
+
+
+def content_moved(before_prof, after_prof) -> bool:
+    """Whether the screen after is the one before moved up or down (a pane scrolled, a chat that took a message): at
+    least two bands, and FOLLOW_MOVED of those that changed, found one shift (scroll_votes)."""
+    _, agree, judged = scroll_votes(before_prof, after_prof)
+    return agree >= SCROLL_BANDS_AGREE and agree >= FOLLOW_MOVED * judged
+
+
+def new_screen(before, after, before_prof, after_prof) -> bool:
+    """Whether `after` is a new screen against `before`, from their signatures and their row profiles (scroll_profile):
+    changed by FOLLOW_NEW over the whole screen and by as much over FOLLOW_ROWS of its rows, and not the same content
+    moved (content_moved)."""
+    diff = np.abs(after - before)                                # cell by cell, as distance() takes it
+    if float(diff.mean()) < FOLLOW_NEW:                          # too little over the whole screen
+        return False
+    rows = diff.reshape(SIG_SIZE[1], SIG_SIZE[0]).mean(axis=1)   # each row of the signature, its own change
+    if float(np.mean(rows >= FOLLOW_NEW)) < FOLLOW_ROWS:         # a box of a few rows: a notification, chat lines
+        return False
+    return not content_moved(before_prof, after_prof)            # what was there, moved, is no new screen
+
+
+class ScreenFollow:
+    """Which monitor to read while following the changing screen. Pure (no screens and no clock of its own): fed each
+    monitor's looks, its signature and row profile with the time of the look, and asked which monitor to read, so the
+    rules are checked without monitors (tests/monitor_follow.py).
+
+    Each monitor keeps the screen it last rested on. A look further than `still` from the look before is a change under
+    way; once FOLLOW_STILL_LOOKS looks in a row come no further than that from the one before, the change is over, and
+    it brought a new screen when what rests now is one against what rested before (new_screen). A video never rests, so
+    it never brings one. The reading moves to the monitor where the newest such screen came to rest since the last move,
+    unless the monitor being read rested on a new screen of its own after that change began, and FOLLOW_HOLD_SEC after
+    the last move at the earliest. With the switch off, one monitor, or all of them read as one picture (0), it reads
+    the chosen one, and a change of any of those takes it back there at once."""
+
+    def __init__(self, still: float, looks: int | None = None, hold: float | None = None):
+        self.still = still            # signature MAD between two looks at or under which a screen is at rest
+        # looks in a row at rest that end a change, and the least time between two moves: the module's, read now
+        self.looks = FOLLOW_STILL_LOOKS if looks is None else looks
+        self.hold = FOLLOW_HOLD_SEC if hold is None else hold
+        self.on, self.chosen, self.count = False, 1, 0   # the switch, the monitor chosen in the panel, how many
+        self.reading = 1              # the monitor read now
+        self.seen: dict = {}          # monitor -> what its looks have shown (look)
+        self.moved = float("-inf")    # when the reading last moved, or was held where it is (stay)
+
+    def setup(self, on: bool, chosen: int, count: int) -> None:
+        """The switch, the monitor chosen in the panel and how many there are. A change of any of them reads the chosen
+        monitor again at once and starts the watching afresh."""
+        if (on, chosen, count) != (self.on, self.chosen, self.count):
+            self.on, self.chosen, self.count = on, chosen, count
+            self.reset()
+
+    def reset(self) -> None:
+        """The chosen monitor read again, and nothing seen of any (the monitors read again, a grab that failed)."""
+        self.reading, self.seen, self.moved = self.chosen, {}, float("-inf")
+
+    @property
+    def active(self) -> bool:
+        """Whether there is anywhere to move: switched on, with two monitors or more, one of them chosen."""
+        return self.on and self.chosen != 0 and self.count >= 2
+
+    @property
+    def following(self) -> int | None:
+        """The monitor read when it is not the chosen one, else None: what the server is told (caps, following)."""
+        return self.reading if self.reading != self.chosen else None
+
+    def look(self, monitor: int, sig, prof, now: float) -> None:
+        """One look at `monitor`: its signature and row profile at `now`. None for both when it could not be looked at
+        (a window of Skip windows shows there, a grab that failed): no move goes there then, and its next look starts it
+        afresh."""
+        if sig is None:
+            self.seen.pop(monitor, None)          # what it showed before says nothing of what it shows after
+            return
+        m = self.seen.get(monitor)
+        if m is None:                             # its first look: what it shows is what it rests on
+            self.seen[monitor] = {"rest": sig, "rest_prof": prof, "last": sig, "still": self.looks,
+                                  "began": None, "new": None, "new_began": None}
+            return
+        if distance(sig, m["last"]) > self.still:  # moving: a change under way, from the screen it rested on
+            m["still"] = 0
+            if m["began"] is None:
+                m["began"] = now
+        else:
+            m["still"] += 1
+        m["last"] = sig
+        if m["still"] >= self.looks:              # at rest
+            if m["began"] is not None:            # the end of a change: a new screen, or the old one back
+                if new_screen(m["rest"], sig, m["rest_prof"], prof):
+                    m["new"], m["new_began"] = now, m["began"]
+                m["began"] = None
+            # what rests now is what the next change is measured from: steps too small to be a change add up to none
+            m["rest"], m["rest_prof"] = sig, prof
+
+    def stay(self, now: float) -> None:
+        """Hold the reading where it is, as a move to it would: a scrolled problem is being joined on it. What came to
+        rest elsewhere until now is let go, and the hold runs from now."""
+        self.moved = now
+
+    def pick(self, now: float) -> int:
+        """The monitor to read now, moved where a new screen came to rest (the class says when)."""
+        if not self.active:
+            self.reading = self.chosen
+            return self.reading
+        if now - self.moved < self.hold:          # moved a moment ago
+            return self.reading
+        read = self.seen.get(self.reading)
+        best = None
+        for k, m in self.seen.items():
+            if k == self.reading or m["new"] is None or m["new"] <= self.moved:
+                continue                          # nothing new there since the last move
+            if m["began"] is not None or m["still"] < self.looks:
+                continue                          # changing again: moved to once it rests
+            if read is not None and read["new"] is not None and read["new"] >= m["new_began"]:
+                continue                          # a new screen rested on the one read since that change began
+            if best is None or m["new"] > self.seen[best]["new"]:
+                best = k                          # the newest screen to come to rest
+        if best is not None:
+            self.reading, self.moved = best, now
+        return self.reading
+
+
+# What following reads of a grab is a copy of it a whole number of times smaller, about this many pixels on its longer
+# side: the signature (160x120) and the row profile (240 rows) it is read for need no more, and taken from the grabbed
+# bytes by striding, it skips turning a 4K screen into an image at full size, which is most of what a look costs after
+# the grab (docs/DECISIONS.md, note 130).
+FOLLOW_SIDE = 1280
+
+
+def follow_reading(shot, found) -> tuple:
+    """(signature, row profile) of a grab (mss's, or one made up), as following reads every monitor, the one read too,
+    so that their looks compare: shrunk by whole steps to about FOLLOW_SIDE, this tool's panel painted over (`found`,
+    from window_rects) so that its answers are no new screen."""
+    w, h = shot.size
+    step = max(1, round(max(w, h) / FOLLOW_SIDE))           # every step-th pixel of every step-th row
+    raw = getattr(shot, "raw", None)                       # mss keeps the bytes it grabbed: read in place, not copied
+    grabbed = np.frombuffer(raw if raw is not None else shot.bgra, dtype=np.uint8).reshape(h, w, 4)
+    img = Image.fromarray(np.ascontiguousarray(grabbed[::step, ::step, 2::-1]))   # BGRA to RGB, the small copy only
+    if found is not None and found[1]:
+        img = hide_own(img, found[0], found[1])            # its rectangles are fractions, so they fit any size
+    grey = gray_plane(img)                                 # one grey plane for both readings
+    return signature(grey), scroll_profile(grey)
+
+
+def watch_look(sct, mon: dict, front, words) -> tuple:
+    """A look at a monitor that is not read, for following: (signature, row profile), read as follow_reading reads every
+    monitor. (None, None) while a window of Skip windows shows there, which no grab may take, or when the grab fails."""
+    if words and skip_now(front, words, mon):     # nothing of a monitor that shows one is grabbed, as of the one read
+        return None, None
+    try:
+        shot = sct.grab(mon)
+    except Exception:                             # a monitor going away: the next look at the monitors says so
+        return None, None
+    if words and skip_now(front, words, mon):     # one came up while it was grabbed: the grab is let go unread
+        return None, None
+    return follow_reading(shot, window_rects(mon))   # this tool's own panel on that monitor, painted over
+
+
 DOWN_POLL = 2.0   # how often to look while there is no server to send to
 
 # Looking at the screen is not free. Measured on this PC's 3840x2160 screen, one look that sends
@@ -1575,6 +1784,12 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
     prev_prof = last_full = prev_full = None
     auto_stitch, auto_idle, last_scroll = False, 0, 0
     auto_off = args.no_auto_stitch
+    # Following the changing screen: which monitor to read (ScreenFollow), when the others are looked at next, and what
+    # the server was last told of it (caps, following: None while the chosen monitor is read)
+    follow = ScreenFollow(args.threshold)   # at rest: two looks no further apart than a screen not worth sending again
+    next_watch = 0.0
+    told_following = None
+    told_sees = None          # whether the window list could be read, as last told (caps follow_ok)
 
     def start_over() -> None:   # the current screen goes out again on the next poll
         nonlocal prev_prof, prev_full, last_full, last_scroll
@@ -1596,13 +1811,23 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     print("         " + t("./sidenote capture --list-monitors shows them."))
                 monitor = sct.monitors[index]
                 sizes = [[m["width"], m["height"]] for m in sct.monitors[1:]]
-                if sizes != told_monitors:   # the panel lists them to choose from
-                    sender.set_caps(monitors=sizes, monitor=index)
-                    told_monitors = sizes
+                # Following looks at monitors this tool's panel may be on, and paints the panel over first so that its
+                # answers are no new screen; where the window list cannot be read (off Windows and macOS) the panel
+                # cannot be found, and an answer written there would take the reading to it. So no following there, and
+                # the panel is told so (follow_ok) to grey its switch out with the reason.
+                sees_windows = window_rects(monitor) is not None
+                if sizes != told_monitors or sees_windows != told_sees:   # the panel lists them to choose from
+                    sender.set_caps(monitors=sizes, monitor=index, follow_ok=sees_windows)
+                    told_monitors, told_sees = sizes, sees_windows
                 if not failing:
                     mode = t("scroll-stitch") if sender.wants["stitch"] else t("single-shot")
                     print("[screen] " + t("capturing monitor {i}: {w}x{h} ({mode})", i=index, w=monitor["width"], h=monitor["height"], mode=mode))
                 screens = display_signature()
+                # Each start of this block reads the chosen monitor: another one chosen in the panel, the monitors read
+                # again or a grab that failed leave nothing of what following had seen
+                follow.setup(bool(sender.wants.get("monitor_follow")) and not args.once and sees_windows, index, len(sct.monitors) - 1)
+                follow.reset()
+                reading = index   # the monitor read now: the chosen one, until following moves it
                 while not stop.is_set():
                     t0 = time.time()
                     sender.keepalive()
@@ -1614,6 +1839,17 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                         print("[screen] " + t("the monitors changed {before} -> {after}; reading them again", before=screens, after=now_screens))
                         start_over()
                         break
+                    # Following the changing screen, switched in the panel (never for --once, which sends one screen):
+                    # off, it reads the chosen monitor, and one it had moved to is left at once
+                    follow.setup(bool(sender.wants.get("monitor_follow")) and not args.once and sees_windows, index,
+                                 len(sct.monitors) - 1)
+                    if follow.reading != reading:
+                        print("[screen] " + t("following is off: back to monitor {n}", n=follow.reading))
+                        reading, monitor = follow.reading, sct.monitors[follow.reading]
+                        start_over()
+                    if follow.following != told_following:   # which monitor is read, for the panel's card
+                        told_following = follow.following
+                        sender.set_caps(following=told_following)
                     # The panel's own switch, which is not the same as the one this loop turns on by
                     # itself when the screen scrolls: without `not auto_stitch` here, the stitcher
                     # started below was thrown away on the very next poll and never joined anything.
@@ -1764,6 +2000,27 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                                 break
 
                     prev_full = full   # the poll before the next one, for a join that starts then
+
+                    # Following the changing screen: every FOLLOW_LOOK_SEC the monitor read (this poll's grab, its panel
+                    # found above) and each of the others (watch_look) are looked at, read the same way, and the reading
+                    # moves where a new screen came to rest (ScreenFollow). A scrolled problem being joined holds it.
+                    now = time.time()
+                    if follow.active and now >= next_watch:
+                        next_watch = now + FOLLOW_LOOK_SEC
+                        follow.look(reading, *follow_reading(shot, found), now)
+                        for k in range(1, len(sct.monitors)):
+                            if k != reading:
+                                follow.look(k, *watch_look(sct, sct.monitors[k], front, words), now)
+                        if auto_stitch or (stitcher is not None and stitcher.joining()):   # its own join, or the panel's
+                            follow.stay(now)
+                        if follow.pick(now) != reading:   # one line for each move, which says monitors and nothing they show
+                            print("[screen] " + t("a new screen came to rest on monitor {to}: reading it instead of monitor {at}",
+                                                  to=follow.reading, at=reading))
+                            reading, monitor = follow.reading, sct.monitors[follow.reading]
+                            start_over()   # its screen goes out as soon as it is at rest, as a screen chosen in the panel
+                        if follow.following != told_following:
+                            told_following = follow.following
+                            sender.set_caps(following=told_following)
 
                     # What the looking costs, written to the log now and then. The loop is this
                     # program's whole expense and from the server's side it is invisible, so it is
@@ -3404,7 +3661,9 @@ def main() -> None:
     # server would clear the drawn region and put the panel's monitor back to what this was first started with.
     flags = {k: v for k, v in (("monitor", args.monitor), ("stitch", args.stitch)) if v is not None and not args.resumed}
     sender.wants.update(flags)
-    sender.caps.update(audio=not args.no_audio, no_audio=args.no_audio, monitor=sender.wants["monitor"])
+    # `following`: the monitor read while following the changing screen has moved the reading off the chosen one, None
+    # until it does; said from the first hello, so a server that knew another one hears that it changed
+    sender.caps.update(audio=not args.no_audio, no_audio=args.no_audio, monitor=sender.wants["monitor"], following=None)
     if not args.resumed:
         sender.caps["flags"] = flags
     # which code this is, sent with every hello: ./sidenote up asks for a restart when it deployed other code
