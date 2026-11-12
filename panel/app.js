@@ -4872,7 +4872,7 @@ function renderIndex() {
   if (focused) $("history").querySelector(`.h[data-id="${focused}"]`)?.focus({ preventScroll: true });
 }
 // A row whose first marked word stands past its end, under the ellipsis, is written again from a few letters before it: the
-// row said nothing of why it was listed (11-12 review: "NFS" past the cut of a long question). Measured as laid out, the
+// row said nothing of why it was listed ("NFS" past the cut of a long question). Measured as laid out, the
 // width of the row being the window's; the words are the row's title, as written into it
 function showHits(listEl, words) {
   if (!words.length) return;
@@ -7950,7 +7950,7 @@ function connect() {
 
 // A box that scrolls inside itself (the contents' list, a sheet's pane) says there is more under its foot: its last lines fade
 // out while more is below (index.html, .more-below). Its scrollbar is thin, overlaid on some systems: answers and settings stood
-// under a straight cut with nothing to say so (11-12 review). Marked as it scrolls, as its words change and as its size does
+// under a straight cut with nothing to say so. Marked as it scrolls, as its words change and as its size does
 {
   const SCROLLERS = "#history, .set-pane";
   const mark = (el) => el.classList.toggle("more-below", el.scrollHeight - el.clientHeight - el.scrollTop > 2);

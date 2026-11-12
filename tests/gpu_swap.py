@@ -2,9 +2,9 @@
 
     SIDENOTE_ANALYZER=mock .venv/bin/python tests/gpu_swap.py
 
-On this PC in November every spoken question loaded the 26b, waited out the 45 s a model just loaded gets for its first
+On the test PC every spoken question loaded the 26b, waited out the 45 s a model just loaded gets for its first
 token, counted the GPU busy, and put the e4b on the GPU, which pushed the 26b off (one model at a time); after a hold of
-30 s the next question loaded the 26b again, cold. 47 spoken questions on 11-10 brought 27 loads, about 17 of 80 minutes.
+30 s the next question loaded the 26b again, cold. 47 spoken questions in one sitting brought 27 loads, about 17 of 80 minutes.
 The hold never grew: the next verdict was measured from when it came, after the retry's own load and wait, not from the
 retry. "Load onto the GPU" left the model cold, so the first question after it met the same. Giving the GPU back during
 an answer was logged as the agent failing, and the model the person had just stopped loaded again.

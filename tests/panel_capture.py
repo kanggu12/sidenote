@@ -266,7 +266,7 @@ def group_connected(br, s) -> None:
 
 
 def group_keys(br, s) -> None:
-    """What the review found the sheet lose or keep: the keyboard on the fold once it is opened, a pressed key back when
+    """What the sheet must not lose or must keep: the keyboard on the fold once it is opened, a pressed key back when
     nothing changes, the keyboard on Close when its key goes, the arrival said to a screen reader, and no ways claimed while
     the server is away."""
     if not T.group("the keyboard, the keys and the words for a screen reader"):

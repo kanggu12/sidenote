@@ -295,7 +295,7 @@ check("Keep answers and Keep what is heard give the days and megabytes set, not 
 
 print("\n[the capture program's words]")
 # Every t() of client/capture.py has its Korean, and every Korean there is said somewhere: its console lines were said in English
-# under SIDENOTE_LANG=ko, though the program and the guide said they were translated (the 0.8.1 review). Read from the source:
+# under SIDENOTE_LANG=ko, though the program and the guide said they were translated. Read from the source:
 # the program imports mss and soundcard only where they are used, but its words are what is checked here
 cap_src = (ROOT / "client" / "capture.py").read_text(encoding="utf-8")
 cap_tree = ast.parse(cap_src)
