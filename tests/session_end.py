@@ -391,9 +391,10 @@ try:
                 prog.kill()
         check("Quit pressed where no checkout was handed (the server was up before): it ends with 0 and runs nothing",
               rc == 0 and ran(plain, 3) == "" and "Stopping the server" not in out, f"exit {rc}: {out[-300:]}")
-        xproc.kill()
-        xproc.wait(10)
 finally:
+    if up is not None:   # the private display, however this ended: a check that raised left it running for an hour
+        up[1].kill()
+        up[1].wait(10)
     srv.terminate()
     try:
         srv.wait(15)
