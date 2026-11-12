@@ -19,6 +19,9 @@
 # - a Windows process query that fails is not read as "a capture program is running";
 # - the processes capture-stop ends are named exactly (a py*.exe pattern also matched pycharm64.exe);
 # - `capture --up` shows why the server could not start (it used to discard every word of it);
+# - a `capture --up` that brought the server up hands the capture program this checkout (--stop-server-on-quit, whose
+#   ./sidenote down its Quit runs), on WSL's own start and on the one launch.pyw makes on Windows; one that found the
+#   server running hands nothing on;
 # - a missing tray package (pystray) is said, and `install` installs it;
 # - --once runs in the terminal, and --no-tray says how the windowless program is ended;
 # - the desktop shortcut runs client/launch.pyw with Windows Python's windowless pyw.exe, not wsl.exe in a console
@@ -243,6 +246,8 @@ case "$1" in
            if [ -f "$FAKE/state/no-toolkit" ] && printf '%s\n' "$@" | grep -qx up; then
              echo 'Error response from daemon: could not select device driver "nvidia" with capabilities: [[gpu]]' >&2; exit 1
            fi
+           # state/up-starts-server: the server was off and `compose up` brings it up, so /health answers from here on
+           if [ -f "$FAKE/state/up-starts-server" ] && printf '%s\n' "$@" | grep -qx up; then rm -f "$FAKE/state/server-down"; fi
            # what compose.yaml would be filled in with, for the checks of the server's user and the time zone
            if printf '%s\n' "$@" | grep -qx up; then
              printf '%s:%s %s' "${SIDENOTE_UID:-}" "${SIDENOTE_GID:-}" "${TZ:-}" > "$FAKE/state/compose-env"
@@ -443,6 +448,30 @@ state; run capture --up --audio-device "스피커 (Realtek USB2.0 Audio)"; wait_
 last_call cmd start; got="$(after --log)"
 [ "$got" = "<--audio-device><스피커 (Realtek USB2.0 Audio)>" ] && ok "--up passes the options as typed, without --up" \
   || bad "--up passes the options as typed, without --up" "got $got"
+
+# 3b. Whoever starts the server stops it: --up that brought the server up hands the program this checkout, whose
+# ./sidenote down the program's Quit runs too, and says how to end both. One that found it running hands nothing (3).
+state server-down up-starts-server; run capture --up --monitor 2; wait_started
+last_call cmd start; got="$(after --log)"; owned="$(wslpath -w "$work/repo")"
+if [ "$got" = "<--monitor><2><--stop-server-on-quit><$owned>" ] && said "Sidenote 끝내기" && said "./sidenote down"; then
+  ok "--up that brought the server up hands the capture program this checkout, and says Quit Sidenote ends both"
+else bad "--up that brought the server up hands the capture program this checkout, and says Quit Sidenote ends both" \
+         "got $got, said: $(grep -aF "끝내기" "$work/out" | tail -1)"; fi
+
+# 3c. A server whose container runs but whose /health is slow (a model loading, a long answer) is no server this start
+# brought up: up runs as before, and nothing is handed on, or the session's Quit would end a server someone else started.
+state server-running server-down up-starts-server; run capture --up --monitor 2; wait_started
+last_call cmd start; got="$(after --log)"
+[ "$got" = "<--monitor><2>" ] && ok "a running server that answers late is not claimed: nothing handed on" \
+  || bad "a running server that answers late is not claimed: nothing handed on" "got $got"
+# 3d. A down on its way (the tray's Quit Sidenote runs one) holds its lock, and a start with --up waits for it: then it
+# finds the server off and brings it up for its own session, and the down does not end the program it starts.
+mkdir -p "$work/logs"; ( flock "$work/logs/.down.lock" sleep 2 ) & holder=$!; started+=("$holder"); sleep 0.3
+state server-down up-starts-server; t0=$(date +%s%N); run capture --up --monitor 2; wait_started; took=$(( ($(date +%s%N) - t0) / 1000000 ))
+last_call cmd start; got="$(after --log)"; wait "$holder" 2>/dev/null || true
+if [ "$took" -ge 1500 ] && [ "$got" = "<--monitor><2><--stop-server-on-quit><$owned>" ]; then
+  ok "a start with --up waits for a down on its way, then brings the server up for its own session"
+else bad "a start with --up waits for a down on its way, then brings the server up for its own session" "took ${took} ms, got $got"; fi
 
 # 4. --list-monitors goes to capture.py directly; the launcher's own --console must not go with it.
 state; run capture --console --list-monitors
@@ -1272,6 +1301,13 @@ if [ "$handed_rc" = 0 ] && [[ $start_line == *$'\t--server\tws://127.0.0.1:8777/
   ok "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)"
 else bad "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)" \
          "rc $handed_rc, Windows calls $handed_calls, start: ${start_line:-none} | open: ${open_line:-none} | $(tail -1 <<<"$handed")"; fi
+state server-down up-starts-server; EXTRA_ENV="$offwin" run capture --up --from-windows --monitor 2
+owned_line="$(grep -a $'^SIDENOTE-START\t' "$work/out" | tail -1)"
+if [[ $owned_line == *$'\t--monitor\t2\t--stop-server-on-quit\t'"$(wslpath -w "$work/repo")" ]] \
+   && [[ $start_line != *stop-server-on-quit* ]]; then
+  ok "...a start there that brought the server up hands this checkout on too, and one that found it running does not"
+else bad "...a start there that brought the server up hands this checkout on too, and one that found it running does not" \
+         "brought up: ${owned_line:-none} | found running: ${start_line:-none}"; fi
 mkdir -p "$work/pymods"   # stand-ins for the capture packages, which launch.pyw looks up (never imports) in its own Python
 for m in mss soundcard numpy PIL websocket; do mkdir -p "$work/pymods/$m"; : > "$work/pymods/$m/__init__.py"; done
 state; EXTRA_ENV="$offwin PYTHONPATH=$work/pymods" run_launch; chain="$(cat "$work/out")"; chain_rc="$(cat "$work/rc")"
@@ -1279,6 +1315,12 @@ if [ "$chain_rc" = 0 ] && grep -qF -- "-X utf8 " <<<"$chain" && grep -qF "captur
    && grep -q '^\[dry-run\] start: ' <<<"$chain" && grep -qF "[dry-run] box: none" <<<"$chain"; then
   ok "...and launch.pyw starts it with its own Python, windowless, and shows no box"
 else bad "...and launch.pyw starts it with its own Python, windowless, and shows no box" "rc $chain_rc: $(grep -a '\[dry-run\]' <<<"$chain" | tr '\n' '|')"; fi
+state server-down up-starts-server; EXTRA_ENV="$offwin PYTHONPATH=$work/pymods" run_launch; owned_chain="$(cat "$work/out")"
+if grep -q '^\[dry-run\] start: ' <<<"$owned_chain" && grep -qF -- "--stop-server-on-quit" <<<"$owned_chain" \
+   && ! grep -qF -- "--stop-server-on-quit" <<<"$chain"; then
+  ok "...launch.pyw hands the checkout on to the program it starts, after a start that brought the server up"
+else bad "...launch.pyw hands the checkout on to the program it starts, after a start that brought the server up" \
+         "$(grep -a '\[dry-run\] start' <<<"$owned_chain" | cut -c1-300)"; fi
 state; EXTRA_ENV="$offwin PYTHONPATH=$work/nopymods" run_launch; nopkg="$(box_text)"; nopkg_rc="$(cat "$work/rc")"
 if [ "$nopkg_rc" != 0 ] && grep -qF "mss" <<<"$nopkg" && grep -qF -- "--setup --distro $distro --repo \"$work/repo\" --port 8777" <<<"$nopkg" \
    && ! grep -q '^\[dry-run\] start: ' "$work/out"; then

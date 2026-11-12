@@ -117,7 +117,7 @@ Each of these runs one of the panel's controls. The body is a JSON object, `{}` 
 | `PUT /api/v1/language/panel` | `{"lang": "en"}` | The panel's language, which the server's words follow (`409` when `SIDENOTE_LANG` holds one) |
 | `PUT /api/v1/language/speech` | `{"lang": "auto"}`, `"ko"` or `"en"` | The language speech is written down in (`409` when speech is off here: `SIDENOTE_TRANSCRIBER=null` or `SIDENOTE_AUDIO=0`) |
 | `POST /api/v1/capture/restart` | `{}`, or `{"quiet": true}` to wait for a moment when nothing runs | The capture program's tray: **Restart capture** |
-| `POST /api/v1/capture/quit` | | The capture program's tray: **Quit** |
+| `POST /api/v1/capture/quit` | | The capture program's tray: **Quit**, the program alone (a server its start brought up stays) |
 | `POST /api/v1/commands` | One of the panel's messages | Anything the panel sends, as it sends it: [The panel's messages](#the-panels-messages) |
 
 A change answers with how things stand after it: `paused`, the setting's `value`, the capture's switches, the number of

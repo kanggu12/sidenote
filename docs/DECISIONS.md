@@ -16,7 +16,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -2081,3 +2081,32 @@ server goes on with what it has, with a status a program can act on (a panel ref
 One capture program feeds a server: the newest to say hello takes over, and the one before is asked to quit
 ([Architecture](ARCHITECTURE.md), the capture program's messages). `tests/many_clients.py` checks each cap against a
 server started as `docker/entrypoint.sh` starts it, and `tests/api_check.py` the bodies.
+
+### <a id="note-125"></a>125. Whoever starts the server stops it
+
+The desktop shortcut started the server when it was off (`./sidenote capture --up`), then the capture program; **Quit**
+in the tray ended the capture program alone. The server the shortcut had started stayed up, with its model on the GPU
+until the idle release, until someone typed `./sidenote down`: starting tied the two together, and ending did not.
+
+The server is a service of its own, and the capture program, the panel and the API are its clients, none of which
+starts or stops it. The launcher does, so the launcher that brings the server up for a session also ends it with the
+session. It hands the capture program its checkout (`--stop-server-on-quit`: the checkout's WSL path on Windows, its
+folder elsewhere), and the person's **Quit Sidenote** from the tray runs that checkout's `./sidenote down`. Nothing
+else the program is told runs it: not `./sidenote capture-stop` or `down`, which ask through the server, not another
+capture program taking over, not a restart of its own, not an end under the desktop app, which ends its own server.
+A server that was up before the start (`./sidenote up`, another session) is left to whoever started it, and there the
+menu says **Quit**. Ctrl+C in a terminal (`--console`) ends the capture program alone, as before.
+
+A start brought the server up when its container was not running before (`brought_up`). A busy server can let
+`/health` wait past its 3 s, and read as off, the session would have claimed a server someone else started. A start
+that finds a capture program running opens the panel and hands nothing on: that program's own start decided. A
+checkout on a Windows drive (`/mnt/c`) has no WSL path to hand on, so there Quit ends the capture program alone.
+
+The value names a checkout and no command, and it must be the checkout the program runs from. The shortcut's starter
+on Windows passes the launcher's lines on, so whatever a line says, the program runs its own checkout's `./sidenote
+down` and nothing else (`server_down_command`). On Windows that runs in a login shell, as the shortcut runs the
+launcher (`bash -lc`, so `~/.profile` sets the same port and Docker), with the checkout as the shell's argument and
+never in its script. A down holds a lock until it ends, and a start with `--up` waits for it: a shortcut clicked again
+right after a Quit then finds the server off and starts a session of its own, where the down would otherwise have
+ended the program it started. `tests/session_end.py` runs the capture program through each of these ends, from a
+checkout of its own, and `tests/launcher_args.sh` checks what the launcher hands on and when it waits.

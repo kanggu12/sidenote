@@ -197,6 +197,13 @@ out. A run's result goes only to the panel that sent the code. The app and the c
 | Capture program | a child process | on the PC, through the port-forward |
 | The agent's CLI | the PC's own `claude` or `codex` | Codex in the image; Claude Code fetched into the pod when it starts |
 
+The server is a service, and the capture program, the panel and the API are its clients: none of them starts or stops
+it. `./sidenote up` and `down` do, the app does for its child, and Kubernetes does for the pod. The desktop shortcut
+starts a session (`./sidenote capture --up`): the server when it is off, then the capture program. A session that
+brought the server up ends it too: the launcher hands the capture program its checkout (`--stop-server-on-quit`), and
+**Quit Sidenote** in the tray runs that checkout's `./sidenote down` and nothing else. A server that was already up is
+left to whoever started it, and **Quit** ends the capture program alone ([note 125](DECISIONS.md#note-125)).
+
 ## What is kept on disk
 
 The server writes to its log folder: `~/.local/state/sidenote/logs` under Docker (bound to `/data/logs`), `logs/` in the
