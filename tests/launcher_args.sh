@@ -1792,5 +1792,18 @@ if grep -q held "$work/held" && grep -qxF "[dry-run] open: http://127.0.0.1:8777
 else bad "...and with a capture program holding its guard for the server, launch.pyw opens the panel and starts no second one" \
          "holder: $(cat "$work/held" | tr '\n' '|') | $(grep -a '\[dry-run\]' <<<"$guarded" | tr '\n' '|')"; fi
 
+# 68. install and restart say an option they do not know before doing anything: install dropped one without a word and ran
+#     without it, and restart took anything but --now as nothing (the 0.8.1 review)
+state; EXTRA_ENV="SIDENOTE_LANG=en" run install --with-modles; i_bogus="$(cat "$work/out")"; i_bogus_rc="$(cat "$work/rc")"
+last_call docker compose; i_calls=${#CALL[@]}
+state server-running; EXTRA_ENV="SIDENOTE_LANG=en" run restart --soon; r_bogus="$(cat "$work/out")"; r_bogus_rc="$(cat "$work/rc")"
+last_call docker up; r_calls=${#CALL[@]}
+if [ "$i_bogus_rc" != 0 ] && grep -qF "Unknown option: --with-modles (./sidenote install [--with-models])" <<<"$i_bogus" && [ "$i_calls" = 0 ] \
+   && ! grep -qF "Installing Sidenote" <<<"$i_bogus" \
+   && [ "$r_bogus_rc" != 0 ] && grep -qF "Unknown option: --soon (./sidenote restart [--now])" <<<"$r_bogus" && [ "$r_calls" = 0 ]; then
+  ok "install and restart say an option they do not know, and do nothing"
+else bad "install and restart say an option they do not know, and do nothing" \
+         "install rc $i_bogus_rc calls $i_calls: $(tail -2 <<<"$i_bogus" | tr '\n' '|') | restart rc $r_bogus_rc calls $r_calls: $(tail -2 <<<"$r_bogus" | tr '\n' '|')"; fi
+
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

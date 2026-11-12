@@ -6,6 +6,37 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- This PC's model no longer swaps with the smaller one at every spoken question. A model just loaded that is slow to
+  its first token hands the question on without counting the GPU busy, so the smaller model is not put on the GPU in
+  its place; the busy hold now doubles when the retry after it misses again; **Load to GPU** warms the model, so the
+  first problem after it gets an answer at the usual speed; and **Free GPU** while the model loads for a problem stops
+  that problem, where it was logged as the agent failing and loaded the model again.
+- The contents list and the panes of Solver settings fade at their foot while more is below: answers and settings under
+  the edge had nothing to show they were there. A search hit past the end of a row is brought into the row.
+- A switch for something the server was started without is drawn off and grey, where it was drawn on under "Off on the
+  server".
+- The setup guide's last step names the steps still to do, each a key to its step; its sound step no longer asks you to
+  play a video into a server that does not listen.
+- On a phone the update band's close key stays on its line.
+- A long command in a table cell breaks between its words, never after the hyphen of an option.
+- A day of one answer in the contents' day list shows its time, not a range from it to itself, and the capture
+  program's connected time reads like every other time in the panel (03:15 PM).
+- `./sidenote install` and `./sidenote restart` refuse an option they do not know, where install dropped it and ran.
+- The capture program's console lines follow `SIDENOTE_LANG=ko`, as its tray did.
+- The panel follows a browser whose first language is any language the panel has.
+
+### Changed
+
+- The capture program not connected is said one way everywhere ("Capture program not connected", "No program" on the
+  cards), and started from the server's terminal, as the Capture connection sheet says.
+- The chosen chips of a settings row are told apart at a glance: the others' words are muted, and a ticked type has a
+  tick.
+- When the local model cannot be used (missing, not running), the agent card says so, where it said the model was off.
+- `./sidenote report` counts the local model's loads with their time, and its first silences after one.
+- The ask box after a start of the server says first that questions come from the next answer.
+
 ## [0.8.0] - 2026-11-12
 
 ### Added

@@ -34,8 +34,8 @@ from typing import Awaitable, Callable
 from PIL import Image, ImageDraw, ImageFilter, ImageStat
 
 from . import repeats, telemetry
-from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, build_user_text, error_hint, error_words, speech_request,
-                       text_request, verify_request)
+from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, LoadStopped, build_user_text, error_hint, error_words,
+                       speech_request, text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
 from .heads import TALL_BOX, head_of, head_start, parse_region, region_box, within
@@ -1665,13 +1665,19 @@ class Pipeline:
                 else:
                     out.sent = sent + out.sent
                     return out
-            except (asyncio.CancelledError, Repeat):
+            except (asyncio.CancelledError, Repeat, LoadStopped):
+                # LoadStopped: the GPU was given back (or the panel paused) while this PC's model was loading for the
+                # agent's question, which it reads out of what was heard. No fault of the agent's, and loading the model
+                # again for this PC's answer undoes what was just asked for (11-11: the e4b back on the GPU 31 s after
+                # Free GPU, logged as an agent failure). The analysis ends, said as stopped (app, run_analysis)
                 raise
             except NotSent as why:
                 # No question in what was heard, by the model's own reading: nothing to solve, unless it was asked for by hand
                 if isinstance(why, NothingAsked) and not by_user:
                     log.info("analysis #%d: no question in what was heard; nothing to solve", seq)
-                    return Outcome(text="TYPE: none", model=f.model or local.model, usage=f.usage, cost_usd=None, engine="local",
+                    # the model that read it out is the one this PC uses now (the smaller one through a busy stretch),
+                    # not the first pass's: credited to that, the report gave the 26b answers it never read
+                    return Outcome(text="TYPE: none", model=local.model, usage=f.usage, cost_usd=None, engine="local",
                                    sent=sent, stages=stages)
                 stages["not_sent"] = True
                 # Why nothing went, in the log as well as on the panel: the 169 s answer fell to this

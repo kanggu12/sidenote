@@ -3309,6 +3309,16 @@ async def analysis_worker(app: FastAPI) -> None:
             telemetry.event("analysis_not_sent", id=seq, trigger=trigger)
             await broadcast({"type": "analysis_cancelled", "id": seq, "reason": "not_sent"})
             return
+        except LoadStopped:
+            # The model this answer needed was loading when the GPU was given back or the panel paused: stopped on
+            # purpose, as a pause stops one, and not loaded again for it. It was an error card, or an agent failure
+            # followed by the very load the person had just stopped (11-11)
+            STATE.supersede_streak = 0
+            log.info("analysis #%d: stopped, the GPU was given back while its model loaded", seq)
+            telemetry.event("analysis_cancelled", id=seq, trigger=trigger, reason="gpu_released",
+                            after=round(time.time() - start, 2))
+            await broadcast({"type": "analysis_cancelled", "id": seq, "reason": "gpu_released"})
+            return
         except Exception as exc:
             log.exception("analysis #%d failed", seq)
             STATE.supersede_streak = 0
@@ -3927,13 +3937,15 @@ def create_app() -> FastAPI:
         app.state.speech_task = asyncio.create_task(load_speech(app))
         crop_on = CONFIG.crop != "off" and app.state.ocr is not None
         audio_on = getattr(app.state.transcriber, "available", False)
+        # the release that runs, on the line every start writes: only the release check, a minute later and only when it
+        # is on and online, said it before, so a log read afterwards could not tell which release a problem was in
         log.info(
-            "ready on %s:%d  analyzer=%s agent=%s gate=%s audio=%s crop=%s",
-            CONFIG.host, CONFIG.port, CONFIG.analyzer, CONFIG.agent, app.state.detector.mode,
+            "Sidenote %s ready on %s:%d  analyzer=%s agent=%s gate=%s audio=%s crop=%s",
+            VERSION, CONFIG.host, CONFIG.port, CONFIG.analyzer, CONFIG.agent, app.state.detector.mode,
             ("continuous" if (audio_on and CONFIG.transcribe_interval > 0) else "on") if audio_on else "off",
             CONFIG.crop if crop_on else "off",
         )
-        telemetry.event("server_start", analyzer=CONFIG.analyzer, agent=CONFIG.agent, gate=app.state.detector.mode,
+        telemetry.event("server_start", version=VERSION, analyzer=CONFIG.analyzer, agent=CONFIG.agent, gate=app.state.detector.mode,
                         audio=bool(audio_on), local_model=main_model(CONFIG) if ENGINES.local else None,
                         agent_model=CONFIG.agent_model or None, mode=effective_mode(),
                         screen=STATE.screen_on, sound=STATE.audio_on, paused=STATE.paused)

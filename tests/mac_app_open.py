@@ -125,7 +125,7 @@ def main(argv):
                            check=True, timeout=60)
             check("the server comes up", wait_for(lambda: health(port) is not None, 240), text(logs / "app.log"))
             check("...and the capture program, its menu bar icon about to run",
-                  wait_for(lambda: "[main] capturing" in text(logs / "capture.log"), 60), text(logs / "capture.log")[-800:])
+                  wait_for(lambda: any(m in text(logs / "capture.log") for m in ("[main] capturing", "[main] 캡처 중")), 60), text(logs / "capture.log")[-800:])
             check("the panel is opened once", wait_for(lambda: len(lines()) >= 1, 30) and lines() == [url],
                   str(lines()))
             if on_ci:

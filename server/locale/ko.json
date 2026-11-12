@@ -1,5 +1,5 @@
 {
- " (screens with nothing to solve, apart: {n})": " (풀 문제 없는 화면 {n}건 따로)",
+ " (nothing to solve, apart: {n})": " (풀 것 없음 {n}건 따로)",
  " (standing in for the agent)": " (에이전트 대신 푸는 중)",
  " (the agent may search the web)": "({agent} 웹 검색 허용)",
  " + code language {lang}": " + 코드 언어 {lang}",
@@ -91,7 +91,7 @@
  "Don't solve the same problem again": "같은 문제 다시 풀지 않기",
  "Don't switch": "바꾸지 않음",
  "Drawn region": "직접 그린 영역",
- "Empty screens": "빈 화면",
+ "Nothing to solve": "풀 것 없음",
  "Empty: as the agent is set up. Latest: the newest model of that family. To pin one, SIDENOTE_AGENT_MODEL": "비우면 {agent} 설정대로. 최신은 그 계열의 가장 새 모델. 고정하려면 SIDENOTE_AGENT_MODEL",
  "Errors": "오류",
  "Errors in a row: automatic analysis rests {s} s · Reanalyze solves at once": "오류가 이어져 {s}초 자동 분석 쉼 · 다시 분석은 바로 풂",
@@ -157,7 +157,7 @@
  "Nothing to solve {ran} times in a row: automatic sending to the agent stops for {left} min (Reanalyze and questions still go)": "연달아 {ran}번 풀 것이 없어 {left}분 동안 {agent}에 자동 전송 멈춤 (다시 분석, 질문은 보냄)",
  "Off": "안 함",
  "One of the pulled models. Auto: the largest that fits the GPU's memory": "받아 둔 모델 중 선택. 자동: GPU 메모리에 맞는 가장 큰 모델",
- "Only 'Types the agent solves' go to the agent, the rest to the local model (to the agent when it would be over 1.5 times slower). If the agent fails, the local model": "'{agent}가 푸는 유형'만 {agent}, 나머지는 이 PC의 모델 (1.5배 넘게 늦으면 {agent}). {agent}가 실패하면 이 PC의 모델",
+ "Only the types ticked under 'Types the agent solves' in Solver settings go to the agent, the rest to the local model (to the agent when it would be over 1.5 times slower). If the agent fails, the local model": "풀이 설정의 '{agent}가 푸는 유형'에 고른 유형만 {agent}, 나머지는 이 PC의 모델 (1.5배 넘게 늦으면 {agent}). {agent}가 실패하면 이 PC의 모델",
  "Only for the latest problem on the screen": "가장 최근 화면 문제에서만 가능",
  "Other": "기타",
  "Work": "실무",
@@ -316,7 +316,7 @@
  "usage limit": "사용 한도",
  " (could not be taken off: {n})": "(내리지 못함 {n})",
  " (read but not in the problem's text, left out: {n})": "(읽었지만 문제 글에 없어 뺌 {n})",
- "Agent cost  answers ${answers}   follow-ups ${followups}   screens with nothing to solve ${empty} (count {empty_n})   answers with no head line ${headless} (count {headless_n})": "에이전트 비용  답 ${answers}   추가 질문 ${followups}   풀 것 없는 화면 ${empty} ({empty_n}번)   머리줄 없는 답 ${headless} ({headless_n}번)",
+ "Agent cost  answers ${answers}   follow-ups ${followups}   nothing to solve ${empty} (count {empty_n})   answers with no head line ${headless} (count {headless_n})": "에이전트 비용  답 ${answers}   추가 질문 ${followups}   풀 것 없음 ${empty} ({empty_n}번)   머리줄 없는 답 ${headless} ({headless_n}번)",
  "First token  {way}   answers {n}   median {p50} s   slowest 10% {p90} s": "첫 토큰  {way}   답 {n}개   중앙 {p50}초   느린 10% {p90}초",
  "First token (median)": "첫 토큰(중앙)",
  "Last {n}: response median {p50}, 90% {p90}, median to the first token {first}": "최근 {n}건: 응답 중앙값 {p50}, 90% {p90}, 첫 토큰까지 중앙값 {first}",
@@ -351,5 +351,6 @@
  "{n} questions are being answered · ask again when one ends": "질문 {n}개에 답하는 중 · 하나가 끝나면 다시 질문",
  "Restarting the capture program": "캡처 프로그램 다시 시작 중",
  "Quitting the capture program": "캡처 프로그램 끄는 중",
- "No capture program is connected": "연결된 캡처 프로그램 없음"
+ "No capture program is connected": "연결된 캡처 프로그램 없음",
+ "model loads {n} ({secs} s), first silences after a load {cold}": "모델 올림 {n}번({secs}초), 올린 직후 첫 침묵 {cold}번"
 }

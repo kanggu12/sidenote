@@ -101,6 +101,8 @@ const fmtDay = (ms) => {
 };
 const fmtClock = (ms) => { const d = new Date(ms), h = d.getHours(); return `${String(h % 12 || 12).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
 const fmtWhen = (ms) => `${fmtDay(ms)} ${fmtClock(ms)}`;
+// From when to when: a range, or the one time where both ends read the same ("06:57 PM ~ 06:57 PM" for a day of one answer)
+const fmtSpan = (a, b) => (fmtClock(a) === fmtClock(b) ? fmtClock(a) : `${fmtClock(a)} ~ ${fmtClock(b)}`);
 const fmtShort = (ms) => new Date(ms).toLocaleTimeString(LOCALE, { hour12: false, hour: "2-digit", minute: "2-digit" });
 function fmtAgo(sec) {
   if (sec < 5) return t("just now");
@@ -1627,7 +1629,15 @@ function textStyle(el) {
     tableBar(t.closest(".tablewrap"));
   });
   // Inline code of a few characters is a token (`-n`, `line 3`, `i += 1`): kept on one line (index.html, .short)
-  el.querySelectorAll(".md :not(pre) > code").forEach((c) => c.classList.toggle("short", c.textContent.length <= 24));
+  el.querySelectorAll(".md :not(pre) > code").forEach((c) => {
+    c.classList.toggle("short", c.textContent.length <= 24);
+    // A longer one, a command with its options, breaks between its words only: each word of up to 24 characters a piece kept whole
+    // (index.html, .md code .w). A cell of a table broke "mount ... /mnt -o user=kim" after the hyphen of "-o". A longer word
+    // still breaks inside itself, and the text copied is the same: the spaces stay between the pieces
+    if (c.textContent.length > 24 && !c.children.length && / /.test(c.textContent)) {
+      c.innerHTML = c.textContent.split(" ").map((w) => (w.length && w.length <= 24 ? `<span class="w">${escapeHtml(w)}</span>` : escapeHtml(w))).join(" ");
+    }
+  });
 }
 // ---------- an answer drawn, not only written ----------
 // What an answer says by its shape is drawn from that shape once it is whole: terms as cards, a chain of arrows as a flow, the time and space it costs on
@@ -2393,7 +2403,7 @@ function screenState() {
     // In the desktop app the tray icon is the capture program's own, gone with it: the app is quit and started again
     // The pill is a word or two: its column beside the switch has some 120 px at 1366. How to start one is said once, at the
     // card's foot (renderCapProg), with the key to the Capture connection
-    return card("idle", t("Program off"), []);
+    return card("idle", t("No program"), []);
   }
   // Switched off here in the panel: the monitor still matters, because it is what will be read
   // again the moment it goes back on.
@@ -2439,7 +2449,7 @@ function audioState() {
   // The server itself has transcription off: no switch here can change that.
   if (!status.audio) return card("off", t("Off on the server"), [], t("Start it with {cmd} to listen", { cmd: "<code class=\"cmd\">SIDENOTE_AUDIO=1</code>" }));
   // Said by the screen card too, and once is enough: no note here.
-  if (capture.clients === 0) return card("idle", t("Program off"), []);
+  if (capture.clients === 0) return card("idle", t("No program"), []);
   // Started with --no-audio: the program never opened a device, so the panel's switch is moot.
   if (caps.no_audio) return card("off", t("No sound"), [], t("The capture was started with {cmd}", { cmd: "<code class=\"cmd\">--no-audio</code>" }));
   if (caps.audio === false) {
@@ -2571,6 +2581,11 @@ const payloadName = (p) => (settingItem("agent_payload")?.options || []).find(([
 // What will actually leave this PC. The crop and the written-out problem both come from this PC's
 // model: with it off or down there is neither, and the whole screen goes instead. Saying "Problem
 // crop" then is a promise the tool does not keep.
+// The local model switched off here, rather than missing, not running or not in this server: what the notes name as the reason
+function localSwitchedOff() {
+  const L = eng()?.local;
+  return !!(L && L.present && !L.on);
+}
 function payloadNow(C) {
   const L = eng()?.local;
   const working = !!(L && L.present && L.on && L.ok);
@@ -2614,8 +2629,10 @@ function agentState() {
   // on this card worth a colour and a sentence.
   const forced = pay === "screen" && (C.payload || "crop") !== "screen";
   // One note, not three sentences that each say the local model is off.
-  const note = forced ? t("The local model is off, so the whole screen is sent")
-    : C.effective === "all" && C.mode === "hard" ? t("The local model is off, so the agent solves every problem", { agent: AG() })
+  const off = localSwitchedOff();
+  const note = forced ? (off ? t("The local model is off, so the whole screen is sent") : t("The local model cannot be used, so the whole screen is sent"))
+    : C.effective === "all" && C.mode === "hard" ? (off ? t("The local model is off, so the agent solves every problem", { agent: AG() })
+      : t("The local model cannot be used, so the agent solves every problem", { agent: AG() }))
     : "";
   // The model and its effort, one row of two, with no rows for details such as thinking or the maximum output;
   // the scales say what it is asked to take and to send, the profile who it is, and the meters what is left of the plan
@@ -2736,7 +2753,8 @@ function renderSignals() {
     // green or red (index.html, [data-rest])
     const A = eng()?.agent;
     pill.closest(".src")?.toggleAttribute("data-rest", (id === "local" && eng()?.local?.ok && !eng()?.local?.loaded && !eng()?.local?.loading)
-      || (id === "agent" && !!A && (A.mode === "off" || (!A.ok && A.installed === false))));
+      || (id === "agent" && !!A && (A.mode === "off" || (!A.ok && A.installed === false)))
+      || (id === "audio" && wsState === "up" && !status.audio));   // off on the server: how it was started, said grey
   }
   syncSrc();   // what can be folded goes with the state and the details just drawn
   const L = eng()?.local;
@@ -2763,9 +2781,12 @@ function renderSignals() {
   // On with no CLI on this PC, it does nothing yet: quiet, as the capture switches are with no program connected
   swc.dataset.idle = String(!!(C && !C.ok && C.installed === false));
   $("sw-screen").setAttribute("aria-checked", String(!!capture.screen_on));
-  $("sw-audio").setAttribute("aria-checked", String(!!capture.audio_on));
+  // Speech recognition off on the server (SIDENOTE_AUDIO): drawn off, as nothing is heard, whatever the kept choice is; the
+  // choice stays the program's and shows again once the server listens (a knob on under "Off on the server" read as on but locked)
+  $("sw-audio").setAttribute("aria-checked", String(!!capture.audio_on && !!status.audio));
   // Nothing connected to switch: greyed out and not pressable
-  $("sw-screen").disabled = $("sw-audio").disabled = wsState !== "up" || capture.clients === 0;
+  $("sw-screen").disabled = wsState !== "up" || capture.clients === 0;
+  $("sw-audio").disabled = wsState !== "up" || capture.clients === 0 || !status.audio;
   // Nor can the bar's two buttons: they stayed at full strength while the server was gone, and a press
   // only brought up a toast saying there was nothing connected.
   $("reanalyze").disabled = $("pause").disabled = wsState !== "up";
@@ -3023,7 +3044,7 @@ function renderAlerts() {
     }
   }
   if (wsState === "up" && capture.clients === 0 && (capture.screen_on || capture.audio_on)) {
-    out.push(alertHtml("warn", `<b>${t("Capture program off")}</b> ${startHint()}`,
+    out.push(alertHtml("warn", `<b>${t("Capture program not connected")}</b> ${startHint()}`,
       `<button type="button" class="btn sm" data-open-capture>${PLUG_MARK}<span>${t("Connect")}</span></button>`));
   }
   // A drawn region is easy to forget and it decides everything that follows: with one set, the models
@@ -4192,7 +4213,7 @@ function askEnabled() { return status.canAsk && wsState === "up"; }
 const ASK_TEXT = {
   on: [t("Ask more about the problem just solved (e.g. why is 3 the answer?)"), t("Ask more about the problem just solved"), t("Ask a follow-up")],
   down: [t("Questions once the server is connected"), t("Questions once connected"), t("Ask once connected")],
-  stale: [t("Server restarted: questions from the next answer"),
+  stale: [t("Questions from the next answer · the last one is from before the server started"),
     t("Questions from the next answer"), t("Ask after the next answer")],
   empty: [t("Questions once an answer is in"), t("Questions once an answer is in"), t("Ask after an answer")],
 };
@@ -4625,10 +4646,12 @@ function searchText(it) {
 }
 // The row's text with the words searched for marked, escaped; around the first match when it is further in than
 // the row can show, so the reason the row was kept is in view
-function markedRow(text, words) {
+function markedRow(text, words, lead = 20) {
   let t = text;
   const at = words.length ? t.toLowerCase().indexOf(words[0]) : -1;
-  if (at > 60) t = "…" + t.slice(at - 20);
+  // far into the words, the row starts `lead` letters before the hit; renderIndex asks for fewer where the hit still fell past
+  // the row's end (its ellipsis hid why the row was listed)
+  if (at > (lead < 20 ? lead : 60)) t = "…" + t.slice(at - lead);
   t = t.slice(0, 120);
   // marked on the text and escaped piece by piece: marking the escaped text found words inside its entities ("amp")
   const low = t.toLowerCase(), hit = new Array(t.length).fill(false);
@@ -4772,7 +4795,7 @@ function fillChoices() {
     // From when to when, of the server's kept answers and those on this page
     const server = historyDays.find((x) => x.day === d), ts = [...items.values()].filter((it) => dayOf(it.ts) === d).map((it) => it.ts);
     if (server?.first) ts.push(server.first * 1000, server.last * 1000);
-    const span = ts.length ? ` · ${fmtClock(Math.min(...ts))} ~ ${fmtClock(Math.max(...ts))}` : "";
+    const span = ts.length ? ` · ${fmtSpan(Math.min(...ts), Math.max(...ts))}` : "";
     return `<option value="${d}" data-short="${name}">${name} · ${n === 1 ? t("{n} answer", { n }) : t("{n} answers", { n })}${span}</option>`;
   }).join("");
   if (day.dataset.html !== dayHtml) { day.dataset.html = dayHtml; day.innerHTML = dayHtml; day.value = histStar ? STARRED : histDay; }
@@ -4844,9 +4867,22 @@ function renderIndex() {
       <span class="hk">${escapeHtml(label)}</span><span class="ht">${it.starred ? STAR_ROW() : ""}${markedRow(text, words)}</span><time>${fmtClock(it.ts)}</time></button></li>`;
   }).join("");
   // On every status message the same rows came out, and writing them again cost a layout of the whole rail
-  if (listEl.dataset.html !== listHtml) { listEl.dataset.html = listHtml; listEl.innerHTML = listHtml; }
+  if (listEl.dataset.html !== listHtml) { listEl.dataset.html = listHtml; listEl.innerHTML = listHtml; showHits(listEl, words); }
   markIndex();
   if (focused) $("history").querySelector(`.h[data-id="${focused}"]`)?.focus({ preventScroll: true });
+}
+// A row whose first marked word stands past its end, under the ellipsis, is written again from a few letters before it: the
+// row said nothing of why it was listed (11-12 review: "NFS" past the cut of a long question). Measured as laid out, the
+// width of the row being the window's; the words are the row's title, as written into it
+function showHits(listEl, words) {
+  if (!words.length) return;
+  for (const ht of listEl.querySelectorAll(".h .ht")) {
+    const m = ht.querySelector("mark"), row = ht.closest(".h");
+    if (!m || !row) continue;
+    const box = ht.getBoundingClientRect();
+    if (!box.width || m.getBoundingClientRect().right <= box.right + 0.5) continue;
+    ht.innerHTML = (ht.querySelector(".h-star")?.outerHTML || "") + markedRow(row.title, words, 6);   // a starred row keeps its star
+  }
 }
 // What Export takes, oldest first: the finished answers the contents list (the day and the kind chosen, and the words searched for)
 function exportItems() {
@@ -5206,7 +5242,7 @@ function noteChange() {
   // The server gone always raises its band (renderAlerts), and the capture program gone raises one while a capture switch is on:
   // with both switches off, only this toast tells it
   if (up && prevState.clients > 0 && capture.clients === 0 && !(capture.screen_on || capture.audio_on)) toast(status.desktop ? t("The capture program stopped")
-    : whereNow() === "cluster" ? t("Capture program off: start it on your PC") : t("Capture program off: run ./sidenote capture on the capture PC"), null, "warn");
+    : whereNow() === "cluster" ? t("Capture program not connected: start it on your PC") : t("Capture program not connected: run ./sidenote capture in the server's terminal"), null, "warn");
   prevState = { up, clients: capture.clients };
 }
 
@@ -5382,7 +5418,9 @@ function onDone(m) {
 // other cancel means a newer analysis replaces it (a new screen, a new spoken problem, Reanalyze).
 const STOP_NOTE = { pause: t("Stopped: paused"), screen_off: t("Stopped: screen capture was turned off"),
   sound_off: t("Stopped: sound capture was turned off"), get not_sent() { return t("Not solved: not sent to the agent", { agent: AG() }); },
-  local_off: t("Stopped: the local model was turned off") };
+  local_off: t("Stopped: the local model was turned off"),
+  // Free GPU pressed while the model loaded for this problem (server/app.py, LoadStopped): the person's own stop, not a failure
+  gpu_released: t("Stopped: the GPU was given back") };
 // Whether a message ends the spoken problem's own run: the status "solving … what was heard" went whenever any analysis was
 // stopped, a screen's superseded one included. An id the panel does not know (reloaded)
 // is taken to be it, as before.
@@ -5677,7 +5715,7 @@ function outboundNote() {
   // as fragments, and named what goes a third way
   const mode = MODE_TEXT[C.effective] ? ` · ${t("Takes")}: ${MODE_TEXT[C.effective]}` : "";
   return `${t("Sends")}: <b>${escapeHtml(payloadName(pay))}</b>${mode}${ask}`
-    + `${forced ? t(" · the local model is off, so the problem area cannot be cut out") : ""}${web ? ` · ${web}` : ""}`;
+    + `${forced ? (localSwitchedOff() ? t(" · the local model is off, so the problem area cannot be cut out") : t(" · the local model cannot be used, so the problem area cannot be cut out")) : ""}${web ? ` · ${web}` : ""}`;
 }
 function settingItem(key) { return settingsMeta?.items.find((i) => i.key === key); }
 function settingBlocker(item) {
@@ -5744,7 +5782,10 @@ function settingRow(item) {
   // the drawn box as it stands, set apart from the server's help after it: "none" alone, the help says what none means
   const extra = item.kind === "box" ? ` · ${t("Now: {box}", { box: v ? boxText(v) : t("none") })}` : "";
   const pick = (item.opt_help || {})[String(v)];
-  return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, v, !!why)}</span>
+  // A switch for what this server was started without is drawn off: nothing it holds is done. The kept value is the server's and
+  // shows again with the feature; one dimmed for a setting it needs (ACTIVE_WHEN, needs) keeps its value, used once that is on
+  const shown = item.kind === "bool" && UNAVAILABLE[item.key]?.() ? false : v;
+  return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, shown, !!why)}</span>
     ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
     <p class="help">${escapeHtml(extra ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p></div>`;
 }
@@ -6710,7 +6751,7 @@ async function loadHeard(day = "") {
   const sel = $("heard-day");
   sel.innerHTML = (got.days || []).map((d) => {
     const name = fmtDay(new Date(`${d.day}T12:00:00`).getTime());
-    const span = d.first ? ` · ${fmtClock(d.first * 1000)} ~ ${fmtClock(d.last * 1000)}` : "";
+    const span = d.first ? ` · ${fmtSpan(d.first * 1000, d.last * 1000)}` : "";
     return `<option value="${escapeHtml(d.day)}" data-short="${escapeHtml(name)}">${escapeHtml(name)} · ${d.n === 1 ? t("{n} sentence", { n: d.n }) : t("{n} sentences", { n: d.n })}${span}</option>`;
   }).join("");
   sel.value = heardDay;
@@ -7095,7 +7136,9 @@ function startHint() {
   const where = whereNow();
   if (where === "desktop") return t("The capture program stopped · quit Sidenote and start it again");
   if (where === "cluster") return t("Start it on your PC");
-  return t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` });
+  // ./sidenote capture connects to the server on its own PC (127.0.0.1), so it is run where the server's other commands are: the
+  // Capture connection sheet and the guide say the same (a program on another PC is the sheet's "From another PC")
+  return t("Run {cmd} in the server's terminal", { cmd: `<code class="cmd">./sidenote capture</code>` });
 }
 // The program's card: Checking, Not connected, or Connected with its PC, release, start, address and since when. `here`:
 // drawn where the ways to start it follow (the sheet, the guide), which then says nothing of them on the card
@@ -7106,7 +7149,7 @@ function progState(here = false) {
   // what its tray's Quit ends (the key on this sheet ends the program alone, captureActs): the app, the server too, or the
   // program alone
   const ends = w.started === "app" ? t("Quit ends the app") : w.ends_server ? t("its tray's Quit Sidenote ends the server too") : t("Quit leaves the server running");
-  const since = capture.since ? `${fmtShort(capture.since * 1000)} · ${fmtAgo(Math.max(0, serverNow() - capture.since))}` : "";
+  const since = capture.since ? `${fmtClock(capture.since * 1000)} · ${fmtAgo(Math.max(0, serverNow() - capture.since))}` : "";   // every time in the panel reads 03:15 PM
   // another release: one started from the server's checkout runs the server's code once restarted; one elsewhere is replaced
   const zip = captureZip();
   const note = !v.differs ? ""
@@ -7183,7 +7226,7 @@ function captureWays() {
   // slash ("--server", "/ingest"); a word wider than the line breaks inside itself (index.html, .tok)
   const words = (c) => c.split(" ").map((w) => `<span class="tok">${escapeHtml(w)}</span>`).join(" ");
   const cmd = (c) => `<span class="way-cmd"><code class="cmd">${words(c)}</code><button type="button" class="btn sm" data-copy="${escapeHtml(c)}">${COPY_MARK}<span>${t("Copy")}</span></button></span>`;
-  const step = (n, what, how) => `<li><span class="n" aria-hidden="true">${n}</span><div class="way"><div class="t">${what}</div>${how}</div></li>`;
+  const step = (n, what, how) => `<li>${n ? `<span class="n" aria-hidden="true">${n}</span>` : ""}<div class="way"><div class="t">${what}</div>${how}</div></li>`;
   const win = /Win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
   const py = win ? "py -3" : "python3", port = panelPort(), f = status.forward, zip = captureZip();
   const forward = where === "cluster" && f
@@ -7199,8 +7242,9 @@ function captureWays() {
     + step(3, t("Start it in that folder"), cmd(`${py} capture.py --server ${captureUrl()}`));
   const more = (name) => `<details class="ways-more"><summary>${name}</summary><ol class="ways">${elsewhere}</ol></details>`;
   if (where === "cluster") return on ? more(t("From another PC")) : `<h3 class="ways-h">${t("From your PC")}</h3><ol class="ways">${elsewhere}</ol>`;
-  return (on ? "" : `<h3 class="ways-h">${t("On the server's PC")}</h3><ol class="ways">`
-    + step(1, t("In the server's terminal"), cmd("./sidenote capture")
+  // one way here: a step without a number, as a list of one read "1" with no 2 after it
+  return (on ? "" : `<h3 class="ways-h">${t("On the server's PC")}</h3><ol class="ways one">`
+    + step("", t("In the server's terminal"), cmd("./sidenote capture")
       + `<p class="d">${t("On Windows the desktop shortcut Sidenote Capture does the same, and starts the server first")}</p>`) + `</ol>`)
     + more(t("From another PC"));
 }
@@ -7366,7 +7410,9 @@ function setupParts(id) {
     return [
       ["lede", `<p class="setup-lede">${t("The sound is optional: with it, a problem asked aloud is solved too")}</p>`],
       ["card", setupCard(t("Sound capture"), audioState())],
-      ["heard", `<p class="setup-heard" id="setup-heard">${escapeHtml(setupHeard || t("Nothing heard yet · play a video or say something"))}</p>`],
+      // what was heard, or the ask to play or say something, only while it listens: off on the server, switched off or with no
+      // program the card above says why nothing is heard, and asking to speak into it was a step that could not work
+      ["heard", setupHeard || audioState().s === "ok" ? `<p class="setup-heard" id="setup-heard">${escapeHtml(setupHeard || t("Nothing heard yet · play a video or say something"))}</p>` : ""],
       ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the sound of other apps comes in through a loopback input such as BlackHole (the user guide)")}</p>` : ""],
       ["rows", setupRows("voice_auto", "speech_lang")],
     ];
@@ -7374,6 +7420,10 @@ function setupParts(id) {
   // The sample problem: opened in a tab of its own, then how far it has come. Its answer as the notebook marks an answer, or,
   // with Practice keeping it back there, that it came and no more
   const tr = setupTry, ready = setupState("solve") === "ok" && setupState("screen") === "ok";
+  // the steps that come first, named, each a key to its step; with no program connected the screen follows the connection, and
+  // the connection alone is named for both
+  const first = !up ? [] : SETUP_STEPS.slice(0, 3).map(([id, name], i) => [id, name, i]).filter(([id]) => setupState(id) === "warn")
+    .filter(([id], _, all) => !(id === "screen" && all.some(([x]) => x === "connect")));
   const it = tr?.id != null ? items.get(tr.id) : null;
   const says = !tr ? ""
     : tr.state === "done" ? `<p class="setup-try done">${TICK_MARK}<span>${held(it) ? t("Answered · Practice keeps it back in the notebook")
@@ -7384,7 +7434,8 @@ function setupParts(id) {
       : tr.missed ? t("No problem found on that screen · bring the sample tab to the front") : t("Waiting for it on the screen · keep the sample tab in view")}</span></p>`;
   return [
     ["lede", `<p class="setup-lede">${t("Opens a sample problem in a new tab · with it on the screen, Sidenote finds it and writes its answer in this notebook in some seconds")}</p>`],
-    ["ready", ready || !up ? "" : `<p class="setup-note warn">${t("A solving engine and the screen come first")}</p>`],
+    ["ready", ready || !first.length ? "" : `<p class="setup-note warn with-key"><span>${t("Finish these first")}</span>`
+      + first.map(([, name, i]) => `<button type="button" class="btn sm" data-setup="step" data-to="${i}">${name()}</button>`).join("") + `</p>`],
     ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="sample"${up ? "" : " disabled"}>${t("Open the sample problem")}</button></div>`],
     ["says", says],
   ];
@@ -7514,6 +7565,10 @@ $("setup-body").addEventListener("click", (e) => {
   if (!k || k.disabled) return;
   if (k.dataset.setup === "shot") { if (send({ type: "thumb" })) setupShotAsked = true; }
   else if (k.dataset.setup === "connect") { setupGo(0); $("setup-steps").querySelector('[data-step="0"]')?.focus({ preventScroll: true }); }
+  else if (k.dataset.setup === "step") {   // a step the last one names as coming first
+    const i = Number(k.dataset.to);
+    setupGo(i); $("setup-steps").querySelector(`[data-step="${i}"]`)?.focus({ preventScroll: true });
+  }
   else if (k.dataset.setup === "sample") {
     window.open(`sample.html?lang=${encodeURIComponent(LANG)}`, "_blank", "noopener");
     setupTry = { state: "open", at: serverNow(), id: null, answer: "", missed: false };
@@ -7891,6 +7946,29 @@ function connect() {
     if (stage) seen.observe(stage);                 // the thread growing past the rail is what starts the following
   }
   if (window.ResizeObserver && alerts) new ResizeObserver(fitRail).observe(alerts);
+}
+
+// A box that scrolls inside itself (the contents' list, a sheet's pane) says there is more under its foot: its last lines fade
+// out while more is below (index.html, .more-below). Its scrollbar is thin, overlaid on some systems: answers and settings stood
+// under a straight cut with nothing to say so (11-12 review). Marked as it scrolls, as its words change and as its size does
+{
+  const SCROLLERS = "#history, .set-pane";
+  const mark = (el) => el.classList.toggle("more-below", el.scrollHeight - el.clientHeight - el.scrollTop > 2);
+  const markAll = () => document.querySelectorAll(SCROLLERS).forEach(mark);
+  let due = 0;   // one look per frame, however many changes came in it
+  const soon = () => { if (!due) due = requestAnimationFrame(() => { due = 0; markAll(); }); };
+  // scroll does not bubble: caught on its way down, for the panes the settings sheet draws anew too
+  document.addEventListener("scroll", (e) => { if (e.target instanceof Element && e.target.matches(SCROLLERS)) mark(e.target); }, { capture: true, passive: true });
+  addEventListener("resize", soon);
+  const sized = window.ResizeObserver ? new ResizeObserver(soon) : null;   // a sheet opened, the list's height set (fitRail)
+  const changed = new MutationObserver(soon);                              // rows and settings drawn, a pane shown
+  for (const id of ["history", "settings-body", "setup-body", "capture-body"]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    changed.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    sized?.observe(el);
+  }
+  markAll();
 }
 
 // ---------- preview (?demo=1): sample answers without a server, for screenshots ----------

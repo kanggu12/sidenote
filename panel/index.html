@@ -432,6 +432,11 @@
   .alert.done { --tone: var(--ok); }
   .alert > svg { width: 18px; height: 18px; flex: none; color: var(--tone); }
   .alert .msg { flex: 1; min-width: 220px; }
+  /* A band whose one key is a mark (the update's close) keeps it on its line: on a phone it fell under the words alone, and the
+     band stood twice as tall round nothing (11-12 review). The words wrap beside it instead */
+  .alert:has(> .btn.icon:last-child) { flex-wrap: nowrap; }
+  .alert:has(> .btn.icon:last-child) .msg { min-width: 0; }
+  .alert > .btn.icon { flex: none; }
   .alert .msg b { font-weight: 700; color: color-mix(in srgb, var(--tone) 55%, var(--ink)); }
   .alert .btn { border-color: color-mix(in srgb, var(--tone) 42%, transparent);
     color: color-mix(in srgb, var(--tone) 70%, var(--ink));
@@ -491,7 +496,12 @@
   /* The index is the card that grows with the thread: when all the cards would not fit beside it, its list
      scrolls inside the card (fitRail sets how tall), so the rail can follow the view with the switches and
      the screen in view, instead of staying at the top of the page. The card keeps its own frame. */
-  #history { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  #history { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent; }
+  /* A box that scrolls inside itself shows there is more under its foot: its last lines fade out while more is below (app.js,
+     more-below). The thin scrollbar is overlaid on some systems and was not seen: three of a day's five answers showed, the
+     card's edge cut straight under the third (11-12 review). A list opened from a pane goes out to the page, uncut (combo) */
+  :is(#history, .set-pane).more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
   @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); } .rail.stick, .rail.drift { position: static; } }
   html { scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent; }
   .topline { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 13px; color: var(--graphite); }
@@ -775,6 +785,7 @@
      grey of the code bar, the neutral fill Slack marks code with. Slack also sets the letters in red
      (orange in the dark), which these do not take: the key words around them are in colour already. */
   .md code.short { white-space: nowrap; }   /* at most 24 characters (textStyle in app.js): a token, kept whole */
+  .md code .w { white-space: nowrap; }      /* a longer one's words (textStyle): it breaks between them, not after a hyphen of "-o" */
   .md :not(pre) > code, .asked code { background: var(--code-bar);
     padding: .08em .36em; border-radius: 5px; font-size: .86em; color: var(--ink);
     overflow-wrap: break-word; }
@@ -1158,8 +1169,8 @@
   .hear-state { flex: 1; min-width: 0; margin: 0;
     font-size: 12px; color: var(--graphite); word-break: keep-all; }
   .hear-state b { color: var(--ink-2); font-weight: 600; }
-  /* The index is as long as it is: a scroller here would be the same second scrollbar in a smaller
-     box, and its last rows would be cut the same way. The page scrolls. */
+  /* The index shows nine lines and scrolls inside its card for the rest (#history above, fitRail in app.js), its foot faded
+     while more is below; in one column, under the thread, it is shown whole and the page scrolls */
   .history ol { list-style: none; margin: 0; padding: 0; }
   .h { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; text-align: left;
     padding: 7px 6px; border: 0; border-bottom: 1px dashed var(--rule); background: none; cursor: pointer; font-size: 13.5px; border-radius: 0; }
@@ -1860,6 +1871,14 @@
   :root[data-skin="classic"][data-theme="light"] .menu .seg button[aria-pressed="true"] { background: rgba(0, 0, 0, .08); box-shadow: var(--sunken); }
   /* In a sheet the chosen choice's edge is a rule, not the ink colour of the focus ring beside it */
   :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { border-color: var(--rule-2); }
+  /* On and off told apart at a glance in a sheet's rows (11-12 review: of nine types, the ones on read only by a bolder word on a
+     darker well): those not chosen are muted words, the chosen full ink in a rim, and a ticked type carries its tick */
+  :root[data-skin="classic"] .set .seg button:not([aria-pressed="true"]) { color: var(--graphite); font-weight: 500; }
+  :root[data-skin="classic"] .set .seg button[aria-pressed="true"] { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .set .seg.checks button[aria-pressed="true"]::before { content: ""; display: inline-block; width: 11px; height: 11px; margin: 0 5px 0 -2px;
+    vertical-align: -1px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7'/%3E%3C/svg%3E") center / contain no-repeat; }
   :root[data-skin="classic"] .menu hr { margin: 2px 0 6px; border-top-color: var(--float-line); }
   :root[data-skin="classic"] .menu .item { padding: 8px 8px; font-size: 13.5px; }
   :root[data-skin="classic"] .menu .item:hover { background: rgba(255, 255, 255, .09); }
@@ -3116,6 +3135,7 @@
   .ways-h { margin: 14px 0 8px; font-size: 12.5px; font-weight: 650; letter-spacing: .02em; color: var(--graphite); }
   .ways { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 10px; }
   .ways > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .ways.one > li { grid-template-columns: minmax(0, 1fr); }   /* one way: no number, the step at the heading's edge */
   .ways .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule-2);
     font-size: 12px; font-weight: 700; color: var(--graphite); font-variant-numeric: tabular-nums; }
   .ways .way { min-width: 0; }

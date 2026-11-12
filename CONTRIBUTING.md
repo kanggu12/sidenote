@@ -253,7 +253,7 @@ The panel follows the browser's first language, and **Language** in its gear men
 language a button in `#lang-seg` (`panel/index.html`), named in its own words. `?lang=<code>` picks one for a page.
 
 Four small parts speak only English and Korean so far, each with a `KO` table or English and Korean pairs: the
-capture program's tray (`client/capture.py`), the app's message boxes (`desktop/app.py`), the desktop shortcut's
+capture program's tray and console lines (`client/capture.py`), the app's message boxes (`desktop/app.py`), the desktop shortcut's
 starter (`client/launch.pyw`) and the launcher's messages (`L` in `sidenote`). A third language there turns each
 Korean table into one per language.
 

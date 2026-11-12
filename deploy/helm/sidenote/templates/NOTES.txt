@@ -18,7 +18,7 @@ Connect the capture program
 
     ./sidenote capture
 
-  or from the release's sidenote-capture zip, on Windows or on a Linux desktop with X11,
+  or from the release's sidenote-capture zip, on Windows, a Mac or a Linux desktop with X11,
 
     py -3 capture.py --server ws://127.0.0.1:8777/ingest
     python3 capture.py --server ws://127.0.0.1:8777/ingest

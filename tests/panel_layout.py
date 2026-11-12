@@ -1557,11 +1557,13 @@ def group_controls(br, s):
           any("warn" in c and "사용 한도" in x for c, x in ready) and any("bad" in c and "사용 한도" in x for c, x in alone)
           and not any("모두 꺼짐" in x for _, x in alone), [ready, alone])
     status(p, eng())
-    # The capture program is started on the PC whose screen it reads: the capture PC is the server's client
+    # ./sidenote capture connects to the server on its own PC: it is run in the server's terminal, as the Capture connection
+    # sheet and the guide say (a program on another PC is the sheet's "From another PC")
     capture(p, clients=0)
     p.wait(250)
     cap = p.js("() => document.getElementById('cap-who').textContent")
-    check("a capture program that is off is started on the capture PC, not the server's terminal", "캡처 PC에서" in cap and "서버 터미널" not in cap, cap)
+    check("a capture program not connected is started in the server's terminal, said as the sheet says it",
+          "서버 터미널에서" in cap and "./sidenote capture" in cap and "캡처 PC" not in cap, cap)
     capture(p)
     # An answer's head: the problem text's copy key has its own mark; a failed answer's date stands where every date does; its command is a chip
     p.answer(1801, "essay", "", "답", "풀이")

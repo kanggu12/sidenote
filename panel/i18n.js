@@ -1,6 +1,6 @@
 // The panel's words in the browser's language. The code is written in English; every other language is a table from
-// the English to its own words (panel/i18n/<lang>.js, which adds itself to CATALOGS). English is the default, and
-// Korean is used when the browser lists Korean first. The menu's Language picks one by hand and this browser keeps it;
+// the English to its own words (panel/i18n/<lang>.js, which adds itself to CATALOGS). English is the default, and a
+// supported language is used when the browser lists it first. The menu's Language picks one by hand and this browser keeps it;
 // `?lang=en` or `?lang=ko` in the address picks one for that page alone.
 //
 //   t("Pause")                               the word itself, or its translation
@@ -13,10 +13,11 @@
 const SUPPORTED = ["en", "ko"];
 const CATALOGS = {};
 
-// The browser's own language among those supported: Korean when it lists Korean first, else English
+// The browser's own language among those supported: the first it lists, by its main code ("ko-KR" is ko), else English.
+// Read from SUPPORTED, so a language added there is picked for a browser that lists it first (it was Korean alone, by name)
 function browserLang() {
-  const first = ((navigator.languages && navigator.languages[0]) || navigator.language || "en").toLowerCase();
-  return first.startsWith("ko") ? "ko" : "en";
+  const first = ((navigator.languages && navigator.languages[0]) || navigator.language || "en").toLowerCase().split("-")[0];
+  return SUPPORTED.includes(first) ? first : "en";
 }
 // The language picked in the menu, kept in this browser; "auto" when none is: the browser's
 function pickedLang() {
