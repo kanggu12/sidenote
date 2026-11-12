@@ -8,12 +8,12 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 
 | Topic | Notes |
 |:---|:---|
-| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103) |
+| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117) |
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
@@ -2110,3 +2110,45 @@ never in its script. A down holds a lock until it ends, and a start with `--up` 
 right after a Quit then finds the server off and starts a session of its own, where the down would otherwise have
 ended the program it started. `tests/session_end.py` runs the capture program through each of these ends, from a
 checkout of its own, and `tests/launcher_args.sh` checks what the launcher hands on and when it waits.
+
+### <a id="note-126"></a>126. The capture connection is the panel's
+
+The capture program was a command in a note. With none connected the panel said "./sidenote capture on the capture PC",
+the same words for a server in a cluster, where that command is not the way; with one connected it said nothing of it:
+not which PC it ran on, nor its release, nor how it was started, nor that its Quit would end the server too
+([125](#note-125)). The setup guide began with what solves, though nothing works before a program connects, and the tray
+had no way from the program to what the server knew of it.
+
+The program is a client of the server, and the panel is where a person connects it. As it connects, the program says
+what it is in its hello (`who`): its PC's name and system, its release, how it was started (the app, the desktop shortcut,
+a terminal's `./sidenote capture`, or by hand: the launcher passes `--started`), the address it was given, and whether
+its Quit ends the server. The server cleans each word (no terminal codes, no marks that turn or hide text, a release of
+three numbers or none) and keeps them with that connection: the capture message carries them and when it connected
+(`since`), a `--once` run beside it never replaces them, a newer program that takes over brings its own and the notice
+names its PC, and they go when the connection ends.
+
+**Capture connection** shows them, with **Restart** and **Quit the program** (the tray's, through the server) and the
+settings the program carries out. With none connected it waits with its seconds and gives the way to start one for where
+the server runs, which the server now says (`where`: the app, a container of `./sidenote`, a cluster, by hand), each
+command with this page's port, as a program on the browser's PC reaches the server where the browser does; for a cluster,
+the `kubectl port-forward` with the chart's own names. It is the setup guide's first step, and the tray's item of the
+same name opens it (`?open=capture`).
+
+What it does not do, and why:
+
+- Start a program. The program runs outside the server's container, on Windows for a server in WSL: a link the browser
+  hands to Windows would need a URL scheme registered there and a prompt in every browser. The launcher, the shortcut and
+  the app start it, and the sheet says how.
+- End the server. The panel is served by it, and the launcher ends what it started ([125](#note-125)): **Quit the
+  program** ends the program alone, and says that the tray's **Quit Sidenote** would end the server too. Under the app a
+  program that quits ends the app (`desktop/app.py`), so there the key is **Quit Sidenote** and says so.
+- Pair with a code. The server takes connections from this PC only, through its own port or a forward to it, and the
+  panel has no login: a code would keep out nothing that the port does not.
+- Choose the sound device. The default speaker is followed as it changes, headphones included; `--audio-device` names
+  another, as it did.
+
+A program of a release other than the server's turns the card amber: one started from the server's checkout runs the
+server's code once restarted; one elsewhere is replaced from that release's `sidenote-capture` zip. A program before 0.8.0
+says nothing of itself, and the card says its release is not known. `tests/panel_capture.py` checks the sheet,
+`tests/panel_setup.py` the guide's first step, `tests/api_check.py` what the server keeps, `tests/session_end.py` the real
+program's hello, `tests/tray_switch.py` the tray's item and `tests/launcher_args.sh` what the launcher hands on.

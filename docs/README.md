@@ -228,22 +228,26 @@ sessions on this PC.
 ### The setup guide
 
 The first time a browser opens the panel of a server that has kept no answer, the panel opens the **Setup guide**, once
-in that browser; the gear menu opens it again at any time. It has four steps, and each is ticked in the row of steps once
+in that browser; the gear menu opens it again at any time. It has five steps, and each is ticked in the row of steps once
 what it is about works:
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/setup-guide-dark.png">
-    <img alt="The Setup guide on its first step, Solving: the steps Solving, Screen, Sound and Try it in a row, the first three ticked; the Local model on the GPU and the Agent connected, each as its card says it; and the settings Local model, Model and Problems the agent solves" src="assets/setup-guide-light.png" width="560">
+    <img alt="The Setup guide on its first step, Connection: the steps Connection, Solving, Screen, Sound and Try it in a row, Solving ticked; the Capture program card saying Not connected, Waiting for the capture program with its seconds, and the way to start one on the server's PC, ./sidenote capture with its Copy key, another PC's ways folded under it" src="assets/setup-guide-light.png" width="560">
   </picture>
 </p>
 
-1. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with the **Local model**
+1. **Connection**: the capture program, as **Capture connection** shows it ([The capture
+   connection](#the-capture-connection)): connected or not, the wait for one with its seconds, and the ways to start one
+   where this server runs. The step is ticked once one connects, and says which PC it is on.
+2. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with the **Local model**
    switch, **Model** and **Problems the agent solves**. One of the two is enough.
-2. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
-   **Monitor** and **Skip windows**. On a Mac the capture program needs **Screen Recording**.
-3. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
-4. **Try it**: **Open the sample problem** opens a question in a new tab. With that tab on the screen, the step
+3. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
+   **Monitor** and **Skip windows**. With no capture program connected it says that comes first, with the way back to
+   the first step. On a Mac the capture program needs **Screen Recording**.
+4. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
+5. **Try it**: **Open the sample problem** opens a question in a new tab. With that tab on the screen, the step
    follows the answer it gets and offers **See the answer**.
 
 Its settings are the rows of **Solver settings**, and change the same values.
@@ -287,8 +291,9 @@ area. What it prints goes to `capture.log`, kept under 4 MB (a trim keeps the ne
 the terminal instead, where Ctrl+C ends it; that is the way to see what stops it from starting.
 
 Clicking the icon opens the panel. Right-clicking it opens a menu with **Open the panel**, the **Screen capture** and
-**Sound capture** switches, **Restart capture** and **Quit** (**Quit Sidenote** where it ends the server too: in the
-app, which it ends whole, and after a start that brought the server up);
+**Sound capture** switches, **Capture connection** (the panel's sheet of that name), **Restart capture** and **Quit**
+(**Quit Sidenote** where it ends the server too: in the app, which it ends whole, and after a start that brought the
+server up);
 on macOS a click on the icon in the menu bar opens that menu. On Windows the menu uses the panel's look: the same icons,
 the same status pill (green while it captures, red with no server, amber with **Skipped window** while a window named in
 **Skip windows** is on screen) and the same switches.
@@ -309,7 +314,8 @@ into that code at a quiet moment (the screen at rest for 20 seconds, nothing bei
 in the last minute), as **Restart capture** in its tray menu does. `./sidenote capture-restart` restarts it at once.
 
 The panel switches the screen and the sound on and off, chooses the monitor and pauses the answers, but it cannot
-start the capture program, which runs outside the server's container. Once that is started, everything else is the
+start the capture program, which runs outside the server's container: its **Capture connection** gives the command for
+where the server runs, and waits for the program to connect. Once that is started, everything else is the
 panel's.
 
 Capture options go after `./sidenote capture`:
@@ -332,6 +338,44 @@ Each option reaches the capture program as typed, so a device name with spaces g
 (`--audio-device "Realtek USB2.0 Audio"`). On Windows the options pass through cmd.exe, which would act on some
 characters itself, so a value holding one of `" % & | < > ^` is refused with a message. Give a part of the name
 without it: any part of a device's name finds it.
+
+### The capture connection
+
+**Capture connection** in the gear menu opens the panel's sheet for the capture program: the program as the server
+knows it, the way to start one, and what it is asked to do. The capture card's foot opens it too (**Manage** while one is
+connected, **Connect** while none is), as do the alert bar's **Connect**, the welcome's checklist and the tray menu's item
+of the same name. It is also the setup guide's first step.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/capture-connection-dark.png">
+    <img alt="Capture connection with a capture program connected: the Capture program card saying Connected, with its PC and system, its release the same as the server's, started by the desktop shortcut so that its tray's Quit Sidenote ends the server too, its address and when it connected; the keys Restart and Quit the program; another PC's ways folded; and the settings Monitor, Join scrolled screens and Skip windows" src="assets/capture-connection-light.png" width="560">
+  </picture>
+</p>
+
+- **The card**: **Not connected**, or **Connected** with the program's **PC** and system, its **Release** against the
+  server's, what it was **Started by** (**The Sidenote app**, **The desktop shortcut**, a terminal's `./sidenote capture`,
+  or **By hand**) and what its tray's **Quit** ends, the **Address** it was given and **Since** when it is connected. The
+  program says these in its hello as it connects; one older than 0.8.0 says none of them. A program of another release
+  turns the card amber, with what to do: one started from the server's checkout runs the server's code once restarted,
+  and one elsewhere is replaced from that release's `sidenote-capture` zip.
+- **Restart** and **Quit the program**, which asks twice, ask the program what its tray's **Restart capture** and
+  **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
+  **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.
+- With none connected, it waits, with the seconds since the sheet opened, and past a minute says where to look for why
+  (`./sidenote capture --console` prints what stops it). When one connects, it says so with the PC it is on.
+- **The ways to start one**, by where the server runs: on the server's own PC `./sidenote capture` in its terminal, or the
+  desktop shortcut on Windows; under **From another PC**, or first for a server in a cluster, three steps: this server's
+  port on that PC (for a cluster, the `kubectl port-forward` the panel came through, with its namespace and service), the
+  capture program from the release's zip with Python 3.10 or newer, and its start, `py -3 capture.py --server
+  ws://127.0.0.1:<this panel's port>/ingest` on Windows (`python3` elsewhere). Each command has its **Copy** key. Under the
+  app, the app starts the program itself.
+- **What it does**: **Monitor**, **Join scrolled screens** and **Skip windows**, the settings the capture program carries
+  out, as **Solver settings** has them.
+
+The panel cannot start a program that runs outside the server's container, nor end the server it is served by: those
+stay with the launcher, the desktop shortcut and the app. `./sidenote status` names the PC, the system and the release of
+the program that is connected.
 
 ### The desktop shortcut on Windows
 
@@ -413,8 +457,10 @@ notebook carry the same readings.
     for that page alone.
   - **Practice**: **Off** or **On**. With it on, a new answer shows its question first, and its hints and its answer
     when you ask ([Practice](#practice)). This browser keeps it.
+  - **Capture connection**: the capture program, connected or not, and the way to start one ([The capture
+    connection](#the-capture-connection)).
   - **Solver settings** (section 12).
-  - **Setup guide**: the four steps of a first start, again ([The setup guide](#the-setup-guide)).
+  - **Setup guide**: the five steps of a first start, again ([The setup guide](#the-setup-guide)).
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Recently deleted**, with how many it holds, while it holds any: the answers deleted in the last 7 days
     ([The notebook](#the-notebook)).
@@ -597,7 +643,8 @@ follows you down the thread. When it is taller than the window, it moves with th
 the window and stays there, and going up it moves back until its head is under the top bar.
 
 - **The capture card**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
-  arrived, which sound device). The **Screen capture** line reads **Watching quietly** while the watching has slowed
+  arrived, which sound device). Its foot names the capture program's PC and release (its system in the tooltip), or how
+  to start one, with the key to **Capture connection**. The **Screen capture** line reads **Watching quietly** while the watching has slowed
   itself down after a run of answers that found nothing, and says what brings it back (section 8). It reads
   **Skipped window**, in amber, while a window named in **Skip windows** is on screen and no screen is sent; it never
   says which window. It reads **Windows not skipped** or **Front window only**, in amber, where the capture program
@@ -1323,7 +1370,7 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | The panel says "Capture program off" | `./sidenote capture`. If that says the capture is already running, run `./sidenote capture-stop` and try again |
 | The tray says "Not connected (./sidenote up)" | The capture program is running but the server is not: `./sidenote up`. It stops grabbing the screen while there is nowhere to send it, and starts again by itself |
 | Capture has ended, but something seems to be left on Windows | `./sidenote capture-stop`. If it could not stop some, it says how many |
-| **Screen capture** on the capture card says **Program off** | The capture program is not running: `./sidenote capture` |
+| **Screen capture** on the capture card says **Program off** | The capture program is not running: `./sidenote capture`, or the way **Capture connection** gives for where the server runs |
 | **Screen capture** is green, but no solutions appear | Check that `capture.log` in the log folder (or the terminal, with `--console`) shows `[screen] sent frame`. With several monitors, use `--monitor` |
 | **Sound capture** says **Off** or **Device error** | Check the **Sound capture** switch on the capture card. On **Device error**, name the device with `--audio-device "part of the name"` |
 | The screen changed, but it did not solve again | The change was outside the problem's region. **Reanalyze** solves right away |
@@ -1616,7 +1663,9 @@ then runs on its own on your PC (section 17).
 When the server is not on this PC (in a cluster, for example), the capture program runs alone on the PC whose screen and
 sound it reads, Windows, a Mac or a Linux desktop: install its packages and start it with the server's address. It sends
 to `ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on that
-PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the options.
+PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the options, and
+the panel's **Capture connection** gives them with this server's names and port ([The capture
+connection](#the-capture-connection)).
 
 ## 18. Panel labels
 
@@ -1642,6 +1691,14 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
 | 최근 삭제 | Recently deleted | **Settings** menu, and its sheet |
 | 기록 지우기 | Clear history | **Settings** menu |
+| 캡처 연결 | Capture connection | **Settings** menu, and its sheet; the tray menu; the setup guide's first step (**Connection** in English) |
+| 연결하기 | Connect | the capture card's foot and the alert bar, with no capture program connected |
+| 관리 | Manage | the capture card's foot, with a capture program connected |
+| 캡처 프로그램 | Capture program | **Capture connection**: its card |
+| 다시 시작 | Restart | **Capture connection** |
+| 프로그램 끝내기 | Quit the program | **Capture connection** |
+| 다른 PC에서 | From another PC | **Capture connection** |
+| 캡처 프로그램 기다리는 중 | Waiting for the capture program | **Capture connection**, the setup guide |
 | 버전 … | Version … | **Settings** menu, at its foot; and as v… beside the name in the top bar, a link to that release's notes |
 | 새로고침 | Reload | alert bar, when a new version of the panel is ready |
 | Sidenote … 출시 | Sidenote … is out | alert bar, when a newer release is out |
@@ -1842,6 +1899,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 패널 열기 | Open the panel | the tray menu |
 | 화면 캡처 | Screen capture | the tray menu |
 | 소리 캡처 | Sound capture | the tray menu |
+| 캡처 연결 | Capture connection | the tray menu: the panel's sheet of that name |
 | 캡처 다시 시작 | Restart capture | the tray menu |
 | 끝내기 | Quit | the tray menu |
 | Sidenote 끝내기 | Quit Sidenote | the tray menu, in the app and after a start that brought the server up |

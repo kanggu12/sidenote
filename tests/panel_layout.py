@@ -433,6 +433,25 @@ def st_off(p):
     capture(p, clients=0)
 
 
+WHO_LONG = {"host": "A-VERY-LONG-WORKSTATION-NAME-ON-THE-OFFICE-NETWORK-0042", "system": "Linux (Wayland)", "version": "0.8.0", "started": "terminal",
+            "server": "ws://127.0.0.1:8777/ingest", "ends_server": False}
+
+
+def st_prog(p):   # the program that feeds the server, with a long PC name, at the capture card's foot
+    p.send({"type": "status", "version": "0.8.0", "where": "container"})
+    capture(p, who=WHO_LONG, since=p.js("() => Date.now() / 1000") - 300)
+
+
+def st_prog_old(p):   # another release, in the warning's colour
+    p.send({"type": "status", "version": "0.8.0", "where": "container"})
+    capture(p, who={**WHO_LONG, "version": "0.7.10"}, since=p.js("() => Date.now() / 1000") - 300)
+
+
+def st_off_cluster(p):   # none connected to a server in a cluster: the words of the card's foot and the band
+    p.send({"type": "status", "version": "0.8.0", "where": "cluster", "forward": {"namespace": "sidenote", "service": "sidenote-server", "port": 8777}})
+    capture(p, clients=0)
+
+
 def st_screen_off(p):
     capture(p, screen_on=False, caps={**h.CAPTURE["caps"]})
 
@@ -570,7 +589,7 @@ def st_update(p):
     p.send({"type": "status", "version": "0.1.0", "update": {"version": "0.1.2", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.1.2"}})
 
 
-RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_heard_notes, st_off, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_skip_limit, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
+RAIL_STATES = {f.__name__[3:]: f for f in (st_full, st_heard_notes, st_off, st_prog, st_prog_old, st_off_cluster, st_screen_off, st_audio_off, st_no_device, st_three_monitors, st_skipping, st_skip_limit, st_local_loaded, st_local_rest, st_local_loading, st_local_busy, st_local_missing,
                                            st_local_down, st_local_long, st_agent_off, st_agent_login, st_agent_expired, st_agent_gone, st_agent_limit, st_agent_brake, st_agent_forced, st_agent_long,
                                            st_agent_codex, st_huge, st_nothing_today, st_no_gpu, st_gpu_full, st_hearing, st_toast, st_alert, st_disconnected, st_update)}
 SIZES = [(1920, 1080), (1920, 1300), (2560, 1440), (1440, 900), (1366, 768), (1280, 720), (1100, 800), (1001, 700), (1000, 800), (768, 1024), (390, 844)]
@@ -632,6 +651,8 @@ STUDY_OPEN = [
     ("export_menu", "() => { const k = document.getElementById('hist-export'); k.scrollIntoView({ block: 'nearest' }); k.click(); }"),
     ("heard_sheet", "() => openHeard()"),
     ("setup_guide", "() => openSetup(0)"),
+    # none connected: its card, the wait, and the ways to start one, each step's name over its command
+    ("capture_sheet", "() => { handle({ type: 'status', version: '0.8.0', where: 'container' }); handle({ type: 'capture', clients: 0, now: Date.now() / 1000, caps: {} }); openCapture(); }"),
 ]
 # What the sheet of what was heard reads: the stand-in server's /heard while the audit opens it
 HEARD_KEPT = {"days": [{"day": "2026-11-04", "n": 40, "first": 1793800000, "last": 1793803000}, {"day": "2026-11-03", "n": 2, "first": 1793700000, "last": 1793700100}], "day": "2026-11-04",
@@ -646,6 +667,7 @@ STUDY_PLANTS = [
     ("cut-told", "#export-menu { width: 64px !important; min-width: 0 !important; } #export-menu .item { overflow: hidden !important; white-space: nowrap !important; }"),
     ("cut", "#heard .heard-line { grid-template-columns: 8px minmax(0, 1fr) !important; } #heard .heard-line time { overflow: hidden !important; }"),
     ("cut", "#setup .setup-step .name { max-width: 8px !important; }"),
+    ("cut", "#capture .ways .t { max-width: 8px !important; overflow: hidden !important; white-space: nowrap !important; }"),
 ]
 
 
@@ -672,7 +694,7 @@ def group_rail(br, s):
     for (w, hh) in SIZES:
         for name, fn in RAIL_STATES.items():
             # Every state at the one size most windows have, the hard ones on a phone, the fullest at every other size
-            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off", "skipping", "update")) or name == "full"):
+            if not ((w, hh) == (1920, 1080) or ((w, hh) == (390, 844) and name in ("full", "agent_long", "huge", "local_long", "agent_brake", "off", "prog", "off_cluster", "skipping", "update")) or name == "full"):
                 continue
             p = Page(br, s, many(), w=w, h=hh, settle=250)
             fn(p)
@@ -779,19 +801,43 @@ def group_overlays(br, s):
         if p.errors:
             check(f"settings_words {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()
-    # The setup guide as the server fills it, each of its four steps, from the widest window to the narrowest (app.js, renderSetup)
+    # The setup guide as the server fills it, each of its five steps, from the widest window to the narrowest (app.js, renderSetup)
     for (w, hh) in ((2560, 1440), (1920, 1080), (1366, 768), (768, 1024), (390, 844), (360, 740)):
         p = Page(br, s, many(), w=w, h=hh, settle=300)
         p.send(words)
         p.js("() => openSetup(0)")
         p.wait(300)
-        for i, step in enumerate(("solve", "screen", "sound", "try")):
+        for i, step in enumerate(("connect", "solve", "screen", "sound", "try")):
             p.js(f"() => setupGo({i})")
             p.wait(250)
             found += audit(p, f"setup_{step}", f"{w}x{hh}")
         if p.errors:
             check(f"setup {w}x{hh}: the page threw nothing", False, p.errors[:2])
         p.close()
+    # The Capture connection in each of its states, from the widest window to the narrowest (app.js, renderCapture): none connected
+    # to a server of ./sidenote with another PC's ways unfolded, a cluster's, the app's, and one connected with long names (its
+    # settings under it), in a light theme too
+    now = "Date.now() / 1000"
+    sheets = (
+        ("capture_none", f"""() => {{ handle({{ type: 'status', version: '0.8.0', where: 'container' }}); handle({{ type: 'capture', clients: 0, now: {now}, caps: {{}} }});
+            openCapture(); const d = document.querySelector('#capture-body details.ways-more'); d.open = true; d.dispatchEvent(new Event('toggle')); capWaitFrom = Date.now() - 61000; }}"""),
+        ("capture_cluster", f"""() => {{ handle({{ type: 'status', version: '0.8.0', where: 'cluster', forward: {{ namespace: 'a-namespace-with-a-long-name', service: 'a-release-with-a-long-name-sidenote-server', port: 8777 }} }});
+            handle({{ type: 'capture', clients: 0, now: {now}, caps: {{}} }}); openCapture(); }}"""),
+        ("capture_app", f"""() => {{ handle({{ type: 'status', version: '0.8.0', where: 'desktop', desktop: true }}); handle({{ type: 'capture', clients: 0, now: {now}, caps: {{}} }}); openCapture(); }}"""),
+        ("capture_on", f"""() => {{ handle({{ type: 'status', version: '0.8.0', where: 'container' }}); handle({{ type: 'capture', clients: 0, now: {now}, caps: {{}} }}); openCapture();
+            handle({{ type: 'capture', clients: 1, now: {now}, since: {now} - 7300, caps: {{ screen: true, audio: true, monitor: 1, monitors: [[3840, 2160]] }},
+                      who: {json.dumps({**WHO_LONG, "version": "0.7.10", "ends_server": True, "started": "shortcut"})} }}); }}"""),
+    )
+    for (w, hh, theme) in ((2560, 1440, "dark"), (1920, 1080, "dark"), (1366, 768, "light"), (768, 1024, "dark"), (390, 844, "dark"), (360, 740, "light")):
+        for name, act in sheets:
+            p = Page(br, s, many(), w=w, h=hh, theme=theme, settle=300)
+            p.send(words)
+            p.js(act)
+            p.wait(300)
+            found += audit(p, name, f"{w}x{hh} {theme}")
+            if p.errors:
+                check(f"{name} {w}x{hh}: the page threw nothing", False, p.errors[:2])
+            p.close()
     s.heard = {"days": [], "day": "", "lines": []}
     # An empty panel, and the first screen
     for (w, hh) in ((1920, 1080), (1366, 768), (390, 844)):
@@ -1514,7 +1560,7 @@ def group_controls(br, s):
     # The capture program is started on the PC whose screen it reads: the capture PC is the server's client
     capture(p, clients=0)
     p.wait(250)
-    cap = p.js("() => document.getElementById('st-screen').textContent")
+    cap = p.js("() => document.getElementById('cap-who').textContent")
     check("a capture program that is off is started on the capture PC, not the server's terminal", "캡처 PC에서" in cap and "서버 터미널" not in cap, cap)
     capture(p)
     # An answer's head: the problem text's copy key has its own mark; a failed answer's date stands where every date does; its command is a chip

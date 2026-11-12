@@ -3058,13 +3058,13 @@
      keep the ink otherwise (#settings-reset), and the armed one looked only pressed */
   :root[data-skin="classic"] :is(#settings-reset, #deleted .btn).on { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   :root[data-skin="classic"] #open-heard { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3'/%3E%3C/svg%3E"); }
-  /* The setup guide: the settings sheet again, its four steps in a row over the pane, each numbered or ticked in the colour of
+  /* The setup guide: the settings sheet again, its five steps in a row over the pane, each numbered or ticked in the colour of
      how it stands; a step's states are drawn as the cards draw them, its settings as Solver settings draws them (app.js, renderSetup) */
   #setup { width: min(720px, 100%); }
   /* one height for every step, so the sheet does not jump between them: 680 px left the first step's last line 13 px under the
      keys at the foot */
   @media (min-width: 721px) { #setup.settings { height: min(720px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
-  .setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; padding: 3px 3px 10px;
+  .setup-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 8px 0 12px; padding: 3px 3px 10px;
     border-bottom: 1px solid var(--rule); }
   .setup-step { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; border: 0; border-radius: 8px;
     background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--graphite); cursor: pointer; text-align: left;
@@ -3098,7 +3098,53 @@
   .setup-try mark.key { font-size: 15.5px; font-weight: 650; }   /* the answer, as the notebook marks it: a little over the line's words */
   .setup-foot { justify-content: flex-start; }
   .setup-foot #setup-next { margin-left: auto; }
-  @media (max-width: 560px) { .setup-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* narrow: the five in one row, each its number or its tick, and the step shown with its name beside it (in a grid two to a row
+     left the fifth alone, and three to a row broke "Capture connection" inside its words). Each step's name stays in its label */
+  @media (max-width: 560px) {
+    .setup-steps { display: flex; gap: 4px; }
+    .setup-step { flex: none; padding: 6px; }
+    .setup-step .name { display: none; }
+    .setup-step[aria-selected="true"] { flex: 1 1 auto; min-width: 0; padding: 6px 10px 6px 6px; }
+    .setup-step[aria-selected="true"] .name { display: block; }
+  }
+  /* The Capture connection: the guide's look (its state box, notes, keys and tick), with the ways to start a program as numbered
+     steps, each command a chip with its Copy key; and the capture card's foot, the program's PC or how to start one */
+  #capture { width: min(720px, 100%); }
+  @media (min-width: 721px) { #capture.settings { max-height: min(760px, calc(100vh - var(--bar-h, 56px) - 50px)); } }
+  #capture-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .setup-try .secs { margin-left: 4px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+  .ways-h { margin: 14px 0 8px; font-size: 12.5px; font-weight: 650; letter-spacing: .02em; color: var(--graphite); }
+  .ways { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 10px; }
+  .ways > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .ways .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule-2);
+    font-size: 12px; font-weight: 700; color: var(--graphite); font-variant-numeric: tabular-nums; }
+  .ways .way { min-width: 0; }
+  .ways .t { margin: 1px 0 6px; font-size: 13.5px; font-weight: 600; color: var(--ink); word-break: keep-all; }
+  .ways .d { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--graphite); word-break: keep-all; }
+  .ways .d a { color: var(--pen); }
+  /* a command and its Copy key on one line: a long command breaks inside its chip, the key stays beside it */
+  .way-cmd { display: flex; align-items: flex-start; gap: 8px; }
+  .way-cmd + .way-cmd, .d + .way-cmd { margin-top: 6px; }
+  /* broken at its spaces first, inside a word only where one word is wider than the line: "anywhere" cut "requirements.txt"
+     and "/ingest" at 360 px with room on the line before them */
+  .way-cmd > code.cmd { flex: 0 1 auto; min-width: 0; overflow-wrap: break-word; word-break: normal; white-space: normal; }
+  .way-cmd code.cmd .tok { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+  .way-cmd > .btn { flex: none; }
+  .setup-note.with-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .way-cmd var { font-style: italic; color: var(--graphite); }
+  .ways-more { margin: 6px 0 4px; }
+  .ways-more > summary { cursor: pointer; width: max-content; padding: 4px 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .ways-more > summary:hover { color: var(--ink); }
+  .ways-more[open] > summary { margin-bottom: 8px; }
+  .cap-prog { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+  .cap-prog[hidden] { display: none; }
+  .cap-prog > svg { width: 15px; height: 15px; flex: none; color: var(--graphite); }
+  .cap-prog[data-state="ok"] > svg { color: var(--ok); }
+  .cap-prog[data-state="warn"] > svg { color: var(--warn); }
+  .cap-who { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; word-break: keep-all; }
+  .cap-who .warn { color: var(--warn); }
+  .cap-prog .btn { flex: none; }
+  :root[data-skin="classic"] #open-capture { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 2.5V8M15 2.5V8M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8zM12 17v4.5'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #open-setup { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5l1.6 1.6L8.5 5M4 12.5l1.6 1.6 2.9-3.1M4 18.5l1.6 1.6 2.9-3.1M11.5 6.5H20M11.5 12.5H20M11.5 18.5H20'/%3E%3C/svg%3E"); }
   /* Export's menu: the gear menu's look, held to the window under the Export key (app.js, exportMenu) */
   #export-menu { position: fixed; top: 0; right: auto; min-width: 176px; transform-origin: top right; }
@@ -3201,6 +3247,8 @@
           <button type="button" data-practice="on" title="New answers show their question first, and their hints and the answer when asked" data-t="Practice: On" data-t-title>On</button><button type="button" data-practice="off" data-t="Practice: Off">Off</button>
         </div>
         <hr />
+        <!-- the capture program: connected or not, its PC, its Restart and Quit, the ways to start one (app.js, openCapture) -->
+        <button class="item" id="open-capture" type="button" data-t>Capture connection</button>
         <button class="item" id="open-settings" type="button" data-t>Solver settings</button>
         <button class="item" id="open-setup" type="button" data-t>Setup guide</button>
         <button class="item" id="open-keys" type="button" data-t>Keyboard shortcuts</button>
@@ -3242,6 +3290,13 @@
           <span class="pill" id="pill-audio" data-state="idle" data-t>Checking</span>
           <button class="switch" id="sw-audio" role="switch" aria-checked="true" aria-label="Sound capture on or off" data-t-aria></button></div>
         <div class="src-state" id="st-audio"></div>
+      </div>
+      <!-- the program that sends them: its PC, system and release, or how to start one, and the key to the Capture connection
+           (app.js, renderCapProg) -->
+      <div class="cap-prog" id="cap-prog" data-state="idle" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2.5V8M15 2.5V8M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8zM12 17v4.5"/></svg>
+        <span class="cap-who" id="cap-who"></span>
+        <button class="btn sm" id="cap-open" type="button"></button>
       </div>
     </section>
     <section class="card conn engine" id="card-local" aria-label="Local model" data-t-aria>
@@ -3359,17 +3414,29 @@
     <footer class="set-foot" id="deleted-foot" hidden><button class="btn sm ghost" id="deleted-empty" type="button"><span data-t="Recently deleted: Empty">Empty</span></button></footer>
   </section>
 </div>
-<!-- The setup guide (app.js, renderSetup): the settings sheet's look, four steps over one pane, each with how things stand as the cards
+<!-- The setup guide (app.js, renderSetup): the settings sheet's look, five steps over one pane, each with how things stand as the cards
      say it, what to do, and the settings that step is about. From the menu, and once by itself on a new install (the server's fresh) -->
 <div class="overlay" id="setup-overlay" hidden>
   <section class="card settings" id="setup" role="dialog" aria-modal="true" aria-labelledby="setup-title">
     <header><h2 id="setup-title" data-t>Setup guide</h2>
       <button class="btn icon" id="setup-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
-    <p class="lede" data-t>Four steps, each checked as you go · opened again from the menu</p>
+    <p class="lede" data-t>Five steps, each checked as you go · opened again from the menu</p>
     <nav class="setup-steps" id="setup-steps" role="tablist" aria-label="Steps" data-t-aria></nav>
     <!-- named by the step it shows (app.js, renderSetup) -->
     <div class="set-pane" id="setup-body" role="tabpanel"></div>
     <footer class="set-foot setup-foot"><button class="btn sm ghost" id="setup-back" type="button" data-t>Previous</button><button class="btn sm" id="setup-next" type="button" data-t>Next</button></footer>
+  </section>
+</div>
+<!-- The capture program's connection (app.js, renderCapture): the setup guide's look, its parts drawn as the guide's are. How it
+     stands, with its PC, release, start and address; the wait for one; its Restart and Quit; the ways to start one where this
+     server runs; and the settings the program carries out. From the menu, the capture card, the band and the tray's item of the
+     same name (?open=capture) -->
+<div class="overlay" id="capture-overlay" hidden>
+  <section class="card settings" id="capture" role="dialog" aria-modal="true" aria-labelledby="capture-title">
+    <header><h2 id="capture-title" data-t>Capture connection</h2>
+      <button class="btn icon" id="capture-close" type="button" aria-label="Close" title="Close" data-t-aria data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></header>
+    <p class="lede" data-t>The capture program sends the screen and the sound of the PC it runs on to this server · one program at a time</p>
+    <div class="set-pane" id="capture-body"></div>
   </section>
 </div>
 <!-- Export's two files, in the gear menu's look, opened under the Export key (app.js, exportMenu) -->

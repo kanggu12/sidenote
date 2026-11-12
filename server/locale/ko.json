@@ -348,5 +348,8 @@
  "Speech is off on this server: no language to set": "이 서버는 말소리를 받지 않음: 정할 언어 없음",
  "Not deleted: no answer has this id": "삭제 못 함: 이 번호의 답이 없음",
  "Another capture program connected ({info}): it feeds the server now, and the one before stops": "다른 캡처 프로그램이 연결됨({info}): 이제 그쪽이 보내고, 먼저 연결된 쪽은 멈춤",
- "{n} questions are being answered · ask again when one ends": "질문 {n}개에 답하는 중 · 하나가 끝나면 다시 질문"
+ "{n} questions are being answered · ask again when one ends": "질문 {n}개에 답하는 중 · 하나가 끝나면 다시 질문",
+ "Restarting the capture program": "캡처 프로그램 다시 시작 중",
+ "Quitting the capture program": "캡처 프로그램 끄는 중",
+ "No capture program is connected": "연결된 캡처 프로그램 없음"
 }

@@ -174,6 +174,11 @@ node's bridge, which anything on the node can come from (a NetworkPolicy cannot 
 {{- $_ := set $env "HF_HOME" "/data/hf" -}}
 {{- /* Kubernetes starts a container that ended again itself (with its back-off, and the liveness probe): the image's own loop, which does that under compose (docker/keep-running.sh), stands aside so a pod's restarts stay the cluster's to count. */ -}}
 {{- $_ := set $env "SIDENOTE_SELF_RESTART" "0" -}}
+{{- /* Where the server runs and the names of its port-forward, for the panel's Capture connection (server/app.py, server_where and cluster_forward): the same command as NOTES.txt gives. */ -}}
+{{- $_ := set $env "SIDENOTE_WHERE" "cluster" -}}
+{{- $_ := set $env "SIDENOTE_K8S_NAMESPACE" .Release.Namespace -}}
+{{- $_ := set $env "SIDENOTE_K8S_SERVICE" (include "sidenote.componentName" (dict "context" . "component" "server")) -}}
+{{- $_ := set $env "SIDENOTE_K8S_SERVICE_PORT" (toString .Values.server.service.port) -}}
 {{- $_ := set $env "SIDENOTE_AGENT" (toString .Values.agent.provider) -}}
 {{- with .Values.agent.model -}}
 {{- $_ := set $env "SIDENOTE_AGENT_MODEL" (toString .) -}}

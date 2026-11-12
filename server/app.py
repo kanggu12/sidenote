@@ -41,6 +41,7 @@ import signal
 import socket
 import struct
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -380,6 +381,12 @@ class AppState:
     # Capture clients on /ingest, shown in the panel so a missing one is obvious.
     captures: int = 0
     capture_info: str = ""
+    # What the capture program that feeds the server said of itself in its hello (who_of: its PC, system, release, how it
+    # was started, its server address and whether its Quit ends the server), when that connection was made, and which
+    # connection it is: the panel's Capture connection shows these, and they go with that connection
+    capture_who: dict = field(default_factory=dict)
+    capture_since: float = 0.0
+    capture_who_ws: object = None
     # What the panel switched on/off. Sent to the capture client (it stops grabbing the screen
     # or closes the sound device) and enforced here too: data for a switched-off source is dropped.
     screen_on: bool = True
@@ -882,11 +889,73 @@ async def broadcast(message: dict) -> None:
             STATE.panel_clients.discard(panel)
 
 
+# What a capture program may say of how it was started (client/capture.py, who_am_i): the desktop app, the desktop shortcut,
+# a terminal's ./sidenote capture, or by hand
+WHO_STARTED = ("app", "shortcut", "terminal", "own")
+# Not shown as they came: every control and format character (a terminal's escape codes in ./sidenote status, the marks
+# that turn or hide text: a name that reads backwards, or one hiding a word), the line and paragraph separators, and what
+# Unicode has not assigned or keeps private. By the character's category, so a mark a list of ranges left out is not missed
+UNSHOWN_KINDS = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+
+
+def who_of(raw) -> dict:
+    """What a capture program's hello says of itself (`who`), as the panel and ./sidenote status may show it: its PC's name
+    and system in a few words, its release (three numbers, as the server's), how it was started (WHO_STARTED), the address
+    it was given, and whether its Quit ends the server (a yes or a no). A word that is not a string, or too long, or a
+    release of another shape is left out ("" or false), never refused: the connection is the same with or without it."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def word(v, n: int) -> str:
+        if not isinstance(v, str):
+            return ""
+        return "".join(ch for ch in v[:4 * n] if unicodedata.category(ch) not in UNSHOWN_KINDS).strip()[:n]
+
+    version, started = raw.get("version"), raw.get("started")
+    return {"host": word(raw.get("host"), 64), "system": word(raw.get("system"), 40),
+            # ASCII digits: \d takes any script's ("０.８.０" passed), and the release is three of these numbers
+            "version": version if isinstance(version, str) and re.fullmatch(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,6}", version) else "",
+            "started": started if started in WHO_STARTED else "",
+            "server": word(raw.get("server"), 200),
+            "ends_server": raw.get("ends_server") is True}
+
+
+# A Kubernetes name, as the chart gives it (a namespace, a service): what the panel puts in its port-forward command
+K8S_NAME = re.compile(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?")
+
+
+def server_where() -> str:
+    """Where this server runs, for the panel's way to start a capture program (panel/app.js, captureWays): the desktop
+    app, which starts its own (desktop); a pod of the Helm chart, reached from a PC through a port-forward (cluster, its
+    SIDENOTE_WHERE); a container that ./sidenote runs, whose capture program ./sidenote capture starts (container, the
+    image's SIDENOTE_WHERE); or a server started by hand (host)."""
+    if CONFIG.desktop:
+        return "desktop"
+    where = os.environ.get("SIDENOTE_WHERE", "").strip().lower()
+    return where if where in ("cluster", "container") else "host"
+
+
+def cluster_forward() -> dict | None:
+    """The chart's namespace, service and port of this server (SIDENOTE_K8S_NAMESPACE, SIDENOTE_K8S_SERVICE,
+    SIDENOTE_K8S_SERVICE_PORT), for the `kubectl port-forward` the panel shows, as NOTES.txt gives it; None outside a
+    cluster, or for names not of Kubernetes' shape."""
+    if server_where() != "cluster":
+        return None
+    ns, svc = os.environ.get("SIDENOTE_K8S_NAMESPACE", ""), os.environ.get("SIDENOTE_K8S_SERVICE", "")
+    port = os.environ.get("SIDENOTE_K8S_SERVICE_PORT", "8777")
+    if not (K8S_NAME.fullmatch(ns) and K8S_NAME.fullmatch(svc) and port.isascii() and port.isdigit()
+            and 0 < int(port) < 65536):
+        return None
+    return {"namespace": ns, "service": svc, "port": int(port)}
+
+
 def capture_status() -> dict:
     # `now` is this server's own clock: the panel reads the two stamps below against it instead of
     # against the browser's, which can differ by a minute (the browser is Windows, this is a
     # container) and made "last sound just now" either stick for ever or never appear.
     return {"type": "capture", "clients": STATE.captures, "info": STATE.capture_info, "now": time.time(),
+            # the program that feeds the server, as it says itself (who_of), and since when: none while none does
+            "who": STATE.capture_who or None, "since": STATE.capture_since or None,
             "last_frame": STATE.last_seen_ts or None, "last_audio": STATE.last_audio_ts or None,
             "screen_on": STATE.screen_on, "audio_on": STATE.audio_on, "caps": STATE.capture_caps,
             # The run of answers that found nothing, and how long a small change waits because of
@@ -3628,7 +3697,7 @@ def no_core_dumps() -> None:
 PANEL_COMMANDS = ("capture_set", "pause", "resume", "reanalyze", "ask", "problem_text", "run", "setting",
                   "agent_confirm_reply", "thumb", "gpu_release", "history_clear", "star", "gpu_load", "gpu_load_cancel",
                   "settings_reset", "llm_pull", "ui_lang", "set_lang", "answer_delete", "answer_restore", "answer_purge",
-                  "deleted_clear")
+                  "deleted_clear", "capture_restart", "capture_quit")
 API_VERSION = 1                # /api/v1: a change that breaks a caller goes to /api/v2, beside it
 
 
@@ -3998,19 +4067,26 @@ def create_app() -> FastAPI:
                 origin == f"http://{h}:{CONFIG.port}" or origin == f"http://{h}" for h in LOCAL_HOSTS):
             telemetry.event("refused", path=path, origin=origin[:120])
             return JSONResponse({"error": "not allowed"}, status_code=403)
+        return JSONResponse({"asked": await tell_captures(what, extra)})
+
+    async def tell_captures(what: str, extra: dict | None = None) -> int:
+        """Send every capture program connected `{"type": what, **extra}`: ./sidenote's routes above, and the panel's
+        Capture connection (panel_command). How many were sent it."""
         asked = 0
         for ws in list(STATE.ingest_ws):
             if ws not in STATE.ingest_ws:
                 # taken over while the one before it was being sent to: a restart reaching it would start a copy of it,
                 # which would take the server back
                 continue
+            if what == "restart" and ws in STATE.ingest_once:
+                continue   # a --once run sends its one screen and ends: restarted, it would send another
             try:
                 await ws.send_text(json.dumps({"type": what, **(extra or {})}))
                 asked += 1
             except Exception:
                 STATE.ingest_ws.discard(ws)
         log.info("asked %d capture program(s) to %s", asked, "end" if what == "quit" else what)
-        return JSONResponse({"asked": asked})
+        return asked
 
     @app.get("/history")
     async def history_rows(day: str = "", q: str = "", kind: str = "", limit: int = 60, starred: bool = False):
@@ -4090,7 +4166,8 @@ def create_app() -> FastAPI:
         counts = {"frame": 0, "audio": 0}
         # What this connection said of itself (its hello and caps) and its run. Once it takes over (take_over), the
         # capture card shows these alone. `once`: a --once run's
-        me: dict = {"info": "", "run": "", "caps": {}, "once": False}
+        # `who`: what its hello said of the program (who_of); `since`: when this connection was made
+        me: dict = {"info": "", "run": "", "caps": {}, "once": False, "who": {}, "since": time.time()}
         telemetry.event("capture_connect", peer=peer)
 
         async def handle(raw: str) -> None:
@@ -4143,6 +4220,9 @@ def create_app() -> FastAPI:
                             STATE.ingest_once.add(ws)
                         else:
                             me["info"] = STATE.capture_info = str(data.get("info") or "")
+                            # the panel's Capture connection: what it says of itself, and since when it feeds the server
+                            me["who"] = who_of(data.get("who"))
+                            STATE.capture_who, STATE.capture_since, STATE.capture_who_ws = me["who"], me["since"], ws
                         run = data.get("run")   # a capture program's own word for this run of it (take_over)
                         if isinstance(run, str) and re.fullmatch(r"[0-9a-f]{8,32}", run):
                             me["run"] = STATE.ingest_runs[ws] = run
@@ -4182,7 +4262,9 @@ def create_app() -> FastAPI:
                                 await broadcast({"type": "settings", "values": {k: v}})
                     if kind == "hello":
                         await take_over()   # the newest capture program to say who it is feeds the server
-                    telemetry.event("capture_" + kind, info=STATE.capture_info[:200], **caps)
+                    telemetry.event("capture_" + kind, info=STATE.capture_info[:200],
+                                    **({k: me["who"][k] for k in ("host", "system", "version", "started")}
+                                       if kind == "hello" and me["who"] else {}), **caps)
                     await note_capture(force=True)
             except Exception:
                 log.exception("ingest: skipped a bad message")
@@ -4208,7 +4290,11 @@ def create_app() -> FastAPI:
                 STATE.captures -= 1
             STATE.capture_info = me["info"]
             STATE.capture_caps = dict(me["caps"])   # the card says what this one can do, not a mix of the two
-            by = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", me["info"])[:80] or "?"   # its own words, no terminal codes
+            STATE.capture_who, STATE.capture_since, STATE.capture_who_ws = me["who"], me["since"], ws
+            # Named by its PC and system where it says them (who_of, cleaned already), else by its own words, no terminal
+            # codes: "DESKTOP-7Q2, Windows 11" tells two PCs apart where "capture/win32" said the same of both
+            by = (", ".join(x for x in (me["who"].get("host"), me["who"].get("system")) if x)
+                  or re.sub(r"[\x00-\x1f\x7f-\x9f]", "", me["info"])[:80] or "?")
             asked = 0
             for o in others:
                 if me["run"] and STATE.ingest_runs.get(o) == me["run"]:
@@ -4257,6 +4343,8 @@ def create_app() -> FastAPI:
             STATE.ingest_once.discard(ws)
             if not STATE.captures:
                 STATE.capture_caps = {}
+            if STATE.capture_who_ws is ws or not STATE.captures:   # what it said of itself goes with it
+                STATE.capture_who, STATE.capture_since, STATE.capture_who_ws = {}, 0.0, None
             telemetry.event("capture_disconnect", peer=peer, frames=counts["frame"], audio_chunks=counts["audio"])
             await note_capture(force=True)
 
@@ -4283,6 +4371,9 @@ def create_app() -> FastAPI:
             "engines": panel_engines(),
             "build": panel_build(),   # a panel left open on an older build says so
             "desktop": CONFIG.desktop,   # the desktop app's server: directions name the app, not ./sidenote
+            # where it runs, and in a cluster the names its port-forward takes: the Capture connection's way to start one
+            "where": server_where(),
+            "forward": cluster_forward(),
             "version": VERSION,          # shown in the gear menu
             "update_check": RELEASES.allowed(),   # false: SIDENOTE_UPDATE_CHECK=0 (or mock mode) leaves the switch nothing to do
             "update": update_status(),   # a newer release found before this panel opened, or None
@@ -4396,6 +4487,19 @@ def create_app() -> FastAPI:
             await reply({"type": "notice", "level": "done" if done else "bad",
                          "text": t("Taken off the GPU · loaded again for the next problem")
                          if done else t("Taking it off the GPU failed")})
+            return True
+        elif kind in ("capture_restart", "capture_quit"):
+            # The Capture connection's Restart and Quit: what the program's tray has, and ./sidenote capture-restart and
+            # capture-stop ask (/capture/restart, /capture/quit). Quit ends the program alone: a server its start brought
+            # up stays, as with capture-stop, the panel being that server's. Under the desktop app a program that quits
+            # ends the app (desktop/app.py), server and panel with it, which the panel's key says (Quit Sidenote)
+            # (not named `asked`: that is the follow-up's own function, below, which a local of that name would hide)
+            what = "restart" if kind == "capture_restart" else "quit"
+            sent_to = await tell_captures(what, {"reason": "panel"})
+            telemetry.event("control", action=kind, asked=sent_to)
+            await reply({"type": "notice", "level": "info" if sent_to else "warn",
+                         "text": (t("Restarting the capture program") if what == "restart" else t("Quitting the capture program"))
+                         if sent_to else t("No capture program is connected")})
             return True
         elif kind == "history_clear":   # Clear the history: what is kept goes too
             cleared = await asyncio.get_running_loop().run_in_executor(HISTORY_WRITES, clear_history)
@@ -5107,8 +5211,8 @@ def create_app() -> FastAPI:
         await run({"type": "set_lang", "lang": lang})
         return JSONResponse({"ok": True, "lang": SETTINGS.get("speech_lang")})
 
-    @api("POST", "/api/v1/capture/restart", 'restart the capture program, as its tray\'s Restart; {"quiet": true} waits '
-                                            'for a moment when nothing runs')
+    @api("POST", "/api/v1/capture/restart", 'restart the capture program, as its tray\'s Restart and the Capture connection\'s; '
+                                            '{"quiet": true} waits for a moment when nothing runs', "capture_restart")
     async def api_capture_restart(request: Request):
         if isinstance(body := await write_body(request), JSONResponse):
             return body
@@ -5116,7 +5220,7 @@ def create_app() -> FastAPI:
                                     {"quiet": True} if body.get("quiet") is True else {})
         return JSONResponse({"ok": answer.status_code < 400, **json.loads(answer.body)}, status_code=answer.status_code)
 
-    @api("POST", "/api/v1/capture/quit", "end the capture program, as its tray's Quit")
+    @api("POST", "/api/v1/capture/quit", "end the capture program, as its tray's Quit and the Capture connection's", "capture_quit")
     async def api_capture_quit(request: Request):
         if isinstance(body := await write_body(request), JSONResponse):
             return body

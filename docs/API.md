@@ -71,7 +71,7 @@ The words in `error` and in a change's `notices` are the panel's own, in the pan
 | Route | Gives |
 |:---|:---|
 | `GET /api/v1` | The API's version, its routes, and the route of each of the panel's messages |
-| `GET /api/v1/status` | What a panel is shown as it opens: `status`, `settings`, `capture`, `usage`, the `confirms` waiting, the answers being written (`live`), and what the server is busy with (`activity`) |
+| `GET /api/v1/status` | What a panel is shown as it opens: `status`, `settings`, `capture`, `usage`, the `confirms` waiting, the answers being written (`live`), and what the server is busy with (`activity`). Its `status` says where the server runs (`where`: `desktop`, `container`, `cluster` or `host`) and, in a cluster, the `namespace`, `service` and `port` of its port-forward (`forward`) |
 | `GET /api/v1/settings` | Every setting's value (`values`), and what the settings sheet shows of each (`meta`: its words, its options, its default) |
 | `GET /api/v1/settings/{key}` | One setting: `value` and `meta` |
 | `GET /api/v1/answers` | The answers kept, the newest first. `?day=YYYY-MM-DD`, `?q=words` (every word in the answer, the question or the follow-ups), `?kind=essay`, `?starred=true`, `?limit=60` (at most 200) |
@@ -152,7 +152,7 @@ with urllib.request.urlopen("http://127.0.0.1:8777/api/v1/events") as stream:
 |:---|:---|
 | `status` | Part of the status changed: `paused`, the engines' cards (`engines`), the speech `lang`, a newer release (`update`) |
 | `settings` | The settings, all of them (`values`, and `meta` in the panel's words) |
-| `capture` | The capture program: connected or not, its switches, when it last sent a screen and sound |
+| `capture` | The capture program: connected or not, its switches, when it last sent a screen and sound, and what the program that feeds the server said of itself as it connected (`who`: its PC's name `host`, its `system`, its release `version`, how it was `started`, the `server` address it was given, and whether its Quit `ends_server`; `since`: when that connection was made; both `null` while none is) |
 | `usage` | The counters the usage card shows |
 | `analysis_start` | A problem is being answered: its `id`, what set it off (`trigger`), the screen (`thumb`), what was heard (`transcript`); a follow-up says which answer it is `about` |
 | `stage` | Where that answer stands: the step (`stage`), and the thinking pass's last line (`thought`) |
@@ -187,6 +187,7 @@ any of them as the panel sends it, and answers with what the server sent back to
 | `reanalyze` | `POST /api/v1/reanalyze` |
 | `ask` | `POST /api/v1/ask` |
 | `capture_set` | `PUT /api/v1/capture` |
+| `capture_restart`, `capture_quit` | `POST /api/v1/capture/restart`, `POST /api/v1/capture/quit` |
 | `setting` | `PUT /api/v1/settings/{key}` |
 | `settings_reset` | `POST /api/v1/settings/reset` |
 | `star` | `PUT /api/v1/answers/{seq}/star` |

@@ -2391,10 +2391,9 @@ function screenState() {
   if (capture.clients === 0) {
     // started on the PC whose screen it reads, the server's own only in the default set-up (a server, with the capture PC as its client).
     // In the desktop app the tray icon is the capture program's own, gone with it: the app is quit and started again
-    // The pill is a word or two: its column beside the switch has some 120 px at 1366
-    return card("idle", t("Program off"), [], status.desktop
-      ? t("The capture program stopped · quit Sidenote and start it again")
-      : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` }));
+    // The pill is a word or two: its column beside the switch has some 120 px at 1366. How to start one is said once, at the
+    // card's foot (renderCapProg), with the key to the Capture connection
+    return card("idle", t("Program off"), []);
   }
   // Switched off here in the panel: the monitor still matters, because it is what will be read
   // again the moment it goes back on.
@@ -2778,6 +2777,7 @@ function renderSignals() {
   $("sw-screen").dataset.dead = $("sw-audio").dataset.dead = String(capture.clients === 0);
   renderUsage();
   renderSetup();   // the guide says each state as its card does
+  renderCapture();   // and the Capture connection, with the foot of the capture card
 }
 // The numbers of the sitting, as a line of type rather than a table of labels: what was answered and
 // how fast first, what it cost underneath.
@@ -3023,9 +3023,8 @@ function renderAlerts() {
     }
   }
   if (wsState === "up" && capture.clients === 0 && (capture.screen_on || capture.audio_on)) {
-    out.push(alertHtml("warn", `<b>${t("Capture program off")}</b> ${status.desktop
-      ? t("The capture program stopped · quit Sidenote and start it again")
-      : t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` })}`, ""));
+    out.push(alertHtml("warn", `<b>${t("Capture program off")}</b> ${startHint()}`,
+      `<button type="button" class="btn sm" data-open-capture>${PLUG_MARK}<span>${t("Connect")}</span></button>`));
   }
   // A drawn region is easy to forget and it decides everything that follows: with one set, the models
   // only ever see that patch. It once cost a sitting: a region drawn on an old screen left every answer
@@ -3253,8 +3252,11 @@ function renderWelcome() {
           { does: agentDoes(C.mode), agent: AG(), cmd: `<code class="cmd">${LOGIN()}</code>` }),
         C.mode === "off" ? t("Off") : C.installed === false ? t("Optional") : C.ok ? t("Connected") : t("Needed")) : ""}
       ${!L && !C ? step(null, t("Solving engines"), t("Checked once the server is connected"), t("Checking")) : ""}
-      ${step(capOk, t("Capture program"), status.desktop ? t("The Sidenote app starts it with no window; quitting it from its tray icon ends the app")
-        : t("{cmd} (runs with no window; quit it from its tray icon)", { cmd: "<code class=\"cmd\">./sidenote capture</code>" }), capOk === null ? t("Checking") : capOk ? t("On") : t("Not running"))}
+      ${step(capOk, t("Capture program"), (status.desktop ? t("The Sidenote app starts it with no window; quitting it from its tray icon ends the app")
+        : whereNow() === "cluster" ? t("Runs on your PC, through the port-forward")
+        : t("{cmd} (runs with no window; quit it from its tray icon)", { cmd: "<code class=\"cmd\">./sidenote capture</code>" }))
+        + (capOk === false ? ` <button type="button" class="btn sm" data-open-capture>${t("Capture connection")}</button>` : ""),
+        capOk === null ? t("Checking") : capOk ? t("On") : t("Not running"))}
     </ul>`)}
     ${row(t("Tips"), `<ul class="tips">
       <li>${t("The same problem is not solved twice; move on to the next one and it is solved at once")}</li>
@@ -5204,7 +5206,7 @@ function noteChange() {
   // The server gone always raises its band (renderAlerts), and the capture program gone raises one while a capture switch is on:
   // with both switches off, only this toast tells it
   if (up && prevState.clients > 0 && capture.clients === 0 && !(capture.screen_on || capture.audio_on)) toast(status.desktop ? t("The capture program stopped")
-    : t("Capture program off: run ./sidenote capture on the capture PC"), null, "warn");
+    : whereNow() === "cluster" ? t("Capture program off: start it on your PC") : t("Capture program off: run ./sidenote capture on the capture PC"), null, "warn");
   prevState = { up, clients: capture.clients };
 }
 
@@ -5455,6 +5457,9 @@ function handle(m) {
       if (m.voice !== undefined) status.voice = !!m.voice;   // Solve spoken problems automatically (the Heard speech card reads it)
       if (m.engines !== undefined) { status.engines = m.engines; gpuPending = false; clearTimeout(gpuPressed.timer); renderSettings(); }
       if (m.desktop !== undefined) status.desktop = !!m.desktop;   // the desktop app's server: no ./sidenote commands
+      // where it runs (desktop, container, cluster, host) and a cluster's port-forward: the Capture connection's way to start one
+      if (m.where !== undefined) status.where = ["desktop", "container", "cluster", "host"].includes(m.where) ? m.where : "";
+      if (m.forward !== undefined) status.forward = m.forward && typeof m.forward === "object" ? m.forward : null;
       if (m.can_ask !== undefined) status.canAsk = !!m.can_ask;   // a restarted server has nothing to ask about
       if (m.run_enabled !== undefined) status.runEnabled = !!m.run_enabled;
       if (m.runner !== undefined) status.runner = !!m.runner;
@@ -5462,10 +5467,12 @@ function handle(m) {
       if (m.update !== undefined) status.update = m.update;   // a newer release, or null: one line in the band (updateBand)
       if (m.update_check !== undefined) status.updateCheck = m.update_check !== false;   // false: the environment turned the check off
       renderAll();
-      if (m.fresh) setupFirst();   // nothing answered yet on this server: the setup guide, once in this browser
+      // the tray's Capture connection (?open=capture) first; else, with nothing answered yet on this server, the setup guide,
+      // once in this browser
+      if (!openCaptureAsked() && m.fresh) setupFirst();
       break;
     case "capture": {
-      const wasOn = capture.screen_on;
+      const wasOn = capture.screen_on, before = capture.clients;
       // The message carries the server's own clock, so the offset is known before anything is
       // measured against it.
       if (typeof m.now === "number") clockSkew = Date.now() / 1000 - m.now;
@@ -5473,7 +5480,10 @@ function handle(m) {
         screen_on: m.screen_on !== false, audio_on: m.audio_on !== false, caps: m.caps || {},
         // The run of answers that found nothing and how long a small change waits because of it:
         // the screen card says so while it holds.
-        empty_run: m.empty_run || 0, quiet_sec: m.quiet_sec || 0 };
+        empty_run: m.empty_run || 0, quiet_sec: m.quiet_sec || 0,
+        // what the program that feeds the server said of itself, and since when (the Capture connection)
+        who: m.who && typeof m.who === "object" ? m.who : null, since: typeof m.since === "number" ? m.since : null };
+      noteCapture(before);
       if (wasOn && !capture.screen_on) { forgetScreens(); if (drawing) drawing = null; }   // a box drawn on a screen no longer kept: the key to end it was off with the capture
       renderSignals(); renderAlerts(); renderShot(); noteChange();
       renderHear(capture.audio_on ? undefined : "", "");
@@ -5742,6 +5752,7 @@ function settingRow(item) {
 // sections become tabs down the side, so every setting is one click from any other.
 function renderSettings() {
   renderSetup();   // the setup guide holds settings and states too, and is drawn with them
+  renderCapture();   // and so does the Capture connection
   const body = $("settings-body");
   if (!body || $("settings-overlay").hidden) return;
   if (sheetBusy()) { sheetDue = true; return; }   // drawn once the press or the typing is over (sheetSettle)
@@ -5817,22 +5828,22 @@ function setSetting(key, value) {
   return true;
 }
 // The panes that hold rows of settings: Solver settings and the setup guide, each row pressed and typed into the same way
-const onSheets = (type, fn) => { for (const id of ["settings-body", "setup-body"]) $(id).addEventListener(type, fn); };
+const onSheets = (type, fn) => { for (const id of ["settings-body", "setup-body", "capture-body"]) $(id).addEventListener(type, fn); };
 // ---------- a box of words in the sheet (Skip windows) ----------
 // The sheet is drawn again on every message from the server, and two moments wait for that: a press in it (the control
 // under the pointer replaced between the press and the release takes no click), and the keyboard in a box of words (a
 // redraw puts the caret back at the start and cuts a Korean syllable being put together)
 let sheetPress = false, sheetDue = false;
-function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.(":is(#settings-body, #setup-body) textarea.words"); }
+function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.(":is(#settings-body, #setup-body, #capture-body) textarea.words"); }
 // The redraw that waited, once neither holds: after the focus has moved on (a Tab out of the box) or the click has landed
 function sheetSettle() { setTimeout(() => { if (sheetDue && !sheetBusy()) { sheetDue = false; renderSettings(); } }, 0); }
-for (const o of ["settings-overlay", "setup-overlay"]) $(o).addEventListener("pointerdown", () => { sheetPress = true; }, true);
+for (const o of ["settings-overlay", "setup-overlay", "capture-overlay"]) $(o).addEventListener("pointerdown", () => { sheetPress = true; }, true);
 for (const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, () => { if (sheetPress) { sheetPress = false; sheetSettle(); } }, true);
 // The words in a box: split at commas (and at line ends, for a list pasted one to a line), trimmed, none of them empty
 const wordsOf = (text) => text.split(/[,\n]/).map((w) => w.trim()).filter(Boolean);
 // Each box as tall as its lines, up to the stylesheet's limit (index.html, .set textarea.words)
 function fitWords(root = document) {
-  for (const box of root.querySelectorAll(":is(#settings-body, #setup-body) textarea.words")) {
+  for (const box of root.querySelectorAll(":is(#settings-body, #setup-body, #capture-body) textarea.words")) {
     box.style.height = "auto";                                                         // its own height first, so fewer lines shrink it
     box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;   // then its lines, with its edges
   }
@@ -5868,7 +5879,7 @@ window.addEventListener("resize", () => { if (!$("settings-overlay").hidden) fit
 let settingsOpener = null;
 // The page behind an open sheet is out of reach (inert): the sheets say they are modal (aria-modal), and the page's keys and
 // answers still stood in what a screen reader reads. Called as a sheet opens and as it closes, before the focus goes back
-const SHEETS = ["settings-overlay", "setup-overlay", "keys-overlay", "heard-overlay", "deleted-overlay"];
+const SHEETS = ["settings-overlay", "setup-overlay", "keys-overlay", "heard-overlay", "deleted-overlay", "capture-overlay"];
 function pageInert() {
   const open = SHEETS.some((o) => !$(o).hidden);
   for (const el of [document.querySelector("header.bar"), document.querySelector("main.layout")]) if (el) el.inert = open;
@@ -7047,13 +7058,250 @@ $("deleted-list").addEventListener("click", (e) => {
 });
 $("deleted-empty").onclick = () => twoPress($("deleted-empty"), t("Press again to empty"), () => send({ type: "deleted_clear" }));
 sheetPlumbing("deleted", "deleted-overlay", () => closeDeleted());
+// ---------- the capture program's connection ----------
+// The capture program as the server knows it: connected or not, and what its hello said of itself (capture.who: its PC and
+// system, its release, how it was started and what its Quit ends, the address it was given; capture.since: when it
+// connected). Said at the foot of the capture card (renderCapProg); on the Capture connection sheet with its Restart and
+// Quit, the ways to start one where this server runs (status.where) and the settings the program carries out
+// (renderCapture); and as the setup guide's first step. Opened from the menu, the card, the band, the welcome's checklist and
+// the tray's item of the same name (?open=capture: openCaptureAsked).
+const PLUG_MARK = mark('<path d="M9 2.5V8M15 2.5V8M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8zM12 17v4.5"/>');
+const STARTED = { get app() { return t("The Sidenote app"); }, get shortcut() { return t("The desktop shortcut"); },
+  get terminal() { return t("A terminal's ./sidenote capture"); }, get own() { return t("By hand"); } };
+// Where this server runs, as it says (status.where); a server before 0.8.0 says only whether it is the app's
+const whereNow = () => status.where || (status.desktop ? "desktop" : "container");
+// The address it was given, as the panel's own is written: ws://127.0.0.1:8777/ingest is 127.0.0.1:8777
+const capAddress = (w) => String(w?.server || "").replace(/^wss?:\/\//, "").replace(/\/ingest\/?$/, "");
+// This panel's port: a capture program on the PC this browser is on is pointed at it (through the same port-forward, for a
+// server in a cluster)
+const panelPort = () => location.port || (location.protocol === "https:" ? "443" : "80");
+const captureUrl = () => `ws://127.0.0.1:${panelPort()}/ingest`;
+// The release's capture program, of the server's release: what another PC runs (the latest release's page for a server
+// that does not say its own), from this repository's releases (NOTES_PREFIX, the band's link to a release's notes)
+function captureZip() {
+  const v = /^\d+\.\d+\.\d+$/.test(status.version || "") ? status.version : "";
+  return v ? { url: `${NOTES_PREFIX}download/v${v}/sidenote-capture-${v}.zip`, name: `sidenote-capture-${v}.zip` }
+    : { url: `${NOTES_PREFIX}latest`, name: t("the latest release") };
+}
+// The program's release against the server's: the same, another (a warning), or not said by a program before 0.8.0
+function capVersion(w) {
+  const mine = w?.version || "", srv = /^\d+\.\d+\.\d+/.test(status.version || "") ? status.version : "";
+  if (!mine) return { text: t("Not said (before 0.8.0)"), differs: !!srv };
+  if (!srv || mine === srv) return { text: `v${escapeHtml(mine)}${srv ? ` · ${t("same as the server")}` : ""}`, differs: false };
+  return { text: `<span class="warn">v${escapeHtml(mine)}</span> · ${t("the server is v{v}", { v: escapeHtml(srv) })}`, differs: true };
+}
+// What to do where none is connected, in a few words, by where the server runs: the band's, the card's and the welcome's
+function startHint() {
+  const where = whereNow();
+  if (where === "desktop") return t("The capture program stopped · quit Sidenote and start it again");
+  if (where === "cluster") return t("Start it on your PC");
+  return t("Run {cmd} on the capture PC", { cmd: `<code class="cmd">./sidenote capture</code>` });
+}
+// The program's card: Checking, Not connected, or Connected with its PC, release, start, address and since when. `here`:
+// drawn where the ways to start it follow (the sheet, the guide), which then says nothing of them on the card
+function progState(here = false) {
+  if (wsState !== "up" || capture.clients == null) return card("idle", t("Checking"), []);
+  if (!capture.clients) return card("idle", t("Not connected"), [], here ? "" : startHint());
+  const w = capture.who || {}, v = capVersion(w);
+  // what its tray's Quit ends (the key on this sheet ends the program alone, captureActs): the app, the server too, or the
+  // program alone
+  const ends = w.started === "app" ? t("Quit ends the app") : w.ends_server ? t("its tray's Quit Sidenote ends the server too") : t("Quit leaves the server running");
+  const since = capture.since ? `${fmtShort(capture.since * 1000)} · ${fmtAgo(Math.max(0, serverNow() - capture.since))}` : "";
+  // another release: one started from the server's checkout runs the server's code once restarted; one elsewhere is replaced
+  const zip = captureZip();
+  const note = !v.differs ? ""
+    : ["shortcut", "terminal"].includes(w.started) ? t("Restart it to run the server's code")
+    : t("The server's release is in {zip}", { zip: `<a href="${escapeHtml(zip.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(zip.name)}</a>` });
+  return card(v.differs ? "warn" : "ok", t("Connected"), [
+    [t("PC"), [w.host, w.system].filter(Boolean).map(escapeHtml).join(" · ")],
+    [t("Release"), v.text],
+    [t("Started by"), w.started && STARTED[w.started] ? `${STARTED[w.started]} · ${ends}` : ""],
+    [t("Address"), capAddress(w) ? `<span class="model">${escapeHtml(capAddress(w))}</span>` : ""],
+    [t("Since"), since],
+  ], note);
+}
+// The foot of the capture card: the program's PC and release, or how to start one, and the key to its connection
+function renderCapProg() {
+  const box = $("cap-prog");
+  if (!box) return;
+  const known = wsState === "up" && capture.clients != null;
+  box.hidden = !known;
+  if (!known) return;
+  const on = capture.clients > 0, w = capture.who || {}, v = capVersion(w);
+  // the PC and the release on one line, the system in its tooltip and on the sheet: with it, a PC's name and its system
+  // broke the line before the release at the column's width
+  const who = on ? [w.host ? escapeHtml(w.host) : "", w.version ? (v.differs ? `<span class="warn">v${escapeHtml(w.version)}</span>` : `v${escapeHtml(w.version)}`) : ""]
+    .filter(Boolean).join(" · ") || (v.differs ? `${t("Connected")} · <span class="warn">${t("a program before 0.8.0")}</span>` : t("Connected")) : startHint();
+  box.dataset.state = on ? (v.differs ? "warn" : "ok") : "idle";
+  setHtml("cap-who", who);
+  $("cap-who").title = on ? [w.host, w.system, w.version ? `v${w.version}` : ""].filter(Boolean).join(" · ") : "";
+  const key = $("cap-open"), word = on ? t("Manage") : t("Connect");
+  if (key.textContent !== word) key.textContent = word;
+  key.title = t("Capture connection");
+}
+// How long the sheet or the guide has waited for a program, from when it was opened with none (or the one there went), and
+// when one came while they were open: said with a tick for a minute
+let capWaitFrom = null, capArrived = { at: 0, since: null };
+function noteCapture(before) {
+  const open = !$("capture-overlay").hidden || (!$("setup-overlay").hidden && SETUP_STEPS[setupStep][0] === "connect");
+  if (capture.clients > 0) {
+    if (before === 0 && open) {
+      capArrived = { at: Date.now(), since: capture.since };
+      const who = [capture.who?.host, capture.who?.system].filter(Boolean).join(" · ");
+      announce(who ? t("Connected: {who}", { who }) : t("Connected"));   // the tick is drawn; this is its words for a screen reader
+    }
+    capWaitFrom = null;
+  } else if (capture.clients === 0 && capWaitFrom == null) capWaitFrom = Date.now();
+}
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// The wait, with its seconds; past a minute, where to look for why
+function capWait() {
+  if (wsState !== "up" || capture.clients == null) return "";
+  if (capture.clients > 0) {
+    const who = [capture.who?.host, capture.who?.system].filter(Boolean).map(escapeHtml).join(" · ");
+    return Date.now() - capArrived.at < 60000 && capture.since === capArrived.since
+      ? `<p class="setup-try done">${TICK_MARK}<span>${who ? t("Connected: {who}", { who }) : t("Connected")}</span></p>` : "";
+  }
+  const secs = capWaitFrom ? Math.max(0, Math.floor((Date.now() - capWaitFrom) / 1000)) : 0, where = whereNow();
+  const why = secs < 60 ? ""
+    : where === "desktop" ? t("Nothing yet · quit Sidenote and start it again")
+    : where === "cluster" ? t("Nothing yet · check the port-forward, and the last lines the program printed")
+    : t("Nothing yet · {cmd} shows what stops it", { cmd: `<code class="cmd">./sidenote capture --console</code>` });
+  return `<p class="setup-try"><span class="spin"></span><span>${t("Waiting for the capture program")} <span class="secs">${mmss(secs)}</span></span></p>`
+    + (why ? `<p class="setup-note warn">${why}</p>` : "");
+}
+// The ways to start one, by where this server runs, each command with its Copy key. On the server's own PC first; another
+// PC's three steps (its port, the program, its start) are the ways themselves in a cluster and folded under them otherwise
+let capMore = false;   // "From another PC" opened here: kept open across a redraw (keepFold)
+// The fold as it was left, put back on a part drawn again: kept out of the part's words, so opening it redraws nothing
+function keepFold(body) { for (const d of body.querySelectorAll("details.ways-more")) if (d.open !== capMore) d.open = capMore; }
+function captureWays() {
+  if (wsState !== "up" || capture.clients == null) return "";   // nothing known: the band says the server is away
+  const where = whereNow(), on = capture.clients > 0;
+  if (where === "desktop") return on ? "" : `<p class="setup-note">${t("The Sidenote app starts it with the server, and quitting it ends the app")}</p>`;
+  // each word of a command a piece of its own, so a narrow line breaks between words and never after a word's own hyphen or
+  // slash ("--server", "/ingest"); a word wider than the line breaks inside itself (index.html, .tok)
+  const words = (c) => c.split(" ").map((w) => `<span class="tok">${escapeHtml(w)}</span>`).join(" ");
+  const cmd = (c) => `<span class="way-cmd"><code class="cmd">${words(c)}</code><button type="button" class="btn sm" data-copy="${escapeHtml(c)}">${COPY_MARK}<span>${t("Copy")}</span></button></span>`;
+  const step = (n, what, how) => `<li><span class="n" aria-hidden="true">${n}</span><div class="way"><div class="t">${what}</div>${how}</div></li>`;
+  const win = /Win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+  const py = win ? "py -3" : "python3", port = panelPort(), f = status.forward, zip = captureZip();
+  const forward = where === "cluster" && f
+    ? cmd(`kubectl --namespace ${f.namespace} port-forward svc/${f.service} ${port}:${f.port}`)
+      + `<p class="d">${t("The port-forward this panel came through: keep it running")}</p>`
+    : `<span class="way-cmd"><code class="cmd">${words(`ssh -L ${port}:127.0.0.1:${port}`)} <var class="tok">${t("server PC")}</var></code></span>`
+      + `<p class="d">${t("Any forward to the server's {port} on 127.0.0.1 of that PC", { port })}</p>`;
+  const elsewhere = step(1, t("Forward the server's port"), forward)
+    + step(2, t("The capture program and Python 3.10 or newer"), `<p class="d"><a href="${escapeHtml(zip.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(zip.name)}</a>`
+      + ` · <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer">python.org</a></p>`
+      + cmd(`${py} -m pip install -r requirements.txt`)
+      + (win ? "" : `<p class="d">${t("In a virtual environment")}</p>`))
+    + step(3, t("Start it in that folder"), cmd(`${py} capture.py --server ${captureUrl()}`));
+  const more = (name) => `<details class="ways-more"><summary>${name}</summary><ol class="ways">${elsewhere}</ol></details>`;
+  if (where === "cluster") return on ? more(t("From another PC")) : `<h3 class="ways-h">${t("From your PC")}</h3><ol class="ways">${elsewhere}</ol>`;
+  return (on ? "" : `<h3 class="ways-h">${t("On the server's PC")}</h3><ol class="ways">`
+    + step(1, t("In the server's terminal"), cmd("./sidenote capture")
+      + `<p class="d">${t("On Windows the desktop shortcut Sidenote Capture does the same, and starts the server first")}</p>`) + `</ol>`)
+    + more(t("From another PC"));
+}
+// The sheet's keys: Restart and Quit, for a program that is connected. Quit under the app ends the app (desktop/app.py),
+// and says so; elsewhere it ends the program alone, and a server its start brought up stays (the tray's Quit Sidenote ends both)
+function captureActs() {
+  if (wsState !== "up" || !(capture.clients > 0)) return "";
+  const w = capture.who || {}, app = w.started === "app";
+  return `<div class="setup-act"><button type="button" class="btn sm" data-cap="restart" title="${t("Starts the capture program again, as its tray's Restart capture")}">${t("Restart")}</button>`
+    + `<button type="button" class="btn sm" data-cap="quit" title="${app ? t("Ends Sidenote, as the tray's Quit Sidenote") : t("Ends the capture program; the server stays")}">${app ? t("Quit Sidenote") : t("Quit the program")}</button></div>`;
+}
+// The sheet's parts, drawn as the guide's are (drawParts)
+function captureParts() {
+  return [
+    ["card", setupCard(t("Capture program"), progState(true))],
+    ["wait", capWait()],
+    ["acts", captureActs()],
+    ["ways", captureWays()],
+    ["rows-h", settingsMeta ? `<h3 class="ways-h">${t("What it does")}</h3>` : ""],
+    ["rows", setupRows("monitor", "stitch", "skip_windows")],
+  ];
+}
+function renderCapture() {
+  renderCapProg();
+  const body = $("capture-body");
+  if (!body || $("capture-overlay").hidden) return;
+  if (sheetBusy()) { sheetDue = true; return; }   // drawn once the press or the typing is over (sheetSettle), as the guide is
+  const parts = captureParts(), had = body.contains(document.activeElement);
+  drawParts(body, parts, parts.map(([k]) => k).join(","));
+  keepFold(body);
+  // a key that had the keyboard and is gone (Restart once the program left, the keys once the server went): the keyboard
+  // to Close, not to the page under the sheet
+  if (had && !body.contains(document.activeElement)) $("capture-close").focus({ preventScroll: true });
+}
+let captureOpener = null;
+function openCapture() {
+  toggleMenu(false); exportMenu(false); comboClose(false);
+  // one sheet at a time, as the guide: it holds some of the same settings
+  if (!$("settings-overlay").hidden) closeSettings();
+  closeSetup(); closeKeys(); closeHeard(); closeDeleted();
+  captureOpener = document.activeElement;
+  if (!(capture.clients > 0)) capWaitFrom = Date.now();   // the wait counts from here
+  $("capture-overlay").hidden = false;
+  pageInert();
+  $("capture-body").dataset.shape = "";   // drawn afresh, from its top
+  renderCapture();
+  $("capture-body").scrollTop = 0;
+  $("capture-close").focus({ preventScroll: true });
+}
+function closeCapture() {
+  if ($("capture-overlay").hidden) return;
+  $("capture-overlay").hidden = true;
+  pageInert();
+  comboClose(false);
+  for (const k of document.querySelectorAll('#capture-body [data-cap="quit"]')) disarm(k);
+  const was = captureOpener;
+  captureOpener = null;
+  focusBack(was);
+}
+// The tray's Capture connection opens the panel at ?open=capture: the sheet, once the server has said how things stand, and
+// the address put back without it, so a reload does not open it again
+let captureAsked = (() => { try { return new URLSearchParams(location.search).get("open") === "capture"; } catch (_) { return false; } })();
+function openCaptureAsked() {
+  if (!captureAsked) return false;
+  captureAsked = false;
+  try {
+    const q = new URLSearchParams(location.search);
+    q.delete("open");
+    history.replaceState(history.state, "", location.pathname + (q.toString() ? `?${q}` : "") + location.hash);
+  } catch (_) {}
+  openCapture();
+  return true;
+}
+$("open-capture").onclick = () => openCapture();
+$("cap-open").onclick = () => openCapture();
+$("capture-close").onclick = closeCapture;
+sheetPlumbing("capture", "capture-overlay", () => closeCapture());
+for (const id of ["capture-body", "setup-body"]) $(id).addEventListener("toggle", (e) => { if (e.target.matches?.("details.ways-more")) capMore = e.target.open; }, true);
+$("capture-body").addEventListener("click", (e) => {
+  const k = e.target.closest("[data-cap]");
+  if (!k || k.disabled || k.getAttribute("aria-disabled") === "true") return;
+  // pressed once while the server answers, then back: its answer may change nothing on the sheet (none connected, another
+  // program taking over), and a key held off until the sheet was opened again could not be pressed at all
+  const hold = () => { k.setAttribute("aria-disabled", "true"); setTimeout(() => k.removeAttribute("aria-disabled"), 4000); };
+  if (k.dataset.cap === "restart") { if (send({ type: "capture_restart" })) hold(); }
+  else if (k.dataset.cap === "quit") {
+    twoPress(k, t("Press again to quit"), () => { if (send({ type: "capture_quit" })) hold(); });
+  }
+});
+// The keys elsewhere that open it: the band's, the welcome's and the guide's
+document.addEventListener("click", (e) => { if (e.target.closest("[data-open-capture]")) openCapture(); });
 // ---------- The setup guide ----------
-// Four steps in the settings sheet's look: what solves, the screen, the sound, and a sample problem to try. Each says how things
+// Five steps in the settings sheet's look: the capture program's connection, what solves, the screen, the sound, and a sample
+// problem to try. Each says how things
 // stand as the cards say it (the same states, words and notes: localState and the others), what to do where something is
 // missing, and holds the settings that step is about, drawn and pressed as in Solver settings (settingRow, onSheets). From the
 // menu, and once by itself on a new install: the server says fresh while it has kept no answer, and this browser remembers it.
 const SETUP_SEEN = "sidenote.setupSeen";
-const SETUP_STEPS = [["solve", () => t("Solving")], ["screen", () => t("Screen")], ["sound", () => t("Sound")], ["try", () => t("Try it")]];
+// (the first step's name a word in English, where "Capture connection" did not fit its fifth of the row; the sheet's name in Korean)
+const SETUP_STEPS = [["connect", () => t("Connection")], ["solve", () => t("Solving")], ["screen", () => t("Screen")], ["sound", () => t("Sound")],
+  ["try", () => t("Try it")]];
 let setupStep = 0, setupOpener = null;
 let setupShot = null, setupShotAsked = false;   // the screen the screen step asked for: shown there, and no drawing starts on the screen card
 let setupHeard = "";                            // the last words heard, on the sound step
@@ -7062,6 +7310,7 @@ let setupTry = null;                            // the sample problem: { state: 
 function setupState(id) {
   const L = eng()?.local, C = eng()?.agent;
   if (wsState !== "up" || !eng()) return "idle";
+  if (id === "connect") return capture.clients > 0 ? "ok" : capture.clients === 0 ? "warn" : "idle";
   if (id === "solve") return (L?.present && L.on && L.ok) || (C?.present && C.ok && C.mode !== "off") ? "ok" : "warn";
   if (id === "screen") return screenState().s === "ok" ? "ok" : "warn";
   if (id === "sound") return audioState().s === "ok" ? "ok" : "idle";   // the sound is optional: off is no fault
@@ -7078,6 +7327,16 @@ const onMac = () => /Mac/i.test(navigator.userAgentData?.platform || navigator.p
 // pane drawn again took the picture away and back and shut an open list, which came back with its animation each second
 function setupParts(id) {
   const L = eng()?.local, C = eng()?.agent, up = wsState === "up";
+  // The capture program first: what the other steps are about comes through it. Its card, the wait for it, and the ways to
+  // start it where this server runs, as the Capture connection sheet has them (its keys and settings stay on the sheet)
+  if (id === "connect") {
+    return [
+      ["lede", `<p class="setup-lede">${t("The capture program sends the screen and the sound of the PC it runs on to this server · one program at a time")}</p>`],
+      ["card", setupCard(t("Capture program"), progState(true))],
+      ["wait", capWait()],
+      ["ways", capture.clients > 0 ? "" : captureWays()],
+    ];
+  }
   if (id === "solve") {
     return [
       ["lede", `<p class="setup-lede">${t("What answers the problems: the model on this PC, the agent, or both · one of them is enough", { agent: AG() })}</p>`],
@@ -7095,6 +7354,8 @@ function setupParts(id) {
     return [
       ["lede", `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends, of the monitor chosen below")}</p>`],
       ["card", setupCard(t("Screen capture"), screenState())],
+      ["first", up && capture.clients === 0 ? `<p class="setup-note warn with-key"><span>${t("The capture program comes first")}</span>`
+        + `<button type="button" class="btn sm" data-setup="connect">${t("Capture connection")}</button></p>` : ""],
       ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`],
       ["shot", shot],
       ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : ""],
@@ -7155,6 +7416,20 @@ function renderSetup() {
   // keyboard put back on its row (by the keys renderSettings uses) and an open list opened again on the same choice
   const parts = setupParts(SETUP_STEPS[setupStep][0]);
   const shape = `${setupStep}:${parts.map(([k]) => k).join(",")}`, moved = body.dataset.step !== String(setupStep);
+  const had = body.contains(document.activeElement);
+  drawParts(body, parts, shape);
+  keepFold(body);
+  if (had && !body.contains(document.activeElement)) $("setup-close").focus({ preventScroll: true });   // as on the Capture connection
+  if (moved) { body.dataset.step = String(setupStep); body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
+  const backHad = document.activeElement === $("setup-back");
+  $("setup-back").hidden = setupStep === 0;
+  if (backHad && setupStep === 0) $("setup-next").focus({ preventScroll: true });   // Previous gone on the first step: the focus to Next, not the page
+  $("setup-next").textContent = setupStep === SETUP_STEPS.length - 1 ? t("Finish") : t("Next");
+}
+// A pane's parts (the guide's step, the Capture connection sheet): a holder for each, made again only with another shape; then
+// each part drawn again only when it changed, the keyboard put back on its row (by the keys renderSettings uses) and an open
+// list opened again on the same choice
+function drawParts(body, parts, shape) {
   if (body.dataset.shape !== shape) {
     if (comboOpen && body.contains(comboOpen.btn)) comboClose(false);
     body.innerHTML = parts.map(([k]) => `<div class="setup-part" data-part="${k}"></div>`).join("");
@@ -7170,25 +7445,22 @@ function renderSetup() {
     part.innerHTML = html;
     fitWords(part);
     const sel = was?.set ? `[data-set="${CSS.escape(was.set)}"]` + (was.val !== undefined ? `[data-val="${CSS.escape(was.val)}"]`
-      : was.multi !== undefined ? `[data-multi="${CSS.escape(was.multi)}"]` : "") : was?.setup ? `[data-setup="${CSS.escape(was.setup)}"]` : "";
+      : was.multi !== undefined ? `[data-multi="${CSS.escape(was.multi)}"]` : "") : was?.setup ? `[data-setup="${CSS.escape(was.setup)}"]`
+      : was?.cap ? `[data-cap="${CSS.escape(was.cap)}"]` : was?.copy ? `[data-copy="${CSS.escape(was.copy)}"]` : "";
     if (sel) (part.querySelector(sel) || (was.set ? part.querySelector(`[data-set="${CSS.escape(was.set)}"]`) : null))?.focus({ preventScroll: true });
     if (reopen) {
       const btn = part.querySelector(`.combo-btn[data-set="${CSS.escape(reopen.key)}"]:not([disabled])`);
       if (btn) { comboToggle(btn); if (reopen.at >= 0) comboMove(reopen.at); }
     }
   }
-  if (moved) { body.dataset.step = String(setupStep); body.scrollTop = 0; body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
-  const backHad = document.activeElement === $("setup-back");
-  $("setup-back").hidden = setupStep === 0;
-  if (backHad && setupStep === 0) $("setup-next").focus({ preventScroll: true });   // Previous gone on the first step: the focus to Next, not the page
-  $("setup-next").textContent = setupStep === SETUP_STEPS.length - 1 ? t("Finish") : t("Next");
 }
 function openSetup(step) {
   toggleMenu(false); exportMenu(false); comboClose(false);
   // One sheet at a time: the guide holds some of the same settings, and two dialogs would each keep the keyboard
   if (!$("settings-overlay").hidden) closeSettings();
-  closeKeys(); closeHeard(); closeDeleted();
+  closeKeys(); closeHeard(); closeDeleted(); closeCapture();
   setupOpener = document.activeElement;
+  if (!(capture.clients > 0)) capWaitFrom = Date.now();   // its first step waits for the capture program from here
   if (typeof step === "number") setupStep = step;
   try { localStorage.setItem(SETUP_SEEN, "1"); } catch (_) {}
   $("setup-overlay").hidden = false;
@@ -7241,6 +7513,7 @@ $("setup-body").addEventListener("click", (e) => {
   const k = e.target.closest("[data-setup]");
   if (!k || k.disabled) return;
   if (k.dataset.setup === "shot") { if (send({ type: "thumb" })) setupShotAsked = true; }
+  else if (k.dataset.setup === "connect") { setupGo(0); $("setup-steps").querySelector('[data-step="0"]')?.focus({ preventScroll: true }); }
   else if (k.dataset.setup === "sample") {
     window.open(`sample.html?lang=${encodeURIComponent(LANG)}`, "_blank", "noopener");
     setupTry = { state: "open", at: serverNow(), id: null, answer: "", missed: false };
@@ -7298,6 +7571,7 @@ document.addEventListener("keydown", (e) => {
     if (!$("heard-overlay").hidden) { closeHeard(); return; }
     if (!$("deleted-overlay").hidden) { closeDeleted(); return; }
     if (!$("setup-overlay").hidden) { closeSetup(); return; }
+    if (!$("capture-overlay").hidden) { closeCapture(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
     if (!$("export-menu").hidden) { exportMenu(false, true); return; }
     if (drawing) { stopDrawing(); return; }
@@ -7320,6 +7594,7 @@ document.addEventListener("keydown", (e) => {
   if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
   if (!$("deleted-overlay").hidden) return;   // and Recently deleted
   if (!$("setup-overlay").hidden) return;   // and the setup guide
+  if (!$("capture-overlay").hidden) return;   // and the Capture connection
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
   // Drawing a region is its own mode, ended by Escape: nothing starts behind it
   if (SHORTCUTS[key] && !drawing && (key === "?" || ($("menu").hidden && $("export-menu").hidden && !comboOpen))) {

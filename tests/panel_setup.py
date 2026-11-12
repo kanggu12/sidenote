@@ -1,10 +1,11 @@
-"""The setup guide: four steps over the settings sheet's look, opened from the menu and once by itself on a new install.
+"""The setup guide: five steps over the settings sheet's look, opened from the menu and once by itself on a new install.
 
     PY=.venv/bin/python .venv-panel/bin/python tests/panel_setup.py
     PANEL_DIR=/an/older/copy/of/panel ...        # watch the checks fail there
 
 A new user met a page of states and commands, and the settings that matter first were spread over Solver settings. Checked
-here: the menu opens the guide on its first step; Escape and Finish close it, the keyboard back on the gear; a server with no
+here: the menu opens the guide on its first step, the capture program's connection (its card, the wait for one with its
+seconds, the ways to start one, and the tick when one comes); Escape and Finish close it, the keyboard back on the gear; a server with no
 answer kept (fresh) opens it once in a browser and never again, and one with answers never; each step says how things stand
 in the words and colours of the cards, marks itself done or not in the steps over the pane, and holds its settings, pressed
 as in Solver settings; the screen step shows the screen the server sends back without starting a drawing on the screen card;
@@ -53,7 +54,7 @@ def group_way_in(br, s) -> None:
     opened(p)
     got = p.js("""() => ({ steps: document.querySelectorAll('#setup-steps .setup-step').length, focus: document.activeElement?.id,
       title: document.getElementById('setup-title')?.textContent })""")
-    check("the menu opens it on the first of four steps, the keyboard on Close", p.js(SHOWN) and got["steps"] == 4 and p.js(STEP) == "0"
+    check("the menu opens it on the first of five steps, the keyboard on Close", p.js(SHOWN) and got["steps"] == 5 and p.js(STEP) == "0"
           and got["focus"] == "setup-close", str(got))
     p.page.keyboard.press("Escape")
     p.wait(200)
@@ -61,14 +62,14 @@ def group_way_in(br, s) -> None:
           str(p.js("() => document.activeElement?.id")))
     opened(p)
     seen = []
-    for _ in range(4):
+    for _ in range(5):
         seen.append((p.js(STEP), p.js("() => document.getElementById('setup-next')?.textContent.trim()"),
                      p.js("() => document.getElementById('setup-back')?.hidden")))
         p.js("() => document.getElementById('setup-next')?.click()")
         p.wait(250)
-    check("Next walks the four steps, Previous from the second on, and the last one's key is Finish",
-          [x[0] for x in seen] == ["0", "1", "2", "3"] and seen[0][2] and not any(x[2] for x in seen[1:])
-          and seen[3][1] != seen[0][1], str(seen))
+    check("Next walks the five steps, Previous from the second on, and the last one's key is Finish",
+          [x[0] for x in seen] == ["0", "1", "2", "3", "4"] and seen[0][2] and not any(x[2] for x in seen[1:])
+          and seen[4][1] != seen[0][1], str(seen))
     check("...which closes the guide", not p.js(SHOWN))
     opened(p)
     p.js("() => document.querySelector('#setup-steps [data-step=\"0\"]')?.focus()")
@@ -77,8 +78,51 @@ def group_way_in(br, s) -> None:
     p.page.keyboard.press("End")
     p.wait(200)
     check("the steps are tabs: an arrow and End move the step, the keyboard with it",
-          p.js(STEP) == "3" and p.js("() => document.activeElement?.dataset.step") == "3", str(p.js(STEP)))
+          p.js(STEP) == "4" and p.js("() => document.activeElement?.dataset.step") == "4", str(p.js(STEP)))
     p.page.keyboard.press("Escape")
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+
+
+def group_connect(br, s) -> None:
+    """The first step, the capture program: its card as the server knows it, the wait for one with its seconds and, past a minute,
+    where to look; the ways to start one; the tick when one comes; and the screen step sending to it where none is connected."""
+    if not T.group("the capture program's step"):
+        return
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send(support.settings_message(), {"type": "status", "version": "0.8.0", "where": "container"})
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "clients": 0, "caps": {}, "now": now})
+    p.wait(200)
+    opened(p)
+    got = p.js("""() => ({ state: document.querySelector('#setup-steps [data-step="0"]')?.dataset.state,
+      pill: document.querySelector('#setup-body .setup-state .pill')?.textContent, wait: document.querySelector('#setup-body .setup-try .secs')?.textContent,
+      cmds: [...document.querySelectorAll('#setup-body .ways code.cmd')].map((c) => c.textContent), copy: document.querySelector('#setup-body [data-copy]')?.dataset.copy })""")
+    check("none connected: the step is to look at, the card says so, and it waits with its seconds",
+          got["state"] == "warn" and got["pill"] == "연결 안 됨" and got["wait"] == "0:00", str(got))
+    check("...with the way to start one on the server's PC first, its Copy key the command", got["cmds"][:1] == ["./sidenote capture"] and got["copy"] == "./sidenote capture", str(got))
+    p.js("() => { capWaitFrom = Date.now() - 61000; }")
+    p.wait(1200)
+    hint = p.js("() => document.querySelector('#setup-body .setup-note.warn')?.textContent || ''")
+    check("...past a minute, where to look for why", "./sidenote capture --console" in hint, hint)
+    who = {"host": "DESKTOP-7Q2KD", "system": "Windows 11", "version": "0.8.0", "started": "shortcut", "server": "ws://127.0.0.1:8777/ingest", "ends_server": True}
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "now": now, "who": who, "since": now})
+    p.wait(300)
+    got = p.js("""() => ({ state: document.querySelector('#setup-steps [data-step="0"]')?.dataset.state, tick: document.querySelector('#setup-body .setup-try.done')?.textContent || '',
+      ways: !!document.querySelector('#setup-body .ways'), facts: [...document.querySelectorAll('#setup-body .setup-state .fact dd')].map((d) => d.textContent) })""")
+    check("one comes: the step is ticked, says which PC came, and the ways to start one go",
+          got["state"] == "ok" and "DESKTOP-7Q2KD · Windows 11" in got["tick"] and not got["ways"], str(got))
+    check("...its card says the PC, the release against the server's, how it was started and what its Quit ends",
+          got["facts"][:3] == ["DESKTOP-7Q2KD · Windows 11", "v0.8.0 · 서버와 같음", "바탕화면 바로가기 · 트레이의 Sidenote 끝내기는 서버도 끔"], str(got["facts"]))
+    # gone again: the screen step says the program comes first, and its key goes back to the first step
+    p.send({**h.CAPTURE, "clients": 0, "caps": {}, "now": now})
+    go(p, 2)
+    p.wait(200)
+    p.js("() => document.querySelector('[data-setup=\"connect\"]')?.click()")
+    p.wait(250)
+    check("none connected: the screen step's key goes back to the capture program's step, the keyboard on it",
+          p.js(STEP) == "0" and p.js("() => document.activeElement?.dataset.step") == "0", str(p.js(STEP)))
     check("no page errors", not p.errors, str(p.errors[:2]))
     p.close()
 
@@ -114,20 +158,21 @@ def group_steps(br, s) -> None:
     p.send(support.settings_message())
     p.wait(200)
     opened(p)
+    go(p, 1)
     cards = p.js("""() => [...document.querySelectorAll('#setup-body .setup-state')].map((c) => ({ name: c.querySelector('b').textContent,
       pill: c.querySelector('.pill').textContent, state: c.querySelector('.pill').dataset.state }))""")
     rail = p.js("() => ['local', 'agent'].map((id) => ({ pill: document.getElementById('pill-' + id).textContent, state: document.getElementById('pill-' + id).dataset.state }))")
     check("what solves: the local model and the agent, each in its card's word and colour",
           [(c["pill"], c["state"]) for c in cards] == [(r["pill"], r["state"]) for r in rail], str((cards, rail)))
-    check("...and a step that works is ticked over the pane", p.js("() => document.querySelector('#setup-steps [data-step=\"0\"]')?.dataset.state") == "ok"
-          and p.js("() => !!document.querySelector('#setup-steps [data-step=\"0\"] .n svg')"))
+    check("...and a step that works is ticked over the pane", p.js("() => document.querySelector('#setup-steps [data-step=\"1\"]')?.dataset.state") == "ok"
+          and p.js("() => !!document.querySelector('#setup-steps [data-step=\"1\"] .n svg')"))
     # What a screen reader is given for a step: its number, its name and how it stands, whole. Read from what is drawn, a
     # ticked step had no number (the tick is a drawing) and its state came after a stray space ("풀이 , 완료")
     said = p.js("""() => [...document.querySelectorAll('#setup-steps .setup-step')].map((b) => [b.getAttribute('aria-label'), b.dataset.state,
       b.querySelector('.name').textContent, b.querySelector('.n').getAttribute('aria-hidden')])""")
     check("...and each step is read out whole: its number, its name, done or to look at",
-          len(said) >= 4 and all(a == f"{i + 1}. {name}" + {"ok": ", 완료", "warn": ", 확인 필요"}.get(st, "") and hid == "true" for i, (a, st, name, hid) in enumerate(said))
-          and said[0][1] == "ok", str(said))
+          len(said) == 5 and all(a == f"{i + 1}. {name}" + {"ok": ", 완료", "warn": ", 확인 필요"}.get(st, "") and hid == "true" for i, (a, st, name, hid) in enumerate(said))
+          and said[1][1] == "ok" and said[0][2] == "캡처 연결", str(said))
     rows = p.js("() => [...document.querySelectorAll('#setup-body .set [data-set]')].map((b) => b.dataset.set)")
     check("...with its settings, drawn as Solver settings draws them", {"local_llm", "local_model", "agent_mode"} <= set(rows), str(rows))
     p.js("() => { window.__sent.length = 0; document.querySelector('#setup-body [data-set=\"local_llm\"]')?.click(); }")
@@ -137,10 +182,10 @@ def group_steps(br, s) -> None:
     off = {**h.ENGINES, "local": {**h.ENGINES["local"], "on": False}, "agent": {**h.ENGINES["agent"], "mode": "off", "effective": "off"}}
     p.send({"type": "status", "engines": off})
     p.wait(250)
-    check("with nothing able to solve, the step says so and is marked to do", p.js("() => document.querySelector('#setup-steps [data-step=\"0\"]')?.dataset.state") == "warn"
+    check("with nothing able to solve, the step says so and is marked to do", p.js("() => document.querySelector('#setup-steps [data-step=\"1\"]')?.dataset.state") == "warn"
           and p.js("() => !!document.querySelector('#setup-body .setup-note.warn')"))
     p.send({"type": "status", "engines": h.ENGINES})
-    go(p, 1)
+    go(p, 2)
     shot = p.js("() => ({ pill: document.querySelector('#setup-body .setup-state .pill')?.textContent, rail: document.getElementById('pill-screen')?.textContent })")
     check("the screen: the capture card's state", shot["pill"] == shot["rail"], str(shot))
     p.js("() => { window.__sent.length = 0; document.querySelector('[data-setup=\"shot\"]')?.click(); }")
@@ -153,7 +198,8 @@ def group_steps(br, s) -> None:
     check("...shown on the step, and no drawing starts on the screen card", got["img"] == png and not got["drawing"], str(got)[:200])
     rows = p.js("() => [...document.querySelectorAll('#setup-body .set [data-set]')].map((b) => b.dataset.set)")
     check("...with the monitor and Skip windows", {"monitor", "skip_windows"} <= set(rows), str(rows))
-    go(p, 2)
+    check("...and with a program connected, no word of one to connect first", not p.js("() => !!document.querySelector('[data-setup=\"connect\"]')"))
+    go(p, 3)
     p.send({"type": "transcript", "text": "What is the difference between a process and a thread?", "lang": "en"})
     p.wait(200)
     check("the sound: what is heard comes on the step as it is heard",
@@ -169,7 +215,7 @@ def group_try(br, s) -> None:
     p.send(support.settings_message())
     p.wait(200)
     opened(p)
-    go(p, 3)
+    go(p, 4)
     url = ""
     if p.js("() => !!document.querySelector('[data-setup=\"sample\"]')"):   # an older panel has no such key: no tab to wait for
         with p.page.expect_popup() as tab:
@@ -192,7 +238,7 @@ def group_try(br, s) -> None:
     p.wait(150)
     p.done(42, "TYPE: mcq\nANSWER: ④\n\n풀이")
     p.wait(300)
-    got = p.js("() => ({ answer: document.querySelector('#setup-body .setup-try.done mark.key')?.textContent, see: !!document.querySelector('[data-setup=\"see\"]'), step: document.querySelector('#setup-steps [data-step=\"3\"]')?.dataset.state, hl: getComputedStyle(document.querySelector('#setup-body .setup-try.done mark.key') || document.body).backgroundImage })")
+    got = p.js("() => ({ answer: document.querySelector('#setup-body .setup-try.done mark.key')?.textContent, see: !!document.querySelector('[data-setup=\"see\"]'), step: document.querySelector('#setup-steps [data-step=\"4\"]')?.dataset.state, hl: getComputedStyle(document.querySelector('#setup-body .setup-try.done mark.key') || document.body).backgroundImage })")
     check("...the next answer to a screen: its answer line, a way to it, and the step ticked", {k: got[k] for k in ("answer", "see", "step")} == {"answer": "④", "see": True, "step": "ok"}, str(got))
     check("...the answer in the notebook's highlighter, as its answer line is", "gradient" in (got["hl"] or ""), str(got)[:200])
     p.js("() => document.querySelector('[data-setup=\"see\"]')?.click()")
@@ -223,7 +269,7 @@ def group_try_ends(br, s) -> None:
     p.answer(70, "mcq", key="④")   # an answer from before, which a repeat points at
     p.wait(200)
     opened(p)
-    go(p, 3)
+    go(p, 4)
     line = "() => document.querySelector('#setup-body .setup-try')?.textContent.trim() || ''"
 
     def sample():
@@ -266,7 +312,7 @@ def group_try_ends(br, s) -> None:
     p.wait(200)
     p.js("() => setPractice(true)")
     opened(p)
-    go(p, 3)
+    go(p, 4)
     sample()
     start(65)
     p.done(65, "TYPE: mcq\nANSWER: ④\n\n풀이")
@@ -294,7 +340,7 @@ def group_redraws(br, s) -> None:
     p.send(support.settings_message())
     p.wait(200)
     opened(p)
-    go(p, 1)
+    go(p, 2)
     png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     p.js("() => document.querySelector('[data-setup=\"shot\"]')?.click()")
     p.send({"type": "thumb", "url": png, "ts": p.js("() => Date.now() / 1000"), "live": False})
@@ -319,7 +365,7 @@ def group_redraws(br, s) -> None:
     check("Escape in its box of words puts the words back, sends nothing and closes the guide, as Solver settings does",
           first == {"open": False, "words": False, "sent": 0}, str(first))
     opened(p)
-    go(p, 1)
+    go(p, 2)
     p.js("() => document.querySelector('[data-setup=\"shot\"]')?.click()")
     p.page.keyboard.press("Escape")
     p.wait(150)
@@ -339,11 +385,15 @@ def group_narrow(br, s) -> None:
     p.wait(200)
     opened(p)
     got = []
-    for i in range(4):
+    for i in range(5):
         go(p, i)
-        got.append(p.js("""() => { const g = document.getElementById('setup'); if (!g) return { over: 1, rows: 0 }; return { over: g.scrollWidth - g.clientWidth,
-          rows: new Set([...document.querySelectorAll('#setup-steps .setup-step')].map((b) => Math.round(b.getBoundingClientRect().top))).size }; }"""))
-    check("at 390 px nothing runs out sideways, and the four steps stand in two rows", all(x["over"] <= 0 and x["rows"] == 2 for x in got), str(got))
+        got.append(p.js("""() => { const g = document.getElementById('setup'); if (!g) return { over: 1, rows: 0 }; const steps = [...document.querySelectorAll('#setup-steps .setup-step')];
+          return { over: g.scrollWidth - g.clientWidth, rows: new Set(steps.map((b) => Math.round(b.getBoundingClientRect().top))).size,
+                   named: steps.filter((b) => b.querySelector('.name').offsetParent !== null).map((b) => b.dataset.step),
+                   cut: steps.some((b) => { const n = b.querySelector('.name'); return n.offsetParent !== null && n.scrollWidth > n.clientWidth + 1; }) }; }"""))
+    # five steps in a grid of two left the fifth on a row of its own, and in a grid of three "Capture connection" broke inside its words
+    check("at 390 px nothing runs out sideways, and the five steps stand in one row, the one shown named in full",
+          all(x["over"] <= 0 and x["rows"] == 1 and x["named"] == [str(i)] and not x["cut"] for i, x in enumerate(got)), str(got))
     check("no page errors", not p.errors, str(p.errors[:2]))
     p.close()
 
@@ -355,6 +405,7 @@ def main():
         br = pw.chromium.launch()
         s = Stand("setup")
         group_way_in(br, s)
+        group_connect(br, s)
         group_fresh(br, s)
         group_steps(br, s)
         group_try(br, s)

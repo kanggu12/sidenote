@@ -932,7 +932,9 @@ ENGINES
   [ "$n" -gt 0 ] || procs="$(capture_running)"
   if [ "$n" -gt 0 ]; then
     local shown; if [ "$screen" = True ]; then shown="$(L on 켜짐)"; else shown="$(L off "꺼 둠")"; fi
-    ok "$(L "Capture program: connected (screen ${shown}, sound ${sound})" "캡처 프로그램: 연결됨 (화면 ${shown}, 소리 ${sound})")"
+    # Which PC, its system and the program's release, as the panel's Capture connection says them (the program's hello, who)
+    local who; who="$(echo "$h" | json '", ".join(x for x in [str(w.get("host") or ""), str(w.get("system") or ""), ("v" + str(w["version"])) if w.get("version") else ""] if x) if isinstance(w := d["capture"].get("who"), dict) else ""' 2>/dev/null)"
+    ok "$(L "Capture program: connected${who:+, $who} (screen ${shown}, sound ${sound})" "캡처 프로그램: 연결됨${who:+, $who} (화면 ${shown}, 소리 ${sound})")"
   elif [ "$procs" = "?" ]; then
     # Windows gave no process list. Nothing is connected, which is what the server knows; whether one is
     # running and reconnecting cannot be said, so it is not claimed.
@@ -1328,7 +1330,7 @@ windows_starts() {
   case "${SIDENOTE_LANG:-}" in en|ko) printf 'SIDENOTE-LANG\t%s\n' "$SIDENOTE_LANG" ;; esac   # one that is set, never the locale's pick
   printf 'SIDENOTE-SETUP\t%s\n' "$(win_setup_command)"   # one line, no tab in it: the starter reads the first field
   printf 'SIDENOTE-START\t%s' "$CLIENT_WIN"
-  printf '\t%s' --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${@+"$@"} ${ends[@]+"${ends[@]}"}
+  printf '\t%s' --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" --started shortcut ${@+"$@"} ${ends[@]+"${ends[@]}"}
   printf '\n'
 }
 
@@ -1410,6 +1412,10 @@ cmd_capture() {
   # (./sidenote up, another session), and Quit leaves it to them.
   local ends=()
   if [ "$started" = 1 ]; then ends=($(quit_ends)); fi
+  # How it was started, which the panel's Capture connection shows (client/capture.py, who_am_i): from the desktop shortcut's
+  # starter (client/launch.pyw, --from-windows) or from a terminal
+  local how=(--started terminal)
+  if [ "$from_win" = 1 ]; then how=(--started shortcut); fi
   local packages
   packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   # Two capture programs would send every screen twice. Windows' process list says whether one is running;
@@ -1457,7 +1463,7 @@ cmd_capture() {
     # with spaces in quotes for the Windows command line, and cmd.exe and start pass it on whole
     # (measured with a script that only writes down its arguments).
     (cd "$WIN_CWD" && setsid --fork "$CMD_EXE" /c start "" /b pyw -3 -X utf8 "$CLIENT_WIN" \
-        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} \
+        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" "${how[@]}" ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} \
         >/dev/null 2>&1 </dev/null) || true
     local n=0
     while [ "$n" -lt 20 ]; do          # about ten seconds at most
@@ -1502,7 +1508,7 @@ cmd_capture() {
   # above. set +e in the subshell, so a pipe that ends in failure does not end it before the code is read.
   local ended=0
   (set +e; cd "$WIN_CWD" || exit 0
-   "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} \
+   "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" "${how[@]}" ${opts[@]+"${opts[@]}"} \
      ${ends[@]+"${ends[@]}"} 2>&1 | sed -u 's/\r$//' \
      | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture
    exit "${PIPESTATUS[0]}") || ended=$?
@@ -1563,7 +1569,7 @@ cmd_capture_here() {
   fi
   ensure_dirs
   rotate_capture_log
-  local cmd=("$(here_py)" -X utf8 -u client/capture.py --server "ws://127.0.0.1:${PORT}/ingest")
+  local cmd=("$(here_py)" -X utf8 -u client/capture.py --server "ws://127.0.0.1:${PORT}/ingest" --started terminal)
   if [ "$console" = 1 ]; then
     echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it)${N}" "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C)${N}")"
     ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} 2>&1 | log_capture || true

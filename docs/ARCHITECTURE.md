@@ -244,7 +244,7 @@ one is logged as lost (code 1009).
 
 | Type | When | Main fields |
 |:---|:---|:---|
-| `hello` | first, on every connection | `info` (`capture/win32`, `capture/linux`, `capture/darwin`), `screen`, `audio`, `no_audio`, `monitor`, `monitors` (what the panel offers), `flags` (the options it was started with, which win over the panel's last choice, sent once per start), `code` (the sha256 of the `capture.py` it runs), `run` (a random word for this run of the program, kept through a restart of its own: by it the server tells the program's own earlier connection from another capture program's), `once` (true for a `--once` run, which sends one screen beside the program that runs) |
+| `hello` | first, on every connection | `info` (`capture/win32`, `capture/linux`, `capture/darwin`), `screen`, `audio`, `no_audio`, `monitor`, `monitors` (what the panel offers), `flags` (the options it was started with, which win over the panel's last choice, sent once per start), `code` (the sha256 of the `capture.py` it runs), `run` (a random word for this run of the program, kept through a restart of its own: by it the server tells the program's own earlier connection from another capture program's), `once` (true for a `--once` run, which sends one screen beside the program that runs), `who` (what the program is, for the panel's **Capture connection**: its PC's name `host` and `system`, its release `version`, how it was `started`, the `server` address it was given and whether its Quit `ends_server`; the server cleans each word and keeps them with the connection) |
 | `caps` | when it knows whether the sound device opened, and when a skip starts or ends | `screen`, `audio`, `audio_device`, `no_audio` (started with `--no-audio`), `monitors`, `skipping` (a window named in **Skip windows** is on screen, so no frame comes; never which window), `skip_limit` (`none` or `front`: what **Skip windows** can go by on this desktop, empty when it can read all the windows) |
 | `frame` | when the screen changed and settled, and no window named in **Skip windows** is on screen | `data` (PNG, base64), `windows` (the visible top-level windows over the captured area, front to back, in fractions of it, without the desktop, the taskbar and tool windows), `extra` (with `--stitch`: the joined problem) |
 | `audio` | each second while sound is on | `sr` (16000), `data` (16-bit mono PCM, base64) |
@@ -255,8 +255,8 @@ one is logged as lost (code 1009).
 | Type | When | Main fields |
 |:---|:---|:---|
 | `control` | on connect and on every change | `screen`, `audio`, `stitch`, `monitor`, `skip_windows` (the words of **Skip windows**: no frame is sent while a window on screen has one in its title or its program's name) |
-| `quit` | `./sidenote capture-stop` (`POST /capture/quit`, `POST /api/v1/capture/quit`), and when another capture program connects | `reason` (`taken_over` for the latter), `by` (the newer one's `info`) |
-| `restart` | `./sidenote capture-restart` (`POST /capture/restart`, `POST /api/v1/capture/restart`), and a deploy with new code for it | `quiet` (a deploy's: at a quiet moment) |
+| `quit` | `./sidenote capture-stop` (`POST /capture/quit`, `POST /api/v1/capture/quit`), the panel's **Quit the program**, and when another capture program connects | `reason` (`panel` for the panel's, `taken_over` for the latter), `by` (the newer one's PC and system, or its `info` where it says none) |
+| `restart` | `./sidenote capture-restart` (`POST /capture/restart`, `POST /api/v1/capture/restart`), the panel's **Restart**, and a deploy with new code for it | `reason` (`panel` for the panel's), `quiet` (a deploy's: at a quiet moment) |
 
 One capture program feeds a server. The PC's own guard keeps a second one off that PC (it ends with exit code 76); one
 that connects from elsewhere, another PC or another account, takes over when its hello comes. The one before is sent `quit` with
@@ -268,6 +268,11 @@ connection, one a sleep left open on the server, says the same `run` and is clos
 panels. A connection that never says hello takes nothing over, nor does one taken over before its hello came. A
 `--once` run neither takes over nor is taken over: it sends its screen beside the program that runs and leaves the
 card and the drawn region to it.
+
+What the program that feeds the server said of itself (`who`) and when it connected go to the panels in the `capture`
+message, and with its connection when it ends. The panel shows them on **Capture connection** with the way to start one
+for where the server runs, which the server says in its status (`where`, and in a cluster its port-forward's names,
+`forward`); the image sets `SIDENOTE_WHERE=container` and the Helm chart `cluster` with its namespace, service and port.
 
 ### Server to panel, on `/panel`
 
