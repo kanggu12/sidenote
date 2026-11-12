@@ -1668,8 +1668,8 @@ class Pipeline:
             except (asyncio.CancelledError, Repeat, LoadStopped):
                 # LoadStopped: the GPU was given back (or the panel paused) while this PC's model was loading for the
                 # agent's question, which it reads out of what was heard. No fault of the agent's, and loading the model
-                # again for this PC's answer undoes what was just asked for (11-11: the e4b back on the GPU 31 s after
-                # Free GPU, logged as an agent failure). The analysis ends, said as stopped (app, run_analysis)
+                # again for this PC's answer undoes what was just asked for (the e4b was back on the GPU 31 s after Free
+                # GPU, logged as an agent failure). The analysis ends, said as stopped (app, run_analysis)
                 raise
             except NotSent as why:
                 # No question in what was heard, by the model's own reading: nothing to solve, unless it was asked for by hand

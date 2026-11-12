@@ -891,8 +891,8 @@ class GpuPace:
     def trying(self, model: str) -> None:
         """A pass starting on `model`. The first one on the slow model after a hold ran out is the retry the next verdict
         is measured from (_hold): measured at the verdict, the retry's own load (outside every deadline: 22 to 137 s on
-        this PC in November) and the wait for its first token put it past REARM, and the hold went back to 30 s at every
-        try (11-10: 80 minutes of busy verdicts, never a hold over 60 s, the 26b and the e4b swapped at every question)."""
+        the test PC) and the wait for its first token put it past REARM, and the hold went back to 30 s at every try (80
+        minutes of busy verdicts in one sitting, never a hold over 60 s, the 26b and the e4b swapped at every question)."""
         if self.busy_until and not self.busy() and model == self.slow_model and self.retry_at < self.busy_until:
             self.retry_at = time.time()
 
@@ -1431,7 +1431,7 @@ class LocalLlmAnalyzer:
         "Load onto the GPU", so the first problem after the GPU was given back is not kept waiting for the load.
         The main model, not the busy-GPU one a slow stretch may have switched to. Then its prompt is read once
         (_warm_up), so the first problem finds it warm: loaded alone, it was a cold model to that problem, which on
-        this PC waited out the cold limit and counted the GPU busy (3 of 3 sittings that pressed it, 11-10 to 11-12).
+        the test PC waited out the cold limit and counted the GPU busy (3 of 3 sittings that pressed it).
         Raises as _ready does when the load does not finish."""
         model = main_model(self.cfg)
         await self._ready(model)
@@ -1623,7 +1623,7 @@ class LocalLlmAnalyzer:
                             # A model just loaded that has not answered yet: its cache is still being filled, as far as
                             # the cut let it, and the next pass starts from there. Counted busy, its first silence put
                             # the smaller model in, which pushed it off the GPU (one model at a time), so the next
-                            # problem loaded it again cold: on this PC in November, every spoken question swapped the
+                            # problem loaded it again cold: on the test PC every spoken question swapped the
                             # 26b and the e4b, a minute and more each (design note 127). The next silence counts.
                             self._warm.add(model)
                             log.info("local LLM: no first token in %.0f s from %s, just loaded; the screen goes on without "

@@ -1,9 +1,9 @@
-"""What the panel hides says so, what it says is said one way, and what cannot work is not asked for (the 0.8.1 review).
+"""What the panel hides says so, what it says is said one way, and what cannot work is not asked for.
 
     PY=.venv/bin/python .venv-panel/bin/python tests/panel_cues.py
     PANEL_DIR=/an/older/copy/of/panel ...        # watch the checks fail there
 
-A review of the panel on real answers at six sizes found these, each checked here as it is now:
+Each of these was found on real answers at six sizes, and is checked here as it is now:
   hidden   the contents' list held at nine lines showed three of a day's five answers and cut the card under the third, and Solver
            settings left three settings under a pane's edge at 1366x768, with nothing to say more was there: the foot of each
            fades while more is below, and not once its end is in view; a search hit past a row's ellipsis is brought into it

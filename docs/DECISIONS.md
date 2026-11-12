@@ -2185,8 +2185,8 @@ checks each of these against a stand-in model server, and fails 11 of its 19 che
 
 ### <a id="note-128"></a>128. What does not fit says so, and each thing is said one way
 
-A review of the panel on a day of real answers at six sizes found things that were there but not seen, and things said
-two ways:
+Looked at on a day of real answers at six sizes, the panel had things that were there but not seen, and things said two
+ways:
 
 - The contents' list shows nine lines and scrolls inside its card for the rest. Its scrollbar is thin and overlaid on
   some systems, and a day head said five answers over three rows with the card's edge cut straight under the third.

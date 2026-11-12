@@ -1793,7 +1793,7 @@ else bad "...and with a capture program holding its guard for the server, launch
          "holder: $(cat "$work/held" | tr '\n' '|') | $(grep -a '\[dry-run\]' <<<"$guarded" | tr '\n' '|')"; fi
 
 # 68. install and restart say an option they do not know before doing anything: install dropped one without a word and ran
-#     without it, and restart took anything but --now as nothing (the 0.8.1 review)
+#     without it, and restart took anything but --now as nothing
 state; EXTRA_ENV="SIDENOTE_LANG=en" run install --with-modles; i_bogus="$(cat "$work/out")"; i_bogus_rc="$(cat "$work/rc")"
 last_call docker compose; i_calls=${#CALL[@]}
 state server-running; EXTRA_ENV="SIDENOTE_LANG=en" run restart --soon; r_bogus="$(cat "$work/out")"; r_bogus_rc="$(cat "$work/rc")"

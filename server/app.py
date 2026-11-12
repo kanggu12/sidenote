@@ -3312,7 +3312,7 @@ async def analysis_worker(app: FastAPI) -> None:
         except LoadStopped:
             # The model this answer needed was loading when the GPU was given back or the panel paused: stopped on
             # purpose, as a pause stops one, and not loaded again for it. It was an error card, or an agent failure
-            # followed by the very load the person had just stopped (11-11)
+            # followed by the very load the person had just stopped
             STATE.supersede_streak = 0
             log.info("analysis #%d: stopped, the GPU was given back while its model loaded", seq)
             telemetry.event("analysis_cancelled", id=seq, trigger=trigger, reason="gpu_released",
