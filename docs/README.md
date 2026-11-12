@@ -351,7 +351,7 @@ of the same name. It is also the setup guide's first step.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/capture-connection-dark.png">
-    <img alt="Capture connection with a capture program connected: the Capture program card saying Connected, with its PC and system, its release the same as the server's, started by the desktop shortcut so that its tray's Quit Sidenote ends the server too, its address and when it connected; the keys Restart and Quit the program; another PC's ways folded; and the settings Monitor, Join scrolled screens and Skip windows" src="assets/capture-connection-light.png" width="560">
+    <img alt="Capture connection with a capture program connected: the Capture program card saying Connected, with its PC and system, its release the same as the server's, started by the desktop shortcut so that its tray's Quit Sidenote ends the server too, its address and when it connected; the keys Restart and Quit the program; another PC's ways folded; and the settings Monitor, Follow the changing screen, Join scrolled screens and Skip windows" src="assets/capture-connection-light.png" width="560">
   </picture>
 </p>
 
@@ -471,7 +471,7 @@ notebook carry the same readings.
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest, and so does **Recently deleted**.
 
-The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.9.0**, and opens that
+The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.10.0**, and opens that
 release's notes.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
@@ -484,7 +484,7 @@ model is not downloaded or not answering, the agent is in use but needs signing 
 thread scrolls, and the right column stays under it. **Copy command** in an alert copies the command to type in the
 terminal.
 
-When a newer release of Sidenote is out, the alert bar says so in a band of its own, **Sidenote 0.9.0 is out**, with a
+When a newer release of Sidenote is out, the alert bar says so in a band of its own, **Sidenote 0.11.0 is out**, with a
 **Release notes** link to the release's page on GitHub. Its close key hides it for that version in this browser, and the
 next release shows again. The server asks GitHub once a day (section 14); **Check for new versions** in **Solver
 settings** turns that off.
