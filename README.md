@@ -217,9 +217,10 @@ empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
 
 It runs on Windows 10 or 11, macOS 14 or newer on Apple silicon, Linux with X11 (Ubuntu 22.04 or newer), Docker on Linux
 or WSL 2, and Docker on a Mac. Measured on the test PC (Ryzen 9 9950X, RTX 4090 24 GB): the server takes about 0.1 GB of
-memory, the speech model 0.6 GB, and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each
-figure is room for the system and the browser. The speech model runs on the CPU: with `small`, 15 s of steady speech
-takes about 8 s of CPU time. The app downloads as 111 MB on Windows, 76 MB on macOS and 217 MB on Linux; with Docker, the
+memory, the speech models 1.8 GB, and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each
+figure is room for the system and the browser. The speech models run on the CPU and take 2.1 GB of disk: each sentence
+is written down by `large-v3-turbo`, a sentence of 5 s in about 4 s, and the live words by `small`, 15 s of steady speech
+in about 8 s of CPU time. **Speech model** in the panel's settings picks `small` for a lighter PC. The app downloads as 111 MB on Windows, 76 MB on macOS and 217 MB on Linux; with Docker, the
 images take about 8.5 GB, Ollama's 5.6 GB of it.
 
 A Mac's GPU works in the Mac's own memory: macOS lets it use two thirds of it on a Mac with up to 36 GB, and three

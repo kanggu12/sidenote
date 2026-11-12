@@ -14,7 +14,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
 
@@ -2212,3 +2212,61 @@ two ways:
 Practice switched gets no notice of its own: one in the bar hides the bands there for its seconds (note 122), and the
 menu's **On** and **Off** say it. `tests/panel_cues.py` checks each of these, and fails 23 of its 29 checks on the panel
 before.
+
+### <a id="note-129"></a>129. Each sentence is written down by large-v3-turbo, with today's terms in its lists
+
+What was heard in real interviews came out wrong where it matters most to a question: the English technical terms inside
+Korean speech. A bench made for it shows the same. 44 interview questions in Korean and 12 in English, written for it and
+full of such terms, read by three Korean and three English neural voices and passed through what a meeting app sends the
+speakers (Opus at 16 kbps, with a little noise). `small`, the default until now, wrote vLLM as "PLLM", SGLang as "s질랭",
+"Dify나 n8n" as "DP나 NADN", gRPC as "지하우 PC" and 임베딩 as "인베딩". Each sentence is scored by its character errors (a
+term written in Latin letters where the line has it in Hangul, or the other way, counts as written) and by how many of
+its terms are written right. On the 88 Korean sentences of two voices:
+
+| | Character errors | Terms right |
+|:---|---:|---:|
+| `small`, the lists before | 5.7% | 79% |
+| `small`, the new lists | 4.5% | 86% |
+| `large-v3-turbo`, the lists before | 4.0% | 87% |
+| `large-v3-turbo`, the new lists | 3.1% | 89% |
+
+English was already right with `small`: 0.7% and 96% on its 36 sentences. Voices made by a machine are easier than
+people, so the same was measured on HiKE, Korean and English mixed as people speak them and read by people (Apache-2.0;
+81 of its sentences on software development, an English word written in Hangul taken as written where HiKE lists it):
+
+| | Character errors | English words right |
+|:---|---:|---:|
+| `small`, the lists before | 22.9% | 73% |
+| `small`, the new lists | 20.2% | 75% |
+| `large-v3-turbo`, the new lists | 15.9% | 83% |
+
+On people the larger model counts for more than on the made voices, a third fewer errors, and the new lists cost
+nothing where their words are not said (HiKE's are everyday ones: bug, session, deploy).
+
+The new lists end on the names Whisper most often gets wrong, today's AI and infrastructure tools, and start on words a
+model mostly writes right unaided. They take 209 (Korean) and 191 (English) of the 223 tokens Whisper keeps, so a list cut
+for the person's own words now loses its first words. Longer is not better: the 140 terms of the whole bench given as the
+person's words, cut to fit, came to 4.6% and 81% on one voice, where the new lists came to 4.5% and 85%. The person's
+words stay in front: put after the list, nearest the sound, which a study of Whisper's prompts found better, they came to
+5.6% against 4.6%, the terms the same.
+
+The cost, on the clock, four threads and int8 on the test PC with other work running, for sentences of 6.9 s on average
+in a language pinned: 1.9 s with `small`, 5.5 s with `medium` and 5.5 s with `large-v3-turbo`. turbo has large-v3's encoder
+and a decoder of four layers, so it costs what `medium` does on the CPU and hears better than it. A sentence is written
+down once, when it is over, but the live line is read again from the last 15 s every two seconds while somebody speaks:
+the sentences go to `large-v3-turbo` and the live line stays on `small` (`SIDENOTE_WHISPER_LIVE_MODEL`), so the live words
+cost what they did. On auto a model asked to tell the language reads the sound twice, its encoder once to tell and once
+to write, and turbo's encoder is what costs: through the running server, fed five questions as a capture program feeds
+it, a sentence was written down 14 to 18 s after it ended. `small`, which told the language of every utterance before
+(the vote's figures are its odds, [note 12](#note-12)), now tells it for turbo, which then reads the sound once: 8.5 to
+13.4 s, 10 s in the middle, against 6.2 to 11.4 s, 6.5 s in the middle, with `small` alone. A spoken question reaches the
+engines some 3.5 s later, written down with a third fewer errors. The two models
+read in turn in the one speech loop and take 2.1 GB of downloads and 1.8 GB of memory between them (`small` alone, 0.6 GB). `small` and
+`medium` stay in the panel's choices; a model no heavier than the live line's is one model for both.
+
+Nothing was written for silence, two kinds of noise, tones, a beat or a hum with a keyboard, by either model in Korean,
+English or auto, with the new lists. The GPU is not used: beside the 26b about 1.5 GB is left ([note 76](#note-76)),
+which `large-v3-turbo` needs on its own, and past it WSL lends system memory and slows the GPU's every user; the CUDA
+libraries would also add some 1.3 GB of wheels to the image. A sound-alike the model still writes ("BLM이나 SGLang" for vLLM, "지하어
+PC" for gRPC) is for the engine reading the question to set right from its context; that needs the local model to measure,
+and is left for that.

@@ -6,6 +6,23 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- Each sentence heard is written down by `large-v3-turbo`, while the live words stay on `small`. On Korean and English
+  mixed as people speak them it makes a third fewer character errors than `small` did (15.9% against 22.9%) and writes
+  83% of the English words right against 73%; on interview questions full of technical terms, 3.1% against 5.7%, and 89%
+  of the terms against 79%. A spoken question is written down about 3.5 s later, and the live words cost what they did.
+  **Speech model** in the panel still offers `small` and `medium`; the first start downloads 2.1 GB of speech models
+  where it took 0.5 GB.
+- The technical term hints end on today's AI and infrastructure names (vLLM, SGLang, LangChain, LangGraph, Dify, n8n,
+  RAG and the like), which `small` alone now writes right 86% of the time against 79%. With words of your own in
+  **Extra terms**, the list's common words make room first, and a word the list has too is said once.
+
+### Added
+
+- `SIDENOTE_WHISPER_LIVE_MODEL` names the model that reads the live words beside a heavier one for the sentences
+  (`small`).
+
 ## [0.8.1] - 2026-11-13
 
 ### Fixed

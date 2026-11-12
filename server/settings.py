@@ -46,9 +46,11 @@ TYPE_NAMES = {"mcq": "Multiple choice", "short": "Short answer", "essay": "Essay
 SKIP_WINDOWS = ["1Password", "Bitwarden", "KeePass", "KeePassXC", "LastPass", "Dashlane", "Keeper", "Enpass",
                 "NordPass", "Proton Pass", "InPrivate", "Incognito", "Private Browsing", "시크릿", "사생활 보호"]
 WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each at most this many characters
-# Seconds of CPU one pass over the live window takes with each speech model, 15 s of steady speech, four threads, int8, on
-# the test PC: small 7.1 (Korean) and 8.1 (English), medium 18.4 and 13.8 (docs/DECISIONS.md, note 106)
-SPEECH_CPU = {"small": "8", "medium": "16"}
+# Seconds on the clock a sentence of 5 s takes to be written down with each speech model, four threads, int8, on the test
+# PC with other work running: 0.29, 0.81 and 0.84 s for each second of speech (docs/DECISIONS.md, note 129). The live line
+# is read with small beside the larger two, at small's cost (note 106)
+SPEECH_SENTENCE = {"small": "1.5", "medium": "4", "large-v3-turbo": "4"}
+SPEECH_MODELS = ("small", "medium", "large-v3-turbo")
 
 
 @dataclass
@@ -273,11 +275,15 @@ def _defs() -> list[Setting]:
         # What each costs is measured on the test PC (docs/DECISIONS.md, note 106). A model the environment names is
         # always offered as well, as the agent's models are.
         Setting("whisper_model", "choice", CONFIG.whisper_model, "speech", t("Speech model"),
-                t("The model that writes down what is heard, on the CPU. One not downloaded yet is fetched when first chosen"),
-                [("small", "small"), ("medium", "medium")]
-                + ([(CONFIG.whisper_model, CONFIG.whisper_model)] if CONFIG.whisper_model not in ("small", "medium") else []),
-                opt_help={"small": t("About {s} s of CPU a pass, on the test PC", s=SPEECH_CPU["small"]),
-                          "medium": t("About {s} s of CPU a pass, on the test PC. Hears technical terms better", s=SPEECH_CPU["medium"])}),
+                t("The model that writes down each sentence heard, on the CPU; the live words are read with small. One not "
+                  "downloaded yet is fetched when first chosen"),
+                [(m, m) for m in SPEECH_MODELS]
+                + ([(CONFIG.whisper_model, CONFIG.whisper_model)] if CONFIG.whisper_model not in SPEECH_MODELS else []),
+                opt_help={"small": t("A sentence of 5 s in about {s} s on the test PC. The lightest, and the worst at technical terms",
+                                     s=SPEECH_SENTENCE["small"]),
+                          "medium": t("A sentence of 5 s in about {s} s on the test PC", s=SPEECH_SENTENCE["medium"]),
+                          "large-v3-turbo": t("A sentence of 5 s in about {s} s on the test PC. Hears technical terms best, "
+                                              "for the cost of medium", s=SPEECH_SENTENCE["large-v3-turbo"])}),
         # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
         Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
                 t("Saves each sentence heard, with its time, on this PC only, for {days} days (up to {mb} MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),

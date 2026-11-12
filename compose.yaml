@@ -58,7 +58,7 @@ services:
       - default      # the agent's CLI here reaches its vendor (claude.ai, chatgpt.com)
       - llmnet       # and the local LLM (SIDENOTE_ANALYZER=local), which has no internet
     volumes:
-      - hf-cache:/data/hf     # whisper models, downloaded once (~0.5 GB for `small`)
+      - hf-cache:/data/hf     # whisper models, downloaded once (~2.1 GB: large-v3-turbo for the sentences, small for the live words)
       - runner-sock:/sock     # the code runner's socket
       - gpu-stat:/gpu:ro      # what the GPU is doing, written by the llm service: the panel's chart
       # server.log, events.jsonl (and capture.log from ./sidenote capture): each rotated by

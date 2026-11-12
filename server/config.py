@@ -59,19 +59,25 @@ def env_bool(name: str, default: bool) -> bool:
 # What Whisper is given as the text before the audio, so it spells technical terms as they are written, one list for
 # each speech language and chosen by the language each utterance is decoded in (server/transcriber.py). The Korean
 # list keeps the words Korean speech says in Hangul and writes the rest as they are written in Korean technical text,
-# in Latin letters. The most useful words come first: Whisper keeps the last 223 tokens of a prompt, and the person's
-# own words go in front of these (Extra terms), so a list cut to fit loses its end. They take 173 and 156 of the 223.
-# Measured on 146 mentions of a term in made-up sentences with `small`: written right 99 times with no hint, 103 with the
-# one text before these lists, 124 with them, and nothing invented on silence, noise or music (docs/DECISIONS.md, note 106).
+# in Latin letters. Each list ends on the words Whisper most often gets wrong, today's AI and infrastructure names (vLLM,
+# SGLang, LangGraph, Dify, n8n: in spoken interview questions `small` wrote them as "s질랭", "랭그레프", "DP나 NADN"), and starts on
+# words a model mostly writes right unaided. Whisper keeps the last 223 tokens of a prompt, and the person's own words go
+# in front of these (Extra terms), so a list cut to fit loses its first words (transcriber.py, prompt). They take 209 and
+# 191 of the 223. Measured on 88 spoken interview questions full of terms, through a meeting app's codec (DECISIONS.md,
+# note 129): `small` wrote 79% of the terms right with the lists before these and 86% with these, its character errors
+# 5.7% and 4.5%; the lists before these were measured in note 106.
 WHISPER_HINTS = {
-    "ko": ("쿠버네티스, 도커, 파이썬, 자바, 자바스크립트, 리액트, 깃허브, 리눅스, 엔진엑스, 레디스, 카프카, 올라마, Ollama, "
-           "프로세스, 스레드, 해시 테이블, 시간 복잡도, 데이터베이스, 인덱스, 트랜잭션, 파드, 노드, API, TCP, HTTP, "
-           "kubectl, cordon, drain, Slurm, InfiniBand, NCCL, CUDA, GPU, NFS, LDAP, RStudio, Prometheus, Grafana, "
-           "Terraform, Ansible, MySQL, GTID."),
-    "en": ("Kubernetes, kubectl, cordon, uncordon, drain, kubelet, etcd, Helm, containerd, Docker, Slurm, sbatch, srun, "
-           "InfiniBand, RDMA, NCCL, CUDA, NVLink, NVIDIA, GPU, NFS, Lustre, LDAP, Kerberos, RStudio, JupyterHub, "
-           "Prometheus, Grafana, Terraform, Ansible, Ollama, PyTorch, nginx, Redis, Kafka, PostgreSQL, MySQL, GTID, "
-           "binlog, systemd, cgroup, TCP, UDP, HTTP, DNS, API, YAML, Linux, GitHub."),
+    "ko": (
+        "쿠버네티스, 파드, 레디스, 카프카, 엔진엑스, 임베딩, 파인튜닝, 양자화, 레이턴시, 온프레미스, 데브옵스, API, gRPC, OAuth, JWT, WebSocket, S3, IAM, "
+        "kubectl, Helm, Terraform, Prometheus, Grafana, Slurm, InfiniBand, NCCL, CUDA, GPU, NFS, SMB, PostgreSQL, "
+        "Elasticsearch, Airflow, Kubeflow, MLOps, CI/CD, PyTorch, Triton, TensorRT-LLM, LoRA, KV cache, RAG, LLM, "
+        "VLM, Ollama, vLLM, SGLang, LangChain, LangGraph, Dify, n8n."),
+    "en": (
+        "Kubernetes, kubectl, etcd, Helm, Docker, Slurm, InfiniBand, RDMA, NCCL, CUDA, NVLink, NVIDIA, GPU, NFS, SMB, "
+        "LDAP, Prometheus, Grafana, Terraform, Ansible, PyTorch, nginx, Redis, Kafka, PostgreSQL, MySQL, "
+        "Elasticsearch, Airflow, Kubeflow, MLOps, gRPC, OAuth, JWT, WebSocket, DNS, API, YAML, GitHub, S3, IAM, "
+        "Triton, TensorRT-LLM, LoRA, KV cache, prefill, RAG, LLM, VLM, Ollama, vLLM, SGLang, LangChain, LangGraph, "
+        "Dify, n8n."),
 }
 
 
@@ -335,9 +341,14 @@ class Config:
     # Speech language: auto (detect, but only between Korean and English) | ko | en.
     # Switchable at runtime from the panel.
     speech_lang: str = env_str("SIDENOTE_SPEECH_LANG", "auto")
-    # small: Korean CER 2.5% vs 6.2% for base on a 16s clip (measured), ~2.4x the time --
-    # still within the 2s continuous-transcription pass. SIDENOTE_WHISPER_MODEL=base is lighter.
-    whisper_model: str = env_str("SIDENOTE_WHISPER_MODEL", "small")
+    # The model that writes down each sentence heard. large-v3-turbo: on 88 interview questions full of technical terms,
+    # through a meeting app's codec, 3.1% character errors and 89% of the terms right against 5.7% and 79% for small,
+    # for 5.5 s of the clock a sentence of 7 s against 1.9 s, four threads on the test PC (DECISIONS.md, note 129).
+    # The live line stays on small (whisper_live_model). SIDENOTE_WHISPER_MODEL=small is the light choice
+    whisper_model: str = env_str("SIDENOTE_WHISPER_MODEL", "large-v3-turbo")
+    # The live line is read every two seconds while somebody speaks, a sentence once when it is over: a heavier model for
+    # the sentences reads the live line with this one (server/transcriber.py, live_model; DECISIONS note 129)
+    whisper_live_model: str = env_str("SIDENOTE_WHISPER_LIVE_MODEL", "small")
     whisper_compute: str = env_str("SIDENOTE_WHISPER_COMPUTE", "int8")
     # Threads faster-whisper decodes with. Left to itself it takes every core the container has
     # (measured: eight, held for 95 minutes), which lags the PC it is meant to help.

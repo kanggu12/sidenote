@@ -749,7 +749,7 @@ def group_heard(br, s):
             p.wait(250)
             box = p.js("""() => { const b = document.querySelector('#settings textarea[data-set=speech_terms]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' });
                 const r = b.getBoundingClientRect(), pane = document.querySelector('#settings .set-pane').getBoundingClientRect(), keys = [...document.querySelectorAll('#settings button[data-set=whisper_model]')].map((x) => x.getBoundingClientRect());
-                return { inside: r.left >= pane.left - .5 && r.right <= pane.right + .5, keys: keys.length === 2 && keys.every((k) => k.left >= pane.left - .5 && k.right <= pane.right + .5), side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
+                return { inside: r.left >= pane.left - .5 && r.right <= pane.right + .5, keys: keys.length === 3 && keys.every((k) => k.left >= pane.left - .5 && k.right <= pane.right + .5), side: document.documentElement.scrollWidth - document.documentElement.clientWidth }; }""")
             check(f"{name}: Extra terms and the speech model stand inside the sheet", box and box["inside"] and box["keys"] and box["side"] <= 0, box)
             check(f"{name}: the page threw nothing", not p.errors, p.errors[:2])
             p.close()

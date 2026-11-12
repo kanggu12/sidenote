@@ -228,7 +228,7 @@ PersistentVolumeClaim on Kubernetes.
 | `before-restore-<when>/` | what `./sidenote restore` replaced: the history and the settings as they were | each, until `./sidenote uninstall --data` | the files it holds |
 | `none_*.png` | with `SIDENOTE_DEBUG_FRAMES` set, the screens read as nothing to solve | the last eight | a few MB each |
 | Docker's container logs | each container's output (json-file) | rotated | the server 3 x 5 MB, the local model 2 x 5 MB, the runner and SearXNG 2 x 2 MB, the model download 1 x 2 MB |
-| `hf-cache` volume | the speech model | until removed | about 0.5 GB for `small` |
+| `hf-cache` volume | the speech models | until removed | about 2.1 GB for `large-v3-turbo` and `small`, the live words' model |
 | `llm-models` volume | the local model's weights | until removed | tens of GB a model |
 
 The app also keeps what each child printed (`server-console.log`, `capture.log`, `ollama.log`) and its own `app.log`,

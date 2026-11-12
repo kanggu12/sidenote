@@ -128,7 +128,7 @@ class FasterWhisperTranscriber:
     available = True
 
     def __init__(self, model_size: str = "base", compute_type: str = "int8", language: str = "auto",
-                 hint: str | dict = "", cpu_threads: int = 4):
+                 hint: str | dict = "", cpu_threads: int = 4, live_model: str = ""):
         # Lazy, heavy imports kept inside so the module import stays cheap.
         import numpy  # noqa: F401  (validated here, used in transcribe)
         from faster_whisper import WhisperModel, download_model
@@ -143,18 +143,49 @@ class FasterWhisperTranscriber:
         self.hints = hint_words(hint)
         self.extra: list[str] = []   # the person's own words (Extra terms), ahead of the built-in ones
         self._prompts: dict = {}     # the prompt for each language, built once per change (prompt())
-        log.info("loading faster-whisper model=%s compute=%s lang=%s threads=%s",
-                 model_size, compute_type, self.language, cpu_threads)
+        # The live line is read again from the last seconds of sound every two seconds while somebody speaks, and a
+        # sentence once, when it is over. A larger model for the sentences alone costs that once (DECISIONS note 129):
+        # `live_model` reads the live line, `model_size` every sentence. The same name, or none, is one model for both
+        self.model_name = model_size
+        self.live_name = live_model if live_model and live_model != model_size else model_size
+        log.info("loading faster-whisper model=%s%s compute=%s lang=%s threads=%s", model_size,
+                 f" (live line: {self.live_name})" if self.live_name != model_size else "", compute_type, self.language, cpu_threads)
         # cpu_threads: without it CTranslate2 decodes on every core the container has, which is
         # the lag the tool is supposed to save the user. num_workers 1: one utterance at a time.
         # Fetched first, outside the spawn lock: a first download takes minutes, and the model in use and every agent's
         # process would wait on that lock for as long.
         where = model_size if os.path.isdir(model_size) else download_model(model_size)
+        live_where = None
+        if self.live_name != model_size:
+            live_where = self.live_name if os.path.isdir(self.live_name) else download_model(self.live_name)
         # Built under the spawn lock: it loads in the background now, beside the CLI checks and the analyses, and its
         # int8 conversion can run in a native parallel region, which a fork must not meet (forksafe.py)
         with forksafe.native_work():
             self._model = WhisperModel(where, device="cpu", compute_type=compute_type,
                                        cpu_threads=max(1, int(cpu_threads)), num_workers=1)
+            # the two read in turn, in the one speech loop (app.py, transcription_worker), so they share the threads
+            self._live_model = None if live_where is None else WhisperModel(
+                live_where, device="cpu", compute_type=compute_type, cpu_threads=max(1, int(cpu_threads)), num_workers=1)
+
+    def _told(self, audio):
+        """The language of a sentence as the live line's model tells it, (language, {language: odds}), where there are two
+        models; None where there is one, or where it cannot tell. Asked to tell it, the sentence model reads the sound
+        twice, its encoder once to tell and once to write, and that encoder is what costs: the sentence of 7 s that took
+        it 5.5 s with the language pinned took twice that on auto (DECISIONS.md, note 129). The live line's model told
+        the language of every utterance before there were two, and the vote's figures are its odds (note 12)."""
+        teller = getattr(self, "_live_model", None)
+        if teller is None:
+            return None
+        try:
+            language, _, odds = teller.detect_language(audio=audio, vad_filter=True)
+        except Exception as exc:   # nothing it can hear: the sentence model tells it as before
+            log.debug("the live line's model could not tell the language (%s)", exc)
+            return None
+        return language, dict(odds or [])
+
+    def _reader(self, live: bool):
+        """The model a decode is read with: the live line's own where there is one (live_model), else the sentence model."""
+        return (getattr(self, "_live_model", None) or self._model) if live else self._model
 
     @property
     def language(self) -> str:
@@ -189,11 +220,19 @@ class FasterWhisperTranscriber:
         if lang in self._prompts:
             return self._prompts[lang]
         # each word on its own, so a cut never splits one, and the person's first: those are the last to go here. In an
-        # utterance over 30 s Whisper's later windows also take its own text before these, which goes before all of them
-        words = self.extra + [w.strip() for w in self.hints.get(lang, "").rstrip(".").split(",") if w.strip()]
+        # utterance over 30 s Whisper's later windows also take its own text before these, which goes before all of them.
+        # A word of the person's that the list has too is said once, as theirs
+        mine = {w.lower() for w in self.extra}
+        listed = [w.strip() for w in self.hints.get(lang, "").rstrip(".").split(",") if w.strip() and w.strip().lower() not in mine]
+        words = self.extra + listed
         text = ", ".join(words)
         while words and self._tokens(text + ".") > PROMPT_TOKENS:
-            words.pop()                    # the last of the built-in words first, then the person's own last ones
+            # the list's first words go first: it ends on the words Whisper most often gets wrong (config.py, WHISPER_HINTS),
+            # and its first are those a model mostly writes right unaided. Then the person's own, from their last
+            if len(words) > len(self.extra):
+                words.pop(len(self.extra))
+            else:
+                words.pop()
             text = ", ".join(words)
         if len(words) < len(self.extra):   # the person's words alone did not fit: said once per change
             log.warning("speech hint: %d of the %d extra terms fit in what Whisper keeps", len(words), len(self.extra))
@@ -268,18 +307,21 @@ class FasterWhisperTranscriber:
         # is detected: the first call is given the hint of the language this session most likely speaks, and is
         # asked again with the right one when the utterance turns out to be in the other
         first = lang or self.voted or self.last_language or LANGS[0]
+        model = self._reader(live)
         # The lock keeps a fork() out of the decode (server/forksafe.py). It covers the reading of
         # the segments too: transcribe() settles the language up front and decodes lazily while
         # they are read, so a rejected auto pick costs a detection pass, not a decode.
         with forksafe.native_work():
-            segments, info = self._model.transcribe(audio, language=lang, vad_filter=True,
-                                                    initial_prompt=self.prompt(first), **quick)
+            told = self._told(audio) if lang is None and not live else None
+            if told is None:
+                segments, info = model.transcribe(audio, language=lang, vad_filter=True,
+                                                  initial_prompt=self.prompt(first), **quick)
             if lang is None:
-                probs = dict(info.all_language_probs or [])
+                detected, probs = told or (info.language, dict(info.all_language_probs or []))
                 # Whichever of the two this utterance looks like on its own, then what the session has
                 # voted for. The vote is counted from the odds, not from the decision, so an utterance
                 # decoded against it still says what it sounded like.
-                pick = info.language if info.language in LANGS else max(LANGS, key=lambda l: probs.get(l, 0.0))
+                pick = detected if detected in LANGS else max(LANGS, key=lambda l: probs.get(l, 0.0))
                 if not live and self.voted == VOTE_TOWARDS and pick != VOTE_TOWARDS \
                         and (seconds < HOLD_SEC or probs.get(pick, 0.0) < HOLD_SURE):
                     pick = self.voted
@@ -289,14 +331,15 @@ class FasterWhisperTranscriber:
                 if not live:
                     self._count(probs, seconds)
                 # Asked again in the language picked, or with that language's hint: nothing has been decoded yet, and
-                # a call with the language given detects nothing, so the second call adds no decode and no detection
-                if pick != info.language or self.prompt(pick) != self.prompt(first):
+                # a call with the language given detects nothing, so the second call adds no decode and no detection.
+                # Told by the live line's model, this is the one call the sentence model gets
+                if told or pick != detected or self.prompt(pick) != self.prompt(first):
                     # Held to Korean against what it sounds like, a sentence reads as poor text and Whisper tries it again
                     # at each higher temperature: English of 5 s took 5 to 8 s to come to the words the first try wrote in
                     # 1 s. Longer speech goes round on one phrase at that first try, so the retries stay for it.
-                    held = pick != info.language and seconds <= HELD_SENTENCE_SEC
-                    segments, info = self._model.transcribe(audio, language=pick, vad_filter=True, initial_prompt=self.prompt(pick),
-                                                            **(quick or ({"temperature": 0.0} if held else {})))
+                    held = pick != detected and seconds <= HELD_SENTENCE_SEC
+                    segments, info = model.transcribe(audio, language=pick, vad_filter=True, initial_prompt=self.prompt(pick),
+                                                      **(quick or ({"temperature": 0.0} if held else {})))
             # With no retries a reading may go round on one sound or phrase, which is nothing anyone said
             text = " ".join((unlooped(seg) if live or held else seg.text.strip()) for seg in segments).strip()
         self.last_language = info.language
@@ -359,6 +402,19 @@ class UtteranceTracker:
         return self._close(split=False) if self.start is not None else None
 
 
+# Whisper's sizes from the lightest: a live line read by a heavier model than the sentences gains nothing
+SIZES = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
+
+
+def live_model(cfg, chosen: str) -> str:
+    """The model that reads the live line beside `chosen`: SIDENOTE_WHISPER_LIVE_MODEL (small), or `chosen` itself when that
+    is no heavier, or a folder or a name this list does not know, which is taken as it is (one model for both)."""
+    live = getattr(cfg, "whisper_live_model", "") or ""
+    if not live or chosen not in SIZES or live not in SIZES or SIZES.index(chosen) <= SIZES.index(live):
+        return chosen
+    return live
+
+
 def make_transcriber(cfg, model: str = "") -> "NullTranscriber | FasterWhisperTranscriber":
     """The speech model: `model` when it is named (the panel's choice), else the one the environment names. One not
     downloaded yet is fetched by faster-whisper on the way."""
@@ -366,8 +422,9 @@ def make_transcriber(cfg, model: str = "") -> "NullTranscriber | FasterWhisperTr
         return NullTranscriber()
     if cfg.transcriber in ("auto", "faster-whisper"):
         try:
-            return FasterWhisperTranscriber(model or cfg.whisper_model, cfg.whisper_compute, cfg.speech_lang,
-                                            cfg.whisper_hint, getattr(cfg, "whisper_threads", 4))
+            chosen = model or cfg.whisper_model
+            return FasterWhisperTranscriber(chosen, cfg.whisper_compute, cfg.speech_lang, cfg.whisper_hint,
+                                            getattr(cfg, "whisper_threads", 4), live_model(cfg, chosen))
         except Exception as exc:  # pragma: no cover - env dependent
             if cfg.transcriber == "faster-whisper":
                 raise
