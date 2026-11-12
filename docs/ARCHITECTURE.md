@@ -302,7 +302,10 @@ and is sent the state afresh. One such panel used to hold every broadcast, and t
 At most 32 panels are open at once (`MAX_PANELS`): the next is refused at its handshake (`403`) until one closes,
 as the API's readers of events are past 32 (`429`). A panel's place is taken before its handshake waits, so panels
 opening together cannot pass the count. At most 8 questions are answered at once (`MAX_ASKS`): one more is refused
-before it takes an id, with a warning to the panel that asked (`429` from `POST /api/v1/ask`).
+before it takes an id, with a warning to the panel that asked (`429` from `POST /api/v1/ask`). A panel's message over
+2 MB (`MAX_BODY`) closes its socket with `1009`, unparsed. The server takes 512 connections at once (uvicorn's
+`--limit-concurrency`) and answers one more request `503`, and 8 capture connections at once (`MAX_INGEST`, `403`
+past them); [note 124](DECISIONS.md#note-124) has each cap and why.
 
 ### Panel to server, on `/panel`
 

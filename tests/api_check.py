@@ -667,6 +667,19 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
           and r.json()["ok"] is False and "GET /api/v1" in r.json()["error"], r.text[:200])
     r = c.post("/api/v1/ask", content=b"{not json", headers={"content-type": "application/json"})
     check("a body that is not JSON is a 400", r.status_code == 400 and r.json()["error"] == "the body is not JSON")
+    # A body is read a piece at a time up to MAX_BODY: past it, refused before it is held whole
+    as_json = {"content-type": "application/json"}
+    r = c.post("/api/v1/pause", content=json.dumps({"pad": "x" * (A.MAX_BODY - 100)}).encode(), headers=as_json)
+    check("a body just under the cap is taken", r.status_code == 200 and A.STATE.paused is True, r.status_code)
+    c.post("/api/v1/resume", json={})
+    r = c.post("/api/v1/pause", content=b"{" + b" " * (A.MAX_BODY + 1) + b"}", headers=as_json)
+    check("a body over it that says its length is a 413, and nothing changes", r.status_code == 413
+          and "over 2 MB" in r.json()["error"] and A.STATE.paused is False, [r.status_code, r.text[:120]])
+    check("...its connection closed after it (left open, the rest of the body went on being read)",
+          r.headers.get("connection") == "close", dict(r.headers))
+    r = c.post("/api/v1/pause", content=(b" " * 65536 for _ in range(A.MAX_BODY // 65536 + 2)), headers=as_json)
+    check("...and so is one that does not, sent in pieces (chunked)", r.status_code == 413 and A.STATE.paused is False
+          and "content-length" not in {k.lower() for k in r.request.headers}, [r.status_code, dict(r.request.headers)])
     r = c.post("/api/v1/ask", content=b"[1]", headers={"content-type": "application/json"})
     check("...and one that is not an object", r.status_code == 400 and "object" in r.json()["error"])
     # What JSON allows and nothing past it: NaN and Infinity, a number past a float's range and a lone surrogate were taken.

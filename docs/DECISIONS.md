@@ -15,8 +15,8 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
-| [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121) |
+| [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -1983,6 +1983,8 @@ it after 10 s.
 
 ### <a id="note-119"></a>119. A program that ends by itself is started again inside its container
 
+Superseded by [note 123](#note-123).
+
 Under compose nothing started a server that ended by itself (the watchdog ending a stalled loop, an out-of-memory kill)
 until someone typed `./sidenote up`; the desktop app starts its server again (its watch, `desktop/app.py`). Docker's own restart
 policies are not used: they start a container at Docker's own start too, and a PC switched off with Sidenote running
@@ -2027,3 +2029,55 @@ thread passing under them as the page passes under the bar. The gear menu is a s
 window's, on the right column's edges, or the window's width in one column, in the sheet colour the settings'
 dropdowns share. tests/panel_layout.py checks it at six widths, at the top and scrolled, with no band and with two: no
 visible box straddles the edge of a notice or of the menu, what passes under the header aside.
+
+### <a id="note-123"></a>123. Each program a container serves is started again, and what is left of its run's group ends with it
+
+Under compose nothing started a program that ended by itself (the watchdog ending a stalled server, an out-of-memory
+kill) until someone typed `./sidenote up`; the desktop app starts its server again (its watch, `desktop/app.py`).
+Docker's own restart policies are not used: they start a container at Docker's own start too, and a PC switched off with
+Sidenote running would bring it up at the next boot unasked (`restart: "no"` stays). The server, the model server, the
+code runner and SearXNG run in a small loop instead (`docker/keep-running.sh`), which lives only as long as its
+container: a program that ends in failure is started again a second later, at most 5 starts in 10 minutes (the first
+included), after which the container stays ended. A stop that was asked for (`docker stop`, `./sidenote down`) is not a
+failure, and `USR1` still reaches the server, which writes its threads' stacks on it (`server/watchdog.py`). Each end of
+the server nobody asked for is written to `.ended` in the log folder (one line, the last end), which `./sidenote
+status` reads to say why the server is off. A code runner that could not clean up after a run ends with exit code 3 a
+second after, and the loop (on Kubernetes the kubelet, where the runner runs without it) starts a clean one, which
+cleans up first.
+
+Each run is a process group of its own (`setsid`, which every image the loop runs in has), and what is left of the group
+when the run ends is ended with it. A child that starts a session of its own leaves the group and is not ended so (the
+server starts the agents' CLIs that way, and the code runner each run, which it cleans up itself when it starts). A
+program killed outright left its own children running beside the next run: with
+its main process killed (`kill -9`), SearXNG's worker went on serving on the same port while the next run started beside
+it, and each such end would have added one more inside the container's memory cap; Ollama's model runners would hold
+the GPU's memory the same way. SearXNG ran outside the loop before 0.6.4, and stayed ended until `./sidenote up`.
+`tests/entrypoint_loop.sh` checks both with stand-ins, that compose.yaml runs the other three in the loop, and that the
+server's entrypoint runs it there.
+
+### <a id="note-124"></a>124. What a server takes at once
+
+Sidenote serves one person, and its server answers this PC alone: what comes at it at once is that person's panels and
+programs, and a program gone wrong among them. Each kind has a cap, past which one more is refused at once while the
+server goes on with what it has, with a status a program can act on (a panel refused connects again by itself):
+
+- 512 connections (uvicorn's `--limit-concurrency`, in `docker/entrypoint.sh` and in the desktop app's server): one more
+  request is answered `503`, and uvicorn's warning for it is written once a minute (`OncePerMinute`). uvicorn counts a
+  WebSocket only once it is accepted and never refuses one, so the server caps its sockets itself. uvicorn also has no
+  time limit on a connection's first request, so a program that holds 512 connections open and sends nothing on them
+  keeps every request out (`/health` too) until it lets them go; before, it held as many as it liked. Only a program on
+  this PC can, and the server is not harmed by it.
+- 32 panels (`MAX_PANELS`) and 8 capture connections (`MAX_INGEST`). Each takes its place before its handshake's first
+  await, so handshakes that come together cannot pass the count; past it the handshake gets `403`.
+- 32 readers of events (`429`), 2 code runs waiting on the runner (`MAX_RUNS`), and 8 questions answered at once
+  (`MAX_ASKS`): one more question is refused before it takes an id, `429` from the API and a warning in the panel that
+  asked.
+- 2 MB in a request's body or a panel's message (`MAX_BODY`). A body is read a piece at a time and refused (`413`) as
+  soon as it passes the cap, its connection closed after it; a panel's message past it closes the socket (`1009`)
+  unparsed. Read whole, a body of
+  gigabytes went into the server's memory; parsed on the loop, a message of 64 MB (what a socket takes, for a 4K
+  screen) held the loop that serves everyone for seconds, and the watchdog ends a server whose loop stops.
+
+One capture program feeds a server: the newest to say hello takes over, and the one before is asked to quit
+([Architecture](ARCHITECTURE.md), the capture program's messages). `tests/many_clients.py` checks each cap against a
+server started as `docker/entrypoint.sh` starts it, and `tests/api_check.py` the bodies.

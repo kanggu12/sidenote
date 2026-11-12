@@ -12,6 +12,8 @@
 # - the watchdog's stall.txt, written during a run, is in the note;
 # - TERM and INT end the program (INT as TERM) and nothing is started again; USR1 reaches it and it runs on;
 # - the note of an earlier container is gone at the start;
+# - what a run leaves behind (a program killed outright, its own children still running) is ended with it;
+# - compose.yaml runs the model server, the code runner and SearXNG in the loop;
 # - the entrypoint runs uvicorn in the loop, with the shutdown wait, and with SIDENOTE_SELF_RESTART=0 (Kubernetes) on
 #   its own.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
@@ -76,6 +78,40 @@ if [ "$rc" = 0 ] && [ "$(starts)" = 2 ] && [ "$code" = 1 ] && [ "$n" = 1 ] && [ 
   ok "a program that fails once is started again a second later; .ended says it was restarted"
 else bad "a program that fails once is started again a second later; .ended says it was restarted" "rc $rc, starts $(starts), $took s, note '$(note)'"; fi
 
+# 3b. What a run leaves behind is ended with it. Each run below starts a child of its own, a sleep with nothing to do with
+# the loop's output; the first then kills itself outright (as an out-of-memory kill would), the second ends with 0.
+# Before, the first's child went on running beside the second (SearXNG's worker went on serving)
+fresh; : > "$work/kids"; : > "$work/seen"
+# The second run, before it ends, writes whether the first run's child still runs: the check reads it from inside that
+# run, not once the loop has ended. A process that has ended but is not yet reaped (state Z) counts as gone.
+alive='[ -r /proc/$1/stat ] && [ "$(cut -d" " -f3 /proc/$1/stat)" != Z ]'
+prog 'running() { '"$alive"'; }; sleep 300 > /dev/null 2>&1 & echo $! >> "'"$work"'/kids"
+if [ "$(wc -l < "'"$work"'/starts")" -ge 2 ]; then
+  if running "$(sed -n 1p "'"$work"'/kids")"; then echo running > "'"$work"'/seen"; else echo gone > "'"$work"'/seen"; fi
+  exit 0
+fi
+kill -KILL $$'
+run_loop "$work/prog"
+first=$(sed -n 1p "$work/kids"); second=$(sed -n 2p "$work/kids")
+running() { eval "$alive"; }
+if [ "$rc" = 0 ] && [ "$(starts)" = 2 ] && [ -n "$first" ] && [ -n "$second" ] && [ "$(cat "$work/seen")" = gone ] \
+   && ! running "$first" && ! running "$second"; then
+  ok "a run killed outright: the children it left are ended before the next run, and the last run's when it ends"
+else bad "a run killed outright: the children it left are ended before the next run, and the last run's when it ends" \
+         "rc $rc, starts $(starts), the first's child as the second ran: $(cat "$work/seen"), children $(tr '\n' ' ' < "$work/kids"): $(for p in $first $second; do running "$p" && printf '%s running ' "$p"; done)"; fi
+for p in $(cat "$work/kids"); do kill -KILL "$p" 2>/dev/null; done   # none left behind here, whatever the check said
+
+# 3c. compose.yaml runs each program that serves the server in the loop: the model server, the code runner and SearXNG
+# (the server through its entrypoint, checked below), each with the loop mounted where its command starts it
+loops=0
+for svc in llm runner searxng; do
+  block=$(awk -v s="  $svc:" '$0 == s {on = 1; next} on && (/^  [a-z]/ || /^[^ #]/) {on = 0} on' "$root/compose.yaml")
+  if printf '%s\n' "$block" | grep -qE '^ *(entrypoint|command): \["/bin/sh", "/keep-running.sh"' \
+     && printf '%s\n' "$block" | grep -qF -- '- ./docker/keep-running.sh:/keep-running.sh:ro'; then loops=$((loops + 1)); fi
+done
+if [ "$loops" = 3 ]; then ok "compose.yaml runs the model server, the code runner and SearXNG in the loop"
+else bad "compose.yaml runs the model server, the code runner and SearXNG in the loop" "$loops of 3"; fi
+
 # 4. The watchdog's stall.txt, written during the run that ended, is in the note
 fresh; prog '[ "$(wc -l < "'"$work"'/starts")" -ge 2 ] && exit 0; echo stacks > "'"$work"'/logs/stall.txt"; exit 1'; run_loop "$work/prog"
 read -r when code n what stall <<<"$(note)"
@@ -119,9 +155,9 @@ looped="$(wc -l < "$work/uvicorn-args" | tr -d ' ')"; args="$(head -1 "$work/uvi
 SIDENOTE_LOG_DIR="$work/logs" UVICORN_EXIT=3 SIDENOTE_SELF_RESTART=0 PATH="$work/bin:/usr/bin:/bin" timeout 60 /bin/sh "$entry" > "$work/out" 2>&1; alone_rc=$?
 alone="$(wc -l < "$work/uvicorn-args" | tr -d ' ')"
 if [ "$looped_rc" = 3 ] && [ "$looped" = 5 ] && [ "$alone_rc" = 3 ] && [ "$alone" = 1 ] \
-   && [[ $args == "server.app:app --host 0.0.0.0 --port 8777 --no-access-log --ws-max-size 67108864 --timeout-graceful-shutdown 5" ]]; then
-  ok "the entrypoint runs uvicorn in the loop, with a 5 s shutdown wait; with SIDENOTE_SELF_RESTART=0 alone"
-else bad "the entrypoint runs uvicorn in the loop, with a 5 s shutdown wait; with SIDENOTE_SELF_RESTART=0 alone" \
+   && [[ $args == "server.app:app --host 0.0.0.0 --port 8777 --no-access-log --ws-max-size 67108864 --timeout-graceful-shutdown 5 --limit-concurrency 512" ]]; then
+  ok "the entrypoint runs uvicorn in the loop, with a 5 s shutdown wait and 512 connections at most; with SIDENOTE_SELF_RESTART=0 alone"
+else bad "the entrypoint runs uvicorn in the loop, with a 5 s shutdown wait and 512 connections at most; with SIDENOTE_SELF_RESTART=0 alone" \
          "looped: rc $looped_rc, starts $looped | alone: rc $alone_rc, starts $alone | args: $args"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"

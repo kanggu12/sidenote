@@ -280,14 +280,17 @@ services:
     restart: "no"
     networks:
       - default
-    # A fresh secret on every start; nothing else is configured by environment.
-    entrypoint: ["/bin/sh", "-c", "export SEARXNG_SECRET=\"$$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)\"; exec /usr/local/searxng/entrypoint.sh"]
+    # A fresh secret on every start; nothing else is configured by environment. Started again inside the container when
+    # it ends by itself (its memory cap met by a burst of searches), up to 5 times in 10 minutes, as the server, the
+    # model server and the code runner are (docker/keep-running.sh).
+    entrypoint: ["/bin/sh", "/keep-running.sh", "/bin/sh", "-c", "export SEARXNG_SECRET=\"$$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)\"; exec /usr/local/searxng/entrypoint.sh"]
     environment:
       TZ: ${TZ:-UTC}
       FORCE_OWNERSHIP: "false"
     volumes:
       - searxng-conf:/etc/searxng                               # named, so a recreate reuses it
       - ./docker/searxng.yml:/etc/searxng/settings.yml:ro       # the settings themselves, read-only
+      - ./docker/keep-running.sh:/keep-running.sh:ro            # the loop its entrypoint runs SearXNG in
     tmpfs:
       - /var/cache/searxng:size=64m,uid=977,gid=977
       - /tmp:size=64m
