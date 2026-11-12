@@ -1111,6 +1111,13 @@ switch and setting, and what the panels are told as it happens. See [API](API.md
 
 **Maintenance** in the gear menu puts what the commands above tell in the panel, a section a tab:
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/maintenance-checks-dark.png">
+    <img alt="Maintenance on its Checks: the server, the capture program, screen capture, speech recognition, this PC's model, the agent, web search and the code runner Fine; the disk Look at it, with 3.4 GB free and the way to free some; the GPU Fine; and the errors of the last 24 hours Look at it, with a key that opens the Log" src="assets/maintenance-checks-light.png" width="560">
+  </picture>
+</p>
+
 - **Checks**: each part in the order a first start sets it up, the server, the capture program, the screen, speech
   recognition, this PC's model, the agent, web search, the code runner, the disk, the GPU and the errors of the last
   day, with how it stands (**Fine**, **Look at it**, **Needs fixing**, **Switched off**, **Waiting**), what was found
@@ -1134,6 +1141,13 @@ switch and setting, and what the panels are told as it happens. See [API](API.md
   the launcher's: `./sidenote restore <file>` in the server's terminal stops the server for the swap and starts it
   again, and keeps what was there in a before-restore folder. Under the app, quit Sidenote and put the backup's files
   in its data folder.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/maintenance-report-dark.png">
+    <img alt="Maintenance on its Report for 7 days: 78 answers in the period with the follow-ups, cancels and errors; 29 of the 36 answers marked right, 81%, then by engine, by screen or speech and by type; each engine's first token, its median and slowest tenth; the agent's cost; why analyses stopped before their answer; the local model's troubles; and a table of the days with their answers, right of the marked, median response and cost" src="assets/maintenance-report-light.png" width="560">
+  </picture>
+</p>
 
 What it reads it reads as it is shown, and again on its keys: [API](API.md) has the same as `GET /api/v1/check`,
 `/report`, `/log`, `/log/server` and `/models`, `DELETE /api/v1/models/{name}` and `POST /api/v1/backup`.
