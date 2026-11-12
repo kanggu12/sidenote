@@ -19,6 +19,7 @@ import ctypes.util
 import importlib.util
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -57,6 +58,8 @@ def checkout(name: str, script: bool = True, runnable: bool = True, client: bool
     if program:
         shutil.copytree(ROOT / "client", folder / "client", dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("__pycache__"))
+        (folder / "server").mkdir()   # where a checkout keeps its release, which the program says in its hello (code_version)
+        shutil.copy(ROOT / "server" / "version.py", folder / "server" / "version.py")
     elif client:
         (folder / "client" / "capture.py").write_text("", encoding="utf-8")
     if script:
@@ -76,6 +79,29 @@ def ran(folder: Path, limit: float = 0.0) -> str:
             return text
         time.sleep(0.1)
 
+
+print("\n[what it says of itself]")
+# The system in a few words, as Windows tells it by its build (Windows 11 still says release 10) and a server by its kind
+real_version = getattr(sys, "getwindowsversion", None)
+said = []
+try:
+    for build, kind in ((26300, 1), (19045, 1), (20348, 3), (26100, 2)):
+        sys.getwindowsversion = lambda build=build, kind=kind: types.SimpleNamespace(build=build, product_type=kind)
+        said.append(cap.system_name("win32"))
+finally:
+    if real_version is None:
+        del sys.getwindowsversion
+    else:
+        sys.getwindowsversion = real_version
+check("Windows by its build, and a Windows Server as one", said == ["Windows 11", "Windows 10", "Windows Server", "Windows Server"], said)
+import platform as _platform  # noqa: E402   (pc_name reads it when called)
+was_node = _platform.node
+try:
+    _platform.node = lambda: "Studio-Mac.local"
+    mac_name = cap.pc_name()
+finally:
+    _platform.node = was_node
+check("a Mac's name without the network's .local", mac_name == "Studio-Mac", mac_name)
 
 print("\n[what Quit may run]")
 OWN = r"\\wsl.localhost\Ubuntu-22.04\home\me\side note"   # the checkout a program on Windows runs from, as WSL shows it
@@ -318,7 +344,7 @@ try:
         for name, text in STAND_INS.items():
             (stand_in / name).write_text(text, encoding="utf-8")
 
-        def program(folder: Path, hand: bool = True, press: str = ""):
+        def program(folder: Path, hand: bool = True, press: str = "", more: tuple = ()):
             """The capture program of this checkout as the launcher starts it, the checkout handed to it or not, with what the
             stand-in tray presses."""
             run_dir = tempfile.mkdtemp(prefix="sidenote-session-run-")   # its guard's file, away from the user's
@@ -326,7 +352,7 @@ try:
                    "DISPLAY": f":{number}", "XDG_RUNTIME_DIR": run_dir, "SIDENOTE_LANG": "en",
                    "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(stand_in), "STAND_IN_PRESS": press}
             args = [sys.executable, "-u", str(folder / "client" / "capture.py"), "--server", f"ws://127.0.0.1:{PORT}/ingest",
-                    "--no-audio", "--no-auto-update"] + (["--stop-server-on-quit", str(folder)] if hand else [])
+                    "--no-audio", "--no-auto-update", *more] + (["--stop-server-on-quit", str(folder)] if hand else [])
             return subprocess.Popen(args, env=env, cwd=run_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         def ended(proc, limit: float = 30) -> tuple:
@@ -351,9 +377,16 @@ try:
         wait_for(lambda: status()["clients"] == 0, 10)
 
         asked = checkout("asked", program=True)
-        prog = program(asked)
+        prog = program(asked, more=("--started", "terminal"))
         try:
             connected = wait_for(lambda: status()["clients"] == 1, 30)
+            # What it says of itself, for the panel's Capture connection: this PC and its system, its checkout's release, how
+            # the launcher started it, the address it was given, and that its Quit ends the server its start brought up
+            wait_for(lambda: status().get("who"), 5)
+            version = re.search(r'^VERSION = "([0-9.]+)"', (ROOT / "server" / "version.py").read_text(encoding="utf-8"), re.M).group(1)
+            check("its hello says what it is: its PC and system, its release, how it was started, its address, and what its Quit ends",
+                  status().get("who") == {"host": cap.pc_name(), "system": cap.system_name(), "version": version, "started": "terminal",
+                                          "server": f"ws://127.0.0.1:{PORT}/ingest", "ends_server": True}, status().get("who"))
             req = urllib.request.Request(f"http://127.0.0.1:{PORT}/capture/quit", data=b"", method="POST")
             urllib.request.urlopen(req, timeout=10).close()     # ./sidenote capture-stop, as down asks it first
             rc, out = ended(prog)
@@ -385,6 +418,10 @@ try:
         prog = program(plain, hand=False, press="Quit")
         try:
             check("(that program connects too)", wait_for(lambda: status()["clients"] == 1, 5), status())
+            wait_for(lambda: status().get("who"), 5)
+            got = status().get("who") or {}
+            check("...started by hand with no checkout handed: it says so, and that its Quit leaves the server",
+                  got.get("started") == "own" and got.get("ends_server") is False, got)
             rc, out = ended(prog)
         finally:
             if prog.poll() is None:

@@ -31,7 +31,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens-dark.png">
-    <img alt="Four of Sidenote's views. Answer: the panel with a practice problem's worked answer, its key point, the approach, the code and its complexity, beside the capture, local model and agent cards. Heard: the sheet of what was said out loud, each line with its time. Solver settings on its Agent section: which problems go to the agent, what is sent to it, and the types it solves. Capture: the tray menu with Open the panel, the capture's state and the screen and sound switches, beside the desktop shortcut's window at its second step" src="docs/assets/screens-light.png" width="920">
+    <img alt="Four of Sidenote's views. Answer: the panel with a practice problem's worked answer, its key point, the approach, the code and its complexity, beside the capture, local model and agent cards. Heard: the sheet of what was said out loud, each line with its time. Solver settings on its Agent section: which problems go to the agent, what is sent to it, and the types it solves. Capture: the tray menu with Open the panel, the capture's state, the screen and sound switches and Capture connection, beside the desktop shortcut's window at its second step" src="docs/assets/screens-light.png" width="920">
   </picture>
 </p>
 
@@ -94,8 +94,9 @@ The app's icon is by the clock, or in the menu bar on a Mac; quit Sidenote from 
 inside WSL 2: the capture program runs in Python for Windows ([python.org](https://www.python.org/downloads/windows/)).
 On a Mac the speaker's sound comes through a loopback input such as BlackHole ([how](docs/README.md#the-app)), and with
 Docker the first capture asks for **Screen Recording** for your terminal: allow it, then run `./sidenote capture --up`
-again. The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): what solves, the screen, the
-sound, and a sample problem to try.
+again. The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): the capture program's
+connection, what solves, the screen, the sound, and a sample problem to try. **Capture connection** in its gear menu shows
+the capture program and how to start one.
 
 ### The local model (optional)
 

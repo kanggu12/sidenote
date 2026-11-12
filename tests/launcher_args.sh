@@ -431,29 +431,32 @@ wait_started() { for _ in $(seq 1 40); do [ -f "$work/state/running" ] && return
 
 echo "launcher_args ($launcher)"
 want='<--monitor><2><--audio-device><Realtek USB2.0 Audio>'
+# How it was started, which the launcher hands on ahead of the options as typed (the panel's Capture connection shows it):
+# a terminal's start says terminal, the desktop shortcut's starter (launch.pyw, --from-windows) shortcut
+term='<--started><terminal>'
 
 # 1. The windowless start: what pyw gets after the launcher's own --server and --log.
 state; run capture --monitor 2 --audio-device "Realtek USB2.0 Audio"; wait_started
 last_call cmd start; got="$(after --log)"
-[ "$got" = "$want" ] && ok "windowless start passes the options as typed" \
+[ "$got" = "$term$want" ] && ok "windowless start passes the options as typed" \
   || bad "windowless start passes the options as typed" "got $got"
 
 # 2. --console: the same options after --server, and --console itself not passed on.
 state; run capture --console --monitor 2 --audio-device "Realtek USB2.0 Audio"
 last_call cmd -u; got="$(after --server)"
-[ "$got" = "$want" ] && ok "--console passes the options as typed" || bad "--console passes the options as typed" "got $got"
+[ "$got" = "$term$want" ] && ok "--console passes the options as typed" || bad "--console passes the options as typed" "got $got"
 
 # 3. --up (what the desktop shortcut uses), with a Korean device name in parentheses, the way Windows names it.
 state; run capture --up --audio-device "스피커 (Realtek USB2.0 Audio)"; wait_started
 last_call cmd start; got="$(after --log)"
-[ "$got" = "<--audio-device><스피커 (Realtek USB2.0 Audio)>" ] && ok "--up passes the options as typed, without --up" \
+[ "$got" = "$term<--audio-device><스피커 (Realtek USB2.0 Audio)>" ] && ok "--up passes the options as typed, without --up" \
   || bad "--up passes the options as typed, without --up" "got $got"
 
 # 3b. Whoever starts the server stops it: --up that brought the server up hands the program this checkout, whose
 # ./sidenote down the program's Quit runs too, and says how to end both. One that found it running hands nothing (3).
 state server-down up-starts-server; run capture --up --monitor 2; wait_started
 last_call cmd start; got="$(after --log)"; owned="$(wslpath -w "$work/repo")"
-if [ "$got" = "<--monitor><2><--stop-server-on-quit><$owned>" ] && said "Sidenote 끝내기" && said "./sidenote down"; then
+if [ "$got" = "$term<--monitor><2><--stop-server-on-quit><$owned>" ] && said "Sidenote 끝내기" && said "./sidenote down"; then
   ok "--up that brought the server up hands the capture program this checkout, and says Quit Sidenote ends both"
 else bad "--up that brought the server up hands the capture program this checkout, and says Quit Sidenote ends both" \
          "got $got, said: $(grep -aF "끝내기" "$work/out" | tail -1)"; fi
@@ -462,14 +465,14 @@ else bad "--up that brought the server up hands the capture program this checkou
 # brought up: up runs as before, and nothing is handed on, or the session's Quit would end a server someone else started.
 state server-running server-down up-starts-server; run capture --up --monitor 2; wait_started
 last_call cmd start; got="$(after --log)"
-[ "$got" = "<--monitor><2>" ] && ok "a running server that answers late is not claimed: nothing handed on" \
+[ "$got" = "$term<--monitor><2>" ] && ok "a running server that answers late is not claimed: nothing handed on" \
   || bad "a running server that answers late is not claimed: nothing handed on" "got $got"
 # 3d. A down on its way (the tray's Quit Sidenote runs one) holds its lock, and a start with --up waits for it: then it
 # finds the server off and brings it up for its own session, and the down does not end the program it starts.
 mkdir -p "$work/logs"; ( flock "$work/logs/.down.lock" sleep 2 ) & holder=$!; started+=("$holder"); sleep 0.3
 state server-down up-starts-server; t0=$(date +%s%N); run capture --up --monitor 2; wait_started; took=$(( ($(date +%s%N) - t0) / 1000000 ))
 last_call cmd start; got="$(after --log)"; wait "$holder" 2>/dev/null || true
-if [ "$took" -ge 1500 ] && [ "$got" = "<--monitor><2><--stop-server-on-quit><$owned>" ]; then
+if [ "$took" -ge 1500 ] && [ "$got" = "$term<--monitor><2><--stop-server-on-quit><$owned>" ]; then
   ok "a start with --up waits for a down on its way, then brings the server up for its own session"
 else bad "a start with --up waits for a down on its way, then brings the server up for its own session" "took ${took} ms, got $got"; fi
 
@@ -535,7 +538,7 @@ else bad "install installs the packages when only the tray one is missing" "$(gr
 #     printed, rather than windowless, where it could be gone before the start was seen.
 state; run capture --once
 last_call cmd -u; got="$(after --server)"
-[ "$got" = "<--once>" ] && ok "--once runs in this terminal" || bad "--once runs in this terminal" "got ${got:-no console call}"
+[ "$got" = "$term<--once>" ] && ok "--once runs in this terminal" || bad "--once runs in this terminal" "got ${got:-no console call}"
 
 # 15. --no-tray, windowless: neither a window nor an icon, so the launcher says how it is ended.
 state; run capture --no-tray; wait_started
@@ -625,8 +628,8 @@ else bad "launch.pyw shows the last lines, cleaned" "rc $(cat "$work/rc"), text:
 # 21. Capture options after the `--` reach capture.py as typed, a Korean device name with spaces and parentheses whole.
 state; run_launch -- --audio-device "스피커 (Realtek USB2.0 Audio)" --monitor 2; wait_started
 last_call cmd start; got="$(after --log)"
-[ "$got" = "<--audio-device><스피커 (Realtek USB2.0 Audio)><--monitor><2>" ] && ok "launch.pyw passes capture options on as typed" \
-  || bad "launch.pyw passes capture options on as typed" "got ${got:-no start}, $(tail -1 "$work/out")"
+[ "$got" = "<--started><shortcut><--audio-device><스피커 (Realtek USB2.0 Audio)><--monitor><2>" ] && ok "launch.pyw passes capture options on as typed, the start said to be the shortcut's" \
+  || bad "launch.pyw passes capture options on as typed, the start said to be the shortcut's" "got ${got:-no start}, $(tail -1 "$work/out")"
 
 # 22. No wsl.exe to run (WSL not installed): a warning box that names it.
 state; WSL_BIN="$work/nowhere/wsl.exe" run_launch
@@ -1296,7 +1299,7 @@ state; EXTRA_ENV="$offwin" run capture --up --from-windows --monitor 2; handed="
 handed_calls="$(calls_of cmd | wc -l)$(calls_of ps | wc -l)"
 start_line="$(grep -a $'^SIDENOTE-START\t' <<<"$handed" | tail -1)"
 state running; EXTRA_ENV="$offwin" run capture --up --from-windows; open_line="$(grep -a $'^SIDENOTE-OPEN\t' "$work/out" | tail -1)"
-if [ "$handed_rc" = 0 ] && [[ $start_line == *$'\t--server\tws://127.0.0.1:8777/ingest\t--log\t'*$'\t--monitor\t2' ]] \
+if [ "$handed_rc" = 0 ] && [[ $start_line == *$'\t--server\tws://127.0.0.1:8777/ingest\t--log\t'*$'\t--started\tshortcut\t--monitor\t2' ]] \
    && [ "$handed_calls" = 00 ] && [ "$open_line" = $'SIDENOTE-OPEN\thttp://127.0.0.1:8777' ]; then
   ok "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)"
 else bad "interop off, from the shortcut: the server up and the capture's start handed to Windows (or the panel, one running)" \

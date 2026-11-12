@@ -103,6 +103,26 @@ check("...and does not write 'the device did not open' into caps", sender.caps.g
 sender.connected = False
 check("the switches cannot be flipped with no server to keep them",
       not items["화면 캡처"].is_enabled() and not items["소리 캡처"].is_enabled())
+# Capture connection: the panel's sheet of that name (?open=capture), and with the server off what Open the panel says instead
+opened_urls, told = [], []
+real_up, real_browser = cap.server_up, sys.modules.get("webbrowser")
+sys.modules["webbrowser"] = types.SimpleNamespace(open=lambda url: opened_urls.append(url))
+icon.notify = lambda text, title=None: told.append(text)
+try:
+    cap.server_up = lambda url, timeout=1.5: True
+    items["캡처 연결"].action(icon, None)
+    cap.server_up = lambda url, timeout=1.5: False
+    items["캡처 연결"].action(icon, None)
+finally:
+    cap.server_up = real_up
+    if real_browser is not None:
+        sys.modules["webbrowser"] = real_browser
+    del icon.notify
+check("the tray's Capture connection opens the panel's sheet of that name, between the switches and Restart",
+      opened_urls[:1] == ["http://127.0.0.1:8777/?open=capture"]
+      and [i.text for i in icon.menu.items].index("캡처 연결") == [i.text for i in icon.menu.items].index("캡처 다시 시작") - 1, str(opened_urls))
+check("...and with the server off it says so, as Open the panel does, and opens nothing",
+      opened_urls[1:] == [] and len(told) == 1 and "./sidenote up" in told[0], str((opened_urls, told)))
 # The drawn right-click menu (client/capture.py, TRAY_MENU): what it is given, and Windows' own menu behind it
 compile(cap.TRAY_MENU, "TRAY_MENU", "exec")
 rows = cap.tray_rows(icon.menu)

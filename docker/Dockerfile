@@ -84,6 +84,7 @@ WORKDIR /app
 ENV HOME=/root \
     SIDENOTE_HOST=0.0.0.0 \
     SIDENOTE_PORT=8777 \
+    SIDENOTE_WHERE=container \
     HF_HOME=/data/hf \
     SIDENOTE_LOG_DIR=/data/logs
 EXPOSE 8777

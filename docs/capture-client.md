@@ -6,8 +6,9 @@ windows, so that a crop of the problem stops at its window's edge. It connects t
 and does nothing else.
 
 The app starts it by itself. On a PC that runs the server with Docker (in WSL, on Linux or on a Mac),
-`./sidenote install` sets it up and `./sidenote capture` starts it. To run it on its own, for a server in Kubernetes or
-on another machine whose port is forwarded to this PC:
+`./sidenote install` sets it up and `./sidenote capture` starts it. The panel's **Capture connection** (the gear menu)
+shows which program is connected and gives the way to start one for where the server runs, with this server's port in
+it. To run it on its own, for a server in Kubernetes or on another machine whose port is forwarded to this PC:
 
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
@@ -46,15 +47,22 @@ has no login of its own, so keep the server off public networks.
 
 ## The tray icon
 
-The icon in the notification area has **Open the panel**, **Screen capture**, **Sound capture**, **Restart capture**
-and **Quit** (**Quit Sidenote** after a start that brought the server up, which ends that server too), in Korean with
+The icon in the notification area has **Open the panel**, **Screen capture**, **Sound capture**, **Capture connection**
+(the panel's sheet of that name: the program as the server sees it), **Restart capture** and **Quit** (**Quit Sidenote**
+after a start that brought the server up, which ends that server too), in Korean with
 `SIDENOTE_LANG=ko`
 ([section 18 of the user guide](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#18-panel-labels) lists
 each label). The line under **Open the panel** says what is being sent. On Linux the icon appears where the desktop
 shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu.
 
-<img alt="The tray menu under sidenote capture v0.6.0: Open the panel; the state, Capturing: Screen · Sound; the Screen
-  capture and Sound capture switches, both on; Restart capture; Quit" src="assets/tray-menu.png" width="272">
+<img alt="The tray menu under sidenote capture v0.8.0: Open the panel; the state, Capturing: Screen · Sound; the Screen
+  capture and Sound capture switches, both on; Capture connection; Restart capture; Quit" src="assets/tray-menu.png" width="272">
+
+As it connects, the program says what it is: its PC's name and system (such as `Windows 11` or `Linux (X11)`), its
+release, how it was started (the app, the desktop shortcut, a terminal's `./sidenote capture`, or by hand), the address
+it was given, and whether its **Quit** ends the server too. The panel's **Capture connection** shows them,
+`./sidenote status` names the PC, the system and the release, and the notice when another program takes over names its
+PC. Nothing else of the PC is sent.
 
 The program sends each frame as it is; the server covers the faces on it before anything reads it
 ([Security and privacy](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#14-security-and-privacy)).

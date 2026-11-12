@@ -24,7 +24,8 @@ Connect the capture program
     python3 capture.py --server ws://127.0.0.1:8777/ingest
 
   A port-forward ends when the pod behind it is replaced (an upgrade, a restart). Run it again; the
-  capture program and the panel reconnect by themselves.
+  capture program and the panel reconnect by themselves. Capture connection, in the panel's gear menu,
+  gives these commands with this release's names and shows the program once it connects.
 {{- if .Values.llm.enabled }}
 
 The local model

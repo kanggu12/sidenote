@@ -6,6 +6,26 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- **Capture connection**, in the panel's gear menu: the capture program as the server knows it, connected or not, with
+  its PC and system, its release against the server's, what started it and what its Quit ends, its address and since
+  when it is connected; **Restart** and **Quit the program**; the settings it carries out; and, with none connected, the
+  wait for one and the way to start one for where the server runs (its own PC, another PC, a cluster's port-forward with
+  the chart's names, the app), each command with this panel's port and a **Copy** key. The capture card's foot names the
+  program and opens it (**Manage**, **Connect**), as do the alert bar, the welcome and the tray's new **Capture
+  connection** item.
+- The setup guide starts with the capture program's connection, and its **Screen** step says that comes first while
+  none is connected.
+- The capture program says what it is as it connects: its PC's name and system, its release, how it was started, the
+  address it was given, and whether its Quit ends the server. `./sidenote status` names the PC, the system and the
+  release, and the notice when a program from another PC takes over names that PC.
+
+### Changed
+
+- With no capture program connected, a server in a cluster no longer tells you to run `./sidenote capture`: the panel
+  gives the port-forward and the program's start instead.
+
 ## [0.7.0] - 2026-11-12
 
 ### Changed

@@ -333,6 +333,98 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
               from_panel is not None and {k: v for k, v in from_panel.items() if k != "type"}
               == {k: v for k, v in c.get("/api/v1/screen").json().items() if k != "ok"}, from_panel)
 
+        print("\n[the capture program's connection]")
+        # What a capture program says of itself in its hello (client/capture.py, who_am_i), as the panel's Capture connection
+        # shows it; the panel's Restart and Quit, sent to the program; and where the server runs, for the ways to start one
+
+        def told(sock, kind, limit=12):
+            """The first message of `kind` the stand-in capture program is sent (the control message comes first)."""
+            for _ in range(limit):
+                m = json.loads(sock.receive_text())
+                if m.get("type") == kind:
+                    return m
+            return None
+        who = {"host": "DESK\u202eTOP\x1b[31m", "system": "Windows 11", "version": "0.8.0", "started": "shortcut",
+               "server": "ws://127.0.0.1:8777/ingest", "ends_server": True}
+        with c.websocket_connect("ws://127.0.0.1:8777/ingest", headers=ORIGIN) as cap:
+            n, at = len(p.msgs), time.time()
+            cap.send_text(json.dumps({"type": "hello", "info": "capture/win32", "run": "a1b2c3d4e5", "who": who, "screen": True,
+                                      "audio": False, "no_audio": True, "monitor": 1}))
+            got = p.wait(lambda m: m.get("type") == "capture" and m.get("who"), after=n)
+            check("a hello's who reaches the panels, cleaned: no terminal codes, no marks that turn text, the rest as it came",
+                  got is not None and got["who"] == {**who, "host": "DESKTOP[31m"}, got and got.get("who"))
+            check("...with when it connected, on the server's clock", got is not None and abs(got["since"] - at) < 5, got and got.get("since"))
+            check("...and the API's status says the same", c.get("/api/v1/status").json()["capture"]["who"] == {**who, "host": "DESKTOP[31m"})
+            with c.websocket_connect("ws://127.0.0.1:8777/ingest", headers=ORIGIN) as once:
+                once.send_text(json.dumps({"type": "hello", "info": "capture/win32", "once": True, "who": {**who, "host": "OTHER"}}))
+                time.sleep(0.3)
+                check("a --once run beside it leaves the card to the program that runs", A.STATE.capture_who.get("host") == "DESKTOP[31m",
+                      A.STATE.capture_who)
+            n = len(p.msgs)
+            ws.send_text(json.dumps({"type": "capture_restart"}))
+            check("the panel's Restart reaches the program, said as the panel's", told(cap, "restart") == {"type": "restart", "reason": "panel"})
+            check("...and the panel is told it is on its way", p.wait(lambda m: m.get("type") == "notice"
+                                                                  and m.get("text") == t("Restarting the capture program"), after=n) is not None)
+            r = c.post("/api/v1/commands", json={"type": "capture_quit"})
+            check("the panel's Quit, as a command of the API too, reaches the program as a quit of the panel's",
+                  r.status_code == 200 and told(cap, "quit") == {"type": "quit", "reason": "panel"}, r.status_code)
+        got = p.wait(lambda m: m.get("type") == "capture" and m.get("clients") == 0, after=n)
+        check("gone: what it said of itself goes with it", got is not None and got.get("who") is None and got.get("since") is None
+              and A.STATE.capture_who == {}, got)
+        n = len(p.msgs)
+        ws.send_text(json.dumps({"type": "capture_quit"}))
+        got = p.wait(lambda m: m.get("type") == "notice", after=n)
+        check("with none connected the panel's Quit says so, as a caution", got is not None and got.get("level") == "warn"
+              and got.get("text") == t("No capture program is connected"), got)
+        # What is not shown as it came: a release in another script's digits, and every mark that turns, hides or breaks text
+        odd = A.who_of({"host": "PC\u061cONE\u2028\u180e\U000e0041X", "system": "Windows\u2029 11", "version": "\uff10.\uff18.\uff10"})
+        check("a release in another script's digits is none, and no control, format or separator mark is kept",
+              odd["version"] == "" and odd["host"] == "PCONEX" and odd["system"] == "Windows 11", odd)
+        # A --once run is never restarted: it sends its one screen and ends, and restarted it would send another
+        with c.websocket_connect("ws://127.0.0.1:8777/ingest", headers=ORIGIN) as once:
+            once.send_text(json.dumps({"type": "hello", "info": "capture/win32", "once": True}))
+            time.sleep(0.3)
+            n = len(p.msgs)
+            ws.send_text(json.dumps({"type": "capture_restart"}))
+            got = p.wait(lambda m: m.get("type") == "notice", after=n)
+            check("the panel's Restart with only a --once run connected: nothing to restart, and the panel is told so",
+                  got is not None and got.get("text") == t("No capture program is connected"), got)
+        # A newer program from another PC takes over: the notice and the quit name its PC, where "capture/win32" named both alike
+        with c.websocket_connect("ws://127.0.0.1:8777/ingest", headers=ORIGIN) as first:
+            first.send_text(json.dumps({"type": "hello", "info": "capture/win32", "run": "aaaa1111bb", "who": {**who, "host": "PC-ONE"}}))
+            time.sleep(0.3)
+            n = len(p.msgs)
+            with c.websocket_connect("ws://127.0.0.1:8777/ingest", headers=ORIGIN) as second:
+                second.send_text(json.dumps({"type": "hello", "info": "capture/win32", "run": "cccc2222dd",
+                                             "who": {**who, "host": "PC-TWO", "system": "macOS 15.1"}}))
+                quit_msg = told(first, "quit")
+                note = p.wait(lambda m: m.get("type") == "notice" and "PC-TWO" in (m.get("text") or ""), after=n)
+                check("a program from another PC takes over: the quit and the notice name its PC and system",
+                      quit_msg == {"type": "quit", "reason": "taken_over", "by": "PC-TWO, macOS 15.1"} and note is not None, [quit_msg, note])
+                check("...and the card is the new one's", A.STATE.capture_who.get("host") == "PC-TWO")
+        # where the server runs: the image says container, the chart cluster with its names (a name of another shape gives none)
+        was = {k: os.environ.get(k) for k in ("SIDENOTE_WHERE", "SIDENOTE_K8S_NAMESPACE", "SIDENOTE_K8S_SERVICE", "SIDENOTE_K8S_SERVICE_PORT")}
+        try:
+            for k in was:
+                os.environ.pop(k, None)
+            st = c.get("/api/v1/status").json()["status"]
+            check("a server started by hand runs on the host, with no port-forward", st.get("where") == "host" and st.get("forward") is None, st.get("where"))
+            os.environ.update(SIDENOTE_WHERE="cluster", SIDENOTE_K8S_NAMESPACE="team-a", SIDENOTE_K8S_SERVICE="notes-sidenote-server",
+                              SIDENOTE_K8S_SERVICE_PORT="8777")
+            st = c.get("/api/v1/status").json()["status"]
+            check("the chart's server is in a cluster, and says its port-forward's names",
+                  st.get("where") == "cluster" and st.get("forward") == {"namespace": "team-a", "service": "notes-sidenote-server", "port": 8777}, st)
+            os.environ["SIDENOTE_K8S_SERVICE"] = "svc; rm -rf /"
+            check("...a name not of Kubernetes' shape gives none", c.get("/api/v1/status").json()["status"].get("forward") is None)
+            os.environ["SIDENOTE_WHERE"] = "container"
+            check("the image's server runs in a container", c.get("/api/v1/status").json()["status"].get("where") == "container")
+        finally:
+            for k, v in was.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
         print("\n[an answer, through the API]")
         SETTINGS.values.update(local_llm=True, agent_mode="hard", agent_confirm=False, history_keep=True)
         A.STATE.local, A.STATE.agent = {"ok": True}, {"ok": True}

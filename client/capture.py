@@ -98,6 +98,8 @@ KO = {
     "No tray icon ({error}). To install it: ./sidenote setup-capture": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-capture",
     "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up을 실행하세요.",
     "Quit from the tray.": "트레이에서 끝냈습니다.",
+    "Quit from the panel": "패널에서 끝냈습니다",
+    "Restarting from the panel": "패널에서 다시 시작합니다",
     "Stopping the server this start brought up too (./sidenote down)": "이번 시작이 켠 서버도 멈춥니다 (./sidenote down)",
     "Could not stop the server: {error}. ./sidenote down stops it": "서버를 멈추지 못했습니다: {error}. ./sidenote down으로 멈추세요",
     "Restarting from the tray.": "트레이에서 다시 시작합니다.",
@@ -125,6 +127,7 @@ KO = {
     "Open the panel": "패널 열기",
     "Screen capture": "화면 캡처",
     "Sound capture": "소리 캡처",
+    "Capture connection": "캡처 연결",
     "Restart capture": "캡처 다시 시작",
     "Quit": "끝내기",
     "Quit Sidenote": "Sidenote 끝내기",
@@ -1275,6 +1278,7 @@ class Sender:
         self.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1,
                       "skip_windows": skip_words(SKIP_WINDOWS)}
         self.caps: dict = {"screen": True}
+        self.who: dict = {}       # what the hello says of this program (who_am_i): none for a stand-in sender
         self._down = False        # the server is unreachable: said once, not on every retry
         self._last_try = 0.0
         self.told = threading.Event()   # the server's switches arrived (sent on every connect)
@@ -1314,7 +1318,11 @@ class Sender:
                 # platform rather than assuming one: the server takes any program that speaks this
                 # protocol, and the Windows parts of this one (the window list, the display metrics,
                 # the notification icon) are extras it does without elsewhere.
-                ws.send(json.dumps({"type": "hello", "info": f"capture/{sys.platform}", "run": RUN, **self.caps}))
+                # `who`: the PC, its system, this release, how it was started and what its Quit ends (who_am_i), for
+                # the panel's Capture connection. Said in every hello, a reconnect's too: the server keeps it with the
+                # connection, not with the program
+                ws.send(json.dumps({"type": "hello", "info": f"capture/{sys.platform}", "run": RUN,
+                                    **({"who": self.who} if self.who else {}), **self.caps}))
             except Exception:
                 ws.close()
                 raise
@@ -1371,6 +1379,8 @@ class Sender:
                 by = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", str(msg.get("by") or "?"))[:80]   # its words, no terminal codes
                 print("[control] " + t("Another capture program now feeds this server ({by}): this one stops", by=by))
                 self.taken_over = True
+            elif msg.get("reason") == "panel":     # Quit on the panel's Capture connection
+                print("[control] " + t("Quit from the panel"))
             else:
                 print("[control] " + t("The server asked this program to quit (./sidenote capture-stop)"))
             self.quit_asked = True
@@ -1381,8 +1391,9 @@ class Sender:
             if msg.get("quiet"):           # a deploy with new code for this program: at a quiet moment (Updater)
                 print("[control] " + t("New code was deployed: restarting at a quiet moment (./sidenote up)"))
                 self.restart_pending = True
-            else:                          # ./sidenote capture-restart: the tray's Restart, asked from WSL
-                print("[control] " + t("The server asked this program to restart (./sidenote capture-restart)"))
+            else:   # the panel's Capture connection, or ./sidenote capture-restart: the tray's Restart, asked from elsewhere
+                print("[control] " + (t("Restarting from the panel") if msg.get("reason") == "panel"
+                                      else t("The server asked this program to restart (./sidenote capture-restart)")))
                 self.restart_asked = self.quit_asked = True
             return
         if msg.get("type") != "control":
@@ -2126,6 +2137,54 @@ def panel_url(server: str) -> str:
     return re.sub(r"/ingest/?$", "/", url) or "http://127.0.0.1:8777/"
 
 
+# The panel opens its Capture connection sheet at this address (panel/app.js, openCapture): the tray's item of that name
+CONNECTION_QUERY = "?open=capture"
+
+
+def pc_name() -> str:
+    """This PC's name, as the system names it on its network: what tells one capture PC from another on the panel's
+    Capture connection and in the notice when another one takes over. "" when the system does not say."""
+    import platform
+    name = platform.node() or os.environ.get("COMPUTERNAME", "")
+    # a Mac adds the network's ".local" to its name: the name alone, as its own Sharing settings show it
+    return re.sub(r"\.local$", "", name)[:64]
+
+
+def system_name(platform_name: str = sys.platform) -> str:
+    """The system this program runs on, in a few words: "Windows 11", "macOS 15.1", "Linux (X11)". Windows 11 still says
+    release 10, so it is told by its build (22000 and later), as Windows itself does."""
+    import platform
+    if platform_name == "win32":
+        try:
+            version = sys.getwindowsversion()
+            build, server = version.build, version.product_type != 1   # 1: a workstation; 2 and 3: a server
+        except Exception:
+            build, server = 0, False
+        if server:   # Windows Server says release 10 too, and its builds are not the desktop's names
+            return "Windows Server"
+        return "Windows 11" if build >= 22000 else "Windows 10" if build >= 10240 else "Windows"
+    if platform_name == "darwin":
+        version = platform.mac_ver()[0]
+        return f"macOS {version}" if version else "macOS"
+    if platform_name.startswith("linux"):
+        session = os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
+        # the session decides what can be read (X11 lists its windows, Wayland lists none): said beside the name
+        return {"x11": "Linux (X11)", "wayland": "Linux (Wayland)"}.get(session, "Linux")
+    return platform.system() or platform_name
+
+
+def who_am_i(args) -> dict:
+    """What this program says of itself in its hello, for the panel's Capture connection (server/app.py, capture_status):
+    the PC and its system, this code's release, how it was started (the app, the desktop shortcut, a terminal's
+    ./sidenote capture, or by hand), the server address it was given, and whether its Quit ends that server too (the
+    session it brought up, server_down_command, or the app it belongs to)."""
+    supervised = os.environ.get("SIDENOTE_SUPERVISED") == "1"
+    return {"host": pc_name(), "system": system_name(), "version": VERSION,
+            "started": "app" if supervised else (getattr(args, "started", "") or "own"),
+            "server": args.server,
+            "ends_server": supervised or bool(server_down_command(getattr(args, "stop_server_on_quit", "")))}
+
+
 # ---------- staying on the code that is deployed ----------
 def code_mark(path: str) -> str:
     """This program's code, as the first 12 hex digits of its file's sha256 ("" when it cannot be read). Sent in the
@@ -2277,7 +2336,7 @@ OK, LIT, BAD, TRACK_ON, TRACK_OFF, KNOB = "#2eb67d", "#4cc08e", "#ff6b6b", "#1a8
 WARN = "#ffb066"                                            # the right column's warning in the dark Classic (Skipped window)
 # The marks a row can wear, the panel's own: the screen and the sound as on its capture card, the turn as on its Reanalyze key.
 # Each row names its mark ("mark"), and the state's row the colour of its pill ("tone"): the words are in either language and are never read
-MARKS = ("open", "screen", "sound", "restart", "quit")
+MARKS = ("open", "screen", "sound", "connect", "restart", "quit")
 user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
 kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
@@ -2407,6 +2466,16 @@ def icon(d, kind, x, mid, colour, under):
     elif kind == "restart":                                 # the turn of Reanalyze
         d.arc([at(4, 4), at(20, 20)], 0, 315, fill=colour, width=w)
         line((20, 4), (20, 9), (15, 9))
+    elif kind == "connect":                                 # a plug, as on the panel's Capture connection (lucide's plug)
+        line((9, 2.5), (9, 8))
+        line((15, 2.5), (15, 8))
+        line((6, 8), (18, 8))
+        line((6, 8), (6, 13))
+        line((18, 8), (18, 13))
+        d.arc([at(6, 9), at(14, 17)], 90, 180, fill=colour, width=w)    # the body's two round corners, radius 4
+        d.arc([at(10, 9), at(18, 17)], 0, 90, fill=colour, width=w)
+        line((10, 17), (14, 17))
+        line((12, 17), (12, 21.5))                          # the lead
     elif kind == "quit":                                    # the power mark
         d.arc([at(3, 4), at(21, 22)], 315, 225, fill=colour, width=w)
         line((12, 2.5), (12, 11))
@@ -2823,6 +2892,15 @@ def start_tray(sender, stop: threading.Event, args):
                 pass
         webbrowser.open(url)
 
+    def open_connection(icon=None, _item=None):
+        """The panel's Capture connection (panel/app.js, openCapture): this program, the PC it runs on, the server it sends to
+        and how to start, restart or end it, as the server sees them. As Open the panel when the server is off."""
+        import webbrowser
+        if not server_up(url):
+            open_panel(icon)   # says why there is no panel, and opens nothing more
+            return
+        webbrowser.open(url + CONNECTION_QUERY)
+
     def quit_now(icon, _item=None):
         print("[tray] " + t("Quit from the tray."))
         sender.quit_by_person = True   # read at the end of main: a server this start brought up goes with it
@@ -2892,6 +2970,8 @@ def start_tray(sender, stop: threading.Event, args):
                                 checked=lambda _i: bool(sender.wants.get("audio")) and not args.no_audio,
                                 enabled=lambda _i: sender.connected and not args.no_audio), "sound"),
         pystray.Menu.SEPARATOR,
+        # this program as the server sees it, and the way to start, restart or end it: the panel's sheet of that name
+        marked(pystray.MenuItem(t("Capture connection"), open_connection), "connect"),
         marked(pystray.MenuItem(t("Restart capture"), restart), "restart"),
         # under the desktop app quitting the capture program ends the whole app (desktop/app.py), and after a start that
         # brought the server up it ends that server too (--stop-server-on-quit): both say so
@@ -3219,6 +3299,9 @@ def main() -> None:
                          "just don't jump a whole screen height at once. Also switched in the panel's settings.")
     ap.add_argument("--no-audio", action="store_true", help="capture the screen only, no sound")
     ap.add_argument("--resumed", action="store_true", help=argparse.SUPPRESS)   # this program restarting itself
+    # How it was started, which the launcher says (./sidenote: shortcut from the desktop shortcut's starter, terminal from a
+    # terminal's ./sidenote capture) and the panel's Capture connection shows; by hand it says nothing (who_am_i: own)
+    ap.add_argument("--started", choices=("shortcut", "terminal"), default="", help=argparse.SUPPRESS)
     ap.add_argument("--no-tray", action="store_true", help="do not put an icon in the notification area")
     ap.add_argument("--stop-server-on-quit", default="", metavar="CHECKOUT",
                     help="the Sidenote checkout whose ./sidenote down Quit in the tray runs too: the launcher passes it when "
@@ -3283,6 +3366,7 @@ def main() -> None:
         sender.caps["flags"] = flags
     # which code this is, sent with every hello: ./sidenote up asks for a restart when it deployed other code
     sender.caps["code"] = code_mark(os.path.abspath(__file__))
+    sender.who = who_am_i(args)   # and what it is, for the panel's Capture connection
     # Connect and take the panel's switches before grabbing anything: with the screen switched off
     # nothing is captured at all, not even a first frame. No server yet: start as switched on.
     sender.keepalive()
