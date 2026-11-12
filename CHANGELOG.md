@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-12
+
 ### Fixed
 
 - Two capture programs could feed one server at once when the PC's own guard could not see the second (one on another
@@ -665,7 +667,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/kanggu12/sidenote/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/kanggu12/sidenote/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/kanggu12/sidenote/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kanggu12/sidenote/compare/v0.5.2...v0.6.0
