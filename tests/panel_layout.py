@@ -308,7 +308,13 @@ AUDIT = r"""
       const laidOut = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';   // not shown(): a card still fading in has its place all the same
       const items = [...root.querySelectorAll(sel)].filter(laidOut).map((e) => ({ e, r: e.getBoundingClientRect() })).sort((a, b) => a.r.top - b.r.top);
       const between = [];
-      for (let i = 1; i < items.length; i++) if (items[i].r.top >= items[i - 1].r.bottom - 1 && items[i].r.left < items[i - 1].r.right) between.push({ d: items[i].r.top - items[i - 1].r.bottom, e: items[i].e });
+      // Each against the nearest one above it in its own column (one it overlaps sideways): in two columns side by side the
+      // one just before it by its top can be the other column's, and their distance is no gap of either (the rail at 2560)
+      for (let i = 1; i < items.length; i++) {
+        let j = i - 1;
+        while (j >= 0 && !(items[i].r.left < items[j].r.right && items[i].r.right > items[j].r.left)) j--;
+        if (j >= 0 && items[i].r.top >= items[j].r.bottom - 1) between.push({ d: items[i].r.top - items[j].r.bottom, e: items[i].e });
+      }
       if (between.length < 2) continue;
       const ds = between.map((b) => b.d), low = Math.min(...ds), high = Math.max(...ds);
       if (high - low > (most || 1)) note('gaps', between[ds.indexOf(high)].e, `${label}: ${ds.map(ROUND).join(', ')}`);
