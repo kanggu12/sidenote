@@ -98,6 +98,8 @@ KO = {
     "No tray icon ({error}). To install it: ./sidenote setup-capture": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-capture",
     "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up을 실행하세요.",
     "Quit from the tray.": "트레이에서 끝냈습니다.",
+    "Stopping the server this start brought up too (./sidenote down)": "이번 시작이 켠 서버도 멈춥니다 (./sidenote down)",
+    "Could not stop the server: {error}. ./sidenote down stops it": "서버를 멈추지 못했습니다: {error}. ./sidenote down으로 멈추세요",
     "Restarting from the tray.": "트레이에서 다시 시작합니다.",
     "Sidenote was opened again: opening the panel": "Sidenote를 다시 열어 패널을 엽니다",
     "Could not show the tray icon ({error})": "트레이 아이콘을 띄우지 못했습니다 ({error})",
@@ -1280,6 +1282,7 @@ class Sender:
         # ends itself and takes its tray icon with it (a killed program leaves the icon behind).
         self.quit_asked = False
         self.taken_over = False      # that quit was for another capture program, which feeds the server now
+        self.quit_by_person = False  # Quit pressed in the tray: the one end that also ends a server this start brought up
         self.restart_asked = False   # the tray's Restart, ./sidenote capture-restart, or a deploy's (Updater)
         self.restart_pending = False # a deploy asked for one at a quiet moment (Updater)
         self.last_frame_ts = 0.0     # when a screen last went out: a restart waits for the screen to rest
@@ -2822,6 +2825,7 @@ def start_tray(sender, stop: threading.Event, args):
 
     def quit_now(icon, _item=None):
         print("[tray] " + t("Quit from the tray."))
+        sender.quit_by_person = True   # read at the end of main: a server this start brought up goes with it
         stop.set()
         icon.stop()
 
@@ -2889,8 +2893,10 @@ def start_tray(sender, stop: threading.Event, args):
                                 enabled=lambda _i: sender.connected and not args.no_audio), "sound"),
         pystray.Menu.SEPARATOR,
         marked(pystray.MenuItem(t("Restart capture"), restart), "restart"),
-        # under the desktop app quitting the capture program ends the whole app (desktop/app.py), so it says so
-        marked(pystray.MenuItem(t("Quit Sidenote") if os.environ.get("SIDENOTE_SUPERVISED") == "1" else t("Quit"), quit_now),
+        # under the desktop app quitting the capture program ends the whole app (desktop/app.py), and after a start that
+        # brought the server up it ends that server too (--stop-server-on-quit): both say so
+        marked(pystray.MenuItem(t("Quit Sidenote") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
+                                or server_down_command(getattr(args, "stop_server_on_quit", "")) else t("Quit"), quit_now),
                "quit"),
     )
     failed = threading.Event()
@@ -2954,6 +2960,90 @@ def start_tray(sender, stop: threading.Event, args):
 
 # The exit code that asks the desktop app to start this program again (desktop/app.py, CAPTURE_RESTART).
 SUPERVISED_RESTART = 75
+
+# ---------- whoever starts the server stops it ----------
+# The desktop shortcut starts a session: the server when it is off (./sidenote capture --up), then this program. The
+# server is a service of its own, which no client starts or stops; the launcher does, and it hands this program
+# --stop-server-on-quit only when it brought the server up for this start. The person's Quit from the tray then ends
+# the session as it began, through the launcher's own ./sidenote down in that checkout. A server started on its own
+# (./sidenote up) is left running, as is one on another PC or a cluster. Before, Quit ended this program alone, and the
+# server the shortcut had started stayed up with its model on the GPU until someone typed ./sidenote down.
+# A checkout's WSL path as Windows shows it: \\wsl.localhost\<distro>\<path> (\\wsl$\ on older Windows). The distro's
+# name is WSL's own kind of name; the path keeps out what no Windows path holds, and control characters.
+WSL_CHECKOUT = re.compile(r'\\\\wsl(?:\.localhost|\$)\\([A-Za-z0-9._-]{1,64})((?:\\[^\\\x00-\x1f"<>|?*]+)+)\\?')
+
+
+# What runs in WSL on Quit, as client/launch.pyw runs the launcher: a login shell (bash -l reads ~/.profile, where a
+# SIDENOTE_PORT, a DOCKER_HOST or the folder of docker may be set), the checkout as its argument and never in the script
+QUIT_SCRIPT = 'cd -- "$1" || exit; exec ./sidenote down'
+
+
+def own_checkout() -> str:
+    """The checkout this program runs from: the folder above client/, where its launcher is."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def server_down_command(checkout: str, platform: str = sys.platform, own: str | None = None) -> list | None:
+    """The command that stops the server a start brought up: ./sidenote down in this program's own checkout, and nothing
+    else. None for any other value. The value comes from the launcher's command line, and the desktop shortcut's starter
+    passes the launcher's lines on, which a forged line could fill: so it must name the checkout this program runs from
+    (`own`, as WSL shows it on Windows), and what Quit can run is that checkout's ./sidenote down, whatever a line says."""
+    if not checkout or any(ord(c) < 32 for c in checkout):
+        return None
+    own = own_checkout() if own is None else own
+    if platform == "win32":   # this checkout in WSL: wsl.exe runs its launcher there, in a login shell
+        m, mine = WSL_CHECKOUT.fullmatch(checkout), WSL_CHECKOUT.fullmatch(own)
+        # the same checkout: the distro's name in any case (WSL takes it so), the path as it is (Linux tells cases apart);
+        # wsl$ and wsl.localhost are one share, and a closing backslash names the same folder
+        if not m or not mine or m.group(1).lower() != mine.group(1).lower() or m.group(2) != mine.group(2):
+            return None
+        # made from where this program runs: the value only says yes, for this checkout
+        return ["wsl.exe", "-d", mine.group(1), "--exec", "bash", "-lc", QUIT_SCRIPT, "sidenote-quit",
+                mine.group(2).replace("\\", "/")]
+    if not os.path.isabs(checkout) or os.path.realpath(checkout) != os.path.realpath(own):
+        return None
+    script = os.path.join(own, "sidenote")   # made from where this program runs: the value only says yes, for this checkout
+    # a Sidenote checkout: its launcher, runnable, beside the capture program it starts
+    if not (os.path.isfile(script) and os.access(script, os.X_OK)
+            and os.path.isfile(os.path.join(own, "client", "capture.py"))):
+        return None
+    return [script, "down"]
+
+
+def session_ends_server(sender) -> bool:
+    """Whether this end stops the server too: the person's Quit from the tray, after a start that brought the server up.
+    Never for an end this program was asked for (./sidenote capture-stop and down ask through the server, another
+    capture program took over), nor for a restart of its own, nor under the desktop app, which ends its own server."""
+    return (getattr(sender, "quit_by_person", False) and not getattr(sender, "restart_asked", False)
+            and not getattr(sender, "taken_over", False) and os.environ.get("SIDENOTE_SUPERVISED") != "1")
+
+
+def stop_server(command: list | None) -> bool:
+    """Starts the command that stops the server, on its own: this program ends at once after it, and the launcher's
+    down asks capture programs to end first, which this one has. No window on Windows, no terminal elsewhere. True when
+    it started; when it could not, the log says how to stop the server instead."""
+    if not command:
+        return False
+    import subprocess
+    print("[main] " + t("Stopping the server this start brought up too (./sidenote down)"))
+    how: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "close_fds": True}
+    if sys.platform == "win32":
+        # its own group and no console window; out of this program's job when Windows lets it, so it outlives this program
+        no_window, own_group, breakaway = 0x08000000, 0x00000200, 0x01000000
+        try:
+            subprocess.Popen(command, creationflags=no_window | own_group | breakaway, **how)
+            return True
+        except OSError:          # a job that allows no breakaway: started inside it, which ends no sooner than this program
+            pass
+        how["creationflags"] = no_window | own_group
+    else:
+        how["start_new_session"] = True   # its own session: this program ending, or its terminal closing, does not end it
+    try:
+        subprocess.Popen(command, **how)
+        return True
+    except OSError as exc:
+        print("[main] " + t("Could not stop the server: {error}. ./sidenote down stops it", error=exc))
+        return False
 
 # ---------- one capture program for a server ----------
 # The exit code of a start that found another capture program running for the same server and ended (OneCapture).
@@ -3130,6 +3220,10 @@ def main() -> None:
     ap.add_argument("--no-audio", action="store_true", help="capture the screen only, no sound")
     ap.add_argument("--resumed", action="store_true", help=argparse.SUPPRESS)   # this program restarting itself
     ap.add_argument("--no-tray", action="store_true", help="do not put an icon in the notification area")
+    ap.add_argument("--stop-server-on-quit", default="", metavar="CHECKOUT",
+                    help="the Sidenote checkout whose ./sidenote down Quit in the tray runs too: the launcher passes it when "
+                         "this start brought the server up (./sidenote capture --up). On Windows the checkout's WSL path "
+                         r"(\\wsl.localhost\<distro>\...), elsewhere its folder")
     ap.add_argument("--no-auto-update", action="store_true",
                     help="do not restart into new code when a deploy asks (it does, at a quiet moment, by default)")
     ap.add_argument("--no-auto-stitch", action="store_true",
@@ -3243,6 +3337,8 @@ def main() -> None:
         print("[main] starting again...")
         sys.stdout.flush()
         os._exit(SUPERVISED_RESTART)
+    if session_ends_server(sender):
+        stop_server(server_down_command(args.stop_server_on_quit))
     if getattr(sender, "restart_asked", False):
         # The same command line as this one: sys.orig_argv keeps the interpreter's own flags (-X utf8
         # -u, which the launcher relies on), and a list keeps an argument with a space in it whole.

@@ -263,8 +263,11 @@ is the Docker setup.
 When the server is in use, `./sidenote up` waits until it is idle before restarting it; `--now` restarts at once.
 With `SIDENOTE_CI_GATE=1` in `.env`, `up` also refuses a commit that CI failed ([QA.md](QA.md)).
 
-When you are done, `./sidenote down` stops the server and the capture program. To stop only the capture program, use
-**Quit** in its tray menu or `./sidenote capture-stop`. `./sidenote restart` restarts the server, which also applies a
+When you are done, **Quit Sidenote** in the capture program's tray menu ends what the desktop shortcut started: the
+capture program, and the server the shortcut brought up for it. A server you started yourself with `./sidenote up`
+stays up: there the menu says **Quit**, which ends the capture program alone, and `./sidenote down` stops the server
+and the capture program. `./sidenote capture-stop` ends the capture program alone either way. `./sidenote restart`
+restarts the server, which also applies a
 change to `.env` or to the code. The server does not start by itself when
 the PC or Docker restarts.
 
@@ -284,7 +287,8 @@ area. What it prints goes to `capture.log`, kept under 4 MB (a trim keeps the ne
 the terminal instead, where Ctrl+C ends it; that is the way to see what stops it from starting.
 
 Clicking the icon opens the panel. Right-clicking it opens a menu with **Open the panel**, the **Screen capture** and
-**Sound capture** switches, **Restart capture** and **Quit** (in the app, **Quit Sidenote**, which ends the whole app);
+**Sound capture** switches, **Restart capture** and **Quit** (**Quit Sidenote** where it ends the server too: in the
+app, which it ends whole, and after a start that brought the server up);
 on macOS a click on the icon in the menu bar opens that menu. On Windows the menu uses the panel's look: the same icons,
 the same status pill (green while it captures, red with no server, amber with **Skipped window** while a window named in
 **Skip windows** is on screen) and the same switches.
@@ -1840,7 +1844,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 소리 캡처 | Sound capture | the tray menu |
 | 캡처 다시 시작 | Restart capture | the tray menu |
 | 끝내기 | Quit | the tray menu |
-| Sidenote 끝내기 | Quit Sidenote | the tray menu, in the app |
+| Sidenote 끝내기 | Quit Sidenote | the tray menu, in the app and after a start that brought the server up |
 | 서버에 연결되지 않음 (./sidenote up) | Not connected (./sidenote up) | the tray menu's state line |
 | 캡처 중: 화면 · 소리 | Capturing: Screen · Sound | the tray menu's state line |
 | Docker에 연결할 수 없습니다 | Cannot connect to Docker | `./sidenote up` |

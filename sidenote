@@ -714,7 +714,18 @@ $moved"
   cmd_status
 }
 
+# A down on its way holds this lock until it ends, and a start with --up waits for it (wait_down). The tray's Quit Sidenote
+# runs a down: a shortcut clicked again right after found the server still up, started a capture program that brought
+# nothing up, and the down then ended that program and the server under it. Where flock is missing (macOS) nothing waits.
+down_lock() { printf '%s' "$LOG_PATH/.down.lock"; }
+wait_down() {
+  command -v flock >/dev/null || return 0
+  ensure_dirs
+  flock -w 120 "$(down_lock)" true 2>/dev/null || true
+}
+
 cmd_down() {
+  if command -v flock >/dev/null; then ensure_dirs; exec 9>"$(down_lock)"; flock -x 9 || true; fi   # held until this ends
   cmd_capture_stop quiet || true   # first: it is outside docker, and docker being off is no reason to leave it running
   docker_up
   # (docker_up has said by now a Docker that does not answer, one without the compose plugin and a Compose too old)
@@ -1281,9 +1292,28 @@ capture_started() {
 # seconds) cannot be seen from here, Windows' process list being out of reach: the starter looks for it on its own
 # side before it starts another (client/launch.pyw, capture_alive), and the program refuses to be the second one for
 # a server (client/capture.py, OneCapture).
+# A start with --up: the server brought up when it does not answer, and whether this start is what brought it up. That
+# is read from Docker, before: a server that is busy (a model loading, a long answer) can let /health wait past its 3 s,
+# and taken for one that is off, the session would have claimed a server someone else started, and its Quit ended it.
+brought_up() {
+  health >/dev/null && return 1
+  local was=0
+  running && was=1
+  cmd_up
+  [ "$was" = 0 ]
+}
+
+# The capture program's --stop-server-on-quit on WSL: this checkout as Windows sees it, the only form the program takes
+# (client/capture.py, server_down_command). A checkout on a Windows drive (/mnt/c) has no such form, and hands nothing on.
+quit_ends() {
+  local w; w="$(wslpath -w "$PWD" 2>/dev/null)"
+  case "$w" in '\\wsl'*) printf '%s\n' --stop-server-on-quit "$w" ;; esac
+}
+
 windows_starts() {
-  local up="$1"; shift
-  if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
+  local up="$1" ends=(); shift
+  # whoever starts the server stops it: a start that brought it up hands its checkout on (see cmd_capture)
+  if [ "$up" = 1 ]; then wait_down; brought_up && ends=($(quit_ends)); fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
                                   "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
   if [ "$(clients)" -gt 0 ]; then
@@ -1298,7 +1328,7 @@ windows_starts() {
   case "${SIDENOTE_LANG:-}" in en|ko) printf 'SIDENOTE-LANG\t%s\n' "$SIDENOTE_LANG" ;; esac   # one that is set, never the locale's pick
   printf 'SIDENOTE-SETUP\t%s\n' "$(win_setup_command)"   # one line, no tab in it: the starter reads the first field
   printf 'SIDENOTE-START\t%s' "$CLIENT_WIN"
-  printf '\t%s' --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${@+"$@"}
+  printf '\t%s' --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${@+"$@"} ${ends[@]+"${ends[@]}"}
   printf '\n'
 }
 
@@ -1326,7 +1356,7 @@ cmd_capture() {
   # --up, --console and --from-windows are this launcher's own: they are noted here and not passed on (capture.py
   # would refuse them). --once sends one screen and ends, so it runs in this terminal as with --console, where
   # what it did is printed; started windowless it could also be gone before the start was seen.
-  local a up=0 console=0 from_win=0 opts=()
+  local a up=0 console=0 from_win=0 opts=() started=0
   for a in "$@"; do
     case "$a" in
       --up) up=1 ;;
@@ -1368,10 +1398,18 @@ cmd_capture() {
     # (Docker off, the port taken) its reason is what has to be seen, in the terminal or in the shortcut's
     # message box (the last lines of this output). The first start also builds the image for minutes; in a
     # terminal, the dots `up` prints say that it is still going.
-    health >/dev/null || cmd_up
+    wait_down
+    brought_up && started=1
   fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
                                   "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
+  # Whoever starts the server stops it. The server is a service of its own, and the capture program a client of it,
+  # which neither starts nor stops it; this launcher does both. A start that brought the server up for this session
+  # hands the program this checkout, whose ./sidenote down the program's Quit in the tray runs too (client/capture.py,
+  # server_down_command): the session ends as it began. A server that was already up was started by someone else
+  # (./sidenote up, another session), and Quit leaves it to them.
+  local ends=()
+  if [ "$started" = 1 ]; then ends=($(quit_ends)); fi
   local packages
   packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   # Two capture programs would send every screen twice. Windows' process list says whether one is running;
@@ -1419,7 +1457,8 @@ cmd_capture() {
     # with spaces in quotes for the Windows command line, and cmd.exe and start pass it on whole
     # (measured with a script that only writes down its arguments).
     (cd "$WIN_CWD" && setsid --fork "$CMD_EXE" /c start "" /b pyw -3 -X utf8 "$CLIENT_WIN" \
-        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null) || true
+        --server "ws://127.0.0.1:${PORT}/ingest" --log "$logwin" ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} \
+        >/dev/null 2>&1 </dev/null) || true
     local n=0
     while [ "$n" -lt 20 ]; do          # about ten seconds at most
       capture_started "$base" && break
@@ -1429,7 +1468,11 @@ cmd_capture() {
       bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 시작되지 않았습니다. ./sidenote capture --console로 원인을 확인하세요.")"
       return 1
     fi
-    if [ "$tray" = 1 ]; then
+    if [ "$tray" = 1 ] && [ ${#ends[@]} -gt 0 ]; then   # the server came up with it, and goes with it (see above)
+      ok "$(L "Screen and sound capture started ${D}(no window, a tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(창 없이, 트레이 아이콘으로)${N}")"
+      echo "  $(L "To end it and the server it started: right-click the tray icon > Quit Sidenote, or ${B}./sidenote down${N}" \
+                  "끝내기(함께 켠 서버도): 트레이 아이콘 오른쪽 클릭 > Sidenote 끝내기, 또는 ${B}./sidenote down${N}")"
+    elif [ "$tray" = 1 ]; then
       ok "$(L "Screen and sound capture started ${D}(no window, a tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(창 없이, 트레이 아이콘으로)${N}")"
       echo "  $(L "To end it: right-click the tray icon > Quit, or ${B}./sidenote capture-stop${N}" "끝내기: 트레이 아이콘 오른쪽 클릭 > 끝내기, 또는 ${B}./sidenote capture-stop${N}")"
     else
@@ -1459,7 +1502,8 @@ cmd_capture() {
   # above. set +e in the subshell, so a pipe that ends in failure does not end it before the code is read.
   local ended=0
   (set +e; cd "$WIN_CWD" || exit 0
-   "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
+   "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" --server "ws://127.0.0.1:${PORT}/ingest" ${opts[@]+"${opts[@]}"} \
+     ${ends[@]+"${ends[@]}"} 2>&1 | sed -u 's/\r$//' \
      | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture
    exit "${PIPESTATUS[0]}") || ended=$?
   if [ "$ended" = 76 ]; then CAPTURE_REFUSED=1; return 1; fi   # as a windowless start that finds one running ends
@@ -1491,7 +1535,7 @@ setup_capture_here() {
   "$(here_py)" -m pip install -q ${source[@]+"${source[@]}"} -r client/requirements.txt 2>&1 | tail -3
 }
 cmd_capture_here() {
-  local a up=0 console=0 opts=() packages
+  local a up=0 console=0 opts=() packages ends=()
   for a in "$@"; do
     case "$a" in
       --up) up=1 ;;
@@ -1506,7 +1550,8 @@ cmd_capture_here() {
   done
   [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
                                     "X11 화면이 없습니다(DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽으니 데스크톱 세션에서 실행하세요.")"
-  if [ "$up" = 1 ]; then health >/dev/null || cmd_up; fi
+  # whoever starts the server stops it: a start that brought it up hands this checkout on (see cmd_capture)
+  if [ "$up" = 1 ]; then wait_down; brought_up && ends=(--stop-server-on-quit "$PWD"); fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
                                   "서버가 꺼져 있습니다. ./sidenote up으로 먼저 켜거나 ./sidenote capture --up으로 함께 켜세요.")"
   # with --up the panel opens and it ends well, as on WSL (already_capturing): "start everything" finds it started
@@ -1521,15 +1566,17 @@ cmd_capture_here() {
   local cmd=("$(here_py)" -X utf8 -u client/capture.py --server "ws://127.0.0.1:${PORT}/ingest")
   if [ "$console" = 1 ]; then
     echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it)${N}" "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C)${N}")"
-    ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} 2>&1 | log_capture || true
+    ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} 2>&1 | log_capture || true
     return 0
   fi
   local base; base="$(clients)"
   # setsid --fork: a session of its own, so closing this terminal does not end it (see the WSL start above)
   if command -v setsid >/dev/null; then
-    setsid --fork ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null || true
+    setsid --fork ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} \
+      >/dev/null 2>&1 </dev/null || true
   else   # macOS has no setsid: nohup, in the background, keeps it past this terminal
-    nohup ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} >/dev/null 2>&1 </dev/null &
+    nohup ${cmd[@]+"${cmd[@]}"} --log "$LOG_PATH/capture.log" ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} \
+      >/dev/null 2>&1 </dev/null &
   fi
   local n=0
   while [ "$n" -lt 20 ]; do

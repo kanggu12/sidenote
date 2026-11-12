@@ -6,6 +6,13 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- **Quit Sidenote** in the capture program's tray ends the server the desktop shortcut started for it, as the shortcut
+  started both: whoever starts the server stops it. A server started on its own (`./sidenote up`) stays up, and there
+  the tray says **Quit**. Before, Quit ended the capture program alone, and the server the shortcut had started stayed
+  up until `./sidenote down`.
+
 ## [0.6.4] - 2026-11-12
 
 ### Fixed

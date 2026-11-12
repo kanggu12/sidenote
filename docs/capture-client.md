@@ -47,7 +47,8 @@ has no login of its own, so keep the server off public networks.
 ## The tray icon
 
 The icon in the notification area has **Open the panel**, **Screen capture**, **Sound capture**, **Restart capture**
-and **Quit**, in Korean with `SIDENOTE_LANG=ko`
+and **Quit** (**Quit Sidenote** after a start that brought the server up, which ends that server too), in Korean with
+`SIDENOTE_LANG=ko`
 ([section 18 of the user guide](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#18-panel-labels) lists
 each label). The line under **Open the panel** says what is being sent. On Linux the icon appears where the desktop
 shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu.
