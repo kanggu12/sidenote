@@ -301,6 +301,7 @@ try:
         print("  (not tried: no Xvfb or no libX11 here)")
     else:
         number, xproc = up
+        prog = None   # the capture program, ended below however this section ends
         try:
             check("(no capture program is connected)", wait_for(lambda: status()["clients"] == 0), status())
             run_dir = tempfile.mkdtemp(prefix="sidenote-clients-run-")   # its guard's file, away from the user's
@@ -340,6 +341,9 @@ try:
             check("...and the newer one feeds the server alone", card["clients"] == 1 and card["info"] == "capture/newer", card)
             newer.close()
         finally:
+            if prog is not None and prog.poll() is None:   # a check that raised before it ended: not left running
+                prog.kill()
+                prog.wait(10)
             xproc.kill()
             xproc.wait(10)
 
