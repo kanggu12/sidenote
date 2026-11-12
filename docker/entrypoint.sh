@@ -21,8 +21,13 @@ fi
 # A stop waits 5 s at most for open connections: a panel's socket that no longer reads held uvicorn's shutdown for good
 # (measured: still waiting after 30 s, when Docker kills it), and the shutdown hook that keeps the remembered problems
 # in .restart.npz never ran.
+# At most 512 connections at once: one more request gets 503 at once, and the server goes on for the ones it has.
+# Nothing capped them before, and a program on this PC that opened them in a loop held one each. A person's own use is
+# far below it: 32 panels with a browser's 6 connections each, and 32 readers of events, are 256. uvicorn counts a
+# WebSocket here only once it is accepted and never refuses one: the server caps those itself (MAX_PANELS, MAX_INGEST).
+# desktop/app.py starts its server with the same three.
 set -- uvicorn server.app:app --host "${SIDENOTE_HOST:-0.0.0.0}" --port "${SIDENOTE_PORT:-8777}" --no-access-log \
-    --ws-max-size 67108864 --timeout-graceful-shutdown 5
+    --ws-max-size 67108864 --timeout-graceful-shutdown 5 --limit-concurrency 512
 # Under compose a server that ends by itself (the watchdog ends one whose loop stopped turning) is started again inside
 # the container, as the desktop app does: keep-running.sh, beside this file in the image. Kubernetes starts a container
 # again itself, and the chart sets SIDENOTE_SELF_RESTART=0 so that a pod's restarts are its own.

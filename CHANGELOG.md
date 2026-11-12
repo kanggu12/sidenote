@@ -6,6 +6,24 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- The loop that starts a container's program again when it ends by itself left that program's own children running
+  when the program was killed outright, as an out-of-memory kill does: SearXNG's worker, its main process killed, went
+  on serving beside the next run. Each run is a process group of its own now, and what is left of it ends with it.
+- SearXNG, the local model's web search, stayed ended when it ended by itself, until `./sidenote up`. It runs in the
+  same loop as the server, the model server and the code runner, and is started again a second later.
+
+### Security
+
+- A request's body was read whole before any check, and a panel's message of up to 64 MB was parsed on the loop that
+  serves everyone: a program on this PC could fill the server's memory, or hold its loop until the watchdog ended it.
+  A body over 2 MB is refused (`413`) as it comes in, and a panel's message over 2 MB closes its socket (`1009`)
+  unparsed.
+- Nothing capped the server's connections, nor its capture connections. The server takes 512 connections at once and
+  answers one more request `503`, writing uvicorn's warning for it once a minute, and takes 8 capture connections at
+  once.
+
 ## [0.6.3] - 2026-11-12
 
 ### Fixed

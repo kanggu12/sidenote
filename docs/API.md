@@ -57,10 +57,12 @@ Every answer is a JSON object with `ok`. On an error it has `error` too, in word
 | `404` | No such route, answer, setting or waiting problem |
 | `405` | The route takes another method; `methods` says which (`OPTIONS` and `HEAD` too) |
 | `409` | Not possible now, and `error` says why (nothing answered yet to ask about, downloads off) |
+| `413` | A body over 2 MB, refused as it comes in |
 | `415` | A change sent without a JSON body |
 | `422` | A code run that did not run: code runs are off, the sandbox is out of reach, or the code did not build (`error`) |
-| `429` | 32 readers of events are open already |
+| `429` | 32 readers of events are open already, or 8 questions are being answered (`POST /api/v1/ask`) |
 | `500`, `502` | The server, or the model server it asked, failed at it: `error` names what failed, and the server's log has why |
+| `503` | The server has 512 connections open already: plain text from the server, not JSON; ask again once fewer are open |
 
 The words in `error` and in a change's `notices` are the panel's own, in the panel's language.
 

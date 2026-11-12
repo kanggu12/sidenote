@@ -819,8 +819,10 @@ def serve(port: int) -> int:
     # 64 MiB per message: a 4K frame of a photo-like screen is over uvicorn's default 16 MiB (docker/entrypoint.sh).
     # A close-down waits 5 s at most for open connections: a panel's socket that stopped reading held it for good, and
     # the close-down that keeps the remembered problems (.restart.npz) never ran (docker/entrypoint.sh says the same).
+    # At most 512 connections at once, one more request answered 503 (docker/entrypoint.sh says why).
     config = uvicorn.Config(server.app, host=os.environ.get("SIDENOTE_HOST", "127.0.0.1"), port=port,
-                            access_log=False, ws_max_size=64 * 1024 * 1024, timeout_graceful_shutdown=5)
+                            access_log=False, ws_max_size=64 * 1024 * 1024, timeout_graceful_shutdown=5,
+                            limit_concurrency=512)
     if hasattr(config, "get_loop_factory"):      # the loop uvicorn.run would use (uvloop where it is there)
         loop = (config.get_loop_factory() or asyncio.new_event_loop)()
     else:                                        # an older uvicorn names it through the event loop policy

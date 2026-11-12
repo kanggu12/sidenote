@@ -393,6 +393,10 @@ class AppState:
     ingest_runs: dict = field(default_factory=dict)
     ingest_retired: set = field(default_factory=set)
     ingest_once: set = field(default_factory=set)
+    # Capture connections with a place taken (MAX_INGEST), counted before the handshake's first await, and when a
+    # refused one was last written to the telemetry (once a minute at most: a program refused tries again every 2 s)
+    ingest_open: int = 0
+    ingest_full_said: float = 0.0
     # When the screen last changed (stamp_frame): a frame that moved only what keeps moving beside it (a video call
     # in a corner) does not count, so the settle sees the screen come to rest. `last_seen_ts` is any frame at all.
     last_frame_ts: float = 0.0
@@ -761,6 +765,16 @@ def note_live(message: dict) -> None:
 # Panels at once on one server: one person's tabs are never this many, and each holds a queue and a writer (PanelOut);
 # a page that reconnects in a loop, or a program opening them, is refused past it, as the API's readers are past 32
 MAX_PANELS = 32
+# Connections on /ingest at once. One capture program feeds a server (take_over); the few beside it are one connecting
+# again, one taken over and ending, a --once run. Every other socket of a program that opens them in a loop is refused
+# here: uvicorn's own cap on connections (--limit-concurrency, docker/entrypoint.sh) counts a WebSocket only after it
+# is accepted, and never refuses one.
+MAX_INGEST = 8
+# What one request's body or one panel's message may hold. The largest the server takes is a code run (MAX_RUN_CODE
+# characters of code and MAX_RUN_STDIN of input: some hundred KB as JSON). A body was read whole before any check, so a
+# program could send gigabytes into the server's memory; a panel's message of 64 MB (what a socket takes, for a 4K
+# screen) was parsed on the loop that serves everyone, for seconds, and the watchdog ends a server whose loop stops.
+MAX_BODY = 2 * 1024 * 1024
 
 
 class PanelOut:
@@ -890,6 +904,27 @@ def control_message() -> str:
     return json.dumps({"type": "control", "screen": STATE.screen_on, "audio": STATE.audio_on,
                        "stitch": bool(SETTINGS.get("stitch")), "monitor": int(SETTINGS.get("monitor")),
                        "skip_windows": list(SETTINGS.get("skip_windows"))})
+
+
+class OncePerMinute(logging.Filter):
+    """A log line with these words passed once a minute at most. uvicorn writes "Exceeded concurrency limit." for each
+    request over its cap (--limit-concurrency, docker/entrypoint.sh): a program that keeps the server full would fill
+    the log with it, and push out the lines that say what happened before."""
+
+    def __init__(self, words: str):
+        super().__init__()
+        self.words, self.said = words, -1e9
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.getMessage() != self.words:
+            return True
+        if time.monotonic() - self.said < 60:
+            return False
+        self.said = time.monotonic()
+        return True
+
+
+CONCURRENCY_NOTE = OncePerMinute("Exceeded concurrency limit.")
 
 
 async def send_control() -> None:
@@ -3643,8 +3678,8 @@ def origin_ok(origin: str, host: str | None) -> bool:
     return u.scheme in ("http", "https") and u.netloc.lower() == (host or "").lower()
 
 
-def api_error(status: int, text: str, **more) -> JSONResponse:
-    return JSONResponse({"ok": False, "error": text, **more}, status_code=status)
+def api_error(status: int, text: str, headers: dict | None = None, **more) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": text, **more}, status_code=status, headers=headers)
 
 
 def api_refused(request: Request, write: bool) -> JSONResponse | None:
@@ -3677,12 +3712,28 @@ def _finite(value) -> bool:
     return True
 
 
+def too_large() -> JSONResponse:
+    """The 413 of a body over MAX_BODY, with the connection closed after it: left open, uvicorn went on reading the rest
+    of the body and dropping it, for as long as the sender went on sending (an endless body in pieces, for ever)."""
+    return api_error(413, f"the body is over {MAX_BODY // (1024 * 1024)} MB", headers={"connection": "close"})
+
+
 async def api_body(request: Request) -> dict | JSONResponse:
     """A write's JSON object ({} for an empty body), or the error that answers it. What JSON allows and nothing past it:
     NaN, Infinity and a number too large for a float were taken, and answering them ended in a 500; a lone surrogate
     ("\ud800") was taken too, and a setting holding one could not be saved or sent, so every answer showing it was a 500
-    and an event holding one ended every events stream."""
-    raw = await request.body()
+    and an event holding one ended every events stream. A body over MAX_BODY is a 413, refused as it comes in."""
+    declared = request.headers.get("content-length", "")
+    # ASCII digits only: "²" is a digit to isdigit() and no number to int(), which made a 500 of it
+    if declared.isascii() and declared.isdigit() and int(declared) > MAX_BODY:   # refused before any of it is read
+        return too_large()
+    pieces, size = [], 0
+    async for piece in request.stream():   # a piece at a time: a body that goes on past the cap is never held whole
+        size += len(piece)
+        if size > MAX_BODY:
+            return too_large()
+        pieces.append(piece)
+    raw = b"".join(pieces)
     if not raw.strip():
         return {}
     try:
@@ -3750,6 +3801,9 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         telemetry.setup()
         no_core_dumps()
+        # after uvicorn set up its loggers: its warning for each request over its cap, once a minute (OncePerMinute)
+        if CONCURRENCY_NOTE not in logging.getLogger("uvicorn.error").filters:
+            logging.getLogger("uvicorn.error").addFilter(CONCURRENCY_NOTE)
         # A plain thread, started before anything can block the loop: see server/watchdog.py.
         stop_watchdog = watchdog.start(asyncio.get_running_loop(), CONFIG.stall_warn_sec,
                                        CONFIG.stall_exit_sec, telemetry.LOG_DIR)
@@ -4016,7 +4070,18 @@ def create_app() -> FastAPI:
             telemetry.event("refused", path="/ingest", origin=str(ws.headers.get("origin"))[:120])
             await ws.close(code=1008)
             return
-        await ws.accept()
+        if STATE.ingest_open >= MAX_INGEST:   # refused before it is accepted: its handshake gets 403
+            if time.monotonic() - STATE.ingest_full_said > 60:
+                STATE.ingest_full_said = time.monotonic()
+                telemetry.event("refused", path="/ingest", reason=f"{MAX_INGEST} capture connections open")
+            await ws.close(code=1013)
+            return
+        STATE.ingest_open += 1   # its place, taken before the handshake's first await; given back at its end (finally)
+        try:
+            await ws.accept()
+        except BaseException:    # the handshake did not complete: nothing below runs, so its place goes back here
+            STATE.ingest_open -= 1
+            raise
         peer = ws.client.host if ws.client else "?"
         log.info("ingest client connected: %s", peer)
         loop = asyncio.get_running_loop()
@@ -4182,6 +4247,7 @@ def create_app() -> FastAPI:
         except Exception:
             log.exception("ingest error")
         finally:
+            STATE.ingest_open -= 1
             if ws in STATE.ingest_retired:
                 STATE.ingest_retired.discard(ws)   # counted out when it was taken over
             else:
@@ -4586,6 +4652,15 @@ def create_app() -> FastAPI:
                 while True:
                     raw = await ws.receive_text()
                     if out.gone:   # closed for not reading while its close waits: what it sends is not run
+                        break
+                    # No panel sends this much (MAX_BODY, in bytes): never parsed on the loop. The length in characters
+                    # first, which is free; the bytes only for one that could be over it (up to 4 bytes a character).
+                    if len(raw) > MAX_BODY or (len(raw) * 4 > MAX_BODY and len(raw.encode("utf-8", "surrogatepass")) > MAX_BODY):
+                        out.stop()            # out of the panels, its writer ended: the close below goes out alone
+                        try:                  # 1009, as uvicorn closes a message past its own limit, waited for here
+                            await asyncio.wait_for(ws.close(code=1009), 1.0)
+                        except Exception:     # gone already, or it would not take the close
+                            pass
                         break
                     try:
                         data = json.loads(raw)

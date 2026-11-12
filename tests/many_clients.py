@@ -19,7 +19,11 @@ own), clients by websocket-client as a capture program connects, and client/capt
   screen and ends, leaving it running and the drawn region in place; taken over, it ends with its own exit code (77,
   on which the desktop app starts its own again) and says why;
 - 40 panels opening at once: 32 get in (MAX_PANELS), the rest are refused at the handshake, and one closing lets a
-  next one in.
+  next one in;
+- the server's own caps, with the server started as docker/entrypoint.sh starts it: 8 capture connections at once
+  (MAX_INGEST) and the 9th refused at its handshake; a panel's message over 2 MB (MAX_BODY) closed with 1009, never
+  parsed; 512 connections held open by a program and the next request answered 503 at once, with uvicorn's warning
+  written once for many; the desktop app's server started with the same cap.
 
     .venv/bin/python tests/many_clients.py
 """
@@ -27,6 +31,8 @@ import ctypes.util
 import importlib.util
 import json
 import os
+import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -34,6 +40,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -87,6 +94,19 @@ mss = MSS
 '''
 
 
+def entry_args() -> list:
+    """uvicorn's arguments as docker/entrypoint.sh gives them (its `set -- uvicorn ...` line), for this PC and this port:
+    the server here runs as the container's does, with its caps."""
+    text = (ROOT / "docker" / "entrypoint.sh").read_text(encoding="utf-8").replace("\\\n", " ")
+    line = next(x for x in text.splitlines() if x.startswith("set -- uvicorn "))
+    line = line.replace('"${SIDENOTE_HOST:-0.0.0.0}"', "127.0.0.1").replace('"${SIDENOTE_PORT:-8777}"', str(PORT))
+    return shlex.split(line)[3:]   # after "set -- uvicorn"
+
+
+ENTRY = entry_args()
+LIMIT = int(ENTRY[ENTRY.index("--limit-concurrency") + 1])   # the container's cap on connections
+
+
 def status() -> dict:
     with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/v1/status", timeout=10) as r:
         return json.loads(r.read())["capture"]
@@ -99,8 +119,7 @@ def region():
 
 
 def start() -> subprocess.Popen:
-    srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "server.app:app", "--host", "127.0.0.1", "--port", str(PORT),
-                            "--no-access-log", "--timeout-graceful-shutdown", "5"], cwd=ROOT, env=ENV,
+    srv = subprocess.Popen([sys.executable, "-m", "uvicorn", *ENTRY], cwd=ROOT, env=ENV,
                            stdout=open(os.path.join(LOGS, "uvicorn.out"), "w"), stderr=subprocess.STDOUT)
     for _ in range(150):
         try:
@@ -147,6 +166,27 @@ def next_frame(ws, limit: float):
         return "none", None
     except (websocket.WebSocketConnectionClosedException, OSError):
         return "gone", None
+
+
+def close_code(ws, limit: float):
+    """The code the server closes this socket with, reading past what it sends first; None when it is not closed."""
+    end = time.monotonic() + limit
+    while time.monotonic() < end:
+        kind, value = next_frame(ws, max(0.1, end - time.monotonic()))
+        if kind == "close":
+            return value
+        if kind in ("gone", "none"):
+            return None if kind == "none" else "gone"
+    return None
+
+
+def health() -> int:
+    """/health's status, 503 among them."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=10) as r:
+            return r.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
 
 
 def notices(said: list) -> list:
@@ -381,6 +421,65 @@ try:
     except Exception as exc:
         again_ok = repr(exc)
     check("one closing lets a next one in", again_ok is True, again_ok)
+
+    print("\n[the server's own caps, as the container starts it]")
+    for ws in opened[1:]:   # the panels above, closed: the one listening stays
+        ws.close()
+    del opened[1:]
+    time.sleep(0.5)
+    caps = []
+    try:
+        for _ in range(8):                               # MAX_INGEST: no hello, so none takes anything over
+            caps.append(websocket.create_connection(f"{WS}/ingest", timeout=15))
+    except Exception as exc:                             # one refused early is the failure below, not a traceback
+        print(f"  (only {len(caps)} capture connections opened: {exc!r})")
+    check("(8 capture connections open)", len(caps) == 8, len(caps))
+    try:
+        extra = websocket.create_connection(f"{WS}/ingest", timeout=15)
+        ninth = "taken"
+        extra.close()
+    except websocket.WebSocketBadStatusException as exc:
+        ninth = getattr(exc, "status_code", None)
+    check("8 capture connections at once, the 9th refused at its handshake (403)", ninth == 403, ninth)
+    if caps:
+        caps.pop().close()
+
+    def next_one():
+        """A capture connection opened once a place is free, or what refused it."""
+        try:
+            caps.append(websocket.create_connection(f"{WS}/ingest", timeout=15))
+            return True
+        except Exception as exc:
+            return repr(exc)
+    check("...one closing lets a next one in", wait_for(lambda: next_one() is True, 5), "refused")
+    for c in caps:
+        c.close()
+    big = websocket.create_connection(f"{WS}/panel", timeout=15)
+    big.send(json.dumps({"type": "ask", "text": "x" * (2 * 1024 * 1024)}))   # past MAX_BODY: no panel sends this much
+    code = close_code(big, 15)
+    check("a panel's message over 2 MB is closed with 1009, never parsed", code == 1009, code)
+    check("...and the server goes on", health() == 200)
+    held = []
+    try:
+        for _ in range(LIMIT):                           # a program that opens connections and sends nothing on them
+            held.append(socket.create_connection(("127.0.0.1", PORT), timeout=10))
+    except OSError as exc:                               # out of file descriptors here: the checks below say so
+        print(f"  (only {len(held)} connections opened: {exc!r})")
+    check(f"({LIMIT} connections held open)", len(held) == LIMIT, len(held))
+    time.sleep(0.5)
+    refused = [health() for _ in range(5)]
+    check(f"{LIMIT} connections held open by a program: the next requests are answered 503 at once", refused == [503] * 5,
+          refused)
+    for h in held:
+        h.close()
+    check("...and once they close, the server answers again", wait_for(lambda: health() == 200, 10), health())
+    out = Path(LOGS, "uvicorn.out").read_text(encoding="utf-8", errors="replace")
+    check("...uvicorn's warning for those refusals written once, not once each", out.count("Exceeded concurrency limit.") == 1,
+          out.count("Exceeded concurrency limit."))
+    desktop = (ROOT / "desktop" / "app.py").read_text(encoding="utf-8")
+    check("the desktop app's server starts with the container's cap on connections",
+          re.search(r"limit_concurrency=(\d+)", desktop) is not None
+          and int(re.search(r"limit_concurrency=(\d+)", desktop).group(1)) == LIMIT, LIMIT)
 finally:
     for ws in opened:
         try:
