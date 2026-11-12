@@ -1951,7 +1951,7 @@ remove_own_files() {
   for sub in "$d"/before-restore-* "$d"/.restore.* "$d"/.backup.*; do
     if [ ! -d "$sub" ] || [ -L "$sub" ]; then continue; fi   # (.backup.sqlite is a file, and went above)
     # shellcheck disable=SC2086
-    remove_named "$sub" $RESTORE_ASIDE $BACKUP_NAMES
+    remove_named "$sub" $RESTORE_ASIDE $BACKUP_NAMES backup.tar.gz   # (the server's backup is made as backup.tar.gz)
     rmdir -- "$sub" 2>/dev/null || true
   done
   rmdir -- "$d" 2>/dev/null || true

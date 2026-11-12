@@ -245,8 +245,8 @@ what it is about works:
 2. **Solving**: the **Local model** and the **Agent**, each as its card says how it stands, with the **Local model**
    switch, **Model** and **Problems the agent solves**. One of the two is enough.
 3. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
-   **Monitor** and **Skip windows**. With no capture program connected it says that comes first, with the way back to
-   the first step. On a Mac the capture program needs **Screen Recording**.
+   **Monitor**, **Follow the changing screen** and **Skip windows**. With no capture program connected it says that
+   comes first, with the way back to the first step. On a Mac the capture program needs **Screen Recording**.
 4. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
 5. **Try it**: **Open the sample problem** opens a question in a new tab. With that tab on the screen, the step
    follows the answer it gets and offers **See the answer**.
@@ -372,8 +372,8 @@ of the same name. It is also the setup guide's first step.
   capture program from the release's zip with Python 3.10 or newer, and its start, `py -3 capture.py --server
   ws://127.0.0.1:<this panel's port>/ingest` on Windows (`python3` elsewhere). Each command has its **Copy** key. Under the
   app, the app starts the program itself.
-- **What it does**: **Monitor**, **Join scrolled screens** and **Skip windows**, the settings the capture program carries
-  out, as **Solver settings** has them.
+- **What it does**: **Monitor**, **Follow the changing screen**, **Join scrolled screens** and **Skip windows**, the
+  settings the capture program carries out, as **Solver settings** has them.
 
 The panel cannot start a program that runs outside the server's container, nor end the server it is served by: those
 stay with the launcher, the desktop shortcut and the app. `./sidenote status` names the PC, the system and the release of
@@ -463,6 +463,8 @@ notebook carry the same readings.
     connection](#the-capture-connection)).
   - **Solver settings** (section 12).
   - **Setup guide**: the five steps of a first start, again ([The setup guide](#the-setup-guide)).
+  - **Maintenance**: how each part stands, the log, the local models and backups ([The Maintenance
+    sheet](#the-maintenance-sheet)).
   - **Keyboard shortcuts**: the list of keys ([Keyboard shortcuts](#keyboard-shortcuts)).
   - **Recently deleted**, with how many it holds, while it holds any: the answers deleted in the last 7 days
     ([The notebook](#the-notebook)).
@@ -510,11 +512,20 @@ marks the current one, whose screen the right column shows.
   is kept past the history's 90 days and size limit until it is unstarred, and the contents' **Starred** lists it.
   Press the star again to unstar it. An answer the server did not keep (with **Keep answers** off) cannot be starred,
   and a notice says so.
+- **Right** and **Wrong**, the tick and the cross just before the star, say whether a finished answer was right: the one
+  pressed stays pressed in, its mark green or red, and every panel that is open shows the same. Press it again to take
+  the mark off, or the other one to change it. The mark stays with the answer across a reload, and through a delete and
+  **Undo**. `./sidenote report` counts the marks: how often each engine was right, and by screen or speech and by type
+  (section 11). **Export** writes **Marked right** or **Marked wrong** under a marked answer's heading. An answer still
+  being written, an error, a stopped one and one **Practice** keeps back have neither key, and an answer the server did
+  not keep (with **Keep answers** off) cannot be marked, and a notice says so. In a window up to 540 px wide, as a
+  phone's, the keys of an answer's head are a little smaller and closer, and its time has no calendar mark and no date
+  when it is today's, so the kind, the time and six keys keep one line.
 - **Delete**, the bin at the end of an answer's head, takes the answer off the page in every panel that is open, and a
   notice says so with **Undo** (`z` does the same while the notice shows). A deleted answer waits in **Recently
-  deleted** in the gear menu for 7 days (`SIDENOTE_DELETED_DAYS`), with its star and its follow-ups: **Restore** puts it
-  back where it was, **Delete for good** takes it from the file at once, and **Empty** takes them all; both ask for a
-  second press. A card the server did not keep (an error, an answer stopped part way, any with **Keep answers** off)
+  deleted** in the gear menu for 7 days (`SIDENOTE_DELETED_DAYS`), with its star, its mark and its follow-ups:
+  **Restore** puts it back where it was, **Delete for good** takes it from the file at once, and **Empty** takes them
+  all; both ask for a second press. A card the server did not keep (an error, an answer stopped part way, any with **Keep answers** off)
   only leaves the page, and **Undo** is the way back. A follow-up still being written about a deleted answer stops,
   and with the last answer deleted the question box waits for the next one, or for **Undo**.
 - Headings, and a line that is only bold (a step such as "1. ..."), are written in the color of the problem's type,
@@ -584,8 +595,9 @@ arrives shows its question and keeps the rest back. The answers that were there 
 - An answer being written says so, and shows nothing of itself until it is done and asked for. An answer kept back
   does not fold with the older ones, where it would show its answer line.
 - Until then the answer line stays out of the contents, their search, the screen reader's note and the `c` key, and
-  the answer has no **Copy** or **Copy all**. **Problem text** writes out the question as usual, and a follow-up
-  asked about the answer is answered under it. **Export** takes everything, the hidden answers too.
+  the answer has no **Copy** or **Copy all**, nor **Right** and **Wrong**: an answer not seen is not judged.
+  **Problem text** writes out the question as usual, and a follow-up asked about the answer is answered under it.
+  **Export** takes everything, the hidden answers too.
 - This browser keeps how far each answer was opened, so a reload shows it as it was, and an answer shown in full stays
   shown. Answers the server gave while the panel was closed, after Practice was turned on, are kept back too.
 - The server is not told: it solves and keeps the answers as before. **Off** shows every answer whole again, and
@@ -646,9 +658,10 @@ their name, and stay so in this browser. The column never scrolls inside itself.
 follows you down the thread. When it is taller than the window, it moves with the page going down until its foot is in
 the window and stays there, and going up it moves back until its head is under the top bar.
 
-- **The capture card**: the **Screen capture** and **Sound capture** switches and the state of each (when the last screen
-  arrived, which sound device). Its foot names the capture program's PC and release (its system in the tooltip), or how
-  to start one, with the key to **Capture connection**. The **Screen capture** line reads **Watching quietly** while the watching has slowed
+- **The capture card**: the **Screen capture** and **Sound capture** switches and the state of each (the monitor read,
+  with **following** after it while **Follow the changing screen** reads another than the one chosen, when the last
+  screen arrived, which sound device). Its foot names the capture program's PC and release (its system in the tooltip),
+  or how to start one, with the key to **Capture connection**. The **Screen capture** line reads **Watching quietly** while the watching has slowed
   itself down after a run of answers that found nothing, and says what brings it back (section 8). It reads
   **Skipped window**, in amber, while a window named in **Skip windows** is on screen and no screen is sent; it never
   says which window. It reads **Windows not skipped** or **Front window only**, in amber, where the capture program
@@ -757,8 +770,9 @@ The switches on the capture card turn screen capture and sound capture on and of
   window over the panel keeps what it showed. A new answer appearing in the panel is then not a new screen either, so
   it starts nothing.
 - To send less than the whole screen, draw a region on the screen card (a **Drawn region**): only that region goes to
-  the model and to the agent. A drawn region lasts until the capture program starts again or the server restarts. It
-  is not saved, because one left from an earlier sitting hid every problem outside it.
+  the model and to the agent. A drawn region lasts until the capture program starts again, the server restarts, or the
+  monitor read changes (another **Monitor** chosen, or **Follow the changing screen** moving to another): it is a part
+  of the screen it was drawn on. It is not saved, because one left from an earlier sitting hid every problem outside it.
 
 ## 7. What it solves and how
 
@@ -1044,7 +1058,7 @@ How a question read out loud becomes a problem. Sound is used as input only; Sid
   into English, so use **Auto** when the two are mixed.
 - The model corrects small transcription errors from the context. **Technical term hints** give the speech model
   the words it is likely to mishear, a list for each speech language, and **Extra terms** adds your own in front of
-  them (section 12).
+  them; **Pick from text** finds them in a job posting or a resume (section 12).
 
 ## 10. Long problems: joining while you scroll
 
@@ -1081,7 +1095,7 @@ How to see what Sidenote is doing and has done, and where its logs are.
 | `./sidenote status` | The server, the local model, the agent and its login, the capture program's connection, the pause, the code runner |
 | `./sidenote stats` | Since the server started: answers, errors, tokens, cost, response times (median and 90th percentile), the last error, the log size. `--json` |
 | `./sidenote events` | Recent events, one per line, with why an analysis stopped (`reason`, `after`), which answer a problem seen again was (`of`, `score`), who answered and why the agent got it (`engine`, `via`), and what went to it (`sent`). `-n 100` for the count, `--errors` for the errors and what held work back (the spend brake, the agent's limit, a stuck model server) |
-| `./sidenote report` | A summary per day, then of the whole period: each engine's time to its first token (the median and the slowest tenth); what the agent was paid for answers, for screens with nothing to solve and for answers with no head line; the agent's answers that found nothing, by what it was given and why it got them; why analyses were stopped, and how long the ones a newer screen replaced had run; how many problems seen again were not solved again (and their lowest score); how often the GPU was busy and the local model timed out; and what the example checks concluded, with the runs on made-up inputs. The default is 7 days including today (a day ends at midnight). `--days 30`, `--json` |
+| `./sidenote report` | A summary per day, then of the whole period: each engine's time to its first token (the median and the slowest tenth); what the agent was paid for answers, for screens with nothing to solve and for answers with no head line; the agent's answers that found nothing, by what it was given and why it got them; why analyses were stopped, and how long the ones a newer screen replaced had run; how many problems seen again were not solved again (and their lowest score); how often the GPU was busy and the local model timed out; what the example checks concluded, with the runs on made-up inputs; and the answers marked with **Right** and **Wrong** in the panel: how many were judged and how many were right, all of them and by engine, by screen or speech and by type, and a right/judged column for each day. An answer marked twice counts once, as its last mark, on the day that mark was given, and one whose mark was taken off counts as not judged. The default is 7 days including today (a day ends at midnight). `--days 30`, `--json` |
 | `./sidenote logs` | Follows the server log (Ctrl+C to leave) |
 | `./sidenote doctor` | Checks the setup, and ends as a failure if anything is marked ✗ |
 
@@ -1093,6 +1107,37 @@ response times; `stats` and `report` show them separately. `stats` asks the runn
 Everything the panel shows and does is open to a program as well: the status, the answers kept, what was heard, every
 switch and setting, and what the panels are told as it happens. See [API](API.md).
 
+### The Maintenance sheet
+
+**Maintenance** in the gear menu puts what the commands above tell in the panel, a section a tab:
+
+- **Checks**: each part in the order a first start sets it up, the server, the capture program, the screen, speech
+  recognition, this PC's model, the agent, web search, the code runner, the disk, the GPU and the errors of the last
+  day, with how it stands (**Fine**, **Look at it**, **Needs fixing**, **Switched off**, **Waiting**), what was found
+  and what to do: a command with its **Copy** key, or a key to the section the fix is in. **Check again** reads them
+  again. A part switched off on purpose is no fault. The disk is a fault under 1 GB free on the data folder's disk and a
+  warning under 5 GB.
+- **Report**: what `./sidenote report` counts, for **Today**, **7 days** or **30 days**: the answers with the
+  follow-ups, the screens with nothing to solve, the cancels and the errors; how many of the answers marked on their
+  cards were right (**Right/judged**), all of them and by engine, by screen or speech and by type; how long each engine
+  took to its first word, the median and the slowest tenth; what the agent cost; why analyses stopped before their
+  answer; and the local model's troubles (the GPU busy, a timeout, a restart). Under them the days, the latest first,
+  with the answers, the right of the marked, the median response and the spend.
+- **Log**: the latest events, newest first, the failures and what held work back (**Failures**, as
+  `./sidenote events --errors`) or all of them (**Everything**), each with its fields; and the last 200 lines of the
+  server's log, with a key that copies them.
+- **Models**: the local server's models (Ollama), each with its size, what it is, and whether this server uses it and
+  it is on the GPU. **Remove** takes a second press. The models the panel downloads that are not there have
+  **Download**, as the local model's card does, and its bar.
+- **Backup**: **Download** makes a backup and saves it: the file `./sidenote backup` writes, the history and the
+  settings, with **Recently deleted** left out. Putting one back replaces the history the server holds open, so it is
+  the launcher's: `./sidenote restore <file>` in the server's terminal stops the server for the swap and starts it
+  again, and keeps what was there in a before-restore folder. Under the app, quit Sidenote and put the backup's files
+  in its data folder.
+
+What it reads it reads as it is shown, and again on its keys: [API](API.md) has the same as `GET /api/v1/check`,
+`/report`, `/log`, `/log/server` and `/models`, `DELETE /api/v1/models/{name}` and `POST /api/v1/backup`.
+
 ### The logs
 
 With Docker, the logs are kept in `~/.local/state/sidenote/logs/`; the app keeps them in its data folder's `logs`
@@ -1101,10 +1146,10 @@ With Docker, the logs are kept in `~/.local/state/sidenote/logs/`; the app keeps
 | File | What it holds |
 |:---|:---|
 | `server.log` | The server's log |
-| `events.jsonl` | Analysis starts and ends, errors, follow-up questions, switch changes, capture connections: one JSON object per line |
+| `events.jsonl` | Analysis starts and ends, errors, follow-up questions, switch changes, capture connections, answers marked right or wrong: one JSON object per line |
 | `capture.log` | What the capture program printed |
 | `stall.txt` | Every thread's stack at the moment the server ended itself in a stall |
-| `history.sqlite` | The kept answers with their follow-ups and a small picture of their screen: 90 days and 200 MB at most, while a starred answer stays past both until it is unstarred (section 5). With **Keep what is heard** on, every sentence heard: 90 days and 20 MB at most |
+| `history.sqlite` | The kept answers with their follow-ups, their stars and marks, and a small picture of their screen: 90 days and 200 MB at most, while a starred answer stays past both until it is unstarred (section 5). With **Keep what is heard** on, every sentence heard: 90 days and 20 MB at most |
 | `server-console.log` | In the app: what the server printed, including why it did not start |
 | `ollama.log` | In the app: what Ollama printed, when the app started it |
 | `app.log` | In the app: what the app itself did |
@@ -1162,6 +1207,24 @@ The **Speech** section holds what shapes what is written down:
   built-in lists take 209 (Korean) and 191 (English), so with words of your own the start of the built-in list is cut,
   its common words first, and past about 60 your own last words, and the log says so. A word the list has too is said
   once. The box holds up to 50 words of up to 60 characters each.
+- **Pick from text**, under the box, finds the words to put there in a job posting, a resume or notes. Paste the text
+  into the area it opens and press **Find terms**: its technical terms come back as keys, the most frequent first (with
+  how many times each appears), at most 60, in three groups. **New terms** are pressed in; **In the built-in hints** are
+  the ones **Technical term hints** gives already, not pressed, since each would take one of the 50 places for a word
+  that is said anyway (press one to put it first all the same); **In Extra terms** are the ones the box holds, shown
+  pressed. Press a key to leave a term out or put it in, then **Add to Extra terms**: the pressed ones go after the
+  words the box holds, which saves the list as Enter in the box does. The box never goes past 50: the terms with no
+  room are not pressed, and the line under the keys says the box is full and how many were left out.
+- A term is found by how it is written, in an English text or a Korean one: a capital inside a word (LangGraph, gRPC),
+  all capitals (AWS, HPA), letters with digits (K8s, H100), a mark inside or at the end (C++, .NET, CI/CD, Node.js), a
+  capitalized name inside a sentence or a list (Kafka), two words of one name (GitHub Actions, Apache Kafka), and in
+  Korean text a lowercase name too (pandas, kubectl). The words every posting or resume has (Team, Experience,
+  Developed, Seoul), numbers, years, e-mail and web addresses are left out. A company or a school named inside a
+  sentence can come up as a term: leave it out with its key.
+- The server reads the text to find its terms and keeps none of it: it is not saved, logged or written as an event, and
+  no other panel or program following the events is sent it. The panel holds it while the area is open and drops it
+  once the terms are added, or when the area or the settings sheet closes. A text holds up to 64 KB (about 21,000
+  Korean characters); paste a longer one in parts. Design note 131 has what was measured.
 - **Speech model** picks the model that writes down each sentence: **large-v3-turbo** (the default), **medium** or
   **small**, all on the CPU. The live words are read with `small` whichever is chosen, about 8 s of CPU for each pass
   over the last 15 seconds of speech. On the test PC a spoken question was written down about 7 s after it ended with
@@ -1197,6 +1260,31 @@ Incognito, Private Browsing, and in Korean 시크릿 and 사생활 보호).
   **Front window only**. In a Wayland session it cannot read them, so nothing is skipped there, and that line says
   **Windows not skipped**. With the list empty, neither line shows.
 - Sound capture goes on while a window is skipped.
+
+The **Capture** section holds what the capture program does: **Join scrolled screens** (section 10), **Monitor**, and
+**Follow the changing screen**, off by default. With it on and two monitors or more, the capture program also looks at
+the monitors it does not read, moves to the one where a new screen settles, and comes back to the chosen one the same
+way once a new screen settles there. It works on Windows and macOS, where the program finds this tool's panel and
+leaves it out of what it compares; elsewhere the row is grayed out with the reason:
+
+- A new screen is another page, the next problem or the next slide: a large part of the monitor changed, then held
+  still for two looks. A notification, a chat that takes a message (its lines only move up), lines typed and a video do
+  not count; a video never holds still. Something that redraws as a whole by itself, such as a dashboard turning its
+  pages, counts as a new screen like any other.
+- It stays where it is when a new screen settled on the monitor it reads as well, while it joins a scrolled problem
+  there, and for 10 seconds after each move. A **Drawn region** is cleared when it moves, as when another **Monitor** is
+  chosen.
+- **Monitor** on the capture card names the monitor read, with **following** after it while that is not the chosen one
+  (`#2 1920x1080 · following`). The capture program's log has one line for each move, with the two monitors' numbers
+  and nothing of what they show.
+- The other monitors are looked at every 1.5 seconds and never sent. One that shows a window of **Skip windows** is not
+  looked at, and the panel itself is painted over first, so an answer appearing in it is no new screen. Each look is a
+  screen grab, read at about 1280 pixels on its longer side: a look at a 1440x2560 monitor took about 26 ms of CPU,
+  about 1 second a minute, and a look at a 3840x2160 one about 40 ms, under 2 seconds a minute, beside the 13 to 18
+  seconds a minute the capture program spends reading a 3840x2160 monitor itself.
+- With one monitor, or **All monitors** chosen, there is nowhere to move, and a capture program on another system than
+  Windows or macOS cannot follow: the row is grayed out with the reason. Turned
+  off, it reads the chosen monitor again at once.
 
 ### The .env file
 
@@ -1382,7 +1470,7 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | The tray says "Not connected (./sidenote up)" | The capture program is running but the server is not: `./sidenote up`. It stops grabbing the screen while there is nowhere to send it, and starts again by itself |
 | Capture has ended, but something seems to be left on Windows | `./sidenote capture-stop`. If it could not stop some, it says how many |
 | **Screen capture** on the capture card says **No program** | The capture program is not connected: `./sidenote capture`, or the way **Capture connection** gives for where the server runs |
-| **Screen capture** is green, but no solutions appear | Check that `capture.log` in the log folder (or the terminal, with `--console`) shows `[screen] sent frame`. With several monitors, use `--monitor` |
+| **Screen capture** is green, but no solutions appear | Check that `capture.log` in the log folder (or the terminal, with `--console`) shows `[screen] sent frame`. With several monitors, choose the one with the problem in **Monitor** (or `--monitor`), or switch **Follow the changing screen** on |
 | **Sound capture** says **Off** or **Device error** | Check the **Sound capture** switch on the capture card. On **Device error**, name the device with `--audio-device "part of the name"` |
 | The screen changed, but it did not solve again | The change was outside the problem's region. **Reanalyze** solves right away |
 | A code box has no **Run** | **Run** is added only to code marked as Python, Java, C, C++, JavaScript, TypeScript, Kotlin, Go or Bash. If it is still missing, look at the code runner's line in `./sidenote status` |
@@ -1456,6 +1544,9 @@ What leaves this PC, what can reach what, and what is kept.
   capture program reads the windows' titles and their programs' names on this PC and keeps them there: they go neither
   to the server nor into a log. The server hears only that a window is skipped and whether the windows could be read,
   and `capture.log` and `events.jsonl` say only when a skip started and ended.
+- The screen that goes is the chosen **Monitor**'s. With **Follow the changing screen** on (section 12) it is the one
+  where a new screen settled, which can be another monitor: the others are looked at on this PC, and nothing of one
+  leaves it until the reading moves there. A monitor that shows a window of **Skip windows** is not looked at.
 
 ### What can reach what
 
@@ -1517,8 +1608,11 @@ What leaves this PC, what can reach what, and what is kept.
   length and its language, for 90 days and 20 MB at most. Everything heard passes through, other people and whatever is
   playing included. It stays on this PC; only what the agent is sent of a spoken problem ever leaves.
 - `events.jsonl` keeps the time, the type, the one-line answer, follow-up questions, the first 200 characters of the
-  speech that set off an analysis (small talk included), the search words and page addresses, and the tokens and
-  cost. It is deleted under the 14-day rule (section 11).
+  speech that set off an analysis (small talk included), the search words and page addresses, the tokens and cost,
+  and the marks given with **Right** and **Wrong**. It is deleted under the 14-day rule (section 11).
+- A text pasted into **Pick from text** is read by the server to find its terms and let go: it is not saved, not in
+  the log or `events.jsonl`, and sent to no other panel or reader of events. The terms added to **Extra terms** are
+  kept as words typed there are: in `.settings.json`, and in `events.jsonl` with each change of a setting.
 - The log keeps the shape of what was heard, not the words: how long an utterance was and how many characters it
   held. Everything the PC plays passes through, including other people's voices in a call, so the words are written
   to a file that lives for days only when asked for (`SIDENOTE_LOG_SPEECH=full`). The panel shows the live
@@ -1700,6 +1794,15 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 밝게 | Light | **Settings** menu |
 | 어둡게 | Dark | **Settings** menu |
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
+| 관리 | Maintenance | **Settings** menu, and its sheet |
+| 점검 · 보고서 · 기록 · 모델 · 백업 | Checks · Report · Log · Models · Backup | **Maintenance**: its sections |
+| 정상 · 확인 필요 · 고칠 것 · 꺼 둠 · 기다림 | Fine · Look at it · Needs fixing · Switched off · Waiting | **Maintenance**, **Checks**: how each part stands |
+| 다시 점검 | Check again | **Maintenance**, **Checks** |
+| 오늘 · 7일 · 30일 | Today · 7 days · 30 days | **Maintenance**, **Report**: the period it counts |
+| 맞음/채점 | Right/judged | **Maintenance**, **Report**: of the answers marked on their cards, how many were right |
+| 실패만 · 전체 | Failures · Everything | **Maintenance**, **Log** |
+| 지우기 | Remove | **Maintenance**, **Models**: a second press removes the model |
+| 백업 받기 | Download a backup | **Maintenance**, **Backup** |
 | 최근 삭제 | Recently deleted | **Settings** menu, and its sheet |
 | 기록 지우기 | Clear history | **Settings** menu |
 | 캡처 연결 | Capture connection | **Settings** menu, and its sheet; the tray menu; the setup guide's first step (**Connection** in English) |
@@ -1739,6 +1842,9 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 전체 복사 | Copy all | an answer's tools; **What was heard** |
 | 별표 | Star | an answer's tools: stars or unstars it |
 | 별표됨 · 누르면 해제 | Starred · press to unstar | the tooltip of a starred answer's **Star** |
+| 맞음 | Right | an answer's tools: marks it right, or takes the mark off |
+| 틀림 | Wrong | an answer's tools: marks it wrong, or takes the mark off |
+| 맞음으로 채점됨 · 누르면 해제, 틀림으로 채점됨 · 누르면 해제 | Marked right · press to clear, Marked wrong · press to clear | the tooltips of a pressed **Right** and **Wrong** |
 | 접기 | Fold | an answer's tools |
 | 풀이 보기 | Show the solution | a folded answer |
 | 문제 글 | Problem text | an answer's tools; a choice of **What is sent to the agent** |
@@ -1884,9 +1990,11 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 완전히 삭제 | Delete for good | **Recently deleted** |
 | 비우기 | Empty | **Recently deleted**, at its foot |
 | 저장된 기록에 없는 답이라 별표 못 함 | Not starred: this answer is not in the saved history | notice, after **Star** |
+| 저장된 기록에 없는 답이라 채점 못 함 | Not marked: this answer is not in the saved history | notice, after **Right** or **Wrong** |
 | 답 기록 남기기 | Keep answers | **Screen** |
 | 기록 지우기 | Clear history | the menu |
 | 내보내기 | Export | **Contents** |
+| 채점: 맞음, 채점: 틀림 | Marked right, Marked wrong | **Export**'s Markdown file, under a marked answer's heading |
 | 얼굴 가리기 | Cover faces | **Screen** |
 | 건너뛸 창 | Skip windows | **Screen** |
 | 같은 문제 다시 풀지 않기 | Don't solve the same problem again | **Screen** |
@@ -1899,12 +2007,23 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 말로 한 문제 자동 풀이 | Solve spoken problems | **Speech** |
 | 기술 용어 힌트 | Technical term hints | **Speech** |
 | 추가 용어 | Extra terms | **Speech** |
+| 글에서 고르기 | Pick from text | **Speech**, under **Extra terms** |
+| 용어 찾기 | Find terms | **Pick from text** |
+| 새 용어 | New terms | **Pick from text** |
+| 기본 힌트에 있음 | In the built-in hints | **Pick from text** |
+| 추가 용어에 있음 | In Extra terms | **Pick from text** |
+| 추가 용어에 넣기 | Add to Extra terms | **Pick from text** |
 | 음성 언어 | Speech language | **Speech** |
 | 음성 모델 | Speech model | **Speech** |
 | 들린 말 보관 | Keep what is heard | **Speech** |
 | 한국어 | 한국어 | **Speech language** (written in Korean in both languages, as **English** is in English) |
 | 스크롤 이어 붙이기 | Join scrolled screens | **Capture** |
 | 모니터 | Monitor | **Capture**; **Screen capture** |
+| 바뀐 화면 따라가기 | Follow the changing screen | **Capture**; **Capture connection**; the setup guide's **Screen** |
+| 따라감 | following | **Screen capture**: after **Monitor**'s value, while the monitor read is not the one chosen |
+| 모니터가 두 대 이상일 때 씀 | Used with two monitors or more | **Follow the changing screen**, grayed out |
+| 모니터 하나를 고를 때 씀 | Used when one monitor is chosen | **Follow the changing screen**, grayed out with **All monitors** |
+| Windows와 macOS에서 씀 | Used on Windows and macOS | **Follow the changing screen**, grayed out for a capture program on another system |
 | 쉬는 동안 GPU 비우기 | Free the GPU when idle | **GPU** |
 | 기본값으로 되돌리기 | Reset to defaults | the foot of **Solver settings** |
 | 패널 열기 | Open the panel | the tray menu |
@@ -1922,3 +2041,4 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 캡처가 이미 실행 중입니다 | The capture is already running | `./sidenote capture` |
 | 코드 실행기: 응답 없음 | Code runner: not responding | `./sidenote status` |
 | 예제 없음 | no examples | `./sidenote report`, the example checks |
+| 맞음/채점 | Right/judged | `./sidenote report`: a day's column, and the lines of the answers marked in the period |

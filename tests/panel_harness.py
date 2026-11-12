@@ -85,6 +85,10 @@ class Stand:
         self.heard: dict = {"days": [], "day": "", "lines": []}   # what /heard gives: Keep what is heard
         self.deleted: list[dict] = []   # what /history/deleted gives: Recently deleted, the latest deleted first
         self.deleted_days = 7           # for how many days it holds one (the server's SIDENOTE_DELETED_DAYS)
+        # The API's answers a suite sets, by "METHOD /api/v1/path": (status, a JSON object or bytes, headers); what was asked
+        # of them, in order, as (method, path, query, body)
+        self.api: dict = {}
+        self.api_asked: list = []
         stand = self
 
         class H(SimpleHTTPRequestHandler):
@@ -114,11 +118,35 @@ class Stand:
                                        "deleted": len(stand.deleted), "deleted_days": stand.deleted_days})
                 if url.path == "/history/deleted":
                     return self._json({"answers": list(stand.deleted), "days": stand.deleted_days})
+                if url.path.startswith("/api/v1/"):
+                    return self._api("GET", url)
                 if url.path == "/heard":
                     q = parse_qs(url.query)
                     day = q.get("day", [""])[0] or stand.heard["day"]
                     return self._json({**stand.heard, "day": day, "lines": [x for x in stand.heard["lines"] if x.get("day", day) == day]})
                 return super().do_GET()
+
+            def do_POST(self):
+                return self._api("POST", urlparse(self.path))
+
+            def do_DELETE(self):
+                return self._api("DELETE", urlparse(self.path))
+
+            def _api(self, method, url):
+                """An API route as the suite set it (stand.api), recorded; one it did not set is a 404"""
+                size = int(self.headers.get("content-length") or 0)
+                body = self.rfile.read(size).decode("utf-8", "replace") if size else ""
+                stand.api_asked.append((method, url.path, url.query, body))
+                status, data, headers = stand.api.get(f"{method} {url.path}", (404, {"ok": False, "error": "not set"}, {}))
+                raw = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
+                self.send_response(status)
+                self.send_header("content-type", (headers or {}).get("content-type", "application/json"))
+                for k, v in (headers or {}).items():
+                    if k != "content-type":
+                        self.send_header(k, v)
+                self.send_header("content-length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
 
             def _json(self, data):
                 body = json.dumps(data, ensure_ascii=False).encode()

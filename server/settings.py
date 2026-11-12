@@ -299,6 +299,12 @@ def _defs() -> list[Setting]:
                 t("All monitors takes them as one picture and sees a problem on any of them. On Windows the panel's "
                   "own window is covered before it is sent"),
                 [(0, t("All monitors")), (1, t("Monitor {i}", i=1)), (2, t("Monitor {i}", i=2))]),
+        # The capture program carries it out (client/capture.py, ScreenFollow), told in its control message: off, it
+        # reads the monitor above and nothing else. It looks at the others now and then to know where a new screen
+        # rests, which costs a grab of each (docs/DECISIONS.md, note 130), so it is off until asked for
+        Setting("monitor_follow", "bool", False, "capture", t("Follow the changing screen"),
+                t("Switches to the monitor where a new screen settles, and back again. Off: only the monitor chosen "
+                  "above")),
         # resources
         Setting("gpu_idle_min", "int", CONFIG.local_idle_min, "resource", t("Free the GPU when idle"),
                 t("Takes the model off the GPU this long after its last use. Loading it again takes some tens of "

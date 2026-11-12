@@ -24,7 +24,8 @@ support = h.support
 # The state of one entry's star key and of its row in the contents, read off the page
 KEY = """(id) => { const e = entryEl(id), k = e?.querySelector(':scope > .row.head [data-star]'), r = document.querySelector(`#history .h[data-id="${id}"]`);
   const tools = e?.querySelector(':scope > .row.head .tools');
-  return { key: !!k, first: !!k && tools.firstElementChild === k, pressed: k?.getAttribute('aria-pressed'), title: k?.title || '',
+  // first: the first of the head's keys after Right and Wrong, which stand before it (tests/panel_verdict.py)
+  return { key: !!k, first: !!k && k.previousElementSibling?.matches('[data-wrong]') && tools.firstElementChild?.matches('[data-right]'), pressed: k?.getAttribute('aria-pressed'), title: k?.title || '',
            word: k?.textContent.trim() || '', fill: k ? getComputedStyle(k.querySelector('svg')).fill : '', row: !!r?.querySelector('.h-star'),
            rowWord: r?.querySelector('.h-star + .sr-only')?.textContent || '' }; }"""
 # The highlighter's token, as this page's theme computes it: what a star is filled with
@@ -74,7 +75,7 @@ def group_key(br, s):
     for theme in ("dark", "light"):
         p = Page(br, s, rows, w=1600, h=1000, theme=theme)
         k = p.js(KEY, 103)
-        check(f"{theme}: a finished answer has a star key, the first of its head's keys, not pressed",
+        check(f"{theme}: a finished answer has a star key, the first of its head's keys after Right and Wrong, not pressed",
               k["key"] and k["first"] and k["pressed"] == "false" and k["word"] == "별표" and k["title"].startswith("별표:"), k)
         check(f"{theme}: ...an outline, nothing in it", k["fill"] == "none", k["fill"])
         p.js("() => { window.__sent = []; }")

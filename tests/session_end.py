@@ -387,6 +387,9 @@ try:
             check("its hello says what it is: its PC and system, its release, how it was started, its address, and what its Quit ends",
                   status().get("who") == {"host": cap.pc_name(), "system": cap.system_name(), "version": version, "started": "terminal",
                                           "server": f"ws://127.0.0.1:{PORT}/ingest", "ends_server": True}, status().get("who"))
+            # Following the changing screen has moved nothing at a start: the chosen monitor is read, and said from the hello
+            caps = status().get("caps") or {}
+            check("...and that it reads the chosen monitor (following: null)", "following" in caps and caps["following"] is None, caps)
             req = urllib.request.Request(f"http://127.0.0.1:{PORT}/capture/quit", data=b"", method="POST")
             urllib.request.urlopen(req, timeout=10).close()     # ./sidenote capture-stop, as down asks it first
             rc, out = ended(prog)

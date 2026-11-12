@@ -8,13 +8,13 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 
 | Topic | Notes |
 |:---|:---|
-| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128) |
+| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127) |
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
 
@@ -2270,3 +2270,221 @@ which `large-v3-turbo` needs on its own, and past it WSL lends system memory and
 libraries would also add some 1.3 GB of wheels to the image. A sound-alike the model still writes ("BLM이나 SGLang" for vLLM, "지하어
 PC" for gRPC) is for the engine reading the question to set right from its context; that needs the local model to measure,
 and is left for that.
+
+### <a id="note-130"></a>130. Following the changing screen on several monitors
+
+The capture program reads the monitor chosen in the panel, and a problem that comes up on another monitor is never read:
+the choice has to be made again by hand, or **All monitors** taken, which reads them as one wide picture and shrinks
+everything on it. **Follow the changing screen** (**Capture**, off by default: most people set one monitor and keep it)
+has the program look at the other monitors too, read the one where a new screen settled, and come back to the chosen one
+the same way.
+
+What counts as a new screen had to be measured. The program's own mark, a signature change of 0.1 (what it sends on),
+would take every notification and chat line on another monitor. Over the whole screen the signature does not tell those
+from a new screen either: on the bench's 29 rendered screens at 1920x1080 and 3840x2160, a notification of the size
+Windows draws changed it by up to 0.87 (0.58 and 0.84 in the middle at the two sizes), and the next problem on the same
+site by 0.17 to 1.31, about 0.9 in the middle. Where the change is tells them apart: a notification reached 14% of the
+signature's rows at the most, three chat lines 16%, five lines typed 12%, where the next slide reached 30% or more and
+the next problem 34% in the middle. A chat that takes a message moves its whole pane up by that message, a change of 1.2
+to 5.6 over 70% to 95% of the rows. The program's scroll reading finds that move, but between two looks seconds apart it
+also found one between 140 to 142 of 383 pairs of unrelated pages, two of their bands lining up by chance. Asking two
+thirds of the bands that changed to agree tells them apart: 5 of 8 at the most for unrelated pages, two thirds or more
+for a chat's pane in 71 of 72 at the three sizes below.
+
+So a new screen is a change of 0.5 or more over the whole screen (the server's mark of a new problem,
+`SIDENOTE_CHANGE_THRESHOLD`), by as much over a fifth of its rows, that is not the same content moved; it has settled
+once the two looks after the last one that moved each come no further than 0.1 from the one before (three looks in all,
+about 3 s). On the same cases at 1920x1080, 3840x2160 and 1440x2560, another
+site is a new screen in 372 or 373 of 383 pairs, the next problem on the same site in 19 or 20 of 23 and the next slide
+in 11 of 11 (7 of 11 for a 16:9 slide on the upright monitor). No notification coming or going, chat message, typing or
+clock change is one, but for two messages at once in a narrow chat window on the upright monitor (1 of 4). A slide of a
+title alone is missed. A video of a face moving slowly, a quarter of a landscape screen wide, changed by 0.13 or more
+from one look to the next, so it never settles; on the upright monitor that box is small enough to count as still, and
+too small to be a new screen.
+
+The reading moves to the monitor where the newest new screen settled since the last move, unless one settled on the
+monitor read after that change began (somebody is working there), and 10 s after the last move at the earliest. The
+chosen monitor is one of the others once the reading has moved, and it comes back the same way. A scrolled problem
+being joined holds the reading where it is, joined by the program's own move or by **Join scrolled screens**. Off, with one monitor, or with **All monitors**, the chosen monitor is read
+at once, and the panel greys the row out with the reason, counting the monitors the **Monitor** row offers. The rules
+are a class of their own (`ScreenFollow`), fed signatures and times.
+
+Nothing of a monitor not read leaves the program. One that shows a window of **Skip windows** is not looked at, and a
+look is let go when one came up while it was grabbed. This tool's panel is painted over before the signature is taken,
+so an answer written there is no new screen; that takes the window list that finds the panel, which the program reads on
+Windows and macOS. Elsewhere (Linux) an answer streaming into the panel on another monitor would be a new screen to move
+to, the panel read as the problem, so the program does not follow there and says so (`follow_ok`), and the panel greys
+the switch out with the reason. The program
+tells the server the monitor it reads (`following` in caps, `null` for the chosen one), which the capture card shows
+("2번 1440x2560 · 따라감"), and a drawn region is cleared when that changes, as when another monitor is chosen: it is a part
+of the screen it was drawn on.
+
+Each other monitor is grabbed every 1.5 s, and every monitor is read for it shrunk by whole steps to about 1280 pixels
+on its longer side, straight off the grabbed bytes (`follow_reading`): the signature and the row profile need no more,
+and turning a 4K grab into an image at full size first, as a look at the monitor read does, cost more than the grab.
+The figures above are read that way. On the test PC a look at its 1440x2560 monitor took 26 ms of CPU, 15 ms of it the
+grab, about 1 s a minute, and a look at its 3840x2160 one about 40 ms, 34 ms the grab, about 1.6 s a minute; read at
+full size they took 51 and 98 ms. The program's screen loop on the two monitors, a minute at a time with other work
+running on the PC, used 12.9 to 18.4 s of CPU a minute with following off and 14.5 to 17.4 with it on, so the looks are
+within what the program's own polls vary by.
+
+Left out: following the window in front or the pointer, which would not follow a presentation on the other monitor while
+notes are typed on this one, the case this is for; and telling a new screen by its words, which would take the local
+model on every look. A screen that redraws as a whole by itself (a dashboard turning its pages, a terminal program that
+redraws) is a new screen by every reading here: on the test PC, in four minutes of measuring, something on the upright
+monitor changed over half its rows twice with nothing in it moved, and following went there, as it would for a slide.
+
+`tests/monitor_follow.py` checks the rules, the screen loop on two made-up monitors and the server's half, and fails all
+22 of its checks on the code before (the parts it needs are missing there); the row and the card in
+`tests/panel_capture.py` fail 11 of 13 there, the other two being its checks for page errors.
+
+### <a id="note-131"></a>131. Extra terms picked from a job posting or a resume
+
+**Extra terms** ([note 129](#note-129)) gives speech recognition the person's own words in front of the built-in lists,
+and they had to be typed one by one, by someone who cannot know which words a recognizer gets wrong. The words an
+interview is about are written down already, in the job posting, the resume and the notes. On the speech bench of note
+129 (its spoken interview questions through a meeting app's codec, `small`, the 44 Korean sentences of one voice), the
+bench's own terms given as Extra terms in front of the built-in lists of the time, those before note 129's, cut the
+character errors from 6.1% to 4.6% and raised the terms written right from 78% to 81%. Today's lists hold 55 of the bench's
+130 Korean terms where those held 29, and alone reach 4.5% and 85% on that voice (note 129): what Extra terms add now is
+the words no built-in list holds, the products and names of one posting.
+
+**Pick from text**, under the box in the Speech section, opens an area in the row: a text is pasted, and **Find terms**
+asks the server for its technical terms (`terms_find`, or `POST /api/v1/speech/terms`). They come back as keys, the most
+frequent first, then the first to appear, at most 60, in three groups: new ones, pressed in; those the built-in lists
+speech recognition is given now hold, not pressed; and those Extra terms holds, shown pressed and not to be pressed again.
+**Add to Extra terms** puts the pressed ones after the box's words with the box's own setting message. The box never
+goes past its 50 words: the terms with no room are not pressed, the keys left cannot be pressed until one comes out, and
+the line under them says the box is full and how many were left out.
+
+A term is found by how it is written, in an English text and a Korean one alike: a capital inside it (LangGraph, gRPC),
+all capitals of 2 to 10 letters (AWS, HPA), letters with digits (K8s, H100), a mark inside or at its end (C++, .NET,
+CI/CD, TensorRT-LLM, Node.js), a capitalized word inside a sentence, in a list or beside Korean (Kafka), and in Korean
+text a lowercase word too (pandas, kubectl), as Korean writes names in Latin letters and little else. A capital at the
+head of a sentence or a line, or after another capital (a title, a person's name), says nothing and is no term. Two words
+are one name when the second is never written without the first: a technical shape and a word (GitHub Actions), two
+capitalized words standing as a name does (Apache Kafka, Spring Boot), or a word and an abbreviation of one or two letters
+(Argo CD); two technical shapes stay two terms (AWS EKS). A stoplist of some 600 words leaves out the words of any English
+sentence, what every posting and resume says (Team, Experience, Developed, Required, Korea, Seoul), a posting's culture and
+perks, which Korean postings write in English too (Remote First, Culture Fit, Flexible Hours), the first verbs of a
+resume's lines and the generic words of every technical posting (Cloud, Server, Data). Numbers, years, numbers with units
+(16GB, 100ms), versions, e-mail and web addresses and domains go too; a name shaped like a domain stays (Node.js, ASP.NET).
+The same word in other capitals is one term, written the way it is written most often; an abbreviation's plural is the
+abbreviation (APIs). On the 56 questions of note 129's bench, written for it, every name they write in Latin letters is
+found, four in a shorter form (GPU for GPUs, KV for KV cache, REST and API, PD for PD disaggregation), and nothing that is
+no term; the everyday words of its English questions (salary, workflow, latency) are not taken, as no lowercase word of
+an English text is.
+
+The words the built-in lists hold are shown apart, not pressed, rather than left out. A posting's most frequent words are
+often among them (Kubernetes, Kafka), and missing from the keys they read as words the search missed; pressed in they would
+take places of the 50 for words the lists give already, and note 129 found that more words is not better: the 140 terms of
+the whole bench, cut to fit, wrote fewer terms right than the lists made for them. One pressed in all the same goes in
+front of the list, which a cut to the 223 tokens Whisper keeps takes from first.
+
+The text is read and let go. The reply goes to the panel that asked alone, never to the other panels or the readers of
+`/api/v1/events`; no log line, event or file holds the text or the terms found in it, and those added to Extra terms are
+kept as words typed there are; the panel holds the text while the area is open, and drops it once the terms are added, as
+the area closes and as the sheet does. A text holds at most 64 KB of UTF-8, some
+21,000 Korean characters or 65,000 English ones: the panel says so beside **Find terms** and sends nothing longer, since a
+message past the socket's own 2 MB would close it, and the server answers a longer one with the same words (`413` from
+the route). An e-mail address looked for from each letter of a long run of letters read the rest of the run each time,
+and 16 KB of letters took 0.4 s, 64 KB seconds; it is looked for from the head of a run only, and 64 KB of each made-up
+text, a run of letters among them, is read in 0.11 s or less, in a thread off the server's loop.
+
+Left out: a dictionary of products, which would date as the built-in lists do while the shapes find today's names
+unaided; a lowercase word in an English text, as often an ordinary word as a name; and words in Hangul, which the Korean
+list keeps for itself. A company or a school named inside a sentence can come up as a term, and is left out with its key.
+`tests/speech_terms.py` checks the finding on made-up postings and resumes, `tests/api_check.py` the route and that nothing
+of the text reaches a panel, a reader of events, a log line or a file, and `tests/panel_terms.py` the area. Each of their
+new checks fails on the code before; the four that look for the text where it must not be fail on a server made to write
+it to the log, to an event and to every panel, and the timing of a long text fails with the address looked for from each
+letter (6.9 s).
+
+### <a id="note-132"></a>132. An answer is marked right or wrong, and the report counts how often each engine is
+
+Nothing said how often the answers were right. The report counted answers, their times and their cost, and the star
+keeps an answer without saying whether it was right. Now a finished answer's head has **Right** and **Wrong**, the tick a
+copy key wears once it worked and the cross of the settings sheet's close key, just before the star, so the star, **Copy
+all** and **Delete** keep their places from the end of the row. The one pressed stays pressed in, its mark in the colour
+of what worked or of what failed; pressed again it takes the mark off, and the other one changes it. As with the star, the
+panel draws nothing until the server says it kept the mark, and then every panel open shows it. The mark is a column of
+the answer's row in `history.sqlite` (`verdict`: `right`, `wrong`, or empty), added once to an older file, so a reload and
+a reconnect bring it back, a row written again keeps it, and a delete and its **Undo** keep it. An answer being written, an
+error, a stopped one and one **Practice** keeps back have no keys: an answer not seen is not judged, and a mark given to it
+on another panel shows once it is opened. A program marks one with `PUT /api/v1/answers/{seq}/verdict`.
+
+Each mark writes a `verdict` event with the answer's engine, model, type and how it came, so `./sidenote report` counts the
+marks from the event log alone, as it counts everything else, and with the server down too. An answer marked more than
+once counts once, as its last mark, on the day that mark was given; one whose mark was taken off is written `none` and
+counts as not judged. The period's summary says how many answers were judged and how many were right, all of them and by
+engine on one line, then by screen or speech and by type, and each day has a right/judged column. The event names the
+answer's kind `type`, as `analysis_done` does.
+
+On a phone the head held the kind, the time and four keys on one line, with 21 px to spare in English (Algorithm, 04:42 AM)
+and 42 in Korean at 390 px; two more keys of 28 px took it to two lines. Three ways were drawn at 390 and 360 px in both
+themes. Keys of 26 px left 1 px in English. Right and Wrong joined into one key of two narrow halves made the row's keys two
+sizes, which the layout audit holds against. Keys of 24 px were taken, the smallest target WCAG 2.2 asks for and the audit's
+floor for these keys. A sweep of the heads from 340 to 1100 px in both languages against the panel before (the newest
+answer's, a folded one's, an open one's, an older day's, a spoken problem's and a scrolled one's) found more: from 421 to 516
+px, above the 420 px the phone's rules stopped at, six keys took two lines beside today's date, and from 370 to 376 px (an
+iPhone SE's 375) English was 2 px short. Now up to 540 px, where six keys of 28 px first fit beside an older day's date, today's
+date goes as it went below 420 px, and so do the kind's own margin and 2 px each side of its word, the time's calendar mark,
+and the keys' gaps down to 3 px. The sweep then finds no head whose keys leave the date's line where they kept it, but a
+spoken problem's at 340 px in English; English heads at 368 px and from 422 to 446 px, on two lines before, now take one.
+
+In the wide layout, how a problem came (heard by voice, gathered by scrolling) now takes the room the keys leave and wraps its
+words there. From 1002 to 1064 px in English a spoken problem's two keys more put its keys on a line of their own; now its
+words take two lines beside them, the head 44 px tall where it was 28, and its keys stay on the date's line, as a scrolled
+problem's and a folded spoken one's do now where theirs went under their words before. At 1366 and 1920 px nothing moved but
+the two keys coming in.
+
+Left out: a choice of the contents by mark, a mark on a follow-up (a turn of its answer's row, with no key of its own),
+and the report by model, which the events carry for later. `tests/history_verdict.py` and `tests/panel_verdict.py` fail all
+40 and all 43 of their checks on the code before, and so do the 10 new checks of `tests/report_period.py` and the 10 of
+`tests/api_check.py`.
+
+### <a id="note-133"></a>133. Maintenance: what the commands tell, in the panel
+
+How the parts stood, what had failed, which models the local server held and a copy of the history were the launcher's
+alone: `./sidenote doctor`, `status`, `events --errors`, `logs`, `llm list` and `rm`, `backup`. The panel showed a card a
+part and said nothing of the disk, the speech model that did not load, the errors of the last day or the models it did
+not use, and someone on the panel had to go to a terminal for each.
+
+**Maintenance** in the gear menu has them in the settings sheet's form, a section a tab:
+
+- **Checks**: one row a part, in the setup guide's order, worked out by the server from what it already holds (the
+  engines' and the capture program's state, the speech model, the release check) and from two things it reads for it,
+  the free space of the data folder's disk and the failures of the last day in the events. Each says how it stands,
+  what was found and what to do: a command with **Copy**, or a key to the section where the fix is. The words are the
+  server's, so `GET /api/v1/check` reads what the panel shows. A part switched off on purpose is no fault, and a part
+  not known yet is waiting, not wrong. The disk turns to a warning under 5 GB free and a fault under 1 GB: a speech
+  model is 1.6 GB, and the history's next writes and a model download fail on a full disk.
+- **Report**: what `./sidenote report` counts, for today, 7 or 30 days. `report_data` in server/report.py gives the
+  command's `--json` and `GET /api/v1/report` the same numbers, the events read once for the days and the whole period
+  (they were read twice). The first tokens come as well with the engine and the way in as keys, so the panel names the
+  agent by its name, as the marks name it; a cancel's reason comes in the server's words (`names`). The days are a
+  table of five columns, the date, the answers, the right of the marked, the median response and the spend, which
+  stays inside a phone's width in English; the rest of a day's numbers are the terminal's, which has the room.
+- **Log**: the latest events, the failures first as `./sidenote events --errors` picks them, and the last 200 lines of
+  the server's log. Both are read from the end of their files, a block at a time and across a rotated file, so a long
+  events.jsonl costs a request no more than its last lines.
+- **Models**: Ollama's models with their sizes, which this server answers with, and which are on the GPU; **Remove**
+  asks twice. The ones the panel downloads and the server lacks have the local card's **Download** and its bar.
+- **Backup**: **Download** saves the file `./sidenote backup` writes, made by the server through SQLite's own backup
+  of the file it holds open, with **Recently deleted** left out and the copy rebuilt so none of those answers is left in
+  its pages. `./sidenote restore` takes it, and takes a backup made by the launcher; one made here is the same file.
+
+Left out, and why: putting a backup back. It replaces the history under the server that has it open, with its settings,
+its switches and the problems it remembered across a restart; the launcher stops the server for the swap, keeps what
+was there in a before-restore folder and starts it again (`cmd_restore`), and the panel, served by that server, can do
+none of that. The sheet gives the command, and under the app the data folder the files go into. The checks of the host
+itself (Docker's version, the GPU's toolkit) stay `./sidenote doctor`'s: the server in its container cannot see them.
+
+The screen's check reads no fault into a still screen: the capture program sends a screen when a change settles and
+none while nothing changes, so a minute without one says nothing. It warns when a program connected for a minute has
+sent none since it connected (its first comes in seconds), and waits while a window of **Skip windows** holds the
+screen back. A backup goes out in blocks from its file, which is removed after the last or when the download stops
+first; a backup a stopped server was making is removed as the next one starts, so no copy of the history, with its
+deleted answers, stays in the log folder. `tests/maintenance_check.py` checks the server's side and
+`tests/panel_maint.py` the sheet; on the code before, the first stops at its import of `server.maintenance` and the
+second finds no **Maintenance** in the menu.

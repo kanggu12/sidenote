@@ -241,6 +241,10 @@ const STAR_ROW = () => `<svg class="h-star" viewBox="0 0 24 24" stroke-width="2"
   + `<span class="sr-only">${t("Starred answer")}</span>`;
 // A bin, for the delete key on an answer's head: the menu's Clear history wears the same (index.html, #clear)
 const TRASH_MARK = mark('<path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v5M14 11v5"/>');
+// A tick and a cross, for an answer marked right or wrong: the tick a copy key wears once it worked (DONE_MARK) and the cross
+// of the settings sheet's close key (CLOSE_MARK), drawn at the weight of the head's chevrons
+const RIGHT_MARK = mark('<path d="M4.5 12.5l5 5L19.5 7"/>', 2.1);
+const WRONG_MARK = mark('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>', 2.1);
 // The code block's own copy button: the mark changes with the word, so the state is visible from
 // across the page and not only to whoever is reading the label.
 async function copyCode(from, btn) {
@@ -2437,8 +2441,11 @@ function monitorText() {
   const sizes = Array.isArray(caps.monitors) ? caps.monitors : [];
   if (chosen === 0) return sizes.length ? t("All monitors ({n})", { n: sizes.length }) : t("All monitors");
   if (!chosen) return "";
-  const size = sizes[chosen - 1];
-  return `${t("#{n}", { n: chosen })}${size ? ` ${size[0]}x${size[1]}` : ""}`;
+  // Following the changing screen has moved the reading to another monitor (the program says which, caps.following): that
+  // one is read, so it is the one named, with a word for why it is not the one chosen
+  const read = Number.isInteger(caps.following) && caps.following > 0 ? caps.following : chosen;
+  const size = sizes[read - 1];
+  return `${t("#{n}", { n: read })}${size ? ` ${size[0]}x${size[1]}` : ""}${read !== chosen ? ` · ${t("following")}` : ""}`;
 }
 const LANG_FULL = { ko: t("Korean"), en: t("English"), auto: t("Auto") };
 function audioState() {
@@ -3801,7 +3808,7 @@ function syncPracticeSeg() {
   document.querySelectorAll("#practice-seg button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.practice === "on") === on)));
 }
 // The day in a span of its own, marked when it is today: a phone's window leaves it out there (index.html, .day.today), the time
-// alone, so the kind, the time and an answer's four keys keep one line. The whole of it stays on the pointer
+// alone, so the kind, the time and an answer's six keys keep one line. The whole of it stays on the pointer
 function entryWhen(it) {
   const day = dayOf(it.ts), today = day === dayOf(Date.now());
   if (stampDay === null) stampDay = dayOf(Date.now());   // the day the first stamp is marked on
@@ -3833,6 +3840,25 @@ function paintStar(it) {
   key.setAttribute("aria-pressed", String(!!it.starred));
   key.title = starTitle(it);
 }
+// Right and Wrong: an answer marked by the person reading it, for how often each engine is right (./sidenote report). Only one
+// that can be starred, since the server keeps the mark on its row, and not one Practice keeps back: unseen, it cannot be judged
+const VERDICTS = ["right", "wrong"];
+const verdictOf = (v) => (VERDICTS.includes(v) ? v : null);   // what a row or a message says, as the keys show it: else no mark
+const judgeable = (it) => starrable(it) && !held(it);
+const verdictTitle = (it, v) => (it.verdict === v ? (v === "right" ? t("Marked right · press to clear") : t("Marked wrong · press to clear"))
+  : v === "right" ? t("Right: mark the answer right") : t("Wrong: mark the answer wrong"));
+// One of the two keys, by the mark it gives: its attribute names the mark and holds the answer's id, as the star's does
+const verdictKey = (it, v) => `<button class="btn sm ghost" data-${v}="${it.id}" aria-pressed="${it.verdict === v}" title="${escapeHtml(verdictTitle(it, v))}">`
+  + `${v === "right" ? RIGHT_MARK : WRONG_MARK}<span>${v === "right" ? t("Right") : t("Wrong")}</span></button>`;
+// The two keys drawn again on their own, for a mark given or taken off from this panel or another, as paintStar does the star's
+function paintVerdict(it) {
+  for (const v of VERDICTS) {
+    const key = entryEl(it.id)?.querySelector(`:scope > .row.head [data-${v}]`);
+    if (!key) continue;
+    key.setAttribute("aria-pressed", String(it.verdict === v));
+    key.title = verdictTitle(it, v);
+  }
+}
 function entryHtml(it) {
   const kind = it.error ? `<span class="kind err">${t("Error")}</span>`
     : it.live && !it.head.type ? `<span class="kind live">${t("Analyzing")}</span>`
@@ -3851,6 +3877,9 @@ function entryHtml(it) {
   const ptextWait = !!it.ptext?.pending;
   if (ptextOffered(it) || ptextWait) tools.push(`<button class="btn sm ghost" data-ptext="${it.id}"${ptextWait ? ' aria-disabled="true"' : ""} title="${t("Write out the problem on the screen as text")}">${PTEXT_MARK}<span>${t("Problem text")}${ptextWait ? "…" : ""}</span></button>`);
   if (it.ptext?.text) tools.push(`<button class="btn sm ghost" data-copy-ptext="${it.id}" title="${t("Copy the problem text written out")}">${PTEXT_COPY_MARK}<span>${t("Copy problem text")}</span></button>`);
+  // Right and Wrong stand before the star, on the answers it is on less those Practice keeps back (judgeable): the star keeps its
+  // place beside Copy all, where it was before they came
+  if (judgeable(it)) tools.push(verdictKey(it, "right"), verdictKey(it, "wrong"));
   // The star, Copy all and Delete come last, so they keep their places from one answer to the next whatever comes before them.
   // The star is on a whole answer the server keeps, by its id (a follow-up's stand-in parent has none)
   if (starrable(it)) tools.push(`<button class="btn sm ghost" data-star="${it.id}" aria-pressed="${!!it.starred}" title="${starTitle(it)}">${STAR_MARK}<span>${t("Star")}</span></button>`);
@@ -3918,7 +3947,7 @@ document.addEventListener("pointercancel", endPress, true);
 // A control inside an entry, as a selector and its place among the entry's matches: found again after a rebuild. A key that
 // names what it acts on (its data-* attribute and value) is found by that first: by place alone, a key that came or went before
 // it moved the focus onto its neighbour
-const KEY_NAMES = ["fold", "ptext", "copyPtext", "star", "copyItem", "delete"];
+const KEY_NAMES = ["fold", "ptext", "copyPtext", "star", "right", "wrong", "copyItem", "delete"];
 function focusKey(el, root) {
   const f = document.activeElement;
   if (!f || f === document.body || !root.contains(f)) return null;
@@ -4710,12 +4739,17 @@ function restore(row) {
     // A star changed while this page was away from the server (another panel, a dropped connection): the server's is the one
     const restar = typeof row.starred === "boolean" && row.starred !== !!had.starred;
     if (restar) had.starred = row.starred;
-    if (mended) renderEntry(had); else if (restar) paintStar(had);
+    // ...and so is a verdict (a row from a server before verdicts has none to say, and leaves this page's as it is)
+    const rejudge = "verdict" in row && verdictOf(row.verdict) !== verdictOf(had.verdict);
+    if (rejudge) had.verdict = verdictOf(row.verdict);
+    if (mended) renderEntry(had);
+    else { if (restar) paintStar(had); if (rejudge) paintVerdict(had); }
     return false;
   }
   if (had) { had.turns.forEach((t) => turns.delete(t)); items.delete(row.id); entryEl(row.id)?.remove(); thread = thread.filter((id) => id !== row.id); }
   const it = newItem({ id: row.id, trigger: row.trigger, transcript: row.transcript, thumb: row.thumb });
   it.ts = row.ts * 1000; it.raw = row.text || ""; it.live = false; it.shown = true; it.restored = true; it.starred = !!row.starred;
+  it.verdict = verdictOf(row.verdict);   // its mark, as the server keeps it: anything else is none
   // Only a box the server says is what the crop took: one kept from before holds the model's first guess, often a part of the problem
   it.meta = row; it.region = (row.region_shown && row.region) || null; it.check = row.check || null; it.verify = row.verify || null; it.head = splitHead(it.raw, true);
   for (const t of row.turns || []) {
@@ -4912,6 +4946,8 @@ function exportMarkdown() {
     const kind = it.error ? t("Error") : TYPE_LABEL[it.head.type] || it.head.type || t("Result");
     const who = it.meta ? `${it.meta.engine === "agent" ? AG() : t("Local model")}${it.meta.model ? ` · ${it.meta.model}` : ""}${it.meta.elapsed != null ? ` · ${t("{n} s", { n: it.meta.elapsed })}` : ""}` : "";
     out.push(`## ${when(it.ts)} ${kind}${who ? ` (${who})` : ""}`, "");
+    // How it was marked, under its heading: a short line of its own, for an answer that has a mark
+    if (it.verdict) out.push(it.verdict === "right" ? t("Marked right") : t("Marked wrong"), "");
     if (it.trigger === "voice" && it.transcript) out.push(`> ${t("Heard: {text}", { text: it.transcript.replace(/\s+/g, " ") })}`, "");
     if (it.head.asked) out.push(`> ${t("Question: {text}", { text: String(it.head.asked).replace(/\s+/g, " ") })}`, "");
     if (it.error) out.push(t("Error: {text}", { text: it.error }), "");
@@ -5510,7 +5546,7 @@ function handle(m) {
       if (!openCaptureAsked() && m.fresh) setupFirst();
       break;
     case "capture": {
-      const wasOn = capture.screen_on, before = capture.clients;
+      const wasOn = capture.screen_on, before = capture.clients, couldFollow = capture.clients > 0 && capture.caps?.follow_ok !== false;
       // The message carries the server's own clock, so the offset is known before anything is
       // measured against it.
       if (typeof m.now === "number") clockSkew = Date.now() / 1000 - m.now;
@@ -5522,6 +5558,9 @@ function handle(m) {
         // what the program that feeds the server said of itself, and since when (the Capture connection)
         who: m.who && typeof m.who === "object" ? m.who : null, since: typeof m.since === "number" ? m.since : null };
       noteCapture(before);
+      // whether the program can follow the changing screen changed (another program, or the first word of this one): the
+      // sheets that hold its switch drawn again, which a capture message otherwise leaves alone
+      if ((capture.clients > 0 && capture.caps.follow_ok !== false) !== couldFollow) renderSettings();
       if (wasOn && !capture.screen_on) { forgetScreens(); if (drawing) drawing = null; }   // a box drawn on a screen no longer kept: the key to end it was off with the capture
       renderSignals(); renderAlerts(); renderShot(); noteChange();
       renderHear(capture.audio_on ? undefined : "", "");
@@ -5542,7 +5581,10 @@ function handle(m) {
       if (m.status === "failed") toast(t("The download of {model} failed: {error}", { model: m.model || "", error: m.error || "" }), null, "bad");
       if (m.status === "done") toast(t("{model} is ready", { model: m.model || "" }), null, "done");
       renderAll();
+      // the Maintenance sheet's Models: the bar moves there too, and the list is read again once it has ended
+      if (!$("maint-overlay").hidden && maintSection === "models") { if (pullNow) maintPullProgress(); else loadMaint("models"); }
       break;
+    case "model_delete": onModelDelete(m); break;   // the answer to the Maintenance sheet's Remove
     // The server words what it could not do this way; said once here rather than at each of its notices
     // The server says what kind of notice it is (level: info, done, warn or bad, the bands' kinds); an older one does not,
     // and its Korean words tell it instead
@@ -5586,6 +5628,7 @@ function handle(m) {
       if (t) { t.check = m; if (owner && entryEl(owner.id)) { keepPlace(() => renderEntry(owner)); followEnd(); } }
       break;
     }
+    case "terms_found": termsFound(m); break;   // the terms of this panel's pasted text, to Pick from text
     case "problem_text": {   // Problem text, for this panel's request
       const it = items.get(m.id);
       if (it) { it.ptext = m.error ? { error: m.error } : { text: m.text || "" }; if (entryEl(it.id)) renderEntry(it); }
@@ -5601,6 +5644,11 @@ function handle(m) {
         paintStar(it);
       } else if (m.starred && histStar) loadHistory({ starred: 1, limit: 200 });   // starred elsewhere, not on this page: Starred brings it in
       renderIndex();
+      break;
+    }
+    case "verdict": {   // an answer marked right or wrong, or its mark taken off, from this panel or another
+      const it = items.get(idOf(m.id));
+      if (it) { it.verdict = verdictOf(m.verdict); paintVerdict(it); }   // one kept back has no keys yet: drawn with its mark when shown
       break;
     }
     case "verify": {   // the verify mode: the agent's check of this local answer; what it sent joins the card's list
@@ -5698,6 +5746,18 @@ const ACTIVE_WHEN = {   // prerequisites that are not plain switches
   agent_payload: (v) => v.agent_mode !== "off", agent_confirm: (v) => v.agent_mode !== "off",
   agent_hard_types: (v) => v.agent_mode === "hard",
 };
+// The monitors the Monitor row offers, All monitors left out: the capture program's once it has said them, the first two
+// before that (server/settings.py), so a count not known yet dims nothing. Read from the row's own choices, which come in a
+// settings message that draws every sheet again (the program's caps come after it, in a capture message that draws none)
+const monitorCount = () => (settingItem("monitor")?.options || []).filter(([v]) => v !== 0).length;
+// Prerequisites that are no setting of their own, each with its own words: following the changing screen moves between
+// monitors, so one monitor, or all of them read as one picture, leaves it nowhere to go
+const NEEDS_MORE = {
+  // and the program has to find this tool's panel to leave it out, which it can on Windows and macOS (caps.follow_ok)
+  monitor_follow: () => capture.clients > 0 && capture.caps?.follow_ok === false ? t("Used on Windows and macOS")
+    : settingsValues.monitor === 0 ? t("Used when one monitor is chosen")
+    : monitorCount() < 2 ? t("Used with two monitors or more") : "",
+};
 function outboundNote() {
   const C = eng()?.agent, S = eng()?.search;
   // Web search also leaves this PC, with words taken from the screen: saying "nothing leaves" while
@@ -5727,6 +5787,8 @@ function settingBlocker(item) {
       return t("Needs {setting} on", { setting: `'${label}'` });
     }
   }
+  const more = NEEDS_MORE[item.key]?.();
+  if (more) return more;
   const f = ACTIVE_WHEN[item.key];
   if (f && !f(settingsValues)) {
     if (item.key !== "agent_hard_types") return t("Needs the agent on", { agent: AG() });
@@ -5787,7 +5849,7 @@ function settingRow(item) {
   const shown = item.kind === "bool" && UNAVAILABLE[item.key]?.() ? false : v;
   return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, shown, !!why)}</span>
     ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
-    <p class="help">${escapeHtml(extra ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p></div>`;
+    <p class="help">${escapeHtml(extra ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p>${item.key === "speech_terms" ? termsHtml() : ""}</div>`;
 }
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
 // sections become tabs down the side, so every setting is one click from any other.
@@ -5814,6 +5876,8 @@ function renderSettings() {
   const focusMulti = was.multi;   // a checkbox in a type group
   const tabFocus = was.sec;
   const actFocus = was.act;
+  const termsFocus = was.terms;   // a key of Pick from text, under Extra terms (termsHtml)
+  const termFocus = was.term;     // a term found there, by its word
   const has = (sec) => settingsMeta.items.some((i) => i.section === sec) || (sec === "resource" && !!eng()?.local?.present);
   const secs = settingsMeta.sections.filter(([sec]) => has(sec));
   if (!secs.some(([sec]) => sec === settingsSection)) settingsSection = secs[0]?.[0] || "solve";
@@ -5851,6 +5915,8 @@ function renderSettings() {
   }
   else if (tabFocus) body.querySelector(`[data-sec="${CSS.escape(tabFocus)}"]`)?.focus();
   else if (actFocus) body.querySelector(`[data-act="${CSS.escape(actFocus)}"]`)?.focus();
+  else if (termsFocus) body.querySelector(`[data-terms="${CSS.escape(termsFocus)}"]`)?.focus();
+  else if (termFocus !== undefined) body.querySelector(`[data-term="${CSS.escape(termFocus)}"]`)?.focus();
   if (reopen) {
     const btn = body.querySelector(`.combo-btn[data-set="${CSS.escape(reopen.key)}"]:not([disabled])`);
     if (btn) { comboToggle(btn); if (reopen.at >= 0) comboMove(reopen.at); }
@@ -5875,7 +5941,7 @@ const onSheets = (type, fn) => { for (const id of ["settings-body", "setup-body"
 // under the pointer replaced between the press and the release takes no click), and the keyboard in a box of words (a
 // redraw puts the caret back at the start and cuts a Korean syllable being put together)
 let sheetPress = false, sheetDue = false;
-function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.(":is(#settings-body, #setup-body, #capture-body) textarea.words"); }
+function sheetBusy() { return sheetPress || !!document.activeElement?.matches?.(":is(#settings-body, #setup-body, #capture-body) :is(textarea.words, textarea.terms-text)"); }
 // The redraw that waited, once neither holds: after the focus has moved on (a Tab out of the box) or the click has landed
 function sheetSettle() { setTimeout(() => { if (sheetDue && !sheetBusy()) { sheetDue = false; renderSettings(); } }, 0); }
 for (const o of ["settings-overlay", "setup-overlay", "capture-overlay"]) $(o).addEventListener("pointerdown", () => { sheetPress = true; }, true);
@@ -5917,10 +5983,165 @@ onSheets("focusout", (e) => {
   sheetSettle();
 });
 window.addEventListener("resize", () => { if (!$("settings-overlay").hidden) fitWords(); });   // the lines wrap at another width
+// ---------- Pick from text, under Extra terms ----------
+// A job posting, a resume or notes pasted in, the technical terms the server finds in it (server/terms.py) offered as keys,
+// each pressed in while it is to go into Extra terms, and those pressed added to the box with the box's own setting message.
+// The server reads the text and keeps none of it; here it is held while the area is open, so that the sheet's redraws do
+// not lose it, and dropped once the terms are added, as the area closes and as the sheet does (closeSettings)
+const TERMS_TEXT_MAX = 64 * 1024;   // the bytes of text the server reads (server/terms.py, TEXT_MAX): a text past it is not
+                                    // sent at all, and a message past the socket's own 2 MB would have closed the socket
+// The area while it is open, null while it is closed: the text, the terms found (null before a find; each { word, count,
+// listed, on }, on while pressed in), the most Extra terms hold, a find on its way, what went wrong, and how many went in
+let termsPick = null;
+// The words Extra terms holds now, in lower case: a term among them is there already in any capitals, as the speech
+// prompt says a word once (server/transcriber.py, prompt)
+const termsHeld = () => new Set((settingsValues.speech_terms || []).map((w) => String(w).toLowerCase()));
+// The terms pressed in that Extra terms does not hold yet, in the order they were found: what Add puts in
+function termsToAdd() {
+  const held = termsHeld();
+  return (termsPick?.found || []).filter((x) => x.on && !held.has(x.word.toLowerCase()));
+}
+// Never past the most Extra terms hold: past the room left, the last pressed in come out, the least frequent, also when the
+// box filled up meanwhile
+function termsFit() {
+  const held = termsHeld();
+  let room = Math.max(0, termsPick.limit - (settingsValues.speech_terms || []).length);
+  for (const x of termsPick.found || []) {
+    if (!x.on || held.has(x.word.toLowerCase())) continue;   // not to be added: takes no room
+    if (room > 0) room -= 1;                                 // fits
+    else x.on = false;                                       // no room left: out, and the line says why
+  }
+}
+// The key under the box, and the area it opens in the row: the text box, Find, the terms found in three groups (new ones
+// pressed in to begin with, those the built-in hints give already left out, those Extra terms holds shown pressed and not
+// to be pressed again), how many go in and how many Extra terms will hold, Add and Close
+function termsHtml() {
+  const p = termsPick, up = wsState === "up";
+  const key = `<div class="terms-key"><button type="button" class="btn sm" data-terms="open" aria-expanded="${!!p}"`
+    + `${p ? ' aria-controls="terms-area"' : ""}${up ? "" : " disabled"}>${t("Pick from text")}</button></div>`;
+  if (!p) return key;
+  const held = termsHeld(), now = (settingsValues.speech_terms || []).length, found = p.found || [];
+  if (p.found) termsFit();
+  const adds = termsToAdd().length, total = now + adds, full = !!p.found && total >= p.limit;
+  const fresh = found.filter((x) => !x.listed && !held.has(x.word.toLowerCase()));
+  // What stands beside Find: a find on its way, what went wrong, what went in, that nothing was found, or that the text is
+  // kept nowhere, which is what someone about to paste a resume asks first
+  const said = p.waiting ? t("Finding terms")
+    : p.error ? p.error
+    : p.added != null ? `${t("Added {n}", { n: p.added })} · ${t("Extra terms {total}/{max}", { total: now, max: p.limit })}`
+    : p.found && !found.length ? t("No technical terms found")
+    : t("Read by the server, never kept");
+  const chip = (x, have) => {
+    const blocked = !have && !x.on && full;   // no room for one more: it cannot be pressed in, and the line says why
+    const times = x.count > 1 ? ` aria-label="${escapeHtml(t("{word}, {n} times", { word: x.word, n: x.count }))}"` : "";
+    return `<button type="button" data-term="${escapeHtml(x.word)}" aria-pressed="${have || x.on}"${have ? " disabled" : ""}`
+      + `${blocked ? ' aria-disabled="true"' : ""}${times}>${escapeHtml(x.word)}`
+      + `${x.count > 1 ? `<span class="n" aria-hidden="true">${x.count}</span>` : ""}</button>`;
+  };
+  const groups = [[t("New terms"), fresh, false],
+    [t("In the built-in hints"), found.filter((x) => x.listed && !held.has(x.word.toLowerCase())), false],
+    [t("In Extra terms"), found.filter((x) => held.has(x.word.toLowerCase())), true]]
+    .filter(([, xs]) => xs.length)
+    .map(([name, xs, have]) => `<div class="terms-group"><p class="terms-h">${escapeHtml(name)}<span class="n">${xs.length}</span></p>`
+      + `<div class="seg checks terms" role="group" aria-label="${escapeHtml(name)}">${xs.map((x) => chip(x, have)).join("")}</div></div>`)
+    .join("");
+  // Full: the new ones left out are counted, so the line says why they are not pressed in
+  const out = fresh.filter((x) => !x.on).length;
+  const line = found.length ? `<p class="terms-line">${t("{n} to add", { n: adds })} · ${t("Extra terms {total}/{max}", { total, max: p.limit })}`
+    + `${full ? ` · ${out ? t("full, {n} left out", { n: out }) : t("full")}` : ""}</p>` : "";
+  return key + `<div class="terms-area" id="terms-area" role="group" aria-label="${escapeHtml(t("Pick from text"))}">`
+    + `<textarea class="terms-text" data-terms="text" rows="5" aria-label="${escapeHtml(t("Text to find terms in"))}"`
+    + ` placeholder="${escapeHtml(t("Paste a job posting, a resume or notes"))}" spellcheck="false" autocomplete="off"`
+    + `${up ? "" : " disabled"}>${escapeHtml(p.text)}</textarea>`
+    + `<div class="terms-acts"><button type="button" class="btn sm" data-terms="find"${up ? "" : " disabled"}`
+    + `${p.waiting || !p.text.trim() ? ' aria-disabled="true"' : ""}>${t("Find terms")}</button>`
+    + `<span class="terms-said${p.error ? " warn" : ""}" aria-live="polite">${escapeHtml(said)}</span></div>`
+    + groups + line
+    + `<div class="terms-acts">${found.length ? `<button type="button" class="btn sm" data-terms="add"${up ? "" : " disabled"}`
+      + `${adds ? "" : ' aria-disabled="true"'}>${t("Add to Extra terms")}</button>` : ""}`
+    + `<button type="button" class="btn sm ghost" data-terms="close">${t("Close")}</button></div></div>`;
+}
+// The area closed, its text and terms dropped, and the keyboard back on the key that opened it
+function termsClose() {
+  termsPick = null;
+  renderSettings();
+  $("settings-body").querySelector('[data-terms="open"]')?.focus({ preventScroll: true });
+}
+// The server's terms for this panel's text (a reply to this panel alone, server/app.py terms_find)
+// Each Find is numbered, and the server says which it answers: one asked before the area was closed and opened again
+// comes after the new one was asked, and is dropped rather than shown for the new text
+let termsAsked = 0;
+function termsFound(m) {
+  if (!termsPick || !termsPick.waiting) return;   // closed meanwhile, or never asked from here
+  if (Number.isInteger(m.ask) && m.ask !== termsPick.ask) return;   // an answer to an earlier Find
+  termsPick.waiting = false;
+  if (Number.isInteger(m.limit) && m.limit > 0) termsPick.limit = m.limit;
+  if (m.error) Object.assign(termsPick, { error: String(m.error), found: null });
+  else {
+    const held = termsHeld();
+    // the new ones pressed in to begin with, as many as there is room for, the most frequent first (termsFit at the drawing)
+    termsPick.found = (Array.isArray(m.terms) ? m.terms : []).filter((x) => x && typeof x.word === "string" && x.word)
+      .map((x) => ({ word: x.word, count: Number(x.count) || 1, listed: !!x.listed, on: !x.listed && !held.has(x.word.toLowerCase()) }));
+  }
+  renderSettings();
+}
+// Typing or pasting: the text kept for the redraws, and Find pressable once there is something to find. Nothing is drawn
+// again meanwhile (sheetBusy), so the caret and a Korean syllable being put together stay as they are
+onSheets("input", (e) => {
+  if (!termsPick || !e.target.matches?.("textarea.terms-text")) return;
+  termsPick.text = e.target.value;
+  const find = e.target.closest(".terms-area")?.querySelector('[data-terms="find"]');
+  if (find && !termsPick.waiting) { if (termsPick.text.trim()) find.removeAttribute("aria-disabled"); else find.setAttribute("aria-disabled", "true"); }
+});
+// The redraw that waited while the text box had the keyboard, once it has gone on
+onSheets("focusout", (e) => { if (e.target.matches?.("textarea.terms-text")) sheetSettle(); });
+onSheets("click", (e) => {
+  const term = e.target.closest?.("[data-term]");
+  if (term) {   // a term found: pressed in or out; one that cannot be (held already, or no room left) is left as it is
+    const x = termsPick?.found?.find((f) => f.word === term.dataset.term);
+    if (!x || term.disabled || term.getAttribute("aria-disabled") === "true") return;
+    x.on = !x.on;
+    renderSettings();
+    return;
+  }
+  const key = e.target.closest?.("button[data-terms]");
+  if (!key || key.disabled || key.getAttribute("aria-disabled") === "true") return;
+  const what = key.dataset.terms;
+  if (what === "close" || (what === "open" && termsPick)) return termsClose();
+  if (what === "open") {
+    termsPick = { text: "", found: null, limit: 0, waiting: false, error: "", added: null };
+    renderSettings();
+    $("settings-body").querySelector("textarea.terms-text")?.focus({ preventScroll: true });
+  } else if (what === "find") {
+    const text = termsPick.text;
+    Object.assign(termsPick, { error: "", added: null });
+    // Past what the server reads, said here and not sent: in characters first, which is free, then in bytes
+    if (text.length > TERMS_TEXT_MAX || new TextEncoder().encode(text).length > TERMS_TEXT_MAX) {
+      Object.assign(termsPick, { error: t("Over {kb} KB of text · paste it in parts", { kb: TERMS_TEXT_MAX / 1024 }), found: null });
+    } else if (send({ type: "terms_find", text, ask: ++termsAsked })) Object.assign(termsPick, { waiting: true, ask: termsAsked });
+    renderSettings();
+  } else if (what === "add") {
+    const adds = termsToAdd().map((x) => x.word);
+    // Into Extra terms after the words it holds, as the box sends them (setSetting): the server keeps the list, and every
+    // panel's box shows it
+    if (!adds.length || !setSetting("speech_terms", [...(settingsValues.speech_terms || []), ...adds])) return;
+    Object.assign(termsPick, { text: "", found: null, error: "", added: adds.length });   // the text goes once its terms are in
+    renderSettings();
+    $("settings-body").querySelector("textarea.terms-text")?.focus({ preventScroll: true });   // ready for the next text
+  }
+});
+// Escape in the area closes the area, not the sheet round it; not while a Korean syllable is being put together
+$("settings-body").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !termsPick || !e.target.closest?.(".terms-area, [data-terms]")) return;
+  e.stopPropagation();   // never the sheet's: an Escape that ends a Korean syllable being put together closed it, text and all
+  if (e.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  termsClose();
+});
 let settingsOpener = null;
 // The page behind an open sheet is out of reach (inert): the sheets say they are modal (aria-modal), and the page's keys and
 // answers still stood in what a screen reader reads. Called as a sheet opens and as it closes, before the focus goes back
-const SHEETS = ["settings-overlay", "setup-overlay", "keys-overlay", "heard-overlay", "deleted-overlay", "capture-overlay"];
+const SHEETS = ["settings-overlay", "setup-overlay", "keys-overlay", "heard-overlay", "deleted-overlay", "capture-overlay", "maint-overlay"];
 function pageInert() {
   const open = SHEETS.some((o) => !$(o).hidden);
   for (const el of [document.querySelector("header.bar"), document.querySelector("main.layout")]) if (el) el.inert = open;
@@ -5936,6 +6157,8 @@ function openSettings() {
 function closeSettings() {
   $("settings-overlay").hidden = true;
   pageInert();
+  termsPick = null;                    // a pasted text is not held past the sheet it was pasted in (Pick from text),
+  $("settings-body").querySelector(".terms-area")?.remove();   // nor left in its hidden page: renderSettings draws none while it is
   resetArmed = 0;                      // armed, closed, reopened: one click would have sent it
   const rb = $("settings-reset");
   rb.textContent = t("Reset to defaults");
@@ -6581,6 +6804,12 @@ document.addEventListener("click", (e) => {
   // The star key asks the server, which keeps the star and tells every panel (the "star" message); offline, send() says so
   const sk = e.target.closest("[data-star]");
   if (sk) { const it = items.get(idOf(sk.dataset.star)); if (it) send({ type: "star", id: it.id, starred: !it.starred }); }
+  // Right and Wrong ask the server the same way (the "verdict" message): the key that is pressed takes the mark off, the other changes it
+  const vk = e.target.closest(".entry > .row.head :is([data-right], [data-wrong])");
+  if (vk) {
+    const v = vk.dataset.right !== undefined ? "right" : "wrong", it = items.get(idOf(vk.dataset[v]));
+    if (it) send({ type: "verdict", id: it.id, verdict: it.verdict === v ? null : v });
+  }
   // The delete key asks the server too, which takes the card from every panel (answer_deleted); this one then offers Undo
   const dk = e.target.closest("[data-delete]");
   if (dk) deleteAnswer(items.get(idOf(dk.dataset.delete)));
@@ -7099,6 +7328,313 @@ $("deleted-list").addEventListener("click", (e) => {
 });
 $("deleted-empty").onclick = () => twoPress($("deleted-empty"), t("Press again to empty"), () => send({ type: "deleted_clear" }));
 sheetPlumbing("deleted", "deleted-overlay", () => closeDeleted());
+// ---------- Maintenance: how each part stands, what the days held, the log, the local models and a backup (the server's
+// /api/v1/check, /report, /log, /models and /backup; server/maintenance.py, server/report.py). The settings sheet's look, a
+// section a tab. Each section reads the server as it is shown, and again on its key: none of it changes by itself in a way
+// worth a redraw every few seconds ----------
+const MAINT_SECTIONS = [["check", () => t("Checks")], ["report", () => t("Report")], ["log", () => t("Log")], ["models", () => t("Models")],
+  ["backup", () => t("Backup")]];
+let maintSection = "check", maintOpener = null;
+// what each section last read: null until read, {error} when the server could not answer; days, the period the report covers
+const maint = { check: null, report: null, days: 7, events: null, failures: true, log: null, models: null, backup: null, busy: "" };
+// The words of a check's state, on its pill in its colour (index.html, .pill[data-state])
+const CHECK_WORD = { ok: () => t("Fine"), warn: () => t("Look at it"), bad: () => t("Needs fixing"), off: () => t("Switched off"), idle: () => t("Waiting") };
+// A read of the API: its JSON, or {error} with the server's words or what went wrong on the way
+async function apiGet(path) {
+  try {
+    const r = await fetch(`api/v1/${path}`);
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? j : { error: j.error || t("The server could not answer: HTTP {status}", { status: r.status }) };
+  } catch (exc) {
+    return { error: t("The server does not answer") };
+  }
+}
+function openMaint() {
+  toggleMenu(false); exportMenu(false);
+  comboClose(false);
+  maintOpener = document.activeElement;
+  $("maint-overlay").hidden = false;
+  pageInert();
+  renderMaint();
+  $("maint-close").focus({ preventScroll: true });
+  loadMaint(maintSection);
+}
+function closeMaint() {
+  if ($("maint-overlay").hidden) return;
+  $("maint-overlay").hidden = true;
+  pageInert();
+  document.querySelectorAll("#maint-body [data-armed]").forEach(disarm);   // a Remove pressed once is not left armed
+  const was = maintOpener;
+  maintOpener = null;
+  focusBack(was);
+}
+// What a section shows comes from the server: read when the section is shown, or its key asks again
+async function loadMaint(sec) {
+  if (sec === "check") { maint.check = await apiGet("check"); maint.checkAt = Date.now(); }   // when it was read, said beside it
+  else if (sec === "report") {
+    const days = maint.days, got = await apiGet(`report?days=${days}`);
+    if (days !== maint.days) return;   // another period was asked while this one was read: its answer is the one to show
+    maint.report = got;
+  } else if (sec === "log") {
+    const failures = maint.failures;
+    const [events, log] = await Promise.all([apiGet(`log?limit=200${failures ? "&errors=1" : ""}`), apiGet("log/server?lines=200")]);
+    if (failures !== maint.failures) return;   // the other list was asked for meanwhile, the same way
+    maint.events = events; maint.log = log;
+  } else if (sec === "models") maint.models = await apiGet("models");
+  if (!$("maint-overlay").hidden) renderMaint();
+}
+// A time as the panel writes it: the clock today, the date before it otherwise
+function maintWhen(ts) {
+  const d = new Date(ts * 1000), today = new Date();
+  return d.toDateString() === today.toDateString() ? fmtClock(ts * 1000) : `${fmtDay(ts * 1000)} ${fmtClock(ts * 1000)}`;
+}
+// A command with its Copy key, as the Capture connection gives one: each word a piece of its own, so a narrow line breaks
+// between words and never inside a file's name (index.html, .way-cmd .tok)
+function maintCmd(cmd) {
+  const words = cmd.split(" ").map((w) => `<span class="tok">${escapeHtml(w)}</span>`).join(" ");
+  return `<span class="way-cmd"><code class="cmd">${words}</code><button type="button" class="btn sm" data-copy="${escapeHtml(cmd)}">${COPY_MARK}<span>${t("Copy")}</span></button></span>`;
+}
+function maintCheck() {
+  const got = maint.check;
+  const tools = `<div class="maint-tools"><button type="button" class="btn sm" data-maint="check">${t("Check again")}</button>`
+    + (got && !got.error ? `<span class="when">${t("Checked {when}", { when: fmtClock(maint.checkAt || Date.now()) })}</span>` : "") + `</div>`;
+  if (!got) return tools + `<p class="cap">${t("Reading")}</p>`;
+  if (got.error) return tools + `<p class="cap warn">${escapeHtml(got.error)}</p>`;
+  // a row a part: its name and the state's word, what was found, and what to do, with its command or the section it is in
+  return tools + (got.checks || []).map((c) => {
+    const go = c.go && MAINT_SECTIONS.find(([id]) => id === c.go);
+    const fix = c.fix || c.cmd || go
+      ? `<p class="help fix">${escapeHtml(c.fix || "")}${go ? ` <button type="button" class="btn sm" data-maint-go="${escapeHtml(c.go)}">${t("Open {section}", { section: go[1]() })}</button>` : ""}`
+        + `${c.cmd ? maintCmd(c.cmd) : ""}</p>` : "";
+    // Switched off on purpose is no fault: grey, as a card at rest (the skin colours a pill's "off" red, the state of a switch
+    // the person turned off on a card), the row keeping the server's own state
+    return `<div class="set maint-check" data-check="${escapeHtml(c.id)}" data-state="${escapeHtml(c.state)}"><span class="lbl">${escapeHtml(c.name)}</span>`
+      + `<span class="ctl"><span class="pill" data-state="${c.state === "off" ? "idle" : escapeHtml(c.state)}">${(CHECK_WORD[c.state] || CHECK_WORD.idle)()}</span></span>`
+      + `<p class="help">${escapeHtml(c.said || "")}</p>${fix}</div>`;
+  }).join("");
+}
+// The periods a report covers, as ./sidenote report --days counts them: whole calendar days, today and the ones before it
+const REPORT_DAYS = [[1, () => t("Today")], [7, () => t("7 days")], [30, () => t("30 days")]];
+// Dollars as the engine cards write them: cents under $100, the tenth of a cent under 10 cents, which a local answer's
+// few cents of a check would otherwise round away
+const maintUsd = (v) => (v >= 100 ? `$${Math.round(v)}` : v >= 0.1 ? `$${v.toFixed(2)}` : v > 0 ? `$${v.toFixed(3)}` : "$0");
+// Answers marked on their cards: right of judged, and the share, rounded half up as the terminal's report rounds it
+const maintShare = (g) => t("{right}/{judged} ({pct}%)", { right: g.right, judged: g.judged, pct: Math.floor((100 * g.right) / g.judged + 0.5) });
+// A word another language says otherwise in this one place, as a data-t with a value does in index.html: the key names the
+// place, the English is the word itself (Korean says "Answers" on an engine's card as the last 24 hours' answers)
+const maintWord = (key, english) => (t(key) === key ? english : t(key));
+// Seconds with one decimal, "-" for a day with none
+const maintSec = (v) => (v == null ? "-" : t("{n} s", { n: Math.round(v * 10) / 10 }));
+function maintReport() {
+  const got = maint.report;
+  const seg = `<div class="seg" role="group" aria-label="${t("Period")}">${REPORT_DAYS.map(([n, name]) =>
+    `<button type="button" data-maint-days="${n}" aria-pressed="${maint.days === n}">${name()}</button>`).join("")}</div>`;
+  const tools = `<div class="maint-tools">${seg}<button type="button" class="btn sm" data-maint="report">${t("Refresh")}</button></div>`;
+  if (!got) return tools + `<p class="cap">${t("Reading")}</p>`;
+  if (got.error) return tools + `<p class="cap warn">${escapeHtml(got.error)}</p>`;
+  const days = got.days || [], p = got.period || {}, names = got.names || {};
+  if (!days.length) return tools + `<p class="cap">${t("No records in this period")}</p>`;
+  const sum = (key) => days.reduce((n, d) => n + (Number(d[key]) || 0), 0);
+  const errors = days.reduce((n, d) => n + Object.values(d.errors || {}).reduce((a, b) => a + b, 0), 0);
+  // a summary row: what it counts, its number, and the line under it that says what the number is made of
+  const row = (id, label, value, help) => `<div class="set maint-sum" data-sum="${id}"><span class="lbl">${label}</span>`
+    + (value === "" ? "" : `<span class="ctl"><b class="num">${value}</b></span>`) + (help ? `<p class="help">${help}</p>` : "") + `</div>`;
+  const parts = [[t("Follow-ups {n}", { n: sum("followups") }), true], [t("Nothing to solve {n}", { n: sum("empty") }), sum("empty")],
+    [t("Cancelled {n}", { n: sum("cancelled") }), sum("cancelled")], [t("Errors {n}", { n: errors }), errors]];
+  let out = row("answers", t("Answers in the period"), sum("answers"), parts.filter(([, shown]) => shown).map(([w]) => escapeHtml(w)).join(" · "));
+  // how often each engine was right, then by where the problem came from and by its type: the period's marks, each answer
+  // by its last one (server/report.py, _verdicts)
+  const v = p.verdicts || {};
+  const engines = { agent: AG(), local: t("Local model"), unknown: t("Not recorded") };
+  const ways = { screen: t("Screen"), voice: t("Speech"), unknown: t("Not recorded") };
+  const groups = (by, words) => Object.entries(by || {}).map(([k, g]) =>
+    escapeHtml(`${words ? words[k] || k : k === "unknown" ? t("Not recorded") : k} ${maintShare(g)}`)).join(" · ");
+  out += v.judged
+    ? row("verdicts", t("Right/judged"), escapeHtml(maintShare(v)), [groups(v.by_engine, engines), groups(v.by_trigger, ways),
+      groups(v.by_type, { ...TYPE_LABEL, unknown: t("Not recorded") })]
+      .filter(Boolean).join("<br>"))
+    : row("verdicts", t("Right/judged"), "-", escapeHtml(t("Mark answers with Right or Wrong on their cards")));
+  // the first word's wait for each engine and way in, the slow tenth beside the median (the medians a day hides), each
+  // named here as the marks are, the agent by its name (first_token_by gives them as keys)
+  const first = p.first_token_by || [];
+  if (first.length) {
+    out += row("first", t("First token"), "", first.map((f) => escapeHtml(t(f.trigger === "voice"
+      ? "{engine} on speech: median {p50} · slowest 10% {p90} · {n} answers" : "{engine} on screens: median {p50} · slowest 10% {p90} · {n} answers",
+    { engine: engines[f.engine] || f.engine, p50: maintSec(f.p50), p90: maintSec(f.p90), n: f.n }))).join("<br>"));
+  }
+  const c = p.cost_usd || {};
+  out += row("cost", escapeHtml(t("{agent} cost", { agent: AG() })), maintUsd(sum("cost_usd")), escapeHtml(t("Answers {a} · Follow-ups {f} · Nothing to solve {e}",
+    { a: maintUsd(c.answers || 0), f: maintUsd(c.followups || 0), e: maintUsd(c.empty || 0) })));
+  // why analyses stopped before their answers, in the report's own words for each reason (the server's, names.cancelled)
+  const stopped = Object.entries(p.cancelled || {});
+  if (stopped.length) {
+    out += row("cancelled", t("Stopped before the answer"), stopped.reduce((n, [, k]) => n + (Number(k) || 0), 0),
+      stopped.map(([why, n]) => escapeHtml(`${(names.cancelled || {})[why] || why} ${Number(n) || 0}`)).join(" · "));
+  }
+  // the local model's troubles, said only when there were any
+  const held = [[t("GPU busy {n}", { n: p.gpu_busy || 0 }), p.gpu_busy], [t("Timed out {n}", { n: p.local_timeouts || 0 }), p.local_timeouts],
+    [t("Stuck and started again {n}", { n: p.local_stuck || 0 }), p.local_stuck]].filter(([, n]) => n);
+  if (held.length) out += row("local", t("Local model"), "", held.map(([w]) => escapeHtml(w)).join(" · "));
+  // the days themselves, the latest first: the answers, the marks, the median wait and the spend of each
+  const lines = [...days].reverse().map((d) => `<tr><th scope="row">${escapeHtml(fmtDay(new Date(`${d.day}T12:00:00`).getTime()))}</th>`
+    + `<td>${Number(d.answers) || 0}</td><td>${d.judged ? `${Number(d.right) || 0}/${Number(d.judged) || 0}` : "-"}</td><td>${escapeHtml(maintSec(d.elapsed_median))}</td>`
+    + `<td>${maintUsd(d.cost_usd || 0)}</td></tr>`).join("");
+  out += `<h3 class="ways-h">${t("By day")}</h3><table class="maint-days"><thead><tr><th scope="col">${t("Date")}</th>`
+    + `<th scope="col">${maintWord("Report: Answers", "Answers")}</th><th scope="col">${t("Right")}</th><th scope="col">${t("Response")}</th><th scope="col">${t("Cost")}</th></tr></thead>`
+    + `<tbody>${lines}</tbody></table><p class="cap">${t("Response is the day's median; Right counts the answers marked on their cards")}</p>`;
+  return tools + out;
+}
+// One event as a line: when, what, and the fields that say more (the long ones cut), as ./sidenote events prints it
+function maintEvent(e) {
+  const skip = new Set(["ts", "event"]);
+  const kv = Object.entries(e).filter(([k, v]) => !skip.has(k) && v !== null && v !== "" && v !== undefined)
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`.slice(0, 160)).join("  ");
+  const bad = /_error$/.test(e.event || "") || ["agent_brake", "agent_limit", "local_stuck"].includes(e.event);
+  return `<li><time>${escapeHtml(maintWhen(e.ts || 0))}</time><span class="ev${bad ? " err" : ""}">${escapeHtml(e.event || "")}</span>`
+    + `<span class="kv">${escapeHtml(kv)}</span></li>`;
+}
+function maintLog() {
+  const ev = maint.events, log = maint.log;
+  const seg = `<div class="seg" role="group" aria-label="${t("Events")}"><button type="button" data-maint-failures="1" aria-pressed="${maint.failures}">${t("Failures")}</button>`
+    + `<button type="button" data-maint-failures="0" aria-pressed="${!maint.failures}">${t("Everything")}</button></div>`;
+  const tools = `<div class="maint-tools">${seg}<button type="button" class="btn sm" data-maint="log">${t("Refresh")}</button></div>`;
+  const list = !ev ? `<p class="cap">${t("Reading")}</p>` : ev.error ? `<p class="cap warn">${escapeHtml(ev.error)}</p>`
+    : (ev.events || []).length ? `<ol class="maint-events">${ev.events.map(maintEvent).join("")}</ol>`
+    : `<p class="cap">${maint.failures ? t("No failures") : t("No events")}</p>`;
+  const lines = log && !log.error ? (log.lines || []) : [];
+  const server = `<h3 class="ways-h">${t("Server log")}</h3>`
+    + (!log ? `<p class="cap">${t("Reading")}</p>` : log.error ? `<p class="cap warn">${escapeHtml(log.error)}</p>`
+      : lines.length ? `<div class="maint-tools"><button type="button" class="btn sm" data-copy="${escapeHtml(lines.join("\n"))}">${COPY_MARK}<span>${t("Copy the log")}</span></button></div>`
+        + `<pre class="maint-log">${escapeHtml(lines.join("\n"))}</pre>` : `<p class="cap">${t("No lines")}</p>`);
+  return tools + `<h3 class="ways-h">${t("Events")}</h3>` + list + server;
+}
+// A size in GB with one decimal, from bytes or from GB
+const maintGb = (bytes, gb) => (bytes ? (bytes / 1024 ** 3).toFixed(1) : gb ? Number(gb).toFixed(1) : "");
+function maintModels() {
+  const got = maint.models, pulling = pullNow;   // the download under way, as the local model's card follows it
+  const tools = `<div class="maint-tools"><button type="button" class="btn sm" data-maint="models">${t("Refresh")}</button></div>`;
+  if (!got) return tools + `<p class="cap">${t("Reading")}</p>`;
+  if (got.error) return tools + `<p class="cap warn">${escapeHtml(got.error)}</p>`;
+  return tools + (got.models || []).map((m) => {
+    const marks = [m.in_use ? `<span class="pill" data-state="ok">${t("In use")}</span>` : "",
+      m.loaded ? `<span class="pill" data-state="ok">${t("On the GPU")}</span>` : ""].join("");
+    const gb = maintGb(m.size, m.size_gb);
+    const facts = [gb ? t("{gb} GB", { gb }) : "", m.params || "", m.quant || "", m.family || ""].filter(Boolean).map(escapeHtml).join(" · ");
+    const name = escapeHtml(m.name);
+    let key;
+    if (m.present) key = `<button type="button" class="btn sm" data-maint-remove="${name}"><span>${t("Remove")}</span></button>`;
+    else if (pulling && pulling.model === m.name) {
+      const pct = pulling.total ? Math.round((100 * (pulling.completed || 0)) / pulling.total) : 0;
+      key = `<span class="pill" data-state="idle" data-maint-pulling="${name}">${t("Downloading {pct}%", { pct })}</span>`;
+    } else key = got.download ? `<button type="button" class="btn sm" data-maint-pull="${name}"${pulling ? " disabled" : ""}>${t("Download")}</button>` : "";
+    return `<div class="set maint-model"><span class="lbl"><span class="name">${name}</span><span class="marks">${marks}</span></span><span class="ctl">${key}</span>`
+      + `<p class="help">${m.present ? facts : t("Not downloaded") + (facts ? ` · ${facts}` : "")}</p></div>`;
+  }).join("") || `<p class="cap">${t("No models")}</p>`;
+}
+function maintBackup() {
+  const b = maint.backup, where = whereNow();
+  const made = !b ? "" : b.error ? `<p class="cap warn">${escapeHtml(t("Not made: {why}", { why: b.error }))}</p>`
+    : `<p class="cap">${escapeHtml(t("Saved {name}: {held}", { name: b.name, held: b.held }))}${b.left ? ` · ${escapeHtml(t("Recently deleted left out: {n}", { n: b.left }))}` : ""}</p>`;
+  const back = where === "desktop"
+    ? `<p class="help">${t("Quit Sidenote, then put the backup's files in its data folder")}</p>`
+    : where === "cluster" ? `<p class="help">${t("Put a backup back with ./sidenote restore on a PC that runs Sidenote with Docker")}</p>`
+    : `<p class="help">${t("In the server's terminal; the server stops for it and starts again")}</p>${maintCmd("./sidenote restore sidenote-backup.tar.gz")}`;
+  return `<div class="set"><span class="lbl">${t("Download a backup")}</span><span class="ctl">`
+    + `<button type="button" class="btn sm" data-maint="backup"${maint.busy === "backup" || wsState !== "up" ? " disabled" : ""}>${maint.busy === "backup" ? t("Making the backup") : t("Download")}</button></span>`
+    + `<p class="help">${t("The history and the settings in one file, Recently deleted left out")}</p>${made}</div>`
+    + `<div class="set"><span class="lbl">${t("Put a backup back")}</span><p class="help">${t("It replaces the history and the settings; what was there is kept beside them")}</p>${back}</div>`;
+}
+// A download's progress on the Models section, twice a second: its pill's words changed where they are, so a Remove
+// pressed once stays armed for its second press and the keyboard stays on its key; the section drawn whole only when the
+// pill is not there yet (the download has just started)
+function maintPullProgress() {
+  const pill = [...$("maint-body").querySelectorAll("[data-maint-pulling]")].find((x) => x.dataset.maintPulling === pullNow?.model);
+  if (!pill) return renderMaint();
+  const pct = pullNow.total ? Math.round((100 * (pullNow.completed || 0)) / pullNow.total) : 0;
+  pill.textContent = t("Downloading {pct}%", { pct });
+}
+function renderMaint() {
+  const body = $("maint-body");
+  if (!body || $("maint-overlay").hidden) return;
+  const was = document.activeElement?.dataset || {};   // the key with the keyboard, found again after the redraw
+  const nav = MAINT_SECTIONS.map(([id, name]) => `<button type="button" role="tab" class="set-tab" data-maint-sec="${id}" aria-selected="${id === maintSection}"
+    tabindex="${id === maintSection ? 0 : -1}">${name()}</button>`).join("");
+  const pane = { check: maintCheck, report: maintReport, log: maintLog, models: maintModels, backup: maintBackup }[maintSection]();
+  const keep = body.querySelector(".set-pane")?.scrollTop || 0;
+  body.innerHTML = `<nav class="set-nav" role="tablist" aria-label="${t("Maintenance sections")}" style="--tab-cols: ${Math.ceil(MAINT_SECTIONS.length / 2)}">${nav}</nav>`
+    + `<div class="set-pane" role="tabpanel">${pane}</div>`;
+  body.querySelector(".set-pane").scrollTop = keep;
+  const keys = [["maintSec", "data-maint-sec"], ["maint", "data-maint"], ["maintFailures", "data-maint-failures"], ["maintDays", "data-maint-days"],
+    ["maintRemove", "data-maint-remove"], ["maintPull", "data-maint-pull"], ["maintGo", "data-maint-go"], ["copy", "data-copy"]];
+  const [prop, attr] = keys.find(([k]) => was[k] !== undefined) || [];
+  const back = prop ? [...body.querySelectorAll(`[${attr}]`)].find((x) => x.getAttribute(attr) === was[prop]) : null;
+  back?.focus({ preventScroll: true });
+}
+// A backup made by the server and saved here: its file's name from the answer, and what it holds from its headers
+async function maintSaveBackup() {
+  maint.busy = "backup"; renderMaint();
+  try {
+    const r = await fetch("api/v1/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      maint.backup = { error: j.error || t("The server could not answer: HTTP {status}", { status: r.status }) };
+    } else {
+      const name = (/filename="?([^";]+)"?/.exec(r.headers.get("content-disposition") || "") || [])[1] || `sidenote-backup-${fileStamp()}.tar.gz`;
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);   // the download has its copy by then
+      maint.backup = { name, held: (r.headers.get("x-sidenote-held") || "").split(" ").filter(Boolean).join(", "),
+                       left: Number(r.headers.get("x-sidenote-left-out") || 0) };
+    }
+  } catch (exc) {
+    maint.backup = { error: t("The server does not answer") };
+  }
+  maint.busy = ""; renderMaint();
+}
+$("open-maint").onclick = openMaint;
+$("maint-close").onclick = closeMaint;
+$("maint-body").addEventListener("click", (e) => {
+  const tab = e.target.closest("[data-maint-sec]");
+  if (tab) { maintSection = tab.dataset.maintSec; renderMaint(); tab.isConnected || $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true }); loadMaint(maintSection); return; }
+  const go = e.target.closest("[data-maint-go]");
+  if (go) { maintSection = go.dataset.maintGo; renderMaint(); $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true }); loadMaint(maintSection); return; }
+  const fail = e.target.closest("[data-maint-failures]");
+  if (fail) { maint.failures = fail.dataset.maintFailures === "1"; maint.events = null; renderMaint(); loadMaint("log"); return; }
+  const days = e.target.closest("[data-maint-days]");
+  if (days) { maint.days = Number(days.dataset.maintDays); maint.report = null; renderMaint(); loadMaint("report"); return; }
+  const key = e.target.closest("[data-maint]");
+  if (key && !key.disabled) {
+    if (key.dataset.maint === "backup") maintSaveBackup();
+    else { maint[key.dataset.maint === "log" ? "events" : key.dataset.maint] = null; renderMaint(); loadMaint(key.dataset.maint); }
+    return;
+  }
+  const rm = e.target.closest("[data-maint-remove]");
+  if (rm && rm.getAttribute("aria-disabled") !== "true") {
+    twoPress(rm, t("Press again to remove"), () => { if (send({ type: "model_delete", model: rm.dataset.maintRemove })) rm.setAttribute("aria-disabled", "true"); });
+    return;
+  }
+  const pull = e.target.closest("[data-maint-pull]");
+  if (pull && !pull.disabled) send({ type: "llm_pull", model: pull.dataset.maintPull });
+});
+// Arrows between the tabs, as in the settings sheet
+$("maint-body").addEventListener("keydown", (e) => {
+  const tab = e.target.closest?.("[data-maint-sec]");
+  if (!tab || !["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+  e.preventDefault();
+  const ids = MAINT_SECTIONS.map(([id]) => id), at = ids.indexOf(tab.dataset.maintSec);
+  const to = e.key === "Home" ? 0 : e.key === "End" ? ids.length - 1 : (at + (["ArrowDown", "ArrowRight"].includes(e.key) ? 1 : -1) + ids.length) % ids.length;
+  maintSection = ids[to]; renderMaint(); $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true }); loadMaint(maintSection);
+});
+sheetPlumbing("maint", "maint-overlay", () => closeMaint());
+// The answer to a Remove: said, and the list read again; a download's progress redraws the Models section as it comes
+function onModelDelete(m) {
+  toast(m.ok ? t("Removed {model}", { model: m.model }) : t("Not removed: {why}", { why: m.error || "" }), null, m.ok ? "done" : "warn");
+  if (!$("maint-overlay").hidden && maintSection === "models") loadMaint("models");
+}
+
 // ---------- the capture program's connection ----------
 // The capture program as the server knows it: connected or not, and what its hello said of itself (capture.who: its PC and
 // system, its release, how it was started and what its Quit ends, the address it was given; capture.since: when it
@@ -7264,7 +7800,7 @@ function captureParts() {
     ["acts", captureActs()],
     ["ways", captureWays()],
     ["rows-h", settingsMeta ? `<h3 class="ways-h">${t("What it does")}</h3>` : ""],
-    ["rows", setupRows("monitor", "stitch", "skip_windows")],
+    ["rows", setupRows("monitor", "monitor_follow", "stitch", "skip_windows")],
   ];
 }
 function renderCapture() {
@@ -7403,7 +7939,7 @@ function setupParts(id) {
       ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`],
       ["shot", shot],
       ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : ""],
-      ["rows", setupRows("monitor", "skip_windows")],
+      ["rows", setupRows("monitor", "monitor_follow", "skip_windows")],
     ];
   }
   if (id === "sound") {
@@ -7625,6 +8161,7 @@ document.addEventListener("keydown", (e) => {
     if (!$("keys-overlay").hidden) { closeKeys(); return; }
     if (!$("heard-overlay").hidden) { closeHeard(); return; }
     if (!$("deleted-overlay").hidden) { closeDeleted(); return; }
+    if (!$("maint-overlay").hidden) { closeMaint(); return; }
     if (!$("setup-overlay").hidden) { closeSetup(); return; }
     if (!$("capture-overlay").hidden) { closeCapture(); return; }
     if (!$("settings-overlay").hidden) { closeSettings(); return; }
@@ -7648,6 +8185,7 @@ document.addEventListener("keydown", (e) => {
   if (!$("keys-overlay").hidden) { if (key === "?") { e.preventDefault(); closeKeys(); } return; }
   if (!$("heard-overlay").hidden) return;   // and so is the sheet of what was heard
   if (!$("deleted-overlay").hidden) return;   // and Recently deleted
+  if (!$("maint-overlay").hidden) return;     // and Maintenance
   if (!$("setup-overlay").hidden) return;   // and the setup guide
   if (!$("capture-overlay").hidden) return;   // and the Capture connection
   // A menu or a list open over the page keeps the letters to itself; ? still opens the keys' sheet
@@ -7738,6 +8276,7 @@ function connect() {
       failPendingRuns(t("Connection lost: no result · run it again"));
       confirms.clear(); drawing = null; dropPending();
       clearVoiceState();   // "solving what was heard" ended with the connection
+      if (termsPick) termsPick.waiting = false;   // the terms asked for will not come: Find can be pressed again
       renderTail();   // the "Send to the agent?" card goes with the connection it belonged to
     }
     renderAll(); setTimeout(connect, 1500);
@@ -7962,7 +8501,7 @@ function connect() {
   addEventListener("resize", soon);
   const sized = window.ResizeObserver ? new ResizeObserver(soon) : null;   // a sheet opened, the list's height set (fitRail)
   const changed = new MutationObserver(soon);                              // rows and settings drawn, a pane shown
-  for (const id of ["history", "settings-body", "setup-body", "capture-body"]) {
+  for (const id of ["history", "settings-body", "setup-body", "capture-body", "maint-body"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     changed.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });

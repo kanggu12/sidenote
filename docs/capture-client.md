@@ -72,6 +72,20 @@ PC. Nothing else of the PC is sent.
 The program sends each frame as it is; the server covers the faces on it before anything reads it
 ([Security and privacy](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#14-security-and-privacy)).
 
+## Following the changing screen
+
+With several monitors the panel's **Monitor** picks the one the program reads. **Follow the changing screen**
+(**Solver settings** > **Capture**, off by default) has it look at the others too, every 1.5 seconds, and read the one
+where a new screen settled: a large part of that monitor changed, held still for two looks, and is not the same lines
+moved up (a chat taking a message). It goes back to the chosen monitor the same way, and stays at least 10 seconds after
+a move. What it sees of the other monitors stays in the program, compared and never sent; a monitor that shows a window
+of **Skip windows** is not looked at, and this tool's own panel is painted over first. Each move is one line of the log,
+with the two monitors' numbers, and the program tells the server which monitor it reads (`following`), which the
+panel's capture card shows. A program or a server from before this setting leaves it off. Each look is a screen grab,
+read at about 1280 pixels on its longer side: a look at a 1440x2560 monitor took about 26 ms of CPU, and at a 3840x2160
+one about 40 ms. It follows on Windows and macOS, where it finds this tool's panel to leave out: on Linux it cannot read
+the window list that finds it, so it does not follow there, and says so to the panel, which greys the switch out.
+
 ## Windows it does not send
 
 While a window with one of the words of **Skip windows** (**Solver settings** > **Screen**) in its title or in its

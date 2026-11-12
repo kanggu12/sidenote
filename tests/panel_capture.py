@@ -11,7 +11,9 @@ and the welcome, and from the tray's item of the same name (?open=capture, once,
 past a minute, where to look; the ways to start one by where the server runs (its own PC, a cluster's port-forward, the app),
 each command with its Copy key and this page's port in it; the tick when one comes while it is open, and none for one that takes
 over; Restart and Quit sent to the server, Quit asking twice and saying under the app that it ends Sidenote; the settings the
-program carries out, pressed as in Solver settings; the card's foot; and the sheet at a phone's width. All of it made up.
+program carries out, pressed as in Solver settings; Follow the changing screen right after Monitor here, in the guide's Screen
+step and in Solver settings, dimmed with why where it has nowhere to move, and the screen card naming the monitor it
+followed to; the card's foot; and the sheet at a phone's width. All of it made up.
 """
 from __future__ import annotations
 
@@ -333,6 +335,113 @@ def group_foot(br, s) -> None:
     p.close()
 
 
+FOLLOW_ROW = """(where) => { const k = document.querySelector(where + ' [data-set="monitor_follow"]'), r = k?.closest('.set');
+  return r ? { dim: r.getAttribute('aria-disabled'), off: !!k.disabled, why: r.querySelector('.warn')?.textContent || '',
+               label: r.querySelector('.lbl')?.textContent || '' } : null; }"""
+TWO = [[0, "모든 모니터"], [1, "1번 (3840x2160)"], [2, "2번 (1440x2560)"]]   # the Monitor row's choices a program of two monitors gives
+ONE = [[0, "모든 모니터"], [1, "1번 (1920x1080)"]]
+
+
+def group_follow(br, s) -> None:
+    """Follow the changing screen: its row right after Monitor wherever the program's settings are drawn (this sheet, the
+    guide's Screen step, Solver settings' Capture), dimmed with why where it has nowhere to move, pressed as there; and the
+    screen card naming the monitor read, and that it was followed there."""
+    if not T.group("following the changing screen"):
+        return
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send(support.settings_message())
+    server(p)
+    program(p, WHO)
+    p.send({"type": "settings", "values": {}, "options": {"monitor": TWO}})
+    opened(p)
+    rows = sheet(p)["rows"]
+    check("the Capture connection holds it right after Monitor", rows[:4] == ["monitor", "monitor_follow", "stitch", "skip_windows"], str(rows))
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("...two monitors: a switch to press, nothing in its way, in Korean", got == {"dim": "false", "off": False, "why": "", "label": "바뀐 화면 따라가기"},
+          str(got))
+    p.js("() => { window.__sent.length = 0; document.querySelector('#capture-body [data-set=\"monitor_follow\"]')?.click(); }")
+    p.wait(200)
+    sent = p.js("() => window.__sent.filter((m) => m.type === 'setting')")
+    check("...pressed, it sends the setting", sent == [{"type": "setting", "key": "monitor_follow", "value": True}], str(sent))
+    p.send({"type": "settings", "values": {"monitor_follow": True}, "options": {"monitor": ONE}})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("a program of one monitor: dimmed, not pressable, and says why", got and got["dim"] == "true" and got["off"]
+          and got["why"] == "모니터가 두 대 이상일 때 씀", str(got))
+    p.send({"type": "settings", "values": {"monitor": 0}, "options": {"monitor": TWO}})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("All monitors chosen: dimmed, and says it needs one chosen", got and got["dim"] == "true" and got["why"] == "모니터 하나를 고를 때 씀", str(got))
+    p.send({"type": "settings", "values": {"monitor": 1}})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("...one chosen again: pressable again, its value kept", got and got["dim"] == "false" and not got["off"]
+          and p.js("() => document.querySelector('#capture-body [data-set=\"monitor_follow\"]')?.getAttribute('aria-checked')") == "true", str(got))
+    # A program that cannot read the window list (off Windows and macOS) cannot leave this tool's panel out: it says so,
+    # and the sheet open meanwhile greys the switch out with the reason, then frees it when a program that can connects
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "caps": {**h.CAPTURE["caps"], "follow_ok": False}, "now": now, "last_frame": now - 2, "last_audio": now - 3,
+            "who": WHO, "since": now - 200})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("a program that cannot follow: dimmed at once, with the reason", got and got["dim"] == "true" and got["off"]
+          and got["why"] == "Windows와 macOS에서 씀", str(got))
+    p.send({**h.CAPTURE, "caps": {**h.CAPTURE["caps"], "follow_ok": True}, "now": now, "last_frame": now - 2, "last_audio": now - 3,
+            "who": WHO, "since": now - 200})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    check("...one that can: pressable again", got and got["dim"] == "false" and not got["off"], str(got))
+    p.page.keyboard.press("Escape")
+    p.wait(150)
+    p.js("() => { openSetup(2); }")
+    p.wait(300)
+    rows = p.js("() => [...document.querySelectorAll('#setup-body .set [data-set]')].map((b) => b.dataset.set)")
+    check("the setup guide's Screen step holds it right after Monitor", rows[:3] == ["monitor", "monitor_follow", "skip_windows"], str(rows))
+    p.send({"type": "settings", "values": {}, "options": {"monitor": ONE}})
+    p.wait(250)
+    got = p.js(FOLLOW_ROW, "#setup-body")
+    check("...dimmed there the same, with the same words", got and got["dim"] == "true" and got["why"] == "모니터가 두 대 이상일 때 씀", str(got))
+    p.js("() => closeSetup()")
+    p.send({"type": "settings", "values": {}, "options": {"monitor": TWO}})
+    p.js("() => { openSettings(); document.querySelector('#settings-body [data-sec=\"capture\"]')?.click(); }")
+    p.wait(300)
+    rows = p.js("() => [...document.querySelectorAll('#settings-body .set [data-set]')].map((b) => b.dataset.set)")
+    check("Solver settings' Capture section has it right after Monitor", "monitor" in rows and rows[rows.index("monitor") + 1:rows.index("monitor") + 2] == ["monitor_follow"],
+          str(rows))
+    p.js("() => closeSettings()")
+    # The screen card: the monitor read, and that it was followed there; the chosen one, as before, once it reads that again
+    fact = "() => [...document.querySelectorAll('#st-screen .fact')].map((f) => [f.querySelector('dt').textContent, f.querySelector('dd').textContent])"
+    now = p.js("() => Date.now() / 1000")
+    caps = {**h.CAPTURE["caps"], "following": 2}
+    p.send({**h.CAPTURE, "caps": caps, "now": now, "last_frame": now - 2, "last_audio": now - 3, "who": WHO, "since": now - 200})
+    p.wait(250)
+    followed = dict(p.js(fact))
+    p.send({**h.CAPTURE, "caps": {**caps, "following": None}, "now": now, "last_frame": now - 2, "last_audio": now - 3, "who": WHO, "since": now - 200})
+    p.wait(250)
+    chosen = dict(p.js(fact))
+    check("the screen card names the monitor read and that it followed the screen there, and the chosen one alone once it reads that",
+          followed.get("모니터") == "2번 1440x2560 · 따라감" and chosen.get("모니터") == "1번 3840x2160", str((followed, chosen)))
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+    # In English: the same words the guide names
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500, locale="en-US", query="?lang=en")
+    p.send(support.settings_message())
+    server(p)
+    program(p, WHO)
+    p.send({"type": "settings", "values": {}, "options": {"monitor": [[0, "All monitors"], [1, "Monitor 1 (1920x1080)"]]}})
+    opened(p)
+    got = p.js(FOLLOW_ROW, "#capture-body")
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "caps": {**h.CAPTURE["caps"], "following": 2}, "now": now, "last_frame": now - 2, "last_audio": now - 3, "who": WHO,
+            "since": now - 200})
+    p.wait(250)
+    card = dict(p.js(fact))
+    check("in English: why it is dimmed, and the card's monitor", got and got["why"] == "Used with two monitors or more"
+          and card.get("Monitor") == "#2 1440x2560 · following", str((got, card)))
+    check("no page errors", not p.errors, str(p.errors[:2]))
+    p.close()
+
+
 def group_narrow(br, s) -> None:
     if not T.group("a phone's width"):
         return
@@ -396,6 +505,7 @@ def main():
         group_connected(br, s)
         group_keys(br, s)
         group_foot(br, s)
+        group_follow(br, s)
         group_narrow(br, s)
         br.close()
     return T.end()
