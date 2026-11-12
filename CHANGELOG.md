@@ -14,6 +14,8 @@ that only fixes raises the patch number. Each release's section here is its rele
   at once. The desktop app starts its own capture program again when another one takes over, and keeps running.
 - `./sidenote capture --once` cleared the region drawn in the panel, as a capture program starting anew does. One
   screen sent leaves the region in place now.
+- The Helm chart's model download Job had no memory limit and its search pod no CPU limit, so a namespace whose
+  ResourceQuota asks every pod for its limits refused them. Every container has both limits now.
 
 ### Security
 

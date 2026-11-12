@@ -259,6 +259,21 @@ What the chart cannot reproduce:
   with whatever was left. The runner cleans them up when it starts, as it does after every run. If it keeps ending
   (the pod in `CrashLoopBackOff`), delete the pod: `kubectl --namespace sidenote delete pod -l app.kubernetes.io/component=runner`.
 
+## Several people on one cluster
+
+Give each person a release in a namespace of their own: the agent's Secret is a credential that anyone who can read
+Secrets in its namespace can use (Agent login). Two releases in one namespace still keep apart where the chart can keep
+them apart. Every object's name starts with its release's, nothing is cluster-wide, and each NetworkPolicy selects its
+own release's pods and lets in only its own release's server, so another release's server reaches neither this one's
+runner, nor its model, nor its search. Every container asks for CPU and memory and has a limit on both, so a namespace
+whose ResourceQuota asks each pod for them takes the pods; the `resources` of each part change them.
+`tests/chart_check.py` checks these on what the chart writes, and `tests/k3d_check.sh` sends another release's server
+at the runner on a running cluster. A release name that has `sidenote` in it is the prefix as it is, so `a` and
+`a-sidenote` would both name their objects `a-sidenote-...`: Helm refuses the second of them in one namespace.
+
+A release serves one person. One capture program feeds its server: a second one that connects takes over, and the one
+before ends itself.
+
 ## Security compared with compose
 
 | compose.yaml | This chart |
@@ -318,7 +333,8 @@ kubectl --namespace sidenote delete pvc sidenote-llm-models sidenote-server-data
 ## Checking it on a throwaway cluster
 
 `tests/k3d_check.sh` installs the chart on a k3d cluster of its own and checks the things a render cannot: the pods
-come up, port-forward reaches the panel, the runner's NetworkPolicy holds both ways, a run needs the runner's token,
+come up, port-forward reaches the panel, the runner's NetworkPolicy holds both ways (another release's server in the
+namespace is kept out too), a run needs the runner's token,
 a request from the node is refused, the runner cleans up after a restart, the token survives an upgrade, and
 Codex's login lands in a writable home. It deletes the cluster at the end and leaves `~/.kube/config` alone; the
 chart-e2e workflow runs it in CI.

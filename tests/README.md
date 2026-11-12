@@ -127,7 +127,8 @@ tests/offline_check.sh sidenote:ci sidenote-runner:ci
 
 `tests/k3d_check.sh` installs the chart on a throwaway k3d cluster with the images given (by default the ones
 `./sidenote up` built) and checks what only a running cluster can show: the pods come up, `kubectl port-forward`
-reaches the panel, the runner opens no connection and only the server reaches it, a run needs the runner's token
+reaches the panel, the runner opens no connection and only the server reaches it (a pod with another release's server
+labels does not, one with this release's does), a run needs the runner's token
 (also from inside the runner's pod), a request from the node is refused because the server trusts loopback alone,
 the runner cleans up what a run left when its container restarts, the token survives an upgrade, and with Codex the
 login is copied into a writable home. The local model stays off, so no GPU is used. The cluster is deleted at the
@@ -139,6 +140,15 @@ K3D=/path/to/k3d HELM=/path/to/helm tests/k3d_check.sh sidenote:e2e sidenote-run
 ```
 
 The chart-e2e workflow runs it on a push that changes the chart, the images or the code inside them, and by hand.
+
+`tests/chart_check.py` needs no cluster: it renders the chart for two releases in one namespace and checks that no two
+objects share a name and none is cluster-wide, that every NetworkPolicy selects and lets in its own release's pods
+only, that every container (init containers too) asks for CPU and memory and has a limit on both, and that no pod
+gets a token for the cluster's API. It needs helm and PyYAML; the CI's chart job runs it.
+
+```bash
+.venv/bin/python tests/chart_check.py
+```
 
 ## The Mac app as the Finder opens it
 
