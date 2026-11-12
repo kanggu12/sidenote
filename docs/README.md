@@ -469,7 +469,7 @@ notebook carry the same readings.
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest, and so does **Recently deleted**.
 
-The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.8.1**, and opens that
+The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.9.0**, and opens that
 release's notes.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
@@ -1164,8 +1164,8 @@ The **Speech** section holds what shapes what is written down:
   once. The box holds up to 50 words of up to 60 characters each.
 - **Speech model** picks the model that writes down each sentence: **large-v3-turbo** (the default), **medium** or
   **small**, all on the CPU. The live words are read with `small` whichever is chosen, about 8 s of CPU for each pass
-  over the last 15 seconds of speech. On the test PC a spoken question was written down about 10 s after it ended with
-  `large-v3-turbo` and 6.5 s with `small`, the live words the same. On Korean and English mixed as people speak them
+  over the last 15 seconds of speech. On the test PC a spoken question was written down about 7 s after it ended with
+  `large-v3-turbo` and 4 s with `small` (10 s and 6.5 s with other work running), the live words the same. On Korean and English mixed as people speak them
   `large-v3-turbo` made 15.9% character errors against 20.2% for `small`, and on interview questions full of technical
   terms wrote 89% of the terms right against 86%. A model not
   downloaded yet (1.6 GB for `large-v3-turbo`, 1.5 GB for `medium`, 0.5 GB for `small`) is fetched the first time it is

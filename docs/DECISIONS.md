@@ -2259,8 +2259,8 @@ cost what they did. On auto a model asked to tell the language reads the sound t
 to write, and turbo's encoder is what costs: through the running server, fed five questions as a capture program feeds
 it, a sentence was written down 14 to 18 s after it ended. `small`, which told the language of every utterance before
 (the vote's figures are its odds, [note 12](#note-12)), now tells it for turbo, which then reads the sound once: 8.5 to
-13.4 s, 10 s in the middle, against 6.2 to 11.4 s, 6.5 s in the middle, with `small` alone. A spoken question reaches the
-engines some 3.5 s later, written down with a third fewer errors. The two models
+13.4 s, 10 s in the middle, against 6.2 to 11.4 s, 6.5 s in the middle, with `small` alone; on a quieter PC, 7.0 s in the
+middle against 4.2 s. A spoken question reaches the engines some 3 s later, written down with a third fewer errors. The two models
 read in turn in the one speech loop and take 2.1 GB of downloads and 1.8 GB of memory between them (`small` alone, 0.6 GB). `small` and
 `medium` stay in the panel's choices; a model no heavier than the live line's is one model for both.
 
