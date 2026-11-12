@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-13
+
 ### Added
 
 - **Maintenance**, in the gear menu: what `./sidenote doctor`, `report`, `events`, `logs`, `llm` and `backup` tell, in the
@@ -802,7 +804,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kanggu12/sidenote/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kanggu12/sidenote/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/kanggu12/sidenote/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/kanggu12/sidenote/compare/v0.7.0...v0.8.0
