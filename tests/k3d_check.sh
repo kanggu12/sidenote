@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The Helm chart on a throwaway k3d cluster: what only a running cluster can show. The pods come up, port-forward
-# reaches the panel, the runner reaches nothing and only the server reaches it, a run needs the runner's token (also
+# reaches the panel, the runner reaches nothing and only the server reaches it (not another release's server in the
+# same namespace), a run needs the runner's token (also
 # from inside the runner pod), a request from the node is refused (loopback only), the runner cleans up what a run
 # left when its container restarts, the token survives an upgrade, Codex's login is copied into a writable home, and the
 # speech model the guide for no internet unpacks through kubectl is found there, and stays when the pod is replaced.
@@ -88,14 +89,28 @@ for _ in $(seq 30); do curl -sf -m 2 "http://127.0.0.1:$PORT/health" > /dev/null
 check "port-forward reaches /health" curl -sf -m 5 "http://127.0.0.1:$PORT/health"
 
 echo "[the runner's network]"
-# Each probe prints what it saw: "blocked" only for a connection that timed out or was refused, so a probe that
-# never ran (no pod, no image) cannot pass for a blocked one.
-BLOCKED='import socket, sys
-try:
-    socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=5)
-    print("open")
-except OSError:
-    print("blocked")'
+# Each probe prints what it saw: "open", "blocked" only for a connection that timed out or was refused at an address
+# the name gave, and "unresolved" for a name that gave none, so neither a probe that never ran (no pod, no image) nor
+# one that could not look the name up passes for a blocked one. A third argument keeps it trying that many seconds
+# until it connects: a new pod's address reaches the policy controller's lists a moment after the pod starts.
+BLOCKED='import socket, sys, time
+end = time.time() + (float(sys.argv[3]) if len(sys.argv) > 3 else 0)
+while True:
+    try:
+        addr = socket.getaddrinfo(sys.argv[1], int(sys.argv[2]), type=socket.SOCK_STREAM)[0][4][:2]
+    except OSError:
+        seen = "unresolved"
+    else:
+        try:
+            socket.create_connection(addr, timeout=5).close()
+            print("open")
+            break
+        except OSError:
+            seen = "blocked"
+    if time.time() >= end:
+        print(seen)
+        break
+    time.sleep(2)'
 OUT=$(kc exec deploy/sidenote-runner -- python3 -c "$BLOCKED" 1.1.1.1 443 2>/dev/null)
 check "the runner opens no connection out" test "$OUT" = blocked
 kc run netcheck --image="$SERVER_IMG" --image-pull-policy=Never --restart=Never --command -- \
@@ -103,6 +118,21 @@ kc run netcheck --image="$SERVER_IMG" --image-pull-policy=Never --restart=Never 
 kc wait --for=jsonpath='{.status.phase}'=Succeeded pod/netcheck --timeout=90s > /dev/null 2>&1
 check "a pod that is not the server cannot reach the runner" test "$(kc logs netcheck 2>/dev/null)" = blocked
 kc delete pod netcheck --wait=false > /dev/null 2>&1
+# Two people's releases in one namespace: the runner lets in its own release's server, not the other release's. A
+# pod with this release's server labels is the control, which gets in once the policy controller has its address; the
+# other release's is given as long to get in, so a policy that let it in late cannot pass for one that keeps it out.
+probe() {   # probe POD LABELS [SECONDS]: what a pod with these labels sees of the runner's port (trying that long to get in)
+  kc run "$1" --image="$SERVER_IMG" --image-pull-policy=Never --restart=Never --labels="$2" --command -- \
+    python3 -c "$BLOCKED" sidenote-runner 8000 "${3:-0}" > /dev/null 2>&1
+  kc wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$1" --timeout=90s > /dev/null 2>&1
+  kc logs "$1" 2>/dev/null
+  kc delete pod "$1" > /dev/null 2>&1   # gone before the checks after it look for the server's pod by its labels
+}
+SERVER_LABELS="app.kubernetes.io/name=sidenote,app.kubernetes.io/component=server"
+check "a pod with this release's server labels reaches the runner (the control)" \
+  test "$(probe ownserver "$SERVER_LABELS,app.kubernetes.io/instance=sidenote" 60)" = open
+check "another release's server in the same namespace cannot reach this one's runner" \
+  test "$(probe otherserver "$SERVER_LABELS,app.kubernetes.io/instance=other" 60)" = blocked
 
 echo "[the runner's token]"
 PROBE='import json, os, sys, urllib.request, urllib.error
@@ -139,7 +169,8 @@ check "a run inside the runner pod that asks the runner itself is refused (403)"
   kc exec deploy/sidenote-server -- python3 -c "$PROBE" inside
 
 echo "[the server trusts loopback only]"
-POD_IP=$(kc get pod -l app.kubernetes.io/component=server -o jsonpath='{.items[0].status.podIP}')
+POD_IP=$(kc get pod -l app.kubernetes.io/instance=sidenote,app.kubernetes.io/component=server \
+  --field-selector=status.phase=Running -o jsonpath='{.items[0].status.podIP}')   # the server's, never a probe's
 kc run nodecheck --image="$SERVER_IMG" --image-pull-policy=Never --restart=Never \
   --overrides='{"spec": {"hostNetwork": true}}' --command -- python3 -c "
 import urllib.request, urllib.error, sys

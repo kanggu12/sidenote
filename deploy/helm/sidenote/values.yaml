@@ -331,13 +331,16 @@ llm:
       - 0.0.0.0/0
     egressPorts:
       - 443
-    # The LLM's CPU cap, and no memory limit, as compose.yaml has it.
+    # The LLM's CPU cap, and a memory limit (compose.yaml has none): a namespace whose quota asks every pod for its
+    # limits, as a cluster shared by several people often does, refused the job without one. A pull streams the
+    # model to the volume and holds little of it.
     resources:
       requests:
         cpu: 250m
         memory: 512Mi
       limits:
         cpu: "8"
+        memory: 4Gi
     # Give up after this many seconds, and try again this many times after a failure.
     activeDeadlineSeconds: 21600
     backoffLimit: 3
@@ -360,12 +363,14 @@ search:
   # More environment variables for SearXNG, for example GRANIAN_HOST: "0.0.0.0" on nodes without
   # IPv6, where it cannot listen on "::" as the image asks.
   env: {}
-  # compose.yaml: 512 MB of memory and no CPU limit.
+  # compose.yaml's 512 MB of memory, and a CPU limit it does not have: a namespace whose quota asks every pod for
+  # its limits refused the pod without one. A search is a few requests and a page of results.
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
+      cpu: "1"
       memory: 512Mi
   probes:
     startup:
