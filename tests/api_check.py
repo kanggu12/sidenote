@@ -564,6 +564,42 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   and r.status_code == 200 and r.json().get("kept") is True and c.get("/api/v1/days").json()["deleted"] == 1
                   and [a["id"] for a in c.get("/api/v1/answers").json()["answers"]] == [fourth["id"]], r.json())
 
+            print("\n[questions at once]")
+            # At most MAX_ASKS questions are answered at once. The follow-up is held here until all of them are asked,
+            # so they are being answered together whatever the time each would take.
+            gate, real = threading.Event(), A.followup
+
+            async def held(*args, **kwargs):
+                while not gate.is_set():
+                    await asyncio.sleep(0.02)
+                return await real(*args, **kwargs)
+
+            A.followup = held
+            try:
+                n = len(p.msgs)
+                many = [c.post("/api/v1/ask", json={"text": f"question {i}?"}) for i in range(A.MAX_ASKS + 1)]
+                ws.send_text(json.dumps({"type": "ask", "text": "and one from the box?"}))
+                warned = p.wait(lambda m: m.get("type") == "notice" and m.get("level") == "warn", timeout=10, after=n)
+            finally:
+                gate.set()
+                A.followup = real
+            busy = t(A.ASK_BUSY, n=A.MAX_ASKS)
+            check(f"{A.MAX_ASKS} questions at once are taken (202), the next is a 429 in the panel's words",
+                  [r.status_code for r in many] == [202] * A.MAX_ASKS + [429] and many[-1].json().get("error") == busy,
+                  [r.status_code for r in many])
+            check("...and one more from the question box is a warning to that panel", warned is not None
+                  and warned.get("text") == busy, warned)
+            ends = [p.wait(lambda m, i=r.json().get("id"): m.get("type") in ("analysis_done", "error", "analysis_cancelled")
+                           and m.get("id") == i, timeout=30, after=n) for r in many[:A.MAX_ASKS]]
+            check("...let go, the questions taken are answered", all(e is not None and e["type"] == "analysis_done" for e in ends),
+                  [e and e.get("type") for e in ends])
+            n = len(p.msgs)
+            r = c.post("/api/v1/ask", json={"text": "and one after them?"})
+            after = p.wait(lambda m: m.get("type") in ("analysis_done", "error") and m.get("id") == r.json().get("id"),
+                           timeout=30, after=n)
+            check("...and a question after them is taken again", r.status_code == 202 and after is not None
+                  and after["type"] == "analysis_done", [r.json(), after and after.get("type")])
+
             print("\n[the history cleared]")
             n = len(p.msgs)
             r = c.request("DELETE", "/api/v1/answers", json={})

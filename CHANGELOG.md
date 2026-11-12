@@ -6,6 +6,23 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- Two capture programs could feed one server at once when the PC's own guard could not see the second (one on another
+  PC or another account): every screen and sound reached the analysis twice. The newest one feeds the server now, and
+  the one before is asked to quit, with a note in the panel. A program's own connection left open by a sleep gives way
+  at once. The desktop app starts its own capture program again when another one takes over, and keeps running.
+- `./sidenote capture --once` cleared the region drawn in the panel, as a capture program starting anew does. One
+  screen sent leaves the region in place now.
+
+### Security
+
+- A server took any number of panels at once, each with up to 16 MB of messages waiting for it, and answered any
+  number of questions at once, each holding a model's turn. A program on this PC (or on a cluster, anyone allowed to
+  port-forward in the namespace) could open or ask as many as it liked. A server takes 32 panels now, as it takes 32
+  readers of events, and answers 8 questions at once; the next is refused (`403` at a panel's handshake, `429` from
+  `POST /api/v1/ask`).
+
 ## [0.6.2] - 2026-11-10
 
 ### Fixed

@@ -52,6 +52,10 @@ PORT = 8777
 # The capture program's exit code when it asks to be started again (a restart from its tray icon or from the panel)
 # while SIDENOTE_SUPERVISED is set: this program starts it, rather than it starting a copy of itself.
 CAPTURE_RESTART = 75
+# The capture program's exit code when another capture program connected to the app's server and took it over
+# (client/capture.py, CAPTURE_TAKEN_OVER). The server listens on this PC alone, so the other one is a program of another
+# account here pointed at this port: the app's own is started again and takes its server back.
+CAPTURE_TAKEN_OVER = 77
 LOG_CAP = 5 * 1024 * 1024          # bytes a log file reaches before it is rotated; one older file is kept
 RESTARTS = (5, 600)                # a child started this many times within this many seconds is given up on
 # A console program started from a windowless one gets a console window of its own unless this flag is given.
@@ -716,7 +720,10 @@ def run(args) -> int:
                                                 "--no-auto-update"),
                             # its tray speaks the language this program's messages do: on macOS from the Finder
                             # there is no locale for it to read
-                            {**env, "SIDENOTE_SUPERVISED": "1", "SIDENOTE_LANG": env.get("SIDENOTE_LANG") or ui_lang()},
+                            {**env, "SIDENOTE_SUPERVISED": "1", "SIDENOTE_LANG": env.get("SIDENOTE_LANG") or ui_lang(),
+                             # one run through all its starts: a start after one whose connection the server still
+                             # holds is the same program to the server, and takes its place without a word
+                             "SIDENOTE_CAPTURE_RUN": secrets.token_hex(8)},
                             CappedLog(logs / "capture.log"),
                             asked_code=CAPTURE_RESTART)   # its own restarts (tray Restart) are not failures
             capture.start()
@@ -777,8 +784,9 @@ def watch(server: Child, capture: Child | None, ollama: Child | None, log: Cappe
                  + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
                      folder=folder), log)
             return 1
-        say(f"the capture program {'asked for a restart' if asked else f'stopped (exit {code})'}; "
-            "starting it again", log)
+        why = ("asked for a restart" if asked else "gave way to another capture program that connected to this server"
+               if code == CAPTURE_TAKEN_OVER else f"stopped (exit {code})")
+        say(f"the capture program {why}; starting it again", log)
         capture.start("--resumed")   # (one it asked for is not counted toward giving up: Child.start, asked_code)
 
 

@@ -56,6 +56,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.websockets import WebSocketState
 from PIL import Image
 
 from . import faces, forksafe, history as answers_log, i18n, models, repeats, telemetry, watchdog
@@ -265,6 +266,10 @@ class AppState:
     audio_buffer: bytearray = field(default_factory=bytearray)
     audio_sr: int = 16000
     panel_clients: set = field(default_factory=set)   # each panel's PanelOut (a stand-in of the checks: its own object)
+    # Panels with a place taken (MAX_PANELS): counted before the handshake's first await, so handshakes that come at
+    # once cannot all pass the count; and when a refused one was last written to the telemetry (once a minute at most)
+    panels_open: int = 0
+    panels_full_said: float = 0.0
     analysis_seq: int = 0
     analyses_done: int = 0
     transcript: str = ""          # latest rolling transcript (continuous transcription loop)
@@ -295,6 +300,7 @@ class AppState:
     cancel_reason: str | None = None   # why the analysis being cancelled right now was cancelled
     screen_epoch: int = 0         # +1 on every screen-off: a screen still being prepared then is dropped
     followups: dict = field(default_factory=dict)   # running follow-up task -> {"image", "reason"}
+    asks_active: int = 0          # questions someone asked being answered now (MAX_ASKS), counted as they are taken
     runner_ok: bool = False       # the code runner answered its last health check
     runs_active: int = 0          # code runs waiting on the runner right now
     analyses_running: int = 0     # analyses started and not yet ended (activity(): the server is in use)
@@ -380,6 +386,13 @@ class AppState:
     audio_on: bool = True
     capture_caps: dict = field(default_factory=dict)   # what the client can do: screen, audio, device
     ingest_ws: set = field(default_factory=set)
+    # Each capture connection's run (a random word a capture program keeps while it runs: RUN in client/capture.py);
+    # the connections a newer capture program took over (take_over in /ingest), from which nothing more is taken, to
+    # which nothing more is sent, and which are not counted; and those of --once runs, one screen sent beside the
+    # program that runs, which neither take over nor are taken over
+    ingest_runs: dict = field(default_factory=dict)
+    ingest_retired: set = field(default_factory=set)
+    ingest_once: set = field(default_factory=set)
     # When the screen last changed (stamp_frame): a frame that moved only what keeps moving beside it (a video call
     # in a corner) does not count, so the settle sees the screen come to rest. `last_seen_ts` is any frame at all.
     last_frame_ts: float = 0.0
@@ -745,6 +758,11 @@ def note_live(message: dict) -> None:
             LIVE.pop(key, None)
 
 
+# Panels at once on one server: one person's tabs are never this many, and each holds a queue and a writer (PanelOut);
+# a page that reconnects in a loop, or a program opening them, is refused past it, as the API's readers are past 32
+MAX_PANELS = 32
+
+
 class PanelOut:
     """One panel's way out: what is sent to it waits here, and a writer of its own sends it, in order. A broadcast only puts
     a message here and never waits on a panel: one that stopped reading (a frozen tab, a socket half gone) held every
@@ -876,10 +894,30 @@ def control_message() -> str:
 
 async def send_control() -> None:
     for ws in list(STATE.ingest_ws):
+        if ws not in STATE.ingest_ws:
+            continue   # taken over (or gone) while the one before it was being sent to
         try:
             await ws.send_text(control_message())
         except Exception:
             STATE.ingest_ws.discard(ws)
+
+
+# How long a capture program asked to quit for a newer one (take_over in /ingest) has to end itself before its
+# connection is closed. It ends in a few seconds (its loops stop, its tray icon goes); closed under it any sooner, its
+# sound thread, still sending as it ends, would connect again and take the server back from the newer one.
+TAKEN_OVER_SEC = 10.0
+
+
+async def close_retired(ws, after: float) -> None:
+    """A capture connection a newer one took over, closed `after` seconds on if it is still open."""
+    if after:
+        await asyncio.sleep(after)
+    if ws.client_state != WebSocketState.CONNECTED or ws.application_state != WebSocketState.CONNECTED:
+        return   # it ended itself, as it was asked
+    try:
+        await asyncio.wait_for(ws.close(code=1000), 2.0)
+    except Exception:   # it went while this was closing it
+        pass
 
 
 RUN_LANGS = {"python", "cpp", "c", "javascript", "typescript", "java", "kotlin", "go", "bash"}
@@ -887,6 +925,10 @@ RUN_ALIASES = {"py": "python", "python3": "python", "c++": "cpp", "cc": "cpp", "
                "ts": "typescript", "kt": "kotlin", "golang": "go", "sh": "bash", "shell": "bash"}
 MAX_RUN_CODE, MAX_RUN_STDIN = 100_000, 20_000
 MAX_RUNS = 2    # runs waiting on the runner at once; the runner itself does one at a time
+# Questions answered at once (the question box, POST /api/v1/ask). A person has a few waiting at most; each holds a
+# model's turn, and with some agents a process of its own, so a program that asks in a loop is refused past it.
+MAX_ASKS = 8
+ASK_BUSY = "{n} questions are being answered · ask again when one ends"   # through t() where it is said
 RUN_BUSY = "Another code run is going · run again when it ends"   # through t() where it is said
 
 
@@ -2060,6 +2102,14 @@ CONTINUE_QUESTION = (
     "'보강할 것 없음:' 뒤에 이유 한 줄만 쓰세요. 이어 붙인 것이 앞의 문제와 다른 문제면 '다른 문제입니다.' 라고 쓴 뒤 그 "
     "문제를 처음부터 푸세요.")
 CONTINUE_LABEL = "Solution filled out from the scrolled problem"   # the panel's words for it, through t()
+
+
+async def asked(app: FastAPI, question: str, seq: int) -> None:
+    """A question someone asked, counted while it is answered (MAX_ASKS): counted in when it is taken, out here."""
+    try:
+        await run_followup(app, question, seq=seq)
+    finally:
+        STATE.asks_active -= 1
 
 
 async def run_followup(app: FastAPI, question: str, retry: dict | None = None, cont: dict | None = None,
@@ -3896,6 +3946,10 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "not allowed"}, status_code=403)
         asked = 0
         for ws in list(STATE.ingest_ws):
+            if ws not in STATE.ingest_ws:
+                # taken over while the one before it was being sent to: a restart reaching it would start a copy of it,
+                # which would take the server back
+                continue
             try:
                 await ws.send_text(json.dumps({"type": what, **(extra or {})}))
                 asked += 1
@@ -3969,9 +4023,14 @@ def create_app() -> FastAPI:
         STATE.captures += 1
         STATE.ingest_ws.add(ws)
         counts = {"frame": 0, "audio": 0}
+        # What this connection said of itself (its hello and caps) and its run. Once it takes over (take_over), the
+        # capture card shows these alone. `once`: a --once run's
+        me: dict = {"info": "", "run": "", "caps": {}, "once": False}
         telemetry.event("capture_connect", peer=peer)
 
         async def handle(raw: str) -> None:
+            if ws in STATE.ingest_retired:
+                return   # taken over by a newer capture program: what this one sends as it ends is not the server's
             try:  # one bad message is skipped, not allowed to drop the client's connection
                 # A frame's message is megabytes of base64: parsed here it stalls every panel and stream for its length
                 data = json.loads(raw) if len(raw) < 65536 else await loop.run_in_executor(None, json.loads, raw)
@@ -4012,13 +4071,23 @@ def create_app() -> FastAPI:
                 elif kind in ("hello", "caps"):
                     if kind == "hello":
                         log.info("ingest hello: %s", data.get("info"))
-                        STATE.capture_info = str(data.get("info") or "")
+                        # ./sidenote capture --once: one screen sent beside the program that runs, which keeps the
+                        # server, its card and its region
+                        if data.get("once") is True:
+                            me["once"] = True
+                            STATE.ingest_once.add(ws)
+                        else:
+                            me["info"] = STATE.capture_info = str(data.get("info") or "")
+                        run = data.get("run")   # a capture program's own word for this run of it (take_over)
+                        if isinstance(run, str) and re.fullmatch(r"[0-9a-f]{8,32}", run):
+                            me["run"] = STATE.ingest_runs[ws] = run
                         # A capture program starting is a new sitting: a region drawn in the last one is about a
                         # screen that is gone, and left set it hid every problem outside it (seen twice).
                         # Only the hello of a start carries the options it was started with (`flags`, empty or not;
                         # client/capture.py drops them after its first connect), so a reconnect after a server
                         # restart or a dropped connection keeps the region, as design 56 promises.
-                        if "flags" in data and SETTINGS.get("roi_box"):
+                        # A --once run is no new sitting: one screen sent is no reason to drop a drawn region.
+                        if "flags" in data and SETTINGS.get("roi_box") and not me["once"]:
                             await apply_setting(app, "roi_box", None)
                             await notice(t("Capture started anew: region cleared · sees the whole screen"))
                     # "code": which capture.py it runs (./sidenote up compares it with the file it deployed);
@@ -4030,7 +4099,8 @@ def create_app() -> FastAPI:
                         caps["skipping"] = caps["skipping"] is True   # a yes or a no, whatever a client sends
                     if "skip_limit" in caps and caps["skip_limit"] not in ("none", "front"):
                         caps["skip_limit"] = ""                       # one of two words, so nothing else can reach the panel
-                    if caps:
+                    me["caps"].update(caps)
+                    if caps and not me["once"]:   # a --once run's leave the card to the program that runs
                         STATE.capture_caps = {**STATE.capture_caps, **caps}
                     if isinstance(data.get("monitors"), list):   # the panel offers these
                         mons = [m for m in data["monitors"] if isinstance(m, list) and len(m) == 2][:8]
@@ -4045,20 +4115,63 @@ def create_app() -> FastAPI:
                             ok, _ = SETTINGS.set(k, v)
                             if ok:
                                 await broadcast({"type": "settings", "values": {k: v}})
+                    if kind == "hello":
+                        await take_over()   # the newest capture program to say who it is feeds the server
                     telemetry.event("capture_" + kind, info=STATE.capture_info[:200], **caps)
                     await note_capture(force=True)
             except Exception:
                 log.exception("ingest: skipped a bad message")
 
+        async def take_over() -> None:
+            """One capture program feeds a server (docs/README.md). The PC's own lock keeps a second one off that PC
+            (OneCapture); this meets one from another PC or another account, and a program's own connection left here
+            from before (a PC that slept: the server holds it until uvicorn's ping gives up, up to 40 s). The newest
+            connection feeds the server, so a program back from a sleep is not shut out by its own old one, which is
+            closed at once (it says the same run). Another program's is asked to quit, as ./sidenote capture-stop asks
+            (every capture program reads it, and ends itself and its tray icon), and closed if it is still here
+            TAKEN_OVER_SEC on. Two at once sent every screen and sound twice to one analysis, each overwriting the
+            other's. It runs when the hello comes: a connection that never says one takes nothing over (a probe, a
+            socket opened by hand), and one taken over before its hello came stays taken over."""
+            if ws in STATE.ingest_retired or me["once"]:
+                return   # taken over itself before its hello came, or a --once run beside the program that runs
+            others = [o for o in list(STATE.ingest_ws) if o is not ws and o not in STATE.ingest_once]
+            if not others:
+                return
+            for o in others:   # all of them before anything is awaited: each one's own end (finally) sees it
+                STATE.ingest_ws.discard(o)
+                STATE.ingest_retired.add(o)
+                STATE.captures -= 1
+            STATE.capture_info = me["info"]
+            STATE.capture_caps = dict(me["caps"])   # the card says what this one can do, not a mix of the two
+            by = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", me["info"])[:80] or "?"   # its own words, no terminal codes
+            asked = 0
+            for o in others:
+                if me["run"] and STATE.ingest_runs.get(o) == me["run"]:
+                    spawn(close_retired(o, 0), "close_retired")   # this program's own, from before: nothing reads it
+                    continue
+                asked += 1
+                try:
+                    await asyncio.wait_for(o.send_text(json.dumps({"type": "quit", "reason": "taken_over", "by": by})), 2.0)
+                except Exception:   # gone already
+                    pass
+                spawn(close_retired(o, TAKEN_OVER_SEC), "close_retired")
+            if asked:
+                log.warning("a capture program connected (%s) while %d fed this server: it takes over, and the one "
+                            "before is asked to quit", by, asked)
+                telemetry.event("capture_taken_over", info=by, before=asked)
+                await notice(t("Another capture program connected ({info}): it feeds the server now, and the one before stops",
+                               info=by))
+
         try:
             # The client says hello (with the options it was started with) first; the switches go
             # out after that, so they already include those options.
             try:
-                await handle(await asyncio.wait_for(ws.receive_text(), 3.0))
+                await handle(await asyncio.wait_for(ws.receive_text(), 3.0))   # its hello: it takes over there
             except asyncio.TimeoutError:
                 pass
-            await ws.send_text(control_message())   # the client starts in the state the panel wants
-            await note_capture(force=True)
+            if ws not in STATE.ingest_retired:          # taken over already: it was asked to quit, and is sent nothing more
+                await ws.send_text(control_message())   # the client starts in the state the panel wants
+                await note_capture(force=True)
             while True:
                 await handle(await ws.receive_text())
         except WebSocketDisconnect as exc:
@@ -4069,8 +4182,13 @@ def create_app() -> FastAPI:
         except Exception:
             log.exception("ingest error")
         finally:
-            STATE.captures -= 1
+            if ws in STATE.ingest_retired:
+                STATE.ingest_retired.discard(ws)   # counted out when it was taken over
+            else:
+                STATE.captures -= 1
             STATE.ingest_ws.discard(ws)
+            STATE.ingest_runs.pop(ws, None)
+            STATE.ingest_once.discard(ws)
             if not STATE.captures:
                 STATE.capture_caps = {}
             telemetry.event("capture_disconnect", peer=peer, frames=counts["frame"], audio_chunks=counts["audio"])
@@ -4150,9 +4268,13 @@ def create_app() -> FastAPI:
         elif kind == "ask":
             question = str(data.get("text") or "").strip()[:2000]
             if question:
+                if STATE.asks_active >= MAX_ASKS:   # refused before it takes an id: a warning to the one who asked
+                    await reply({"type": "notice", "level": "warn", "text": t(ASK_BUSY, n=MAX_ASKS)})
+                    return True
                 STATE.analysis_seq += 1   # its id, given now, as for Reanalyze
                 seq = STATE.analysis_seq
-                spawn(run_followup(app, question, seq=seq), "followup")
+                STATE.asks_active += 1    # counted before anything is awaited, so questions at once cannot pass it
+                spawn(asked(app, question, seq), "followup")
                 if isinstance(reply, Replies):
                     await reply({"type": "accepted", "id": seq})
             return True
@@ -4443,30 +4565,41 @@ def create_app() -> FastAPI:
             telemetry.event("refused", path="/panel", origin=str(ws.headers.get("origin"))[:120])
             await ws.close(code=1008)
             return
-        await ws.accept()
-        out = PanelOut(ws)   # what goes to this panel, in order, through one writer (PanelOut)
-        STATE.panel_clients.add(out)
-
-        async def reply(m: dict) -> None:   # to this panel only (a code run's result), in its order with the rest
-            out.put(json.dumps(m))
+        if STATE.panels_open >= MAX_PANELS:   # refused before it is accepted: its handshake gets 403
+            # a page refused tries again every 1.5 s (panel/app.js): written once a minute, not each time
+            if time.monotonic() - STATE.panels_full_said > 60:
+                STATE.panels_full_said = time.monotonic()
+                telemetry.event("refused", path="/panel", reason=f"{MAX_PANELS} panels open")
+            await ws.close(code=1013)
+            return
+        STATE.panels_open += 1   # its place, taken before the handshake's first await
         try:
-            async for message in opening():
-                out.put(json.dumps(message))
-            while True:
-                raw = await ws.receive_text()
-                if out.gone:   # closed for not reading while its close waits: what it sends is not run
-                    break
-                try:
-                    data = json.loads(raw)
-                except Exception:
-                    continue
-                await panel_command(data, reply)
-        except WebSocketDisconnect:
-            pass
-        except Exception:   # a message the loop could not handle ends this panel's socket: it reconnects, and the log says why
-            log.exception("a panel's connection ended on an error")
+            await ws.accept()
+            out = PanelOut(ws)   # what goes to this panel, in order, through one writer (PanelOut)
+            STATE.panel_clients.add(out)
+
+            async def reply(m: dict) -> None:   # to this panel only (a code run's result), in its order with the rest
+                out.put(json.dumps(m))
+            try:
+                async for message in opening():
+                    out.put(json.dumps(message))
+                while True:
+                    raw = await ws.receive_text()
+                    if out.gone:   # closed for not reading while its close waits: what it sends is not run
+                        break
+                    try:
+                        data = json.loads(raw)
+                    except Exception:
+                        continue
+                    await panel_command(data, reply)
+            except WebSocketDisconnect:
+                pass
+            except Exception:   # a message the loop could not handle ends this panel's socket: it reconnects, and the log says why
+                log.exception("a panel's connection ended on an error")
+            finally:
+                out.stop()
         finally:
-            out.stop()
+            STATE.panels_open -= 1   # its place, given back however it ended (a handshake that failed too)
 
     # ------------------------------------------------------------------------------------------------------------------
     # The API (docs/API.md). Each route that changes something runs one of the panel's messages through panel_command,
@@ -4665,7 +4798,10 @@ def create_app() -> FastAPI:
             return api_error(400, 'send {"text": "the question"}')
         if STATE.last_result is None:
             return api_error(409, t("No problem analyzed yet to ask about"))
-        said = (await run({"type": "ask", "text": text})).messages
+        replies = await run({"type": "ask", "text": text})
+        if (why := replies.refusal()) is not None:   # MAX_ASKS questions are being answered already
+            return api_error(429, why)
+        said = replies.messages
         return JSONResponse({"ok": True, "accepted": True, "id": next((m["id"] for m in said if m.get("type") == "accepted"), None)},
                             status_code=202)   # the id its answer takes in the events
 

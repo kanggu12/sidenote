@@ -95,7 +95,7 @@ Each of these runs one of the panel's controls. The body is a JSON object, `{}` 
 | `POST /api/v1/pause` | | The pause key: no screen or speech is analyzed until resumed |
 | `POST /api/v1/resume` | | The pause key again |
 | `POST /api/v1/reanalyze` | | **Reanalyze**: the screen now, even unchanged (`202` with the `id` its answer takes) |
-| `POST /api/v1/ask` | `{"text": "why not a heap?"}` | The question box under the latest answer (`202` with the `id` its answer takes, `409` with nothing answered yet) |
+| `POST /api/v1/ask` | `{"text": "why not a heap?"}` | The question box under the latest answer (`202` with the `id` its answer takes, `409` with nothing answered yet, `429` while 8 questions are being answered) |
 | `PUT /api/v1/capture` | `{"screen": false}`, `{"audio": true}`, or both | The capture card's switches |
 | `PUT /api/v1/settings/{key}` | `{"value": ...}` | One control of the settings sheet. A value outside its options is refused with the panel's words (`400`) |
 | `POST /api/v1/settings/reset` | | **Reset to defaults**: the values after it and what it did as `notices` (`409` when a setting could not go back) |

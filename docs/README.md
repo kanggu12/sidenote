@@ -296,7 +296,8 @@ reports it missing.
 
 One capture program runs for a server. `./sidenote capture` typed again finds the one that runs and says so, and the
 desktop shortcut clicked while one runs opens the panel. A second capture program started anyway (one the launcher
-could not see) says one is running and ends with exit code 76 before it captures anything. After `SIDENOTE_PORT` changes, stop the capture program and start it again
+could not see) says one is running and ends with exit code 76 before it captures anything. One that connects from another PC or another
+account, where this PC's guard cannot see it, takes over: the one before ends itself, and the panel says so. After `SIDENOTE_PORT` changes, stop the capture program and start it again
 (`./sidenote capture-stop`, then `./sidenote capture`); on WSL make the desktop shortcut again too (`./sidenote shortcut`).
 
 The capture program reads its code when it starts. After `./sidenote up` deploys new code for it, it restarts itself
