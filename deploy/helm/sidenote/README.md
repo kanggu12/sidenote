@@ -202,10 +202,11 @@ kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777
 Then open `http://127.0.0.1:8777`. Keep the forward on 127.0.0.1, its default; `--address 0.0.0.0` would open the
 panel to your network.
 
-The capture program sends to `ws://127.0.0.1:8777/ingest` by default. Run the port-forward on the Windows PC, or
-in WSL on that PC (Windows reaches WSL's localhost), and start the program as usual: `./sidenote capture` from
-the repository in WSL (it only checks that `http://127.0.0.1:8777/health` answers), or on Windows
-`py -3 client\capture.py --server ws://127.0.0.1:8777/ingest`. A port-forward ends when the pod behind it is
+The capture program sends to `ws://127.0.0.1:8777/ingest` by default. Run the port-forward on the PC with the screen
+(on Windows, or in WSL on that PC: Windows reaches WSL's localhost), and start the program as usual: `./sidenote capture`
+from the repository (it only checks that `http://127.0.0.1:8777/health` answers), or from the release's
+`sidenote-capture` zip, `py -3 capture.py --server ws://127.0.0.1:8777/ingest` on Windows and
+`python3 capture.py --server ws://127.0.0.1:8777/ingest` on a Mac or a Linux desktop with X11. A port-forward ends when the pod behind it is
 replaced, after an upgrade or a restart; start it again, and the capture program and the panel reconnect by
 themselves.
 
@@ -309,7 +310,7 @@ authentication of its own. Use `kubectl port-forward` ("Open the panel and conne
 their volumes are ReadWriteOnce), and runs the model-pull Job again while `llm.pull.enabled` is true; with the
 models in place that takes seconds.
 
-The server's claim is 4Gi from this release on (it was 2Gi). An upgrade asks Kubernetes to grow a claim made
+The server's claim is 4Gi from 0.6.0 on (it was 2Gi). An upgrade asks Kubernetes to grow a claim made
 before, which a StorageClass without `allowVolumeExpansion: true` refuses, and the upgrade with it. There, keep the
 old size: `--set server.persistence.size=2Gi`.
 

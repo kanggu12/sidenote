@@ -158,7 +158,7 @@ with urllib.request.urlopen("http://127.0.0.1:8777/api/v1/events") as stream:
 | `stage` | Where that answer stands: the step (`stage`), and the thinking pass's last line (`thought`) |
 | `delta` | The next words of that answer (`text`) |
 | `analysis_done` | The answer whole (`text`), with the `engine`, `model`, `usage`, `cost_usd` and time (`elapsed`) |
-| `analysis_cancelled` | It stopped: a newer screen came, it was not sent, a person stopped it, or the answer it asked about was deleted (`reason`) |
+| `analysis_cancelled` | It stopped: a newer screen came, it was not sent, a person stopped it (the GPU given back among them), or the answer it asked about was deleted (`reason`) |
 | `error` | It failed, in words, with what to do (`hint`) |
 | `check`, `verify` | The code check of an answer's examples, and the agent's check of an answer, under way and done |
 | `transcript`, `utterance` | What is being heard now, and a sentence closed |

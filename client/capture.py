@@ -40,7 +40,8 @@ import websocket  # websocket-client (sync)
 
 
 # ---------- the words it shows: its console lines, the tray menu, the notification ----------
-# Written in English; KO holds the Korean for each, character for character. The language is English unless SIDENOTE_LANG
+# Written in English; KO holds the Korean for each, character for character (tests/i18n_check.py holds every t() to it). The lines
+# of measurements (a frame's size, the looks' timings, sound lost) stay in English, numbers for a report as the server's log is. The language is English unless SIDENOTE_LANG
 # says ko (./sidenote passes on the one it was given, from .env or the environment). The system's language is not read: a
 # Korean Windows gave a capture in Korean beside a guide in English and a launcher that follows its terminal's locale.
 def ui_lang() -> str:
@@ -138,6 +139,48 @@ KO = {
     "Screen": "화면",
     "Sound": "소리",
     "nothing": "없음",
+    # the console's lines of what it does (the lines of measurements, frame sizes, timings and lost sound, stay in English,
+    # numbers for a report, as the server's log)
+    "connected to {url}": "{url}에 연결됨",
+    "cannot reach the server ({error}); retrying": "서버에 닿지 않아 다시 시도합니다 ({error})",
+    "screen capture on (from the panel)": "화면 캡처 켬 (패널에서)",
+    "screen capture off (from the panel)": "화면 캡처 끔 (패널에서)",
+    "sound capture on (from the panel)": "소리 캡처 켬 (패널에서)",
+    "sound capture off (from the panel)": "소리 캡처 끔 (패널에서)",
+    "scroll stitching on (from the panel)": "스크롤 이어 붙이기 켬 (패널에서)",
+    "scroll stitching off (from the panel)": "스크롤 이어 붙이기 끔 (패널에서)",
+    "monitor {n} (from the panel)": "모니터 {n}번 (패널에서)",
+    "{n} word(s) for windows to skip (from the panel)": "건너뛸 창 낱말 {n}개 (패널에서)",
+    "available monitors (pass the index to --monitor):": "모니터 목록 (--monitor에 번호를 넘김):",
+    "0 = all monitors combined (virtual screen): {box}": "0 = 모든 모니터를 합친 한 화면 (가상 화면): {box}",
+    "{i} = {w}x{h} at ({x},{y})": "{i} = {w}x{h}, 위치 ({x},{y})",
+    "default is 1 (primary). 0 captures every monitor as one wide image.": "기본은 1(주 모니터). 0은 모든 모니터를 넓은 한 장으로 받습니다.",
+    "monitor {asked} not found; {n} attached. Using 1.": "모니터 {asked}번이 없습니다. 연결된 {n}개 중 1번을 씁니다.",
+    "./sidenote capture --list-monitors shows them.": "./sidenote capture --list-monitors로 볼 수 있습니다.",
+    "scroll-stitch": "스크롤 이어 붙이기",
+    "single-shot": "한 장씩",
+    "capturing monitor {i}: {w}x{h} ({mode})": "모니터 {i}번 캡처: {w}x{h} ({mode})",
+    "the monitors changed {before} -> {after}; reading them again": "모니터가 바뀌어 다시 읽습니다: {before} -> {after}",
+    "{mode} mode": "{mode} 모드",
+    "screen capture works again": "화면 캡처가 다시 됩니다",
+    "the panel is on this screen ({n} window(s)); its area is painted over before sending": "패널이 이 화면에 있습니다 (창 {n}개). 보내기 전에 그 자리를 칠해 가립니다",
+    "the screen was scrolled ({n} rows): joining it into one problem": "화면이 스크롤됐습니다 ({n}줄): 한 문제로 이어 붙입니다",
+    "back to single screens": "다시 한 장씩 보냅니다",
+    "one screen sent (--once)": "화면 한 장을 보냈습니다 (--once)",
+    "the screen has not changed for {n} looks: looking every {s} s until it does": "화면이 {n}번 그대로여서 바뀔 때까지 {s}초마다 봅니다",
+    "the screen changed: looking at every poll again": "화면이 바뀌어 다시 매번 봅니다",
+    "the screen is locked, a UAC prompt is up or the screen saver is on (desktop {desk}): Windows lets no program capture it; capture resumes when it is back":
+        "화면이 잠겼거나 UAC 창 또는 화면 보호기가 떠 있습니다 (데스크톱 {desk}). Windows는 어떤 프로그램도 이 화면을 캡처하지 못하게 하며, 돌아오면 캡처를 이어 갑니다",
+    "could not capture the screen ({error}); retrying every 2 s": "화면을 캡처하지 못했습니다 ({error}). 2초마다 다시 시도합니다",
+    "capturing loopback: {device}": "루프백 캡처: {device}",
+    "the default speaker changed; switching to it": "기본 스피커가 바뀌어 그쪽으로 옮깁니다",
+    "could not record from the sound device ({error}); retrying every 3 s": "소리 장치에서 녹음하지 못했습니다 ({error}). 3초마다 다시 시도합니다",
+    "could not open the log file {path}: {error}": "로그 파일을 열지 못했습니다 {path}: {error}",
+    "no word from the server yet; starting with screen and sound on": "아직 서버의 말이 없어 화면과 소리를 켠 채로 시작합니다",
+    "capturing.": "캡처 중.",
+    "Ctrl+C to stop.": "멈추려면 Ctrl+C.",
+    "stopping...": "멈추는 중...",
+    "starting again...": "다시 시작하는 중...",
 }
 
 
@@ -1333,12 +1376,12 @@ class Sender:
                 self.epoch += 1  # a reconnect, or a first connect after failed tries -> loops re-send
             self._connected_once = True
             self._down = False
-            print(f"[conn] connected to {self.url}")
+            print("[conn] " + t("connected to {url}", url=self.url))
         return self._ws
 
     def _note_down(self, exc: Exception) -> None:
         if not self._down:
-            print(f"[conn] cannot reach the server ({exc}); retrying")
+            print("[conn] " + t("cannot reach the server ({error}); retrying", error=exc))
             self._down = True
 
     def keepalive(self) -> None:
@@ -1401,20 +1444,22 @@ class Sender:
         for k in ("screen", "audio"):
             if isinstance(msg.get(k), bool) and msg[k] != self.wants[k]:
                 self.wants[k] = msg[k]
-                print(f"[control] {'screen' if k == 'screen' else 'sound'} capture {'on' if msg[k] else 'off'} (from the panel)")
+                said = {("screen", True): t("screen capture on (from the panel)"), ("screen", False): t("screen capture off (from the panel)"),
+                        ("audio", True): t("sound capture on (from the panel)"), ("audio", False): t("sound capture off (from the panel)")}
+                print("[control] " + said[(k, msg[k])])
         if isinstance(msg.get("stitch"), bool) and msg["stitch"] != self.wants["stitch"]:
             self.wants["stitch"] = msg["stitch"]
-            print(f"[control] scroll stitching {'on' if msg['stitch'] else 'off'} (from the panel)")
+            print("[control] " + (t("scroll stitching on (from the panel)") if msg["stitch"] else t("scroll stitching off (from the panel)")))
         m = msg.get("monitor")
         if isinstance(m, int) and not isinstance(m, bool) and m >= 0 and m != self.wants["monitor"]:
             self.wants["monitor"] = m
-            print(f"[control] monitor {m} (from the panel)")
+            print("[control] " + t("monitor {n} (from the panel)", n=m))
         words = msg.get("skip_windows")       # absent from an older server's message: the list held stays
         if (isinstance(words, list) and all(isinstance(w, str) for w in words)
                 and skip_words(words) != self.wants.get("skip_windows")):
             self.wants["skip_windows"] = skip_words(words)
             # how many, not which: the log says nothing of what is skipped
-            print(f"[control] {len(self.wants['skip_windows'])} word(s) for windows to skip (from the panel)")
+            print("[control] " + t("{n} word(s) for windows to skip (from the panel)", n=len(self.wants["skip_windows"])))
         self.told.set()
 
     def send(self, message: dict) -> None:
@@ -1469,11 +1514,11 @@ def list_monitors() -> None:
     """Print the monitors mss sees, so the user knows what --monitor index to pass."""
     with _grabber()() as sct:
         mons = sct.monitors
-        print("available monitors (pass the index to --monitor):")
-        print(f"  0 = all monitors combined (virtual screen): {mons[0]}")
+        print(t("available monitors (pass the index to --monitor):"))
+        print("  " + t("0 = all monitors combined (virtual screen): {box}", box=mons[0]))
         for i, m in enumerate(mons[1:], start=1):
-            print(f"  {i} = {m['width']}x{m['height']} at ({m['left']},{m['top']})")
-    print("\ndefault is 1 (primary). 0 captures every monitor as one wide image.")
+            print("  " + t("{i} = {w}x{h} at ({x},{y})", i=i, w=m["width"], h=m["height"], x=m["left"], y=m["top"]))
+    print("\n" + t("default is 1 (primary). 0 captures every monitor as one wide image."))
 
 
 DOWN_POLL = 2.0   # how often to look while there is no server to send to
@@ -1547,16 +1592,16 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                 asked = sender.wants["monitor"]
                 index = asked if 0 <= asked < len(sct.monitors) else 1
                 if index != asked:
-                    print(f"[screen] monitor {asked} not found; {len(sct.monitors)-1} attached. Using 1.")
-                    print("         ./sidenote capture --list-monitors shows them.")
+                    print("[screen] " + t("monitor {asked} not found; {n} attached. Using 1.", asked=asked, n=len(sct.monitors) - 1))
+                    print("         " + t("./sidenote capture --list-monitors shows them."))
                 monitor = sct.monitors[index]
                 sizes = [[m["width"], m["height"]] for m in sct.monitors[1:]]
                 if sizes != told_monitors:   # the panel lists them to choose from
                     sender.set_caps(monitors=sizes, monitor=index)
                     told_monitors = sizes
                 if not failing:
-                    mode = "scroll-stitch" if sender.wants["stitch"] else "single-shot"
-                    print(f"[screen] capturing monitor {index}: {monitor['width']}x{monitor['height']} ({mode})")
+                    mode = t("scroll-stitch") if sender.wants["stitch"] else t("single-shot")
+                    print("[screen] " + t("capturing monitor {i}: {w}x{h} ({mode})", i=index, w=monitor["width"], h=monitor["height"], mode=mode))
                 screens = display_signature()
                 while not stop.is_set():
                     t0 = time.time()
@@ -1566,7 +1611,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                         break
                     now_screens = display_signature()
                     if now_screens != screens:   # a monitor plugged in, unplugged or resized
-                        print(f"[screen] the monitors changed {screens} -> {now_screens}; reading them again")
+                        print("[screen] " + t("the monitors changed {before} -> {after}; reading them again", before=screens, after=now_screens))
                         start_over()
                         break
                     # The panel's own switch, which is not the same as the one this loop turns on by
@@ -1574,7 +1619,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     # started below was thrown away on the very next poll and never joined anything.
                     if sender.wants["stitch"] != (stitcher is not None) and not auto_stitch:
                         stitcher = ScrollStitcher(args.stable_polls, settle=args.settle) if sender.wants["stitch"] else None
-                        print(f"[screen] {'scroll-stitch' if stitcher else 'single-shot'} mode")
+                        print("[screen] " + t("{mode} mode", mode=t("scroll-stitch") if stitcher else t("single-shot")))
                         start_over()
                     if sender.wants["stitch"] and auto_stitch:   # the panel took it over: it is no longer ours
                         auto_stitch = False
@@ -1640,7 +1685,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if words and skip_now(front, words, monitor):
                         continue
                     if failing:
-                        print("[screen] screen capture works again")
+                        print("[screen] " + t("screen capture works again"))
                         failing = False
                     full = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
                     # Before anything else: this tool's own panel is painted over, so the screen cannot be
@@ -1649,8 +1694,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if found is not None and found[1]:
                         full = hide_own(full, found[0], found[1])
                         if not hidden_said:
-                            print(f"[screen] the panel is on this screen ({len(found[1])} window(s)); "
-                                  f"its area is painted over before sending")
+                            print("[screen] " + t("the panel is on this screen ({n} window(s)); its area is painted over before sending", n=len(found[1])))
                             hidden_said = True
 
                     # A problem read by scrolling arrives as several screens of the same thing. The
@@ -1677,7 +1721,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if going and stitcher is None and not sender.wants["stitch"] and not args.once:
                         stitcher = ScrollStitcher(args.stable_polls, settle=args.settle)
                         auto_stitch, auto_idle = True, 0
-                        print(f"[screen] the screen was scrolled ({scrolled} rows): joining it into one problem")
+                        print("[screen] " + t("the screen was scrolled ({n} rows): joining it into one problem", n=scrolled))
                         # The poll before this one holds what has just scrolled past; the last screen
                         # sent is the fallback. A frame of another size is from another monitor and
                         # would only raise inside the stitcher.
@@ -1693,7 +1737,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                         auto_idle = 0 if scrolled else auto_idle + 1
                         if auto_idle >= AUTO_STITCH_IDLE:
                             stitcher, auto_stitch = None, False
-                            print("[screen] back to single screens")
+                            print("[screen] " + t("back to single screens"))
                             start_over()
 
                     if stitcher is not None:
@@ -1705,7 +1749,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                             send_image(_fit(page[0], args.max_width), "stitch", monitor, [_fit(c, PAGE_MAX_W) for c in page[1]])
                             last_full = full
                             if args.once:      # asked for one screen: this is it, joined or not
-                                print("[screen] one screen sent (--once)")
+                                print("[screen] " + t("one screen sent (--once)"))
                                 stop.set()
                                 break
                     else:
@@ -1715,7 +1759,7 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                             send_image(_fit(full, args.max_width), "screen", monitor)
                             last_full = full
                             if args.once:      # one screen asked for: it is on its way, nothing stays running
-                                print("[screen] one screen sent (--once)")
+                                print("[screen] " + t("one screen sent (--once)"))
                                 stop.set()
                                 break
 
@@ -1743,9 +1787,8 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     slow = stitcher is None and gate.stable >= STILL_POLLS
                     if slow != slowed:
                         slowed = slow
-                        print(f"[screen] the screen has not changed for {STILL_POLLS} looks: "
-                              f"looking every {STILL_PERIOD:g} s until it does" if slow else
-                              "[screen] the screen changed: looking at every poll again")
+                        print("[screen] " + (t("the screen has not changed for {n} looks: looking every {s} s until it does", n=STILL_POLLS, s=f"{STILL_PERIOD:g}")
+                                             if slow else t("the screen changed: looking at every poll again")))
                     wait = max(period, STILL_PERIOD) if slow else period
                     dt = time.time() - t0
                     if dt < wait:
@@ -1757,10 +1800,10 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
             if not failing:
                 desk = input_desktop()
                 if desk and desk != "Default":
-                    print(f"[screen] the screen is locked, a UAC prompt is up or the screen saver is on (desktop "
-                          f"{desk!r}): Windows lets no program capture it; capture resumes when it is back")
+                    print("[screen] " + t("the screen is locked, a UAC prompt is up or the screen saver is on (desktop {desk}): Windows lets "
+                                          "no program capture it; capture resumes when it is back", desk=repr(desk)))
                 else:
-                    print(f"[screen] could not capture the screen ({type(exc).__name__}: {exc}); retrying every 2 s")
+                    print("[screen] " + t("could not capture the screen ({error}); retrying every 2 s", error=f"{type(exc).__name__}: {exc}"))
                 failing = True
             start_over()
             stop.wait(2.0)
@@ -1966,7 +2009,7 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if not recording:   # only a device that really records counts as working
                         recording = True
                         if failing or sender.caps.get("audio") is not True or sender.caps.get("audio_device") != str(mic.name):
-                            print(f"[audio] capturing loopback: {mic.name}")
+                            print("[audio] " + t("capturing loopback: {device}", device=mic.name))
                             sender.set_caps(audio=True, audio_device=str(mic.name))
                         failing = False
                     mono = data.mean(axis=1) if data.ndim == 2 else data
@@ -1975,7 +2018,7 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if speaker is not None and time.time() - checked >= SPEAKER_CHECK_SEC:
                         checked = time.time()
                         if str(sc.default_speaker().name) != speaker:
-                            print("[audio] the default speaker changed; switching to it")
+                            print("[audio] " + t("the default speaker changed; switching to it"))
                             break
                 # Sound switched off, the server gone or another speaker: what the device dropped since the last
                 # line is said now, with the lag it was measured against. Left for later, it was said only once
@@ -1986,7 +2029,7 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
             # Unplugged, disabled, or no speaker at all: the panel shows the sound device as not
             # open (caps), and capture picks up again once a device is there.
             if not failing:
-                print(f"[audio] could not record from the sound device ({exc}); retrying every 3 s")
+                print("[audio] " + t("could not record from the sound device ({error}); retrying every 3 s", error=exc))
                 sender.set_caps(audio=False, audio_device="")
                 failing = True
             stop.wait(3.0)
@@ -2107,7 +2150,7 @@ def _log_to(path: str) -> None:
         sys.stderr = _Tee(path, sys.stderr)
     except Exception as exc:
         if sys.stderr is not None:
-            print(f"[main] could not open the log file {path}: {exc}", file=sys.stderr)
+            print("[main] " + t("could not open the log file {path}: {error}", path=path, error=exc), file=sys.stderr)
 
 
 # ---------- tray icon ----------
@@ -3371,7 +3414,7 @@ def main() -> None:
     # nothing is captured at all, not even a first frame. No server yet: start as switched on.
     sender.keepalive()
     if not sender.told.wait(3):
-        print("[main] no word from the server yet; starting with screen and sound on")
+        print("[main] " + t("no word from the server yet; starting with screen and sound on"))
     stop = threading.Event()
     threads = [threading.Thread(target=screen_loop, args=(sender, stop, args), daemon=True)]
     if not args.no_audio:
@@ -3382,7 +3425,7 @@ def main() -> None:
     tray = None if (args.once or args.no_tray) else start_tray(sender, stop, args)
     # Started without a window (--log, as ./sidenote capture does) there is no console for Ctrl+C to reach.
     # with no tray icon (--no-tray, or no pystray) there is no Quit in it to name
-    print("[main] capturing. " + ("Ctrl+C to stop." if not args.log else
+    print("[main] " + t("capturing.") + " " + (t("Ctrl+C to stop.") if not args.log else
                                   t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
                                   t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
           + ("" if tray is None else " " + t("The tray icon opens the panel and switches the screen and the sound on and off.")))
@@ -3404,7 +3447,7 @@ def main() -> None:
             hold_main_thread(tray, wait_until_done, stop)
             tray = None            # its loop is over, and the icon is gone with it
     except KeyboardInterrupt:
-        print("\n[main] stopping...")
+        print("\n[main] " + t("stopping..."))
     stop.set()
     if tray is not None:
         tray.stop()
@@ -3418,7 +3461,7 @@ def main() -> None:
     if getattr(sender, "restart_asked", False) and os.environ.get("SIDENOTE_SUPERVISED") == "1":
         # Started by the desktop app (desktop/app.py), which watches this process and starts the next one itself:
         # this exit code asks it to. A copy started here would be one it does not know of.
-        print("[main] starting again...")
+        print("[main] " + t("starting again..."))
         sys.stdout.flush()
         os._exit(SUPERVISED_RESTART)
     if session_ends_server(sender):
@@ -3428,7 +3471,7 @@ def main() -> None:
         # -u, which the launcher relies on), and a list keeps an argument with a space in it whole.
         # Popen, not execv: execv on Windows ends this process and the launcher's cleanup can then
         # kill the new one by name.
-        print("[main] starting again...")
+        print("[main] " + t("starting again..."))
         import subprocess
         cmd = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
         if "--resumed" not in cmd:

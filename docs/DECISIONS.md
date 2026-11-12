@@ -8,12 +8,12 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 
 | Topic | Notes |
 |:---|:---|
-| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126) |
-| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117) |
+| [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128) |
+| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
@@ -1448,8 +1448,8 @@ Each rule below is a check in tests/panel_layout.py (`group_controls`) or tests/
 - A failed answer's date stands in every date's place, and its command is a chip.
 - A particle after a key's name follows its last letter, the agent's **Review** row is named on one line with no lone
   colon, and the working line is said one way.
-- The panel says to start the capture program on the capture PC, and a limit band does not ask to turn on a model that
-  is on.
+- The panel says to start the capture program on the capture PC (replaced in [note 128](#note-128): the server's
+  terminal), and a limit band does not ask to turn on a model that is on.
 - With a day chosen, the kind filter offers that day's kinds, and a dropdown is placed by its laid-out size.
 - The question box grows to six lines: Enter sends, Shift+Enter adds a line, and an input method's Enter stays its own.
 - Left as they are, by choice: bands over the head of the thread at the top of a narrow window (toasts above the thread,
@@ -2152,3 +2152,63 @@ server's code once restarted; one elsewhere is replaced from that release's `sid
 says nothing of itself, and the card says its release is not known. `tests/panel_capture.py` checks the sheet,
 `tests/panel_setup.py` the guide's first step, `tests/api_check.py` what the server keeps, `tests/session_end.py` the real
 program's hello, `tests/tray_switch.py` the tray's item and `tests/launcher_args.sh` what the launcher hands on.
+
+### <a id="note-127"></a>127. A model just loaded is not a busy GPU past its limit either
+
+[Note 94](#note-94) gave a model just loaded 45 s for its first token. On the test PC a model of 26b needed more than that
+after a load while the smaller one had just left the GPU, and the first pass that missed the 45 s counted the GPU busy:
+the smaller model went on the GPU, which took the large one off (one model at a time), and after the hold of 30 s the next
+question loaded the large one again, cold. In a day of 47 spoken questions that came to 27 loads, about 17 of 80 minutes.
+The hold never grew: its doubling was measured from the verdict that came after the retry's own load and wait, which was
+always past the two minutes in which a verdict counts as the same spell, so each verdict started a new spell at 30 s.
+
+Now:
+
+- A cold model that brings no first token within its limit hands the pass on as before (to the agent, or the thinking
+  pass), but the GPU is not counted busy and no smaller model is put on it: the event says `local_cold`. The model is warm
+  from then on, its cache holding what the cut let it read, and its next silence counts as before. The thinking pass the
+  same.
+- A pass that waited while the GPU was given back (**Free GPU**, the local model switched off) is not counted busy either.
+- The spell of a hold is measured from the first try of the slow model after the hold ran out, not from the verdict, so
+  a retry that loads and waits and misses again doubles the hold (30, 60, 120 s up to the ten minutes).
+- **Load to GPU** in the panel reads the first pass's instructions once, one token asked for, so the first problem after
+  it meets a warm model and the warm limit. A warm-up that fails leaves the model loaded and cold.
+- **Free GPU** while the model loads for a problem ends that analysis as stopped (`gpu_released`): it was the agent
+  failing in the log before, and the problem went on to this PC's model, which loaded again what the person had just
+  taken off.
+
+Left as it was, by choice: a spoken question with the agent on still loads the local model to read the question out
+(`extract`), and nothing hands that load off. Without it the agent would have only the words heard, which are the
+question's own words but not its options and figures as written on the screen. `./sidenote report` counts the loads
+(`model_load`, with their seconds) and the cold silences, so a day of swaps shows as a number. `tests/gpu_swap.py`
+checks each of these against a stand-in model server, and fails 11 of its 19 checks on the code before.
+
+### <a id="note-128"></a>128. What does not fit says so, and each thing is said one way
+
+A review of the panel on a day of real answers at six sizes found things that were there but not seen, and things said
+two ways:
+
+- The contents' list shows nine lines and scrolls inside its card for the rest. Its scrollbar is thin and overlaid on
+  some systems, and a day head said five answers over three rows with the card's edge cut straight under the third.
+  Solver settings at 1366x768 left three settings of the agent's section under the pane's edge the same way. Each box that
+  scrolls inside itself now fades its last lines while more is below, and not once its end is in view. A search hit past
+  a row's ellipsis is brought into the row.
+- The capture program not connected was "off" on the card and the band and "not connected" in the sheet; the server
+  cannot tell one that is off from one that is gone, so it is "not connected" everywhere. It was started "on the capture
+  PC" on the card and "in the server's terminal" in the sheet. `./sidenote capture` connects to the server on its own PC,
+  so it is the server's terminal everywhere, where every other `./sidenote` command is run; a program on another PC is
+  the sheet's **From another PC**. This replaces the rule in [note 99](#note-99)'s list that said the capture PC.
+- A switch for something the server was started without (speech recognition, the search server) was drawn at its kept
+  value, on, under "Off on the server": it read as on and locked. It is drawn off, not pressable, and the card is grey:
+  how the server was started is no fault. The kept value comes back with the feature.
+- The chosen chips of a row were told from the others by a bolder word on a darker well. The others' words are muted
+  now, and a ticked type carries a tick.
+- The setup guide's last step said "a solving engine and the screen come first" with either one done; it names the
+  steps still to do, each a key to its step. The sound step asked to play a video into a server that does not listen.
+- The capture program's console lines were English under `SIDENOTE_LANG=ko` though the program said they were
+  translated. They go through its table now; the lines of measurements stay English, numbers for a report as the
+  server's log is.
+
+Practice switched gets no notice of its own: one in the bar hides the bands there for its seconds (note 122), and the
+menu's **On** and **Off** say it. `tests/panel_cues.py` checks each of these, and fails 23 of its 29 checks on the panel
+before.

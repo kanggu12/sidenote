@@ -78,7 +78,8 @@ unzip -oq Sidenote-linux-x64.zip
 ./Sidenote/Sidenote
 ```
 
-**Docker** on Linux, on WSL 2, or on a Mac with Docker Desktop (with `git` and `python3`)
+**Docker** on Linux, on WSL 2, or on a Mac with Docker Desktop (with `git` and `python3`; on a Debian or Ubuntu desktop
+also `python3-venv`)
 
 ```bash
 git clone https://github.com/kanggu12/sidenote.git && cd sidenote
@@ -350,6 +351,8 @@ can be worked on without a GPU: the tests run the server with stand-in models an
 with [CONTRIBUTING.md](CONTRIBUTING.md): how the pieces fit, the setup, the tests, and recipes for adding a model, a GPU
 vendor, a language or a cloud agent. Everyone taking part follows the [code of conduct](.github/CODE_OF_CONDUCT.md), and
 security problems are reported as [SECURITY.md](.github/SECURITY.md) says.
+
+With Python 3.10 to 3.13 (the pinned onnxruntime has no wheel for 3.14):
 
 ```bash
 python3 -m venv .venv

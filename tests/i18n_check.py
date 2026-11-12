@@ -267,7 +267,7 @@ ko = report("report", "--days", "1", LANG="ko_KR.UTF-8")
 check("report prints English for an English locale", "Date" in en and "The whole period" in en
       and not HANGUL.search(en), en[-400:])
 check("...and Korean for a Korean one, the old words", "날짜" in ko and "기간 전체" in ko
-      and "풀 것 없는 화면 $0.10 (2번)" in ko, ko[-400:])
+      and "풀 것 없음 $0.10 (2번)" in ko, ko[-400:])   # agent answers with nothing to solve, screens or spoken (report.py)
 check("the payloads logged in either language are counted as one kind",
       json.loads(report("report", "--days", "1", "--json", LANG="en_US.UTF-8"))["period"]["empty_by_sent"]
       == {"cut-out screen": 1, "written-out text": 1})
@@ -292,6 +292,29 @@ with tempfile.TemporaryDirectory() as data:
     kept = json.loads(subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env, capture_output=True, text=True).stdout or "[\"\", \"\"]")
 check("Keep answers and Keep what is heard give the days and megabytes set, not fixed ones",
       "30일" in kept[0] and "50 MB" in kept[0] and "30일" in kept[1] and "5 MB" in kept[1], kept)
+
+print("\n[the capture program's words]")
+# Every t() of client/capture.py has its Korean, and every Korean there is said somewhere: its console lines were said in English
+# under SIDENOTE_LANG=ko, though the program and the guide said they were translated (the 0.8.1 review). Read from the source:
+# the program imports mss and soundcard only where they are used, but its words are what is checked here
+cap_src = (ROOT / "client" / "capture.py").read_text(encoding="utf-8")
+cap_tree = ast.parse(cap_src)
+said = set()
+for node in ast.walk(cap_tree):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t" and node.args:
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            said.add(arg.value)
+ko_table = next(ast.literal_eval(n.value) for n in cap_tree.body
+                if isinstance(n, ast.Assign) and any(isinstance(x, ast.Name) and x.id == "KO" for x in n.targets))
+check("every word the capture program says through t() has its Korean", not (said - set(ko_table)), sorted(said - set(ko_table))[:8])
+check("...and every Korean in its table is said somewhere", not (set(ko_table) - said), sorted(set(ko_table) - said)[:8])
+check("...each with the same {places} as its English", all(set(re.findall(r"\{(\w+)\}", k)) == set(re.findall(r"\{(\w+)\}", v))
+                                                          for k, v in ko_table.items()),
+      [k for k, v in ko_table.items() if set(re.findall(r"\{(\w+)\}", k)) != set(re.findall(r"\{(\w+)\}", v))][:5])
+plain = [ln.strip() for ln in cap_src.splitlines() if re.search(r'print\(\s*f?"\[(conn|control|screen|audio|main)\] [a-z]', ln)
+         and not re.search(r"(?<![\w.])t\(", ln) and not re.search(r"looks in|sent frame|second\(s\) of sound", ln)]   # t( on its own, not print('s
+check("...and no line of what it does is printed past t(), only the measurements", not plain, plain[:5])
 
 print(f"==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)   # tests/run.sh counts a suite by its exit status

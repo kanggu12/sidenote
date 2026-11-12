@@ -1106,7 +1106,9 @@ with redirect_stdout(out):
     real._on_message(json.dumps({"type": "control", "screen": True, "skip_windows": ["  Bank ", "", "Mail"]}))
 check("the server's words are taken from control, as the program matches them", real.wants["skip_windows"] == ["bank", "mail"],
       real.wants["skip_windows"])
-check("...and the log says how many, not which", "2 word(s)" in out.getvalue() and "Bank" not in out.getvalue(), out.getvalue())
+# the line in the program's language (SIDENOTE_LANG, which tests/run.sh sets to ko): its count, and no word of the list
+check("...and the log says how many, not which", cap.t("{n} word(s) for windows to skip (from the panel)", n=2) in out.getvalue()
+      and "Bank" not in out.getvalue() and "bank" not in out.getvalue(), out.getvalue())
 with redirect_stdout(io.StringIO()):
     real._on_message(json.dumps({"type": "control", "screen": True}))   # an older server: no words in it
 check("a control message without them (an older server) leaves the words held", real.wants["skip_windows"] == ["bank", "mail"])

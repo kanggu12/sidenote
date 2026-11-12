@@ -182,8 +182,9 @@ def _defs() -> list[Setting]:
                     "off": t("The agent is not used. Only the local model solves", agent=name),
                     "verify": t("The local model solves and the agent checks the answer. If they differ, the fixed "
                                 "solution is added", agent=name),
-                    "hard": t("Only 'Types the agent solves' go to the agent, the rest to the local model (to the agent "
-                              "when it would be over 1.5 times slower). If the agent fails, the local model", agent=name),
+                    "hard": t("Only the types ticked under 'Types the agent solves' in Solver settings go to the agent, the rest "
+                              "to the local model (to the agent when it would be over 1.5 times slower). If the agent fails, "
+                              "the local model", agent=name),
                     "all": t("The agent solves every problem found", agent=name),
                 }),
         Setting("agent_payload", "choice", payload_default, "agent", t("What is sent to the agent", agent=name),

@@ -69,7 +69,7 @@ def cmd_stats(args) -> int:
             device=c.get("caps", {}).get("audio_device") or "-"))
     if c.get("last_frame"):
         print(t("Last screen {when}", when=_when(c["last_frame"])))
-    empty = t(" (screens with nothing to solve, apart: {n})", n=totals["empty"]) if totals.get("empty") else ""
+    empty = t(" (nothing to solve, apart: {n})", n=totals["empty"]) if totals.get("empty") else ""   # screens and speech
     print(t("Answers {answers}{empty}  errors {errors}  tokens in {tin} / out {tout}  cost ${cost}",
             answers=totals.get("answers", 0), empty=empty, errors=totals.get("errors", 0),
             tin=f"{totals.get('tokens_in', 0):,}", tout=f"{totals.get('tokens_out', 0):,}",
@@ -155,7 +155,9 @@ def cmd_report(args) -> int:
             d["cost"] += e.get("cost_usd") or 0
         elif k == "analysis_cancelled":
             d["cancelled"] += 1
-        elif k and k.endswith("_error"):
+        elif k in ("analysis_error", "followup_error"):
+            # an answer that ended in an error: not the agent's failures this PC's model then answered (agent_error),
+            # which were 20 of the 32 "errors" over a month while every one of those questions got its answer
             d["errors"][e.get("hint") or "other"] += 1
     period = _period(since)
     rows = []
@@ -173,7 +175,9 @@ def cmd_report(args) -> int:
         return 0
     # a time with its unit, as stats writes it (the medians are seconds); 0.0 is a value, not "none"
     sec = lambda v: "-" if v is None else t("{v} s", v=v)
-    cols = [("Date", 10, False), ("Answers", 4, True), ("Follow-ups", 4, True), ("Empty screens", 7, True),
+    # "Nothing to solve": a screen with no problem on it, or something heard that held no question (they were
+    # "Empty screens", 18 of them on a day the screen capture was off)
+    cols = [("Date", 10, False), ("Answers", 4, True), ("Follow-ups", 4, True), ("Nothing to solve", 7, True),
             ("Cancelled", 4, True), ("Errors", 4, True), ("Response (median)", 10, True),
             ("First token (median)", 6, True), ("Cost", 9, True)]
     # each heading in the terminal's language, its column as wide as the heading where that is wider
@@ -216,6 +220,7 @@ def _period(since: float) -> dict:
     repeats: list = []
     repeat_cards: set = set()
     gpu_busy = timeouts = stuck = stuck_failed = 0
+    loads, load_secs, cold = 0, 0.0, 0   # the local model put on the GPU, and its first silences right after (local_cold)
     checks = Counter()
     for e in _events():
         if e.get("ts", 0) < since:
@@ -251,8 +256,15 @@ def _period(since: float) -> dict:
             repeat_cards.add(e.get("of"))
         elif k == "gpu_busy":
             gpu_busy += 1
+            if e.get("after") == "timeout":   # the first pass's own limit ran out, or the model never loaded
+                timeouts += 1
         elif k == "analysis_error" and e.get("hint") == "timeout":
             timeouts += 1
+        elif k == "model_load":
+            loads += 1
+            load_secs += e.get("secs") or 0
+        elif k == "local_cold":
+            cold += 1
         elif k == "local_stuck":   # taken off and started again, or found stuck and not taken off
             if e.get("unloaded"):
                 stuck += 1
@@ -278,6 +290,7 @@ def _period(since: float) -> dict:
                             for way, v in sorted(first.items())},
             "cost_usd": {k: round(v, 4) if isinstance(v, float) else v for k, v in cost.items()},
             "gpu_busy": gpu_busy, "local_timeouts": timeouts, "local_stuck": stuck, "local_stuck_failed": stuck_failed,
+            "model_loads": loads, "model_load_secs": round(load_secs, 1), "local_cold": cold,
             "checks": dict(checks),
             "empty_by_sent": dict(empty_sent.most_common()), "empty_by_via": dict(empty_via.most_common()),
             "cancelled": dict(cancels.most_common()),
@@ -321,7 +334,7 @@ def _print_period(period: dict) -> None:
         print("  " + t("First token  {way}   answers {n}   median {p50} s   slowest 10% {p90} s", way=_pad(way, wide),
                        n=f"{f['n']:>3}", p50=f["p50"], p90=f["p90"]))
     c = period["cost_usd"]
-    print("  " + t("Agent cost  answers ${answers}   follow-ups ${followups}   screens with nothing to solve ${empty} "
+    print("  " + t("Agent cost  answers ${answers}   follow-ups ${followups}   nothing to solve ${empty} "
                    "(count {empty_n})   answers with no head line ${headless} (count {headless_n})",
                    answers=f"{c['answers']:.2f}", followups=f"{c['followups']:.2f}", empty=f"{c['empty']:.2f}",
                    empty_n=c["empty_turns"], headless=f"{c['headless']:.2f}", headless_n=c["headless_turns"]))
@@ -353,6 +366,10 @@ def _print_period(period: dict) -> None:
                    stuck=period.get("local_stuck", 0), failed=failed, passed=ch.get("passed", 0),
                    failed_n=ch.get("failed", 0), none=ch.get("no_examples", 0), left=left,
                    not_run=ch.get("skipped", 0) + ch.get("error", 0))
+          # the model's loads, which a GPU swapping its two models at every question spends minutes on
+          + ("   " + t("model loads {n} ({secs} s), first silences after a load {cold}", n=period.get("model_loads", 0),
+                       secs=period.get("model_load_secs", 0), cold=period.get("local_cold", 0))
+             if period.get("model_loads") or period.get("local_cold") else "")
           + ("   " + t("run on made-up inputs {probes} (errors among them {probe_errors})",
                        probes=ch.get("probe_ran", 0) + ch.get("probe_failed", 0), probe_errors=ch.get("probe_failed", 0))
              if ch.get("probe_ran") or ch.get("probe_failed") else ""))

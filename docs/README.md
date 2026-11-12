@@ -67,7 +67,8 @@ README's [What it runs on](../README.md#what-it-runs-on).
 - **The app**: Windows 10 or 11; macOS 14 or newer on Apple silicon; or Linux with an X11 session and glibc 2.35 or
   newer (Ubuntu 22.04 or newer, Debian 12 or newer). [Ollama](https://ollama.com/download) runs the local model. On a
   Mac the sound needs a loopback input such as BlackHole.
-- **Docker**: Docker with its Compose plugin, `docker compose` 2.24 or newer, and `python3` (both inside WSL on Windows),
+- **Docker**: Docker with its Compose plugin, `docker compose` 2.24 or newer, and `python3` (both inside WSL on Windows;
+  on a Debian or Ubuntu desktop also `python3-venv`, for the capture program's packages),
   and for an NVIDIA GPU on Linux the NVIDIA Container Toolkit. `./sidenote doctor` checks the Compose version. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
   installs the capture program's packages into it.
 - **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
@@ -264,7 +265,8 @@ is the Docker setup.
 ./sidenote open      # open the panel in the browser
 ```
 
-When the server is in use, `./sidenote up` waits until it is idle before restarting it; `--now` restarts at once.
+When the server is in use, `./sidenote up` and `./sidenote restart` wait until it is idle before restarting it; `--now`
+restarts at once.
 With `SIDENOTE_CI_GATE=1` in `.env`, `up` also refuses a commit that CI failed ([QA.md](QA.md)).
 
 When you are done, **Quit Sidenote** in the capture program's tray menu ends what the desktop shortcut started: the
@@ -385,7 +387,7 @@ the capture program, in one click and with no window. Windows Python's windowles
 up, a small window by the clock shows the start, and the tray icon is what stays.
 
 <p align="center">
-  <img alt="The shortcut's window over a light window on the desktop, which shows through its glass: the sidenote capture logo with v0.6.0, Starting in a yellow pill, a bar in three parts with the server done and the capture under way, the names Server, Capture and Ready under it with 9s, and the launcher's last line, Container sidenote Started. Beside it a failed start in the same window: Capture did not start in a red pill, the bar stopped in red at Server, Cannot connect to Docker. Check that Docker is running, and a Close key" src="assets/shortcut-windows.png" width="760">
+  <img alt="The shortcut's window over a light window on the desktop, which shows through its glass: the sidenote capture logo with v0.8.0, Starting in a yellow pill, a bar in three parts with the server done and the capture under way, the names Server, Capture and Ready under it with 9s, and the launcher's last line, Container sidenote Started. Beside it a failed start in the same window: Capture did not start in a red pill, the bar stopped in red at Server, Cannot connect to Docker. Check that Docker is running, and a Close key" src="assets/shortcut-windows.png" width="760">
 </p>
 
 - A small window beside the notification area shows the start as a bar in three parts (the server, the capture
@@ -466,7 +468,9 @@ notebook carry the same readings.
     ([The notebook](#the-notebook)).
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest, and so does **Recently deleted**.
-  - At its foot, the version of Sidenote the server runs, such as **Version 0.1.6**.
+
+The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.8.1**, and opens that
+release's notes.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
 
@@ -474,11 +478,11 @@ The speech language is not in this menu: it is in **Solver settings**, in its **
 
 An alert bar appears under the top bar only when something needs doing: the server connection is lost, the local
 model is not downloaded or not answering, the agent is in use but needs signing in or its login was rejected
-(expired), no engine can answer, the capture program is off, or analysis is paused. It stays under the top bar as the
+(expired), no engine can answer, the capture program is not connected, or analysis is paused. It stays under the top bar as the
 thread scrolls, and the right column stays under it. **Copy command** in an alert copies the command to type in the
 terminal.
 
-When a newer release of Sidenote is out, the alert bar says so in a band of its own, **Sidenote 0.1.2 is out**, with a
+When a newer release of Sidenote is out, the alert bar says so in a band of its own, **Sidenote 0.9.0 is out**, with a
 **Release notes** link to the release's page on GitHub. Its close key hides it for that version in this browser, and the
 next release shows again. The server asks GitHub once a day (section 14); **Check for new versions** in **Solver
 settings** turns that off.
@@ -1322,7 +1326,7 @@ each.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-trouble-dark.svg">
-  <img alt="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program off, or Program off. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers" src="assets/diagram-trouble-light.svg" width="100%">
+  <img alt="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program not connected, or No program. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers" src="assets/diagram-trouble-light.svg" width="100%">
 </picture>
 
 ### The app
@@ -1367,10 +1371,10 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | The panel says "Agent sign-in needed" | `./sidenote login` signs in the agent the server uses (`./sidenote login codex` for Codex); analysis resumes within 20 seconds. The Anthropic API agent needs `ANTHROPIC_API_KEY` in `.env`, then `./sidenote up` |
 | The panel says "Agent sign-in expired", and its card says **Sign-in expired** | The CLI's login expired. `./sidenote login` (or `./sidenote login codex`), or `/login` in Claude Code |
 | The server disappeared and the panel says "Server disconnected" | It may have ended itself in a stall: `stall.txt` in the log folder holds every thread's stack from that moment, and the next start says so in its log. `./sidenote up` |
-| The panel says "Capture program off" | `./sidenote capture`. If that says the capture is already running, run `./sidenote capture-stop` and try again |
+| The panel says "Capture program not connected" | `./sidenote capture`. If that says the capture is already running, run `./sidenote capture-stop` and try again |
 | The tray says "Not connected (./sidenote up)" | The capture program is running but the server is not: `./sidenote up`. It stops grabbing the screen while there is nowhere to send it, and starts again by itself |
 | Capture has ended, but something seems to be left on Windows | `./sidenote capture-stop`. If it could not stop some, it says how many |
-| **Screen capture** on the capture card says **Program off** | The capture program is not running: `./sidenote capture`, or the way **Capture connection** gives for where the server runs |
+| **Screen capture** on the capture card says **No program** | The capture program is not connected: `./sidenote capture`, or the way **Capture connection** gives for where the server runs |
 | **Screen capture** is green, but no solutions appear | Check that `capture.log` in the log folder (or the terminal, with `--console`) shows `[screen] sent frame`. With several monitors, use `--monitor` |
 | **Sound capture** says **Off** or **Device error** | Check the **Sound capture** switch on the capture card. On **Device error**, name the device with `--audio-device "part of the name"` |
 | The screen changed, but it did not solve again | The change was outside the problem's region. **Reanalyze** solves right away |
@@ -1699,7 +1703,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 프로그램 끝내기 | Quit the program | **Capture connection** |
 | 다른 PC에서 | From another PC | **Capture connection** |
 | 캡처 프로그램 기다리는 중 | Waiting for the capture program | **Capture connection**, the setup guide |
-| 버전 … | Version … | **Settings** menu, at its foot; and as v… beside the name in the top bar, a link to that release's notes |
+| v… | v… | beside the name in the top bar, a link to that release's notes |
 | 새로고침 | Reload | alert bar, when a new version of the panel is ready |
 | Sidenote … 출시 | Sidenote … is out | alert bar, when a newer release is out |
 | 릴리스 노트 | Release notes | alert bar: the link to that release's page |
@@ -1707,7 +1711,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 명령 복사 | Copy command | alert bar, error cards |
 | 자세한 오류 | Error details | error cards |
 | 서버 연결 끊김 | Server disconnected | alert bar |
-| 캡처 프로그램 꺼짐 | Capture program off | alert bar |
+| 캡처 프로그램 연결 안 됨 | Capture program not connected | alert bar |
 | 모델 … 없음 | Model … missing | alert bar |
 | 아직 이 PC의 모델 없음 | No local model yet | alert bar, in the app |
 | Ollama가 응답하지 않음 | Ollama does not answer | alert bar, in the app |
@@ -1818,7 +1822,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 창 못 건너뜀 | Windows not skipped | **Screen capture** |
 | 맨 앞 창만 | Front window only | **Screen capture** |
 | 소리 없이 실행 중 | No sound | **Sound capture**, with `--no-audio` |
-| 캡처 프로그램 꺼짐 | Program off | **Screen capture** and **Sound capture**, with no capture program running |
+| 프로그램 연결 안 됨 | No program | **Screen capture** and **Sound capture**, with no capture program connected |
 | 장치를 열지 못함 | Device error | **Sound capture**, when the sound device cannot be opened |
 | 이 답의 화면 | This answer's screen | the screen card |
 | 영역 그리기 | Draw a region | the screen card |

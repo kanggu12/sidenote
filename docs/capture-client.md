@@ -13,12 +13,12 @@ it. To run it on its own, for a server in Kubernetes or on another machine whose
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
 2. Install its packages from the folder of the release's `sidenote-capture-<version>.zip`, or from the repository's
-   `client` folder: `py -m pip install -r requirements.txt` on Windows, or on Linux and macOS
+   `client` folder: `py -3 -m pip install -r requirements.txt` on Windows, or on Linux and macOS
    `python3 -m pip install -r requirements.txt` in a virtual environment.
 3. Start it there, pointing at the server:
 
    ```powershell
-   py capture.py --server ws://127.0.0.1:8777/ingest
+   py -3 capture.py --server ws://127.0.0.1:8777/ingest
    ```
 
    On Linux, run `python3 capture.py --server ws://127.0.0.1:8777/ingest` in the desktop session. It reads the X11
@@ -44,6 +44,11 @@ has no login of its own, so keep the server off public networks.
 | `--audio-device NAME` | take the sound from this device instead of the default speaker, or on a Mac instead of the first loopback input (any part of its name) |
 | `--no-tray` | no icon in the notification area |
 | `--fps N` | how often the screen is looked at, per second (default 3) |
+| `--server URL` | the server's address (default `ws://127.0.0.1:8777/ingest`) |
+| `--once` | send the screen as it is now and exit: no sound, nothing left running |
+| `--no-auto-stitch` | do not join a problem by itself when the screen is scrolled |
+| `--no-auto-update` | do not restart into new code when the server asks after a deploy |
+| `--log FILE` | add what it prints to this file (it runs with no console window) |
 
 ## The tray icon
 

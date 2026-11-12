@@ -164,7 +164,7 @@ fi
 # The language of every word printed here: SIDENOTE_LANG (en or ko, from the environment or .env, as the server reads
 # it), else Korean when the locale is Korean (the first of LC_ALL, LC_MESSAGES and LANG that is set, the order the C
 # library reads them in), else English. A SIDENOTE_LANG that is set is handed on to the Windows programs started from
-# here through WSLENV, so the capture program speaks it too (otherwise it follows Windows' own language).
+# here through WSLENV, so the capture program speaks it too (otherwise it speaks English: it reads no system's language).
 UI_LANG="$(setting SIDENOTE_LANG "" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 case "$UI_LANG" in
   en|ko) export SIDENOTE_LANG="$UI_LANG" WSLENV="SIDENOTE_LANG${WSLENV:+:$WSLENV}" ;;
@@ -1607,7 +1607,7 @@ cmd_llm() {   # the local LLM: pull, list, logs
   case "${1:-}" in
     pull)
       if offline; then die "$(L "With SIDENOTE_OFFLINE=1 a model comes with the bundle, not from the internet: docs/air-gapped.md" \
-                                "SIDENOTE_OFFLINE=1이면 모델은 인터넷이 아니라 묶음으로 가져옵니다: docs/air-gapped.md")"; fi
+                                "SIDENOTE_OFFLINE=1이면 모델은 묶음으로 가져옵니다: docs/air-gapped.md")"; fi
       shift; local models=("$@")
       if [ ${#models[@]} -eq 0 ]; then
         # a GPU that could not be read is not a GPU that is too small: only the second is the no-GPU case
@@ -1737,7 +1737,14 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   # --with-models: pull the models too. Named apart from cmd_llm's own `models` list, which shellcheck
   # would otherwise take for this one.
   local with_models=0 need_model=0
-  [ "${1:-}" = "--with-models" ] && with_models=1
+  # an option it does not know is said, before anything is done: one mistyped was dropped without a word and the install ran without it
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --with-models) with_models=1 ;;
+      *) die "$(L "Unknown option: $a (./sidenote install [--with-models])" "알 수 없는 옵션입니다: $a (./sidenote install [--with-models])")" ;;
+    esac
+  done
   echo "$(L "${B}Installing Sidenote${N} ${D}(steps already done are skipped)${N}" "${B}Sidenote를 설치합니다${N} ${D}(이미 끝난 단계는 건너뜁니다)${N}")"
   echo
   echo "${B}1/4${N} $(L "Server" "서버")"
@@ -2574,7 +2581,8 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote capture-restart  Restart the capture program now, into capture.py as it is (after a deploy it restarts by itself when quiet)
     ./sidenote open           Open the panel in the browser  ($URL)
     ./sidenote down           Stop everything
-    ./sidenote restart        Restart the server (enough after changing .env or the code)
+    ./sidenote restart        Restart the server (enough after changing .env or the code). In use, it waits until idle
+                              (--now: at once)
 
   ${B}First time${N}
     ./sidenote login [codex]  Check the agent's login (Claude Code, or Codex with codex. Uses this PC's own login; on a Mac, a token in .env)
@@ -2634,7 +2642,8 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote capture-restart  캡처 프로그램을 지금의 capture.py로 바로 다시 시작 (배포 뒤에는 한가할 때 자동으로 다시 시작)
     ./sidenote open           패널을 브라우저로 열기  ($URL)
     ./sidenote down           모두 멈추기
-    ./sidenote restart        서버 다시 시작 (.env나 코드를 바꾼 뒤에도 이것으로 충분)
+    ./sidenote restart        서버 다시 시작 (.env나 코드를 바꾼 뒤에도 이것으로 충분). 사용 중이면 쉴 때까지 기다림
+                              (--now: 바로)
 
   ${B}처음 한 번${N}
     ./sidenote login [codex]  에이전트 로그인 확인 (Claude Code, codex를 붙이면 Codex. 이 PC의 로그인을 그대로 사용, 맥은 .env의 토큰)
@@ -2697,7 +2706,12 @@ case "${1:-help}" in
     cmd_up ;;
   qa) shift; cmd_qa "$@" ;;
   down|stop) cmd_down ;;
-  restart) running || die "$(L "The server is off. ./sidenote up" "서버가 꺼져 있습니다. ./sidenote up")"; [ "${2:-}" = --now ] && UP_NOW=1
+  restart) running || die "$(L "The server is off. ./sidenote up" "서버가 꺼져 있습니다. ./sidenote up")"
+    case "${2:-}" in   # in use, it waits until idle as up does (wait_idle); --now restarts at once
+      "") ;;
+      --now) UP_NOW=1 ;;
+      *) die "$(L "Unknown option: $2 (./sidenote restart [--now])" "알 수 없는 옵션입니다: $2 (./sidenote restart [--now])")" ;;
+    esac
     # Not held up: a restart has its own reasons. But it builds what is here, and with the gate on says so if that has failed
     if ci_gate_on; then
       case "$(ci_state)" in

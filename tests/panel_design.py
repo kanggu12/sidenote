@@ -660,7 +660,7 @@ def group_skip(br, s):
         p.wait(120)
         got.append(p.js("() => [document.getElementById('pill-screen').textContent, document.getElementById('pill-screen').dataset.state]"))
     check("the screen switched off and no capture program are said over a skip; the skip otherwise",
-          got == [["꺼 둠", "off"], ["캡처 프로그램 꺼짐", "idle"], ["창 건너뜀", "warn"]], got)
+          got == [["꺼 둠", "off"], ["프로그램 연결 안 됨", "idle"], ["창 건너뜀", "warn"]], got)
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skipping": False}})
     p.wait(120)
     check("...and once the window is gone the card is receiving again", p.js("() => document.getElementById('pill-screen').textContent") == "받는 중")

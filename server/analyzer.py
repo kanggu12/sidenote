@@ -871,6 +871,7 @@ class GpuPace:
         self.streak = 0        # busy verdicts in a row, each when the chosen model was tried again after a hold
         self.slow_model = None # the model whose answers made the hold: only its own answer at its usual rate ends it
         self.held = 0.0        # how long the current hold is, in seconds (shown in the log and the events)
+        self.retry_at = 0.0    # when the slow model was first tried again after the last hold ran out (trying)
         self.last: dict = {}   # the latest measured answer: {"model", "rate", "usual"}
         if path is not None:
             try:
@@ -887,6 +888,14 @@ class GpuPace:
     def busy(self) -> bool:
         return time.time() < self.busy_until
 
+    def trying(self, model: str) -> None:
+        """A pass starting on `model`. The first one on the slow model after a hold ran out is the retry the next verdict
+        is measured from (_hold): measured at the verdict, the retry's own load (outside every deadline: 22 to 137 s on
+        this PC in November) and the wait for its first token put it past REARM, and the hold went back to 30 s at every
+        try (11-10: 80 minutes of busy verdicts, never a hold over 60 s, the 26b and the e4b swapped at every question)."""
+        if self.busy_until and not self.busy() and model == self.slow_model and self.retry_at < self.busy_until:
+            self.retry_at = time.time()
+
     def _hold(self) -> None:
         """Count the GPU busy from now. The first verdict holds for `hold`; each one that comes right after a hold
         ran out doubles it, up to `hold_max`. Through a video call the 26b read a screen in about 100 s
@@ -895,14 +904,17 @@ class GpuPace:
         A verdict during a hold (another request already on the slow model) keeps the length; one long after the
         last hold starts from `hold` again, as a short busy moment should (a hold of one minute was already too long)."""
         now = time.time()
+        # the try this verdict is about: the first one after the hold, where one was made (trying), else now
+        tried = self.retry_at if self.retry_at >= self.busy_until else now
         if now < self.busy_until:
             pass                       # the hold going on: the same length again from now
-        elif self.busy_until and now - self.busy_until <= self.REARM:
+        elif self.busy_until and tried - self.busy_until <= self.REARM:
             # tried again right after the hold, and still busy. Bounded: the hold stops at hold_max long before, and
             # 2 ** 1024 no longer fits a float (a week of busy GPU, or HOLD_SEC=0, raised OverflowError mid-answer)
             self.streak = min(self.streak + 1, 30)
         else:
             self.streak = 0            # a new busy spell
+        self.retry_at = 0.0            # the next hold's retry is another one
         self.held = min(self.hold * 2 ** self.streak, self.hold_max)
         self.busy_until = now + self.held
 
@@ -945,7 +957,7 @@ class GpuPace:
             # An answer at the usual rate outside a hold, from the model that was slow: the busy spell is over, so the
             # next verdict is a new one. The smaller model's answer says nothing of the GPU for the larger one: one
             # ending just after each hold put the doubling back to 30 s every time.
-            self.streak, self.busy_until, self.slow_model = 0, 0.0, None
+            self.streak, self.busy_until, self.slow_model, self.retry_at = 0, 0.0, None, 0.0
         self.rates[model] = (self.rates.get(model, []) + [round(rate, 1)])[-self.KEEP:]
         self._save()
         return False
@@ -1400,12 +1412,16 @@ class LocalLlmAnalyzer:
             r = await self._client.post(self.native_url + "/api/generate", json={"model": model})
         except self._timeouts:
             log.warning("local LLM: %s did not load within %.0fs", model, self.cfg.local_timeout)
+            telemetry.event("model_load", model=model, secs=round(time.time() - t, 1), ok=False)
             raise
         except Exception as exc:
             log.warning("local LLM: loading %s failed: %s", model, exc)
             return
         if r.status_code == 200:
             log.info("local LLM: %s loaded in %.1fs", model, time.time() - t)
+            # each load as an event, so the report counts them and the time they took: a GPU swapping its two models at
+            # every question showed only in the server's log before
+            telemetry.event("model_load", model=model, secs=round(time.time() - t, 1), ok=True)
             self._warm.discard(model)   # loaded afresh: its prompt cache is empty
         else:
             log.warning("local LLM: loading %s: HTTP %d", model, r.status_code)
@@ -1413,9 +1429,32 @@ class LocalLlmAnalyzer:
     async def load(self) -> None:
         """Put the model chosen in the panel on the GPU now, as the next problem would (_ready): the panel's
         "Load onto the GPU", so the first problem after the GPU was given back is not kept waiting for the load.
-        The main model, not the busy-GPU one a slow stretch may have switched to.
+        The main model, not the busy-GPU one a slow stretch may have switched to. Then its prompt is read once
+        (_warm_up), so the first problem finds it warm: loaded alone, it was a cold model to that problem, which on
+        this PC waited out the cold limit and counted the GPU busy (3 of 3 sittings that pressed it, 11-10 to 11-12).
         Raises as _ready does when the load does not finish."""
-        await self._ready(main_model(self.cfg))
+        model = main_model(self.cfg)
+        await self._ready(model)
+        await self._warm_up(model)
+
+    async def _warm_up(self, model: str) -> None:
+        """Have `model` read the first pass's instructions once, a token asked for and nothing kept, so its prompt cache
+        holds them as a first pass would leave it: every pass shares that start, before its image or what was heard
+        (_messages). A warm-up that fails leaves the model cold, as it was."""
+        async def nothing(_text: str) -> None:
+            return None
+        body = self._body([{"role": "system", "content": self._system()}, {"role": "user", "content": "."}], False, None,
+                          max_tokens=1, model=model)
+        t = time.time()
+        try:
+            await asyncio.wait_for(self._stream(body, nothing, pace=False), timeout=self.cfg.local_timeout)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.info("local LLM: warming %s up failed (%s); it stays cold", model, exc)
+            return
+        self._warm.add(model)
+        log.info("local LLM: %s warmed up in %.1fs", model, time.time() - t)
 
     def cancel_load(self, model: str | None = None) -> None:
         """Stop a load in progress (of `model`, or any): closing its request makes Ollama abort it. On a pause
@@ -1522,6 +1561,8 @@ class LocalLlmAnalyzer:
         trace: list = []
         model = self.model
         others = 0
+        began = time.time()        # a GPU given back after this (unload) is why a silence came, not another program
+        self.pace.trying(model)
         try:
             # The limit is on the pass, not on the load before it: a model coming back onto the GPU
             # takes 42 to 71 s here, and counting that as "the GPU is full" put the small model in for
@@ -1549,7 +1590,8 @@ class LocalLlmAnalyzer:
                     # program on the GPU, and each try was stopped before it finished, so it never warmed up
                     # (the GPU was called busy while nothing else was using it; the runtime's log showed 3,137 of 3,980
                     # tokens read at the cut).
-                    limit = first_deadline if model in self._warm else max(first_deadline, self.cfg.local_cold_first_token_sec)
+                    cold = model not in self._warm
+                    limit = max(first_deadline, self.cfg.local_cold_first_token_sec) if cold else first_deadline
                     try:
                         await asyncio.wait({run, waiting}, timeout=limit,
                                            return_when=asyncio.FIRST_COMPLETED)
@@ -1572,6 +1614,21 @@ class LocalLlmAnalyzer:
                             # the screen still goes on without it: the answer is waited for all the same
                             log.info("local LLM: no first token in %.0f s behind another request of this server; the "
                                      "screen goes on without it and the GPU is not counted busy", limit)
+                        elif self._let_go > began:
+                            # the model was taken off on purpose while it was read (the panel's Free GPU, a pause): the
+                            # silence is that, and counted busy it put the smaller model straight back on the GPU
+                            log.info("local LLM: no first token in %.0f s; the GPU was given back meanwhile, so it is "
+                                     "not counted busy", limit)
+                        elif cold:
+                            # A model just loaded that has not answered yet: its cache is still being filled, as far as
+                            # the cut let it, and the next pass starts from there. Counted busy, its first silence put
+                            # the smaller model in, which pushed it off the GPU (one model at a time), so the next
+                            # problem loaded it again cold: on this PC in November, every spoken question swapped the
+                            # 26b and the e4b, a minute and more each (design note 127). The next silence counts.
+                            self._warm.add(model)
+                            log.info("local LLM: no first token in %.0f s from %s, just loaded; the screen goes on without "
+                                     "it, and the GPU is not counted busy for a first pass", limit, model)
+                            telemetry.event("local_cold", model=model, limit=round(limit))
                         else:
                             # Nothing at all in that time, which on this PC is another program on the GPU: the pass
                             # normally starts within a second or two. It is counted as busy (the smaller model takes
@@ -1598,7 +1655,7 @@ class LocalLlmAnalyzer:
                      type(exc).__name__, str(exc)[:120])
             return FastResult(text=None, head=gate.buf, type=gate.type, route=gate.route, messages=messages,
                               searches=trace, model=model)
-        except (asyncio.TimeoutError, TimeoutError):
+        except (asyncio.TimeoutError, TimeoutError) as exc:
             # Both: before Python 3.11, which the image runs (3.10), asyncio.TimeoutError (wait_for's, below) and the
             # builtin TimeoutError (a load that took too long, a connect timeout, raised by _ready and _stream) are
             # different classes, and the second escaped this pass as an error card.
@@ -1613,8 +1670,9 @@ class LocalLlmAnalyzer:
             # so the smaller model answers the next one, and hand this screen on as it stands.
             was_busy = self.pace.busy()
             self.pace.timed_out(model)
-            log.info("local LLM: the first pass brought nothing in %.0f s; counting the GPU as busy",
-                     self.cfg.local_fast_timeout)
+            # a load past local_timeout (180 s) is said as that: "nothing in 45 s" after three minutes of loading misled
+            log.info("local LLM: %s; counting the GPU as busy", str(exc) if "did not load" in str(exc)
+                     else f"the first pass brought nothing in {self.cfg.local_fast_timeout:.0f} s")
             telemetry.event("gpu_busy", model=model, rate=0.0, usual=self.pace.last.get("usual"),
                             switch_to=self.model if self.model != model else None, after="timeout",
                             hold=round(self.pace.held))
@@ -1705,6 +1763,8 @@ class LocalLlmAnalyzer:
         counted busy then (GpuPace), unless another request of this server was streaming, which the silence may have
         been the wait behind."""
         model = self.model
+        began_at = time.time()   # a GPU given back after this is why a silence came (fast)
+        self.pace.trying(model)
         await self._ready(model)
         alive = asyncio.Event()
         others, begun, over = self._streams, self._started, self._ended
@@ -1713,7 +1773,8 @@ class LocalLlmAnalyzer:
             run = asyncio.ensure_future(self._run(messages, think, on_delta, lambda: False, trace))
         finally:
             _FIRST_TOKEN.reset(mark)
-        limit = first_deadline if model in self._warm else max(first_deadline, self.cfg.local_cold_first_token_sec)
+        cold = model not in self._warm
+        limit = max(first_deadline, self.cfg.local_cold_first_token_sec) if cold else first_deadline
         waiting = asyncio.ensure_future(alive.wait())
         try:
             await asyncio.wait({run, waiting}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
@@ -1728,7 +1789,10 @@ class LocalLlmAnalyzer:
             shared = others > 0 or self._started - begun > 1 or self._ended != over
             run.cancel()
             await asyncio.gather(run, return_exceptions=True)
-            if not shared:
+            if cold and not shared:
+                self._warm.add(model)   # as the first pass: a model just loaded is given its first silence (fast)
+                telemetry.event("local_cold", model=model, limit=round(limit))
+            elif not shared and self._let_go <= began_at:
                 self.pace.timed_out(model)
                 telemetry.event("gpu_busy", model=model, rate=0.0, usual=self.pace.last.get("usual"),
                                 switch_to=self.model if self.model != model else None, after="think_first_token",

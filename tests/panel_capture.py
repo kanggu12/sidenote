@@ -315,7 +315,7 @@ def group_foot(br, s) -> None:
     program(p, clients=0)
     foot = p.js("() => ({ text: document.getElementById('cap-who')?.textContent, state: document.getElementById('cap-prog')?.dataset.state, note: document.querySelector('#st-screen .src-note')?.textContent || '' })")
     check("none connected: how to start one, once, at the foot (not again under the screen's line)",
-          foot["text"] == "캡처 PC에서 ./sidenote capture" and foot["state"] == "idle" and not foot["note"], str(foot))
+          foot["text"] == "서버 터미널에서 ./sidenote capture" and foot["state"] == "idle" and not foot["note"], str(foot))
     program(p, WHO)
     foot = p.js("() => ({ text: document.getElementById('cap-who')?.textContent, title: document.getElementById('cap-who')?.title, state: document.getElementById('cap-prog')?.dataset.state })")
     check("connected: its PC and release on the line, its system too in the tooltip",

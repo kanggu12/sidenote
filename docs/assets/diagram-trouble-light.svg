@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 442" width="906" height="442" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program off, or Program off. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 442" width="906" height="442" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="When no answer comes, four questions in turn. The panel does not open: Nothing appears after starting it, or Server disconnected with Docker. Screen capture is not green on the capture card: Capture program not connected, or No program. Neither the local model nor the agent is ready: Ollama does not answer, No local model yet, or Agent sign-in needed. The screen changed outside the problem: it did not solve again, and Reanalyze solves it at once. With all four, Sidenote answers">
 <rect x="0" y="0" width="372" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
 <text x="14" y="23.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="14,358">No answer appears</text>
 <text x="14" y="42.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="14,358">after a screen with a problem on it</text>
@@ -23,8 +23,8 @@
 <path d="M492,180 L483.0,184.5 L483.0,175.5 Z" fill="#818b98" data-tip="492,180"/>
 <text x="432" y="172" font-size="12" fill="#59636e" text-anchor="middle" data-box="382,482">no</text>
 <rect x="492" y="152" width="408" height="56" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
-<text x="506" y="175.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">Capture program off</text>
-<text x="506" y="194.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">or Program off, on the capture card</text>
+<text x="506" y="175.25" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start" data-box="506,886">Capture program not connected</text>
+<text x="506" y="194.25" font-size="12.5" fill="#59636e" text-anchor="start" data-box="506,886">or No program, on the capture card</text>
 <path d="M40,208 L40,221" fill="none" stroke="#818b98" stroke-width="1.6" stroke-linejoin="round"/>
 <path d="M40,228 L35.5,219.0 L44.5,219.0 Z" fill="#818b98" data-tip="40,228"/>
 <text x="50" y="222" font-size="12" fill="#59636e" text-anchor="start" data-box="50,120">yes</text>

@@ -37,6 +37,12 @@ ev += [{"ts": now, "event": "analysis_done", "type": "none", "engine": "local"} 
 ev += [{"ts": now, "event": "analysis_done", "type": "", "engine": "agent", "first_token": 100.0, "cost_usd": 3.5}]
 ev += [{"ts": now, "event": "gpu_busy"}, {"ts": now, "event": "gpu_busy"},
        {"ts": now, "event": "analysis_error", "hint": "timeout"},
+       # the first pass's own limit run out (a load that never finished), counted a timeout too; an agent failure this PC's
+       # model then answered, which is no error of an answer; the model's loads and a cold model's first silence
+       {"ts": now, "event": "gpu_busy", "after": "timeout"}, {"ts": now, "event": "agent_error"},
+       {"ts": now, "event": "model_load", "model": "sidenote-gemma4:26b", "secs": 20.5, "ok": True},
+       {"ts": now, "event": "model_load", "model": "sidenote-gemma4:26b", "secs": 180.0, "ok": False},
+       {"ts": now, "event": "local_cold", "model": "sidenote-gemma4:26b", "limit": 45},
        {"ts": now, "event": "check", "passed": 3, "total": 3}, {"ts": now, "event": "check", "passed": 0, "total": 4},
        {"ts": now, "event": "check", "none": True}, {"ts": now, "event": "check", "skipped": "x"},
        # examples read off the screen and all left out (none of them in the problem's text), and one stuck model server
@@ -68,8 +74,13 @@ with tempfile.TemporaryDirectory() as d:
     check("the agent's cost split: answers, screens with nothing to solve, answers with no head",
           c.get("answers") == 0.4 and c.get("empty") == 0.2 and c.get("empty_turns") == 4
           and c.get("headless") == 3.5 and c.get("headless_turns") == 1, json.dumps(c))
-    check("GPU busy, local timeouts and the checks' verdicts",
-          p.get("gpu_busy") == 2 and p.get("local_timeouts") == 1
+    check("an answer's errors only in the day's Errors: not an agent failure the local model then answered",
+          (got.get("days") or [{}])[0].get("errors") == {"timeout": 1}, json.dumps(got.get("days")))
+    check("the model's loads, the time they took, and a cold model's first silence",
+          p.get("model_loads") == 2 and p.get("model_load_secs") == 200.5 and p.get("local_cold") == 1,
+          json.dumps({k: p.get(k) for k in ("model_loads", "model_load_secs", "local_cold")}))
+    check("GPU busy, local timeouts (the first pass's own limit among them) and the checks' verdicts",
+          p.get("gpu_busy") == 3 and p.get("local_timeouts") == 2
           and p.get("checks") == {"passed": 1, "failed": 1, "no_examples": 2, "left_out": 1, "skipped": 1},
           json.dumps(p.get("checks")))
     check("a model server started again because it answered nothing, apart from one that could not be taken off",
@@ -78,7 +89,10 @@ with tempfile.TemporaryDirectory() as d:
     with redirect_stdout(out):
         report.main(["report", "--days", "1"])
     text = out.getvalue()
-    check("the table shows the period too", "기간 전체" in text and "풀 것 없는 화면 $0.20 (4번)" in text, text[-300:])
+    check("the table shows the period too", "기간 전체" in text and "풀 것 없음 $0.20 (4번)" in text, text[-300:])
+    check("...the column of what had nothing to solve named for screens and speech both, and the loads said",
+          text.splitlines()[0].count("풀 것 없음") == 1 and "빈 화면" not in text
+          and "모델 올림 2번(200.5초), 올린 직후 첫 침묵 1번" in text, text[:200] + " ... " + text[-300:])
     check("...the stuck model and the examples left out among those with none",
           "멈춰서 다시 올림 1번(내리지 못함 1)" in text and "예제 없음 2(읽었지만 문제 글에 없어 뺌 1)" in text, text[-300:])
     check("...the first token by one name, the table's seconds with their unit",
@@ -99,6 +113,9 @@ with tempfile.TemporaryDirectory() as d:
           and "no examples 2 (read but not in the problem's text, left out: 1)" in en
           and "stuck and loaded again: 1 (could not be taken off: 1)" in en
           and "answers with no head line $3.50 (count 1)" in en, en[-700:])
+    check("...and in English the column is Nothing to solve, and the loads are said",
+          "Nothing to solve" in en.splitlines()[0] and "Empty screens" not in en
+          and "model loads 2 (200.5 s), first silences after a load 1" in en, en[:200] + " ... " + en[-400:])
     # `./sidenote events --errors`: the failures, and the times work was held back (the spend brake, a stuck model
     # server), not the answers
     out = io.StringIO()
