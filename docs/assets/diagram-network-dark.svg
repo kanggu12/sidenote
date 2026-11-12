@@ -1,59 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 406" width="906" height="406" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="On the PC, the capture program and the browser reach the server on 127.0.0.1:8777 only. In Docker, the server reaches the local model over llmnet, an internal network with no internet; the code runner has no network and is reached through a socket in a shared volume; SearXNG searches the web for the local model. Only the server, to the agent's service, and SearXNG, to search engines, reach the internet">
-<rect x="0" y="30" width="200" height="340" rx="14" fill="none" stroke="#3d444d" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="14" y="358" font-size="11" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,186">THIS PC</text>
-<rect x="14" y="70" width="172" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="28" y="98.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="28,172">Capture program</text>
-<text x="28" y="117" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="28,172">screen, sound and</text>
-<text x="28" y="134.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="28,172">the window list</text>
-<rect x="14" y="250" width="172" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="28" y="278.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="28,172">Browser</text>
-<text x="28" y="297" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="28,172">the panel, at</text>
-<text x="28" y="314.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="28,172">127.0.0.1:8777</text>
-<rect x="225" y="30" width="470" height="340" rx="14" fill="none" stroke="#3d444d" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="239" y="358" font-size="11" font-weight="600" fill="#9198a1" text-anchor="start" data-box="239,681">DOCKER, ON THIS PC</text>
-<rect x="243" y="150" width="168" height="110" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="257" y="182.45" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="257,397">Server</text>
-<text x="257" y="201.25" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="257,397">the only container</text>
-<text x="257" y="218.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="257,397">with a port, on</text>
-<text x="257" y="236.25" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="257,397">127.0.0.1 only</text>
-<rect x="467" y="60" width="212" height="84" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
-<text x="481" y="88.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="481,665">Local model</text>
-<text x="481" y="107" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">Ollama on the GPU;</text>
-<text x="481" y="124.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">llmnet: no internet</text>
-<rect x="467" y="168" width="212" height="74" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="481" y="191.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="481,665">SearXNG</text>
-<text x="481" y="210" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">web search for the</text>
-<text x="481" y="227.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">local model</text>
-<rect x="467" y="266" width="212" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="481" y="294.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="481,665">Code runner</text>
-<text x="481" y="313" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">no network at all;</text>
-<text x="481" y="330.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="481,665">a socket in a volume</text>
-<rect x="720" y="30" width="180" height="340" rx="14" fill="none" stroke="#3d444d" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="734" y="358" font-size="11" font-weight="600" fill="#9198a1" text-anchor="start" data-box="734,886">THE INTERNET</text>
-<rect x="732" y="70" width="156" height="84" rx="10" fill="#151b23" stroke="#d95926" stroke-width="2"/>
-<text x="746" y="98.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="746,874">Agent's service</text>
-<text x="746" y="117" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="746,874">Anthropic or</text>
-<text x="746" y="134.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="746,874">OpenAI</text>
-<rect x="732" y="168" width="156" height="74" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="746" y="191.2" font-size="14" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="746,874">Search engines</text>
-<text x="746" y="210" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="746,874">what SearXNG</text>
-<text x="746" y="227.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="746,874">asks for</text>
-<path d="M186.5,112 L212,112 L212,185 L235.5,185" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M242.5,185 L233.5,189.5 L233.5,180.5 Z" fill="#656c76" data-tip="242.5,185"/>
-<path d="M186.5,292 L212,292 L212,226 L235.5,226" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M242.5,226 L233.5,230.5 L233.5,221.5 Z" fill="#656c76" data-tip="242.5,226"/>
-<path d="M411.5,180 L439,180 L439,102 L459,102" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M466,102 L457.0,106.5 L457.0,97.5 Z" fill="#3987e5" data-tip="466,102"/>
-<path d="M411.5,205 L459.5,205" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M466.5,205 L457.5,209.5 L457.5,200.5 Z" fill="#656c76" data-tip="466.5,205"/>
-<path d="M411.5,230 L439,230 L439,308 L459.5,308" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M466.5,308 L457.5,312.5 L457.5,303.5 Z" fill="#656c76" data-tip="466.5,308"/>
-<path d="M327,149.5 L327,46 L708,46 L708,112 L724,112" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M731,112 L722.0,116.5 L722.0,107.5 Z" fill="#d95926" data-tip="731,112"/>
-<path d="M679.5,205 L724.5,205" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M731.5,205 L722.5,209.5 L722.5,200.5 Z" fill="#656c76" data-tip="731.5,205"/>
-<rect x="0" y="383" width="22" height="10" rx="3" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
-<text x="30" y="392" font-size="12" fill="#9198a1" text-anchor="start" data-box="30,900">on your GPU: no tokens</text>
-<rect x="209.2" y="383" width="22" height="10" rx="3" fill="#151b23" stroke="#d95926" stroke-width="2"/>
-<text x="239.2" y="392" font-size="12" fill="#9198a1" text-anchor="start" data-box="239.2,900">your cloud agent: paid per use</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 436" width="958" height="436" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="On the PC, the capture program and the browser reach the server on 127.0.0.1:8777 only. In Docker, the server reaches the local model over llmnet, an internal network with no internet; the code runner has no network and is reached through a socket in a shared volume; SearXNG searches the web for the local model. Only the server, to the agent's service, and SearXNG, to search engines, reach the internet">
+<defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="1" fill="#26272b"/></pattern><filter id="relief" x="-10%" y="-20%" width="120%" height="150%"><feDropShadow dx="1.6" dy="2" stdDeviation="2.4" flood-color="#000000" flood-opacity="0.5"/></filter></defs>
+<rect x="0.5" y="0.5" width="957" height="435" rx="14" fill="#161719" stroke="#303236"/><rect x="0.5" y="0.5" width="957" height="435" rx="14" fill="url(#dots)"/><path d="M22,1 V435" stroke="#6b1e38" stroke-width="1.5"/>
+<g transform="translate(40,18)">
+<rect x="0" y="30" width="200" height="340" rx="14" fill="none" stroke="#48494e" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="14" y="358" font-size="11" font-weight="600" fill="#b0b1b4" text-anchor="start" data-box="14,186">THIS PC</text>
+<rect x="14" y="70" width="172" height="84" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="28" y="98.2" font-size="14" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="28,172">Capture program</text>
+<text x="28" y="117" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="28,172">screen, sound and</text>
+<text x="28" y="134.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="28,172">the window list</text>
+<rect x="14" y="250" width="172" height="84" rx="10" fill="#1d1e21" stroke="#f2c744" stroke-width="1.5" filter="url(#relief)"/>
+<rect x="24" y="272.32" width="66.8" height="8.7" rx="1.9" fill="#e8912d" fill-opacity="0.6" transform="translate(57.4 276.7) rotate(-1.2) skewX(-14) translate(-57.4 -276.7)"/>
+<text x="28" y="278.2" font-size="14" font-weight="680" fill="#e3e4e5" text-anchor="start" data-box="28,172">Browser</text>
+<text x="28" y="297" font-size="12.5" fill="#e3e4e5" text-anchor="start" data-box="28,172">the panel, at</text>
+<text x="28" y="314.5" font-size="12.5" fill="#e3e4e5" text-anchor="start" data-box="28,172">127.0.0.1:8777</text>
+<rect x="225" y="30" width="470" height="340" rx="14" fill="none" stroke="#48494e" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="239" y="358" font-size="11" font-weight="600" fill="#b0b1b4" text-anchor="start" data-box="239,681">DOCKER, ON THIS PC</text>
+<rect x="243" y="150" width="168" height="110" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="257" y="182.45" font-size="14" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="257,397">Server</text>
+<text x="257" y="201.25" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="257,397">the only container</text>
+<text x="257" y="218.75" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="257,397">with a port, on</text>
+<text x="257" y="236.25" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="257,397">127.0.0.1 only</text>
+<rect x="467" y="60" width="212" height="84" rx="10" fill="#1d1e21" stroke="#2eb67d" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="485" cy="83.44" r="5.6" fill="#2eb67d" fill-opacity="0.18"/><circle cx="485" cy="83.44" r="3.4" fill="#2eb67d"/>
+<text x="495" y="88.2" font-size="14" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="495,665">Local model</text>
+<text x="481" y="107" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">Ollama on the GPU;</text>
+<text x="481" y="124.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">llmnet: no internet</text>
+<rect x="467" y="168" width="212" height="74" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="481" y="191.2" font-size="14" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="481,665">SearXNG</text>
+<text x="481" y="210" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">web search for the</text>
+<text x="481" y="227.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">local model</text>
+<rect x="467" y="266" width="212" height="84" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="481" y="294.2" font-size="14" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="481,665">Code runner</text>
+<text x="481" y="313" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">no network at all;</text>
+<text x="481" y="330.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="481,665">a socket in a volume</text>
+<rect x="720" y="30" width="180" height="340" rx="14" fill="none" stroke="#48494e" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="734" y="358" font-size="11" font-weight="600" fill="#b0b1b4" text-anchor="start" data-box="734,886">THE INTERNET</text>
+<rect x="732" y="70" width="156" height="84" rx="10" fill="#1d1e21" stroke="#40b3e4" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="750" cy="93.48" r="5.6" fill="#40b3e4" fill-opacity="0.18"/><circle cx="750" cy="93.48" r="3.4" fill="#40b3e4"/>
+<text x="760" y="97.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="760,874">Agent's service</text>
+<text x="746" y="116.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="746,874">Anthropic or</text>
+<text x="746" y="134" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="746,874">OpenAI</text>
+<rect x="732" y="168" width="156" height="74" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="746" y="190.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="746,874">Search engines</text>
+<text x="746" y="209.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="746,874">what SearXNG</text>
+<text x="746" y="227" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="746,874">asks for</text>
+<path d="M186.5,112 L212,112 L212,185 L235.5,185" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M242.5,185 L234.0,189.2 L234.0,180.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="242.5,185"/>
+<path d="M186.5,292 L212,292 L212,226 L235.5,226" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M242.5,226 L234.0,230.2 L234.0,221.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="242.5,226"/>
+<path d="M411.5,180 L439,180 L439,102 L459,102" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M466,102 L457.5,106.2 L457.5,97.8 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="466,102"/>
+<path d="M411.5,205 L459.5,205" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M466.5,205 L458.0,209.2 L458.0,200.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="466.5,205"/>
+<path d="M411.5,230 L439,230 L439,308 L459.5,308" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M466.5,308 L458.0,312.2 L458.0,303.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="466.5,308"/>
+<path d="M327,149.5 L327,46 L708,46 L708,112 L724,112" fill="none" stroke="#40b3e4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M731,112 L722.5,116.2 L722.5,107.8 Z" fill="#40b3e4" stroke="#40b3e4" stroke-width="0.8" stroke-linejoin="round" data-tip="731,112"/>
+<path d="M679.5,205 L724.5,205" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M731.5,205 L723.0,209.2 L723.0,200.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="731.5,205"/>
+<circle cx="6" cy="388" r="5.6" fill="#2eb67d" fill-opacity="0.18"/><circle cx="6" cy="388" r="3.4" fill="#2eb67d"/>
+<text x="18" y="392" font-size="12" fill="#b0b1b4" text-anchor="start" data-box="18,900">on your GPU: no tokens</text>
+<circle cx="203.2" cy="388" r="5.6" fill="#40b3e4" fill-opacity="0.18"/><circle cx="203.2" cy="388" r="3.4" fill="#40b3e4"/>
+<text x="215.2" y="392" font-size="12" fill="#b0b1b4" text-anchor="start" data-box="215.2,900">your cloud agent: paid per use</text>
+</g>
 </svg>

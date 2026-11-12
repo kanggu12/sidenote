@@ -1,52 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 382" width="906" height="382" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="The capture program sends frames, sound and the window list to the Sidenote server; the server sends every screen to the local vision model on your GPU, the hard problems to the cloud agent, and code answers to the code runner; the panel shows the answers">
-<rect x="0" y="8" width="180" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="14" y="36.5" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="14,166">Capture program</text>
-<text x="14" y="55.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="14,166">screen, speaker sound,</text>
-<text x="14" y="73" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="14,166">the list of windows</text>
-<rect x="0" y="238" width="180" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="14" y="266.5" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="14,166">Panel</text>
-<text x="14" y="285.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="14,166">in your browser:</text>
-<text x="14" y="303" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="14,166">answers as written</text>
-<rect x="300" y="8" width="180" height="314" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="314" y="125.25" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="314,466">Sidenote server</text>
-<text x="314" y="144.25" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="314,466">covers faces</text>
-<text x="314" y="161.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="314,466">finds the problem</text>
-<text x="314" y="179.25" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="314,466">sends it to a model</text>
-<text x="314" y="196.75" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="314,466">checks code answers</text>
-<text x="314" y="214.25" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="314,466">keeps the answers</text>
-<rect x="600" y="8" width="300" height="84" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
-<text x="614" y="36.5" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="614,886">Local vision model</text>
-<text x="614" y="55.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">Ollama on your GPU,</text>
-<text x="614" y="73" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">web search when it needs it</text>
-<rect x="600" y="123" width="300" height="84" rx="10" fill="#151b23" stroke="#d95926" stroke-width="2"/>
-<text x="614" y="151.5" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="614,886">Cloud agent</text>
-<text x="614" y="170.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">Claude Code, Codex</text>
-<text x="614" y="188" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">or the Anthropic API</text>
-<rect x="600" y="238" width="300" height="84" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="614" y="266.5" font-size="15" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="614,886">Code runner</text>
-<text x="614" y="285.5" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">runs code answers on the</text>
-<text x="614" y="303" font-size="12.5" fill="#9198a1" text-anchor="start" data-box="614,886">problem's examples, no network</text>
-<path d="M180.5,50 L292.5,50" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M299.5,50 L290.5,54.5 L290.5,45.5 Z" fill="#656c76" data-tip="299.5,50"/>
-<text x="240" y="30" font-size="12" fill="#9198a1" text-anchor="middle" data-box="188,292">frames, sound,</text>
-<text x="240" y="43" font-size="12" fill="#9198a1" text-anchor="middle" data-box="188,292">window list</text>
-<path d="M480.5,50 L592,50" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M599,50 L590.0,54.5 L590.0,45.5 Z" fill="#3987e5" data-tip="599,50"/>
-<text x="540" y="43" font-size="12" fill="#9198a1" text-anchor="middle" data-box="488,592">every screen</text>
-<path d="M480.5,165 L592,165" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M599,165 L590.0,169.5 L590.0,160.5 Z" fill="#d95926" data-tip="599,165"/>
-<text x="540" y="158" font-size="12" fill="#9198a1" text-anchor="middle" data-box="488,592">hard problems</text>
-<path d="M480.5,280 L592.5,280" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M599.5,280 L590.5,284.5 L590.5,275.5 Z" fill="#656c76" data-tip="599.5,280"/>
-<text x="540" y="273" font-size="12" fill="#9198a1" text-anchor="middle" data-box="488,592">code to check</text>
-<path d="M299.5,268 L187.5,268" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M180.5,268 L189.5,263.5 L189.5,272.5 Z" fill="#656c76" data-tip="180.5,268"/>
-<text x="240" y="261" font-size="12" fill="#9198a1" text-anchor="middle" data-box="188,292">answers</text>
-<path d="M180.5,292 L292.5,292" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M299.5,292 L290.5,296.5 L290.5,287.5 Z" fill="#656c76" data-tip="299.5,292"/>
-<text x="240" y="309" font-size="12" fill="#9198a1" text-anchor="middle" data-box="188,292">questions</text>
-<rect x="0" y="353" width="22" height="10" rx="3" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
-<text x="30" y="362" font-size="12" fill="#9198a1" text-anchor="start" data-box="30,900">on your GPU: no tokens</text>
-<rect x="209.2" y="353" width="22" height="10" rx="3" fill="#151b23" stroke="#d95926" stroke-width="2"/>
-<text x="239.2" y="362" font-size="12" fill="#9198a1" text-anchor="start" data-box="239.2,900">your cloud agent: paid per use</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 412" width="958" height="412" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="The capture program sends frames, sound and the window list to the Sidenote server; the server sends every screen to the local vision model on your GPU, the hard problems to the cloud agent, and code answers to the code runner; the panel shows the answers">
+<defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="1" fill="#26272b"/></pattern><filter id="relief" x="-10%" y="-20%" width="120%" height="150%"><feDropShadow dx="1.6" dy="2" stdDeviation="2.4" flood-color="#000000" flood-opacity="0.5"/></filter></defs>
+<rect x="0.5" y="0.5" width="957" height="411" rx="14" fill="#161719" stroke="#303236"/><rect x="0.5" y="0.5" width="957" height="411" rx="14" fill="url(#dots)"/><path d="M22,1 V411" stroke="#6b1e38" stroke-width="1.5"/>
+<g transform="translate(40,18)">
+<rect x="0" y="8" width="180" height="84" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="14" y="36.5" font-size="15" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="14,166">Capture program</text>
+<text x="14" y="55.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="14,166">screen, speaker sound,</text>
+<text x="14" y="73" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="14,166">the list of windows</text>
+<rect x="0" y="238" width="180" height="84" rx="10" fill="#1d1e21" stroke="#f2c744" stroke-width="1.5" filter="url(#relief)"/>
+<rect x="10" y="260.2" width="53.0" height="9.3" rx="2.0" fill="#e8912d" fill-opacity="0.6" transform="translate(36.5 264.8) rotate(-1.2) skewX(-14) translate(-36.5 -264.8)"/>
+<text x="14" y="266.5" font-size="15" font-weight="680" fill="#e3e4e5" text-anchor="start" data-box="14,166">Panel</text>
+<text x="14" y="285.5" font-size="12.5" fill="#e3e4e5" text-anchor="start" data-box="14,166">in your browser:</text>
+<text x="14" y="303" font-size="12.5" fill="#e3e4e5" text-anchor="start" data-box="14,166">answers as written</text>
+<rect x="300" y="8" width="180" height="314" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="314" y="125.25" font-size="15" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="314,466">Sidenote server</text>
+<text x="314" y="144.25" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="314,466">covers faces</text>
+<text x="314" y="161.75" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="314,466">finds the problem</text>
+<text x="314" y="179.25" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="314,466">sends it to a model</text>
+<text x="314" y="196.75" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="314,466">checks code answers</text>
+<text x="314" y="214.25" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="314,466">keeps the answers</text>
+<rect x="600" y="8" width="300" height="84" rx="10" fill="#1d1e21" stroke="#2eb67d" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="618" cy="31.4" r="5.6" fill="#2eb67d" fill-opacity="0.18"/><circle cx="618" cy="31.4" r="3.4" fill="#2eb67d"/>
+<text x="628" y="36.5" font-size="15" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="628,886">Local vision model</text>
+<text x="614" y="55.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">Ollama on your GPU,</text>
+<text x="614" y="73" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">web search when it needs it</text>
+<rect x="600" y="123" width="300" height="84" rx="10" fill="#1d1e21" stroke="#40b3e4" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="618" cy="146.4" r="5.6" fill="#40b3e4" fill-opacity="0.18"/><circle cx="618" cy="146.4" r="3.4" fill="#40b3e4"/>
+<text x="628" y="151.5" font-size="15" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="628,886">Cloud agent</text>
+<text x="614" y="170.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">Claude Code, Codex</text>
+<text x="614" y="188" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">or the Anthropic API</text>
+<rect x="600" y="238" width="300" height="84" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="614" y="266.5" font-size="15" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="614,886">Code runner</text>
+<text x="614" y="285.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">runs code answers on the</text>
+<text x="614" y="303" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="614,886">problem's examples, no network</text>
+<path d="M180.5,50 L292.5,50" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M299.5,50 L291.0,54.2 L291.0,45.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="299.5,50"/>
+<text x="240" y="30" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="188,292">frames, sound,</text>
+<text x="240" y="43" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="188,292">window list</text>
+<path d="M480.5,50 L592,50" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M599,50 L590.5,54.2 L590.5,45.8 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="599,50"/>
+<text x="540" y="43" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="488,592">every screen</text>
+<path d="M480.5,165 L592,165" fill="none" stroke="#40b3e4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M599,165 L590.5,169.2 L590.5,160.8 Z" fill="#40b3e4" stroke="#40b3e4" stroke-width="0.8" stroke-linejoin="round" data-tip="599,165"/>
+<text x="540" y="158" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="488,592">hard problems</text>
+<path d="M480.5,280 L592.5,280" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M599.5,280 L591.0,284.2 L591.0,275.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="599.5,280"/>
+<text x="540" y="273" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="488,592">code to check</text>
+<path d="M299.5,268 L187.5,268" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M180.5,268 L189.0,263.8 L189.0,272.2 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="180.5,268"/>
+<text x="240" y="261" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="188,292">answers</text>
+<path d="M180.5,292 L292.5,292" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M299.5,292 L291.0,296.2 L291.0,287.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="299.5,292"/>
+<text x="240" y="309" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="188,292">questions</text>
+<circle cx="6" cy="358" r="5.6" fill="#2eb67d" fill-opacity="0.18"/><circle cx="6" cy="358" r="3.4" fill="#2eb67d"/>
+<text x="18" y="362" font-size="12" fill="#b0b1b4" text-anchor="start" data-box="18,900">on your GPU: no tokens</text>
+<circle cx="203.2" cy="358" r="5.6" fill="#40b3e4" fill-opacity="0.18"/><circle cx="203.2" cy="358" r="3.4" fill="#40b3e4"/>
+<text x="215.2" y="362" font-size="12" fill="#b0b1b4" text-anchor="start" data-box="215.2,900">your cloud agent: paid per use</text>
+</g>
 </svg>

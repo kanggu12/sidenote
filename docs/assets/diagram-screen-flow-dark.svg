@@ -1,72 +1,79 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 906 640" width="906" height="640" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="A screen problem: the capture program sends a frame once the screen settles; the server covers faces and checks the problem is new, tells the panel, and asks the local model's fast pass; it answers at once, or the agent gets the crop, or the local model thinks; the answer reaches the panel as it is written; a code answer is then run on the problem's examples">
-<path d="M825,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M675,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M525,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M375,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M225,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<path d="M75,44.5 V630" stroke="#3d444d" stroke-width="1.2" stroke-dasharray="3 5"/>
-<rect x="4" y="488" width="892" height="138" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
-<rect x="4" y="194" width="892" height="258" rx="10" fill="#151b23" fill-opacity="0.6" stroke="#3d444d" stroke-width="1"/>
-<rect x="8" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="22" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="22,128">Capture</text>
-<rect x="158" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="172" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="172,278">Server</text>
-<rect x="308" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3987e5" stroke-width="2"/>
-<text x="322" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="322,428">Local model</text>
-<rect x="458" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#d95926" stroke-width="2"/>
-<text x="472" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="472,578">Agent</text>
-<rect x="608" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="622" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="622,728">Code runner</text>
-<rect x="758" y="0" width="134" height="44" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1"/>
-<text x="772" y="25.9" font-size="13" font-weight="600" fill="#f0f6fc" text-anchor="start" data-box="772,878">Panel</text>
-<path d="M75,78 L217,78" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M224,78 L215.0,82.5 L215.0,73.5 Z" fill="#656c76" data-tip="224,78"/>
-<text x="150" y="71" font-size="12" fill="#9198a1" text-anchor="middle" data-box="81,219">a settled screen</text>
-<path d="M225,106 h16 v12 h-9" fill="none" stroke="#656c76" stroke-width="1.5"/>
-<path d="M241,118 L232.5,118" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M225.5,118 L234.5,113.5 L234.5,122.5 Z" fill="#656c76" data-tip="225.5,118"/>
-<text x="249" y="116" font-size="12" fill="#9198a1" text-anchor="start" data-box="249,525">faces covered; a new problem?</text>
-<path d="M225,142 L817,142" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M824,142 L815.0,146.5 L815.0,137.5 Z" fill="#656c76" data-tip="824,142"/>
-<text x="525" y="135" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">analysis_start, with the thumbnail</text>
-<path d="M225,176 L367,176" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M374,176 L365.0,180.5 L365.0,171.5 Z" fill="#3987e5" data-tip="374,176"/>
-<text x="300" y="169" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the fast pass</text>
-<text x="14" y="212" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Answered at once, or nothing to solve</text>
-<path d="M375,242 H225" stroke="#3987e5" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,242 L233,242" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,242 L235.0,237.5 L235.0,246.5 Z" fill="#3987e5" data-tip="226,242"/>
-<text x="300" y="235" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the answer</text>
-<path d="M10,260 H890" stroke="#3d444d" stroke-width="1" stroke-dasharray="4 4"/>
-<text x="14" y="274" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Needs reasoning, and the agent takes it</text>
-<path d="M225,302 L517,302" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M524,302 L515.0,306.5 L515.0,297.5 Z" fill="#d95926" data-tip="524,302"/>
-<text x="375" y="295" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">the problem's crop, or its text</text>
-<path d="M525,336 H225" stroke="#d95926" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,336 L233,336" fill="none" stroke="#d95926" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,336 L235.0,331.5 L235.0,340.5 Z" fill="#d95926" data-tip="226,336"/>
-<text x="375" y="329" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,519">the answer, streamed</text>
-<path d="M10,354 H890" stroke="#3d444d" stroke-width="1" stroke-dasharray="4 4"/>
-<text x="14" y="368" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">Needs reasoning, on this PC</text>
-<path d="M225,396 L367,396" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M374,396 L365.0,400.5 L365.0,391.5 Z" fill="#3987e5" data-tip="374,396"/>
-<text x="300" y="389" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the thinking pass</text>
-<path d="M375,430 H225" stroke="#3987e5" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,430 L233,430" fill="none" stroke="#3987e5" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,430 L235.0,425.5 L235.0,434.5 Z" fill="#3987e5" data-tip="226,430"/>
-<text x="300" y="423" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,369">the answer, streamed</text>
-<path d="M225,470 L817,470" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M824,470 L815.0,474.5 L815.0,465.5 Z" fill="#656c76" data-tip="824,470"/>
-<text x="525" y="463" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">the answer as it is written, then analysis_done</text>
-<text x="14" y="506" font-size="11.5" font-weight="600" fill="#9198a1" text-anchor="start" data-box="14,886">A code answer, with Check the examples on</text>
-<path d="M225,536 L667,536" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M674,536 L665.0,540.5 L665.0,531.5 Z" fill="#656c76" data-tip="674,536"/>
-<text x="450" y="529" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">POST /run, the problem's examples</text>
-<path d="M675,570 H225" stroke="#656c76" stroke-width="1.6" stroke-dasharray="5 4"/>
-<path d="M233,570 L233,570" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M226,570 L235.0,565.5 L235.0,574.5 Z" fill="#656c76" data-tip="226,570"/>
-<text x="450" y="563" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,669">each example's output</text>
-<path d="M225,604 L817,604" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M824,604 L815.0,608.5 L815.0,599.5 Z" fill="#656c76" data-tip="824,604"/>
-<text x="525" y="597" font-size="12" fill="#9198a1" text-anchor="middle" data-box="231,819">check: passed of total</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 670" width="958" height="670" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="A screen problem: the capture program sends a frame once the screen settles; the server covers faces and checks the problem is new, tells the panel, and asks the local model's fast pass; it answers at once, or the agent gets the crop, or the local model thinks; the answer reaches the panel as it is written; a code answer is then run on the problem's examples">
+<defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="1" fill="#26272b"/></pattern><filter id="relief" x="-10%" y="-20%" width="120%" height="150%"><feDropShadow dx="1.6" dy="2" stdDeviation="2.4" flood-color="#000000" flood-opacity="0.5"/></filter></defs>
+<rect x="0.5" y="0.5" width="957" height="669" rx="14" fill="#161719" stroke="#303236"/><rect x="0.5" y="0.5" width="957" height="669" rx="14" fill="url(#dots)"/><path d="M22,1 V669" stroke="#6b1e38" stroke-width="1.5"/>
+<g transform="translate(40,18)">
+<path d="M825,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M675,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M525,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M375,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M225,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<path d="M75,44.5 V630" stroke="#48494e" stroke-width="1.2" stroke-dasharray="3 5"/>
+<rect x="4" y="488" width="892" height="138" rx="10" fill="#1d1e21" fill-opacity="0.6" stroke="#303236" stroke-width="1"/>
+<rect x="4" y="194" width="892" height="258" rx="10" fill="#1d1e21" fill-opacity="0.6" stroke="#303236" stroke-width="1"/>
+<rect x="8" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="22" y="25.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="22,128">Capture</text>
+<rect x="158" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="172" y="25.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="172,278">Server</text>
+<rect x="308" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#2eb67d" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="326" cy="21.48" r="5.6" fill="#2eb67d" fill-opacity="0.18"/><circle cx="326" cy="21.48" r="3.4" fill="#2eb67d"/>
+<text x="336" y="25.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="336,428">Local model</text>
+<rect x="458" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#40b3e4" stroke-width="1.5" filter="url(#relief)"/>
+<circle cx="476" cy="21.48" r="5.6" fill="#40b3e4" fill-opacity="0.18"/><circle cx="476" cy="21.48" r="3.4" fill="#40b3e4"/>
+<text x="486" y="25.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="486,578">Agent</text>
+<rect x="608" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
+<text x="622" y="25.9" font-size="13" font-weight="620" fill="#e3e4e5" text-anchor="start" data-box="622,728">Code runner</text>
+<rect x="758" y="0" width="134" height="44" rx="10" fill="#1d1e21" stroke="#f2c744" stroke-width="1.5" filter="url(#relief)"/>
+<rect x="768" y="20.44" width="47.0" height="8.1" rx="1.8" fill="#e8912d" fill-opacity="0.6" transform="translate(791.5 24.5) rotate(-1.2) skewX(-14) translate(-791.5 -24.5)"/>
+<text x="772" y="25.9" font-size="13" font-weight="680" fill="#e3e4e5" text-anchor="start" data-box="772,878">Panel</text>
+<path d="M75,78 L217,78" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M224,78 L215.5,82.2 L215.5,73.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="224,78"/>
+<text x="150" y="71" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="81,219">a settled screen</text>
+<path d="M225,106 h16 v12 h-9" fill="none" stroke="#7c7d82" stroke-width="1.5"/>
+<path d="M241,118 L232.5,118" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M225.5,118 L234.0,113.8 L234.0,122.2 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="225.5,118"/>
+<text x="249" y="116" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="start" data-box="249,525">faces covered; a new problem?</text>
+<path d="M225,142 L817,142" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M824,142 L815.5,146.2 L815.5,137.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="824,142"/>
+<text x="525" y="135" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,819">analysis_start, with the thumbnail</text>
+<path d="M225,176 L367,176" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M374,176 L365.5,180.2 L365.5,171.8 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="374,176"/>
+<text x="300" y="169" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,369">the fast pass</text>
+<text x="14" y="212" font-size="11.5" font-weight="600" font-style="italic" fill="#b0b1b4" text-anchor="start" data-box="14,886">Answered at once, or nothing to solve</text>
+<path d="M375,242 H225" stroke="#2eb67d" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,242 L233,242" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M226,242 L234.5,237.8 L234.5,246.2 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="226,242"/>
+<text x="300" y="235" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,369">the answer</text>
+<path d="M10,260 H890" stroke="#48494e" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="14" y="274" font-size="11.5" font-weight="600" font-style="italic" fill="#b0b1b4" text-anchor="start" data-box="14,886">Needs reasoning, and the agent takes it</text>
+<path d="M225,302 L517,302" fill="none" stroke="#40b3e4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M524,302 L515.5,306.2 L515.5,297.8 Z" fill="#40b3e4" stroke="#40b3e4" stroke-width="0.8" stroke-linejoin="round" data-tip="524,302"/>
+<text x="375" y="295" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,519">the problem's crop, or its text</text>
+<path d="M525,336 H225" stroke="#40b3e4" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,336 L233,336" fill="none" stroke="#40b3e4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M226,336 L234.5,331.8 L234.5,340.2 Z" fill="#40b3e4" stroke="#40b3e4" stroke-width="0.8" stroke-linejoin="round" data-tip="226,336"/>
+<text x="375" y="329" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,519">the answer, streamed</text>
+<path d="M10,354 H890" stroke="#48494e" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="14" y="368" font-size="11.5" font-weight="600" font-style="italic" fill="#b0b1b4" text-anchor="start" data-box="14,886">Needs reasoning, on this PC</text>
+<path d="M225,396 L367,396" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M374,396 L365.5,400.2 L365.5,391.8 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="374,396"/>
+<text x="300" y="389" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,369">the thinking pass</text>
+<path d="M375,430 H225" stroke="#2eb67d" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,430 L233,430" fill="none" stroke="#2eb67d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M226,430 L234.5,425.8 L234.5,434.2 Z" fill="#2eb67d" stroke="#2eb67d" stroke-width="0.8" stroke-linejoin="round" data-tip="226,430"/>
+<text x="300" y="423" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,369">the answer, streamed</text>
+<path d="M225,470 L817,470" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M824,470 L815.5,474.2 L815.5,465.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="824,470"/>
+<text x="525" y="463" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,819">the answer as it is written, then analysis_done</text>
+<text x="14" y="506" font-size="11.5" font-weight="600" font-style="italic" fill="#b0b1b4" text-anchor="start" data-box="14,886">A code answer, with Check the examples on</text>
+<path d="M225,536 L667,536" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M674,536 L665.5,540.2 L665.5,531.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="674,536"/>
+<text x="450" y="529" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,669">POST /run, the problem's examples</text>
+<path d="M675,570 H225" stroke="#7c7d82" stroke-width="1.6" stroke-dasharray="5 4"/>
+<path d="M233,570 L233,570" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M226,570 L234.5,565.8 L234.5,574.2 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="226,570"/>
+<text x="450" y="563" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,669">each example's output</text>
+<path d="M225,604 L817,604" fill="none" stroke="#7c7d82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M824,604 L815.5,608.2 L815.5,599.8 Z" fill="#7c7d82" stroke="#7c7d82" stroke-width="0.8" stroke-linejoin="round" data-tip="824,604"/>
+<text x="525" y="597" font-size="12" font-style="italic" fill="#b0b1b4" text-anchor="middle" data-box="231,819">check: passed of total</text>
+</g>
 </svg>

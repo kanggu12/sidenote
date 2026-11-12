@@ -1,25 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 150" width="900" height="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="1271 empty screens looked at on the GPU; 1.2 s median; 97% kept off the paid agent">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 186" width="958" height="186" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="1271 empty screens looked at on the GPU; 1.2 s median; 97% kept off the paid agent">
+<defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="1" fill="#26272b"/></pattern></defs><rect x="0.5" y="0.5" width="957" height="185" rx="14" fill="#161719" stroke="#303236"/><rect x="0.5" y="0.5" width="957" height="185" rx="14" fill="url(#dots)"/><path d="M22,1 V185" stroke="#6b1e38" stroke-width="1.5"/>
+<g transform="translate(40,18)">
 <rect x="4.0" y="46" width="103.0" height="15" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(12 0)"/>
-<text x="6.0" y="58" font-size="40" font-weight="800" fill="#f0f6fc" data-box="4.0,211.0">1,271</text>
-<text x="6.0" y="92" font-size="13" font-weight="600" fill="#f0f6fc" data-box="4.0,211.0">empty screens checked</text>
-<text x="6.0" y="114" font-size="12.5" fill="#9198a1" data-box="4.0,211.0">on the GPU, with no</text>
-<text x="6.0" y="132" font-size="12.5" fill="#9198a1" data-box="4.0,211.0">API tokens spent</text>
-<path d="M225.0,8 V142" stroke="#3d444d" stroke-width="1"/>
+<text x="6.0" y="58" font-size="40" font-weight="800" fill="#e3e4e5" data-box="4.0,211.0">1,271</text>
+<text x="6.0" y="92" font-size="13" font-weight="600" fill="#e3e4e5" data-box="4.0,211.0">empty screens checked</text>
+<text x="6.0" y="114" font-size="12.5" fill="#b0b1b4" data-box="4.0,211.0">on the GPU, with no</text>
+<text x="6.0" y="132" font-size="12.5" fill="#b0b1b4" data-box="4.0,211.0">API tokens spent</text>
+<path d="M225.0,8 V142" stroke="#303236" stroke-width="1"/>
 <rect x="245.0" y="46" width="103.0" height="15" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(12 0)"/>
-<text x="247.0" y="58" font-size="40" font-weight="800" fill="#f0f6fc" data-box="245.0,436.0">1.2 s</text>
-<text x="247.0" y="92" font-size="13" font-weight="600" fill="#f0f6fc" data-box="245.0,436.0">median to decide</text>
-<text x="247.0" y="114" font-size="12.5" fill="#9198a1" data-box="245.0,436.0">that a screen has</text>
-<text x="247.0" y="132" font-size="12.5" fill="#9198a1" data-box="245.0,436.0">nothing to solve</text>
-<path d="M450.0,8 V142" stroke="#3d444d" stroke-width="1"/>
+<text x="247.0" y="58" font-size="40" font-weight="800" fill="#e3e4e5" data-box="245.0,436.0">1.2 s</text>
+<text x="247.0" y="92" font-size="13" font-weight="600" fill="#e3e4e5" data-box="245.0,436.0">median to decide</text>
+<text x="247.0" y="114" font-size="12.5" fill="#b0b1b4" data-box="245.0,436.0">that a screen has</text>
+<text x="247.0" y="132" font-size="12.5" fill="#b0b1b4" data-box="245.0,436.0">nothing to solve</text>
+<path d="M450.0,8 V142" stroke="#303236" stroke-width="1"/>
 <rect x="470.0" y="46" width="65.0" height="15" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(12 0)"/>
-<text x="472.0" y="58" font-size="40" font-weight="800" fill="#f0f6fc" data-box="470.0,661.0">97%</text>
-<text x="472.0" y="92" font-size="13" font-weight="600" fill="#f0f6fc" data-box="470.0,661.0">kept off the paid agent</text>
-<text x="472.0" y="114" font-size="12.5" fill="#9198a1" data-box="470.0,661.0">841 of 865 empty</text>
-<text x="472.0" y="132" font-size="12.5" fill="#9198a1" data-box="470.0,661.0">screens since Oct 28</text>
-<path d="M675.0,8 V142" stroke="#3d444d" stroke-width="1"/>
+<text x="472.0" y="58" font-size="40" font-weight="800" fill="#e3e4e5" data-box="470.0,661.0">97%</text>
+<text x="472.0" y="92" font-size="13" font-weight="600" fill="#e3e4e5" data-box="470.0,661.0">kept off the paid agent</text>
+<text x="472.0" y="114" font-size="12.5" fill="#b0b1b4" data-box="470.0,661.0">841 of 865 empty</text>
+<text x="472.0" y="132" font-size="12.5" fill="#b0b1b4" data-box="470.0,661.0">screens since Oct 28</text>
+<path d="M675.0,8 V142" stroke="#303236" stroke-width="1"/>
 <rect x="695.0" y="46" width="103.0" height="15" rx="4" fill="rgba(236,178,46,.78)" transform="skewX(-12) translate(12 0)"/>
-<text x="697.0" y="58" font-size="40" font-weight="800" fill="#f0f6fc" data-box="695.0,886.0">15.0k</text>
-<text x="697.0" y="92" font-size="13" font-weight="600" fill="#f0f6fc" data-box="695.0,886.0">tokens per empty screen</text>
-<text x="697.0" y="114" font-size="12.5" fill="#9198a1" data-box="695.0,886.0">what each one cost when</text>
-<text x="697.0" y="132" font-size="12.5" fill="#9198a1" data-box="695.0,886.0">the agent saw every screen</text>
-</svg>
+<text x="697.0" y="58" font-size="40" font-weight="800" fill="#e3e4e5" data-box="695.0,886.0">15.0k</text>
+<text x="697.0" y="92" font-size="13" font-weight="600" fill="#e3e4e5" data-box="695.0,886.0">tokens per empty screen</text>
+<text x="697.0" y="114" font-size="12.5" fill="#b0b1b4" data-box="695.0,886.0">what each one cost when</text>
+<text x="697.0" y="132" font-size="12.5" fill="#b0b1b4" data-box="695.0,886.0">the agent saw every screen</text>
+</g></svg>
