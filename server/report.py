@@ -3,10 +3,10 @@
   python -m server.report stats [--json]              live numbers from the running server
   python -m server.report events [-n N] [--errors]    the latest events from events.jsonl (--errors: the failures and
                                                       what held work back, the spend brake and a stuck model server)
-  python -m server.report report [--days D] [--json]  per-day summary of the event log, and the period's by engine
+  python -m server.report report [--days N] [--json]  per-day summary of the event log, and the period's by engine
 
 The event log is SIDENOTE_LOG_DIR/events.jsonl plus its rotated files (events.jsonl.1 ...). It prints in the terminal's
-language: SIDENOTE_LANG, else Korean for a Korean locale, else English (i18n.cli_lang).
+language, its help and its errors too: SIDENOTE_LANG, else Korean for a Korean locale, else English (i18n.cli_lang).
 
 The answers marked right or wrong in the panel (its Right and Wrong keys) are counted from their `verdict` events: an
 answer marked more than once counts once, as its last mark in the period and on the day it was given, and one whose mark
@@ -194,6 +194,10 @@ def report_data(n_days: int, log_dir: Path | None = None) -> dict:
     rows = []
     for day in sorted(days):
         d = days[day]
+        # A day whose events were only the server's own (a start, a setting changed, a capture program connecting) has
+        # nothing to count: its row of zeros hid "No records" for a period with no answers in it, here and in the panel
+        if not (d["answers"] or d["empty"] or d["followups"] or d["cancelled"] or d["errors"] or d["cost"] or d["judged"]):
+            continue
         med = lambda v: round(statistics.median(v), 2) if v else None
         rows.append({"day": day, "answers": d["answers"], "empty": d["empty"], "followups": d["followups"], "cancelled": d["cancelled"],
                      "errors": dict(d["errors"]), "elapsed_median": med(d["elapsed"]),
@@ -208,8 +212,8 @@ def cmd_report(args) -> int:
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return 0
     rows, period = data["days"], data["period"]
-    if not rows:
-        print(t("No records in the last {n} day(s)", n=args.days))
+    if not rows:   # no folder is said as events says it: "no records" read as if the folder had been looked in
+        print(t("No records in the last {n} day(s)", n=args.days) if LOG_DIR.is_dir() else t("No log folder: {dir}", dir=LOG_DIR))
         return 0
     # a time with its unit, as stats writes it (the medians are seconds); 0.0 is a value, not "none"
     sec = lambda v: "-" if v is None else t("{v} s", v=v)
@@ -486,14 +490,67 @@ def _pad(value, width: int, right: bool = False) -> str:
     return fill + s if right else s + fill
 
 
+def _whole(low: int):
+    """An argparse type: a whole number from `low` on, refused in the terminal's words otherwise (--days -3 was taken,
+    and the report said there were no records in the last -3 days)."""
+    def read(raw: str) -> int:
+        try:
+            value = int(raw)
+        except ValueError:           # a word, or past Python's limit on a number's digits
+            value = None
+        if value is None or value < low:
+            raise argparse.ArgumentTypeError(t("not a whole number from {low}: {value}", low=low, value=raw))
+        return value
+    return read
+
+
+def _argparse_words() -> dict:
+    """argparse's own words in the terminal's language: the usage line, the headings, -h's help and the errors it writes.
+    It writes each through gettext's `_`, a name of its module with no table for them, so they stayed English (main)."""
+    return {"usage: ": t("usage: "), "options": t("options"),
+            "show this help message and exit": t("show this help message and exit"),
+            "%(prog)s: error: %(message)s\n": t("%(prog)s: error: %(message)s\n"),
+            "the following arguments are required: %s": t("the following arguments are required: %s"),
+            "argument %(argument_name)s: %(message)s": t("argument %(argument_name)s: %(message)s"),
+            "invalid choice: %(value)r (choose from %(choices)s)": t("invalid choice: %(value)r (choose from %(choices)s)"),
+            "expected one argument": t("expected one argument"),
+            "unrecognized arguments: %s": t("unrecognized arguments: %s"),
+            "ignored explicit argument %r": t("ignored explicit argument %r")}
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse's parser, an argument's error worded in the terminal's language too: before Python 3.12 its "argument
+    --days: ..." was put together without `_`, so the table (_argparse_words) never saw it."""
+
+    def error(self, message: str):
+        err = sys.exc_info()[1]   # called while argparse handles the ArgumentError it raised, which names the argument
+        if isinstance(err, argparse.ArgumentError) and err.argument_name is not None:
+            message = t("argument %(argument_name)s: %(message)s") % {"argument_name": err.argument_name, "message": err.message}
+        super().error(message)
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="sidenote")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("stats"); s.add_argument("--json", action="store_true")
-    e = sub.add_parser("events"); e.add_argument("-n", type=int, default=30); e.add_argument("--errors", action="store_true")
-    r = sub.add_parser("report"); r.add_argument("--days", type=int, default=7); r.add_argument("--json", action="store_true")
-    args = ap.parse_args(argv)
-    i18n.set_lang(i18n.cli_lang())   # a terminal's language, not a panel's
+    i18n.set_lang(i18n.cli_lang())   # a terminal's language, not a panel's: the help and the errors below are in it too
+    words, own = _argparse_words(), argparse._
+    # argparse takes its words through `_` as it makes a parser (the headings, -h's help) and as it reads the command line
+    # (the usage line, the errors): given this table for both, and its own back after, help and errors exit included
+    argparse._ = lambda text: words.get(text, text)
+    try:
+        ap = _Parser(prog="sidenote")   # the commands' parsers are of its kind too (add_subparsers takes the parent's)
+        sub = ap.add_subparsers(dest="cmd", required=True, title=t("commands"), metavar="{stats,events,report}")
+        s = sub.add_parser("stats", help=t("live numbers from the running server"))
+        s.add_argument("--json", action="store_true", help=t("print it as JSON"))
+        e = sub.add_parser("events", help=t("the latest events from the log folder"))
+        # 0 shows none (cmd_events); a number under it is no count
+        e.add_argument("-n", type=_whole(0), default=30, metavar="N", help=t("how many of the latest (30)"))
+        e.add_argument("--errors", action="store_true", help=t("only the failures and what held work back"))
+        r = sub.add_parser("report", help=t("a summary per day, then of the whole period"))
+        # whole calendar days, today the first (report_data): none or fewer is no period
+        r.add_argument("--days", type=_whole(1), default=7, metavar="N", help=t("how many days, today included (7)"))
+        r.add_argument("--json", action="store_true", help=t("print it as JSON"))
+        args = ap.parse_args(argv)
+    finally:
+        argparse._ = own
     return {"stats": cmd_stats, "events": cmd_events, "report": cmd_report}[args.cmd](args)
 
 

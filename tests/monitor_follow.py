@@ -300,6 +300,19 @@ if has("ScreenFollow"):
     check("a monitor with a window of Skip windows on it is not moved to, and what it shows after is no new screen",
           set(seen) == {1}, seen)
 
+    # Moved to the other monitor, then a window of Skip windows comes up there: the monitor read is not looked at, so a new
+    # screen that rests on the chosen one takes the reading back within the hold, there being nothing to read where it is
+    s = Script()
+    for img in (slide(0), slide(0), slide(1), slide(1), slide(1)):
+        moved = s.step(m1=page(1), m2=img)
+    at = s.t - LOOK                                           # when it moved
+    seen = [s.step(m1=page(5), m2=None) for _ in range(3)]    # changing, then at rest two looks, on the chosen monitor
+    check("moved, then a window of Skip windows on the monitor read: a new screen resting on the chosen one takes the "
+          "reading back, within the hold", moved == 2 and seen == [2, 2, 1] and s.t - LOOK < at + 10.0 and s.f.following is None,
+          (moved, seen, s.t - LOOK - at))
+    seen = [s.step(m1=page(5), m2=slide(1)) for _ in range(8)]   # past the hold of that move too
+    check("...and the monitor left, once it shows again, does not take it back by what it shows then", set(seen) == {1}, seen)
+
     s = Script()
     for img in (slide(0), slide(0), slide(1), slide(1)):
         s.step(m1=page(1), m2=img)
@@ -447,6 +460,65 @@ if has("ScreenFollow") and has("watch_look"):
     cap.skip_now, cap.FrontWindow = real_skip, real_front
     check("a window of Skip windows on the other monitor: nothing of it grabbed, and no move there in the looks since",
           polls >= 10 and FakeMSS.grabs[2] == 0 and sender.following() in ("never", None), (polls, dict(FakeMSS.grabs), sender.caps))
+
+    # Moved to the other monitor, then a window of Skip windows comes up there, behind the window in front: nothing of that
+    # monitor is grabbed or sent, and following goes on looking at the chosen one, so a new problem resting there takes the
+    # reading back and goes out. The loop once stopped at the skip before following's look, and sent nothing for good.
+    FakeMSS.screens, FakeMSS.grabs = {1: page(1), 2: slide(0)}, Counter()
+    shows = {"vault": False}                                 # whether the window shows on monitor 2 now
+    real_skip, real_front = cap.skip_now, cap.FrontWindow
+    cap.skip_now = lambda front, words, mon: shows["vault"] and mon is FakeMSS.monitors[2]
+    cap.FrontWindow = lambda: types.SimpleNamespace(limit="", why="")
+    sender = FakeSender(skip_windows=["vault"])
+    stop, t, out = loop(sender)
+    until(lambda: FakeMSS.grabs[2] >= 2)                     # the other monitor looked at, at rest on its first slide
+    FakeMSS.screens[2] = slide(1)
+    moved = until(lambda: sender.following() == 2)
+    shows["vault"] = True                                    # a password manager comes up on monitor 2
+    skipped = until(lambda: any(c.get("skipping") is True for c in sender.caps), 5)
+    grabbed, sent_from = FakeMSS.grabs[2], len(sender.sent)
+    FakeMSS.screens[1] = page(9)                             # the next problem, on the chosen monitor
+    back = until(lambda: sender.following() is None, 8)
+    got = until(lambda: any(cap.distance(reading(shown(m))[0], reading(page(9))[0]) < 0.1 for m in sender.sent[sent_from:]), 5)
+    done(stop, t)
+    cap.skip_now, cap.FrontWindow = real_skip, real_front
+    said = out.getvalue()
+    check("moved, then a window of Skip windows on the monitor read: a new problem resting on the chosen monitor takes the "
+          "reading back, and the server is told", moved and skipped and back, (moved, skipped, sender.caps[-4:]))
+    check("...and that problem goes out", got, len(sender.sent) - sent_from)
+    check("...with nothing of the monitor showing the window grabbed meanwhile",
+          FakeMSS.grabs[2] == grabbed and not any(cap.distance(reading(shown(m))[0], reading(slide(1))[0]) < 0.1
+                                                  for m in sender.sent[sent_from:]), (FakeMSS.grabs[2] - grabbed,))
+    check("...the move back said in one line, as any move is",
+          said.count(cap.t("a new screen came to rest on monitor {to}: reading it instead of monitor {at}", to=1, at=2)) == 1, said[-600:])
+    check("...and the skip's end as the reading moving off, not as the window gone, which still shows there",
+          cap.t("Reading another monitor: capturing the screen again") in said
+          and cap.t("The window to skip is no longer on screen: capturing the screen again") not in said, said[-600:])
+
+    # Moved to the other monitor, then its grab fails (a UAC prompt, a monitor going away): the block starts again on the
+    # chosen monitor, which is said in the log, once, as a move is, and the server told. It went back there without a word.
+    FakeMSS.screens, FakeMSS.grabs = {1: page(1), 2: slide(0)}, Counter()
+    sender = FakeSender()
+    stop, t, out = loop(sender)
+    until(lambda: FakeMSS.grabs[2] >= 2)                     # the other monitor looked at, at rest on its first slide
+    FakeMSS.screens[2] = slide(1)
+    moved = until(lambda: sender.following() == 2)
+    real_grab, fails = FakeMSS.grab, {"left": 1}
+
+    def failing(self, mon):
+        """The next grab of monitor 2, the one read, fails: following's looks at the others never grab it"""
+        if mon is FakeMSS.monitors[2] and fails["left"]:
+            fails["left"] -= 1
+            raise OSError("the grab failed")
+        return real_grab(self, mon)
+    FakeMSS.grab = failing
+    back = until(lambda: sender.following() is None, 8)
+    again = until(lambda: FakeMSS.grabs[1] > 3 and cap.t("screen capture works again") in out.getvalue(), 8)
+    FakeMSS.grab = real_grab
+    done(stop, t)
+    said = out.getvalue()
+    check("moved, then the grab of the monitor read fails: back to the chosen monitor, said once in the log and told the server",
+          moved and back and again and said.count(cap.t("the capture failed: back to monitor {n}", n=1)) == 1, (moved, back, said[-500:]))
 
     def halves(left, right):
         """A monitor whose left half shows one screen and its right half another."""

@@ -110,14 +110,17 @@ def server_env(base: dict, data: Path, port: int) -> dict:
         env.setdefault(key, value)
     # The cloud agent: the one SIDENOTE_AGENT names, else the CLI this PC has, Claude Code first. The server's own
     # default is Claude Code, so a PC with Codex alone would otherwise start with an agent it cannot run.
-    if not env.get("SIDENOTE_AGENT") and not env.get("SIDENOTE_CLAUDE"):
+    # Not over an analyzer mode that names its agent (cli: Claude Code; api and claude: the Anthropic API; mock): the CLI
+    # found was set over it, and a PC set to the API ran Claude Code
+    if not env.get("SIDENOTE_AGENT") and not env.get("SIDENOTE_CLAUDE") and analyzer_of(env) not in ("cli", "api", "claude", "mock"):
         found = agent_found(env.get("PATH"))
         if found:
             env["SIDENOTE_AGENT"] = found
     # The CLI by its full path: on Windows an npm-installed one is claude.cmd or codex.cmd, which shutil.which finds and a
-    # bare name started by the server does not (CreateProcess adds .exe alone), so the panel said "Not installed"
-    cli = AGENT_CLIS.get(env.get("SIDENOTE_AGENT", ""))
-    if cli and not env.get("SIDENOTE_AGENT_BIN"):
+    # bare name started by the server does not (CreateProcess adds .exe alone), so the panel said "Not installed". The
+    # agent by its name as the server reads it (agent_of), and a path already given, under either of its names, is kept.
+    cli = AGENT_CLIS.get(agent_of(env))
+    if cli and not (env.get("SIDENOTE_AGENT_BIN") or "").strip() and not (env.get("SIDENOTE_CLAUDE_BIN") or "").strip():
         full = shutil.which(cli, path=env.get("PATH"))
         if full:
             env["SIDENOTE_AGENT_BIN"] = full
@@ -547,6 +550,20 @@ def analyzer_of(env: dict) -> str:
     return value if value in ("local", "agent", "cli", "api", "claude", "mock") else "local"
 
 
+def agent_of(env: dict) -> str:
+    """The cloud agent the server runs, read as it reads it (server/config.py): SIDENOTE_AGENT, else SIDENOTE_CLAUDE (its
+    earlier name), else the one the analyzer mode names; spaces round it dropped and in any case, its other names taken
+    for it (claude, cli and claude-cli are Claude Code, api the Anthropic API), and a name it does not know as Claude
+    Code. Compared as typed, those names found no CLI, and on Windows the server could not start claude.cmd."""
+    value = ((env.get("SIDENOTE_AGENT") or "").strip() or (env.get("SIDENOTE_CLAUDE") or "").strip()).lower()
+    if not value:   # the agent the analyzer mode names: "cli" was Claude Code alone, "api" and "claude" the API
+        value = {"cli": "claude-code", "api": "anthropic-api", "claude": "anthropic-api",
+                 "mock": "mock"}.get(analyzer_of(env), "claude-code")
+    value = {"cli": "claude-code", "api": "anthropic-api", "claude": "claude-code",
+             "claude-cli": "claude-code"}.get(value, value)   # the other names, SIDENOTE_CLAUDE's own among them
+    return value if value in ("claude-code", "codex", "anthropic-api", "off", "mock") else "claude-code"
+
+
 def ollama_needed(env: dict) -> bool:
     """True when the local model is meant to be this PC's Ollama on its own port and nothing answers there."""
     url = env.get("SIDENOTE_LOCAL_URL", "")
@@ -935,6 +952,18 @@ def check() -> int:
     return 1 if problems else 0
 
 
+def port_setting(env: dict) -> int:
+    """SIDENOTE_PORT read as the server reads a number (server/config.py, env_int): spaces round it dropped, "8778.0" as
+    8778, and what is not a port's number (a word, 0, 70000) as 8777. Read with int() alone, a word there ended the app
+    in a traceback before it had a log, and the Windows app, which has no console, ended without a word."""
+    raw = (env.get("SIDENOTE_PORT") or "").strip()
+    try:
+        port = int(float(raw)) if raw else PORT
+    except (ValueError, OverflowError):   # a word, or "inf"
+        return PORT
+    return port if 0 < port < 65536 else PORT
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     # The Windows app is built with no console, so it starts with no stdout or stderr at all.
@@ -954,8 +983,9 @@ def main(argv: list[str] | None = None) -> int:
         return capture(argv[1:])
     ap = argparse.ArgumentParser(prog="sidenote", description="Start Sidenote on this PC: the server, the capture "
                                  "program and the panel, without Docker.")
-    ap.add_argument("--port", type=int, default=int(os.environ.get("SIDENOTE_PORT") or PORT),
-                    help=f"the server's port on 127.0.0.1 (default {PORT})")
+    port = port_setting(os.environ)       # the default, which SIDENOTE_PORT moves
+    ap.add_argument("--port", type=int, default=port,
+                    help=f"the server's port on 127.0.0.1 (default {port}: SIDENOTE_PORT when it names one, else {PORT})")
     ap.add_argument("--no-browser", action="store_true", help="do not open the panel")
     ap.add_argument("--no-capture", action="store_true", help="do not start the capture program")
     ap.add_argument("--check", action="store_true",

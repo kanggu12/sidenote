@@ -41,7 +41,8 @@ import websocket  # websocket-client (sync)
 
 # ---------- the words it shows: its console lines, the tray menu, the notification ----------
 # Written in English; KO holds the Korean for each, character for character (tests/i18n_check.py holds every t() to it). The lines
-# of measurements (a frame's size, the looks' timings, sound lost) stay in English, numbers for a report as the server's log is. The language is English unless SIDENOTE_LANG
+# of measurements alone (a frame's size, what the looks cost) stay in English, numbers for a report as the server's log is; a line
+# that also says why (the sound dropped, and by whom) is translated with the rest. The language is English unless SIDENOTE_LANG
 # says ko (./sidenote passes on the one it was given, from .env or the environment). The system's language is not read: a
 # Korean Windows gave a capture in Korean beside a guide in English and a launcher that follows its terminal's locale.
 def ui_lang() -> str:
@@ -82,7 +83,11 @@ KO = {
     "The server asked this program to quit (./sidenote capture-stop)": "서버가 종료를 요청했습니다 (./sidenote capture-stop)",
     "Another capture program now feeds this server ({by}): this one stops": "다른 캡처 프로그램이 이제 이 서버에 보냅니다 ({by}): 이쪽은 멈춥니다",
     "New code was deployed: restarting at a quiet moment (./sidenote up)": "새 코드가 배포되어 한가할 때 다시 시작합니다 (./sidenote up)",
+    "A restart at a quiet moment was asked for: not taken by this program (--no-auto-update)": "한가할 때 다시 시작하라는 요청은 받지 않음 (--no-auto-update)",
     "The server asked this program to restart (./sidenote capture-restart)": "서버가 다시 시작을 요청했습니다 (./sidenote capture-restart)",
+    # the same two under the desktop app, which has no ./sidenote to name
+    "The server asked this program to quit": "서버가 종료를 요청했습니다",
+    "The server asked this program to restart": "서버가 다시 시작을 요청했습니다",
     "Not connected to the server, so nothing can be sent (--once)": "서버에 연결되지 않아 보낼 수 없습니다 (--once)",
     "Not taking the screen until the server is connected": "서버에 연결될 때까지 화면을 받지 않습니다",
     "Connected to the server again": "서버에 다시 연결됐습니다",
@@ -110,6 +115,9 @@ KO = {
     "To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal.":
         "끝내려면 트레이 아이콘의 끝내기, 또는 서버 터미널에서 ./sidenote capture-stop.",
     "To end it: ./sidenote capture-stop in the server's terminal.": "끝내려면 서버 터미널에서 ./sidenote capture-stop.",
+    # under the desktop app: its Quit ends the app, and there is no console for Ctrl+C nor ./sidenote to run
+    "To end it: Quit Sidenote in the tray icon.": "끝내려면 트레이 아이콘의 Sidenote 끝내기.",
+    "To end it: Quit Sidenote on the panel's Capture connection.": "끝내려면 패널의 캡처 연결에서 Sidenote 끝내기.",
     "The tray icon opens the panel and switches the screen and the sound on and off.": "트레이 아이콘에서 패널을 열고 화면과 소리를 켜고 끌 수 있습니다.",
     "Could not start again: {error}": "다시 시작하지 못했습니다: {error}",
     # a second start for a server that has its capture program already (OneCapture)
@@ -121,9 +129,14 @@ KO = {
     "Skipped window": "창 건너뜀",
     "A window to skip is on screen: no screen is sent while it is": "건너뛸 창이 화면에 보여 그동안 화면을 보내지 않습니다",
     "The window to skip is no longer on screen: capturing the screen again": "건너뛸 창이 더는 보이지 않아 다시 화면을 받습니다",
+    "Skip windows changed: capturing the screen again": "건너뛸 창 설정이 바뀌어 다시 화면을 받습니다",
+    "Reading another monitor: capturing the screen again": "다른 모니터를 읽어 다시 화면을 받습니다",
     "A window to skip is on screen, so nothing was sent (--once)": "건너뛸 창이 화면에 보여 보내지 않았습니다 (--once)",
     "The windows cannot be read here ({why}), so no window is skipped": "여기서는 창을 읽을 수 없어 건너뛰는 창이 없습니다 ({why})",
     "The windows behind the one in front cannot be listed here ({why}), so only that one is skipped": "여기서는 맨 앞 창 뒤의 창을 읽을 수 없어 맨 앞 창만 건너뜁니다 ({why})",
+    # why the windows cannot be read, in those two lines (FrontWindow.why): a system's error stays as the system says it
+    "no list of windows": "창 목록 없음",
+    "no word from the window manager": "창 관리자가 알려 주지 않음",
     # the tray menu
     "Open the panel": "패널 열기",
     "Screen capture": "화면 캡처",
@@ -139,17 +152,18 @@ KO = {
     "Screen": "화면",
     "Sound": "소리",
     "nothing": "없음",
-    # the console's lines of what it does (the lines of measurements, frame sizes, timings and lost sound, stay in English,
-    # numbers for a report, as the server's log)
+    # the console's lines of what it does (the lines of measurements alone, frame sizes and what the looks cost, stay in
+    # English, numbers for a report, as the server's log)
     "connected to {url}": "{url}에 연결됨",
     "cannot reach the server ({error}); retrying": "서버에 닿지 않아 다시 시도합니다 ({error})",
     "screen capture on (from the panel)": "화면 캡처 켬 (패널에서)",
     "screen capture off (from the panel)": "화면 캡처 끔 (패널에서)",
     "sound capture on (from the panel)": "소리 캡처 켬 (패널에서)",
     "sound capture off (from the panel)": "소리 캡처 끔 (패널에서)",
-    "scroll stitching on (from the panel)": "스크롤 이어 붙이기 켬 (패널에서)",
-    "scroll stitching off (from the panel)": "스크롤 이어 붙이기 끔 (패널에서)",
+    "Join scrolled screens on (from the panel)": "스크롤 이어 붙이기 켬 (패널에서)",
+    "Join scrolled screens off (from the panel)": "스크롤 이어 붙이기 끔 (패널에서)",
     "monitor {n} (from the panel)": "모니터 {n}번 (패널에서)",
+    "all monitors (from the panel)": "모든 모니터 (패널에서)",
     "following the changing screen on (from the panel)": "바뀐 화면 따라가기 켬 (패널에서)",
     "following the changing screen off (from the panel)": "바뀐 화면 따라가기 끔 (패널에서)",
     "{n} word(s) for windows to skip (from the panel)": "건너뛸 창 낱말 {n}개 (패널에서)",
@@ -159,13 +173,16 @@ KO = {
     "default is 1 (primary). 0 captures every monitor as one wide image.": "기본은 1(주 모니터). 0은 모든 모니터를 넓은 한 장으로 받습니다.",
     "monitor {asked} not found; {n} attached. Using 1.": "모니터 {asked}번이 없습니다. 연결된 {n}개 중 1번을 씁니다.",
     "./sidenote capture --list-monitors shows them.": "./sidenote capture --list-monitors로 볼 수 있습니다.",
+    "Monitor in Solver settings lists them.": "풀이 설정의 모니터에서 볼 수 있습니다.",
     "scroll-stitch": "스크롤 이어 붙이기",
     "single-shot": "한 장씩",
     "capturing monitor {i}: {w}x{h} ({mode})": "모니터 {i}번 캡처: {w}x{h} ({mode})",
+    "capturing all monitors: {w}x{h} ({mode})": "모든 모니터 캡처: {w}x{h} ({mode})",
     "the monitors changed {before} -> {after}; reading them again": "모니터가 바뀌어 다시 읽습니다: {before} -> {after}",
     # following the changing screen: a move says the two monitors' numbers and never what either shows
     "a new screen came to rest on monitor {to}: reading it instead of monitor {at}": "모니터 {to}번에 새 화면이 멈춰 {at}번 대신 읽습니다",
     "following is off: back to monitor {n}": "따라가기를 꺼서 다시 모니터 {n}번을 읽습니다",
+    "the capture failed: back to monitor {n}": "캡처가 실패해 다시 모니터 {n}번을 읽습니다",
     "{mode} mode": "{mode} 모드",
     "screen capture works again": "화면 캡처가 다시 됩니다",
     "the panel is on this screen ({n} window(s)); its area is painted over before sending": "패널이 이 화면에 있습니다 (창 {n}개). 보내기 전에 그 자리를 칠해 가립니다",
@@ -180,6 +197,21 @@ KO = {
     "capturing loopback: {device}": "루프백 캡처: {device}",
     "the default speaker changed; switching to it": "기본 스피커가 바뀌어 그쪽으로 옮깁니다",
     "could not record from the sound device ({error}); retrying every 3 s": "소리 장치에서 녹음하지 못했습니다 ({error}). 3초마다 다시 시도합니다",
+    "no loopback input on this Mac: install BlackHole (brew install blackhole-2ch), make a Multi-Output Device of the speakers "
+    "and BlackHole the output, or name an input with --audio-device":
+        "이 Mac에 루프백 입력이 없습니다: BlackHole을 설치하고 (brew install blackhole-2ch) 스피커와 BlackHole로 다중 출력 기기를 "
+        "만들어 출력으로 고르거나, --audio-device로 입력을 지정하세요",
+    # the sound lost: by the device, with how far behind this program was then (_gap_line), or on the way out
+    "the sound device dropped sound {n} time(s) in the last {sec} s; this program fell {late} s behind reading it (the device "
+    "holds {held} s; the longest step between two reads took {step} s)":
+        "소리 장치가 지난 {sec}초 동안 소리를 {n}번 놓쳤고, 이 프로그램이 {late}초 늦게 읽었습니다 (장치가 {held}초를 담음, "
+        "두 읽기 사이 가장 긴 작업 {step}초)",
+    "the sound device dropped sound {n} time(s) in the last {sec} s; this program was at most {late} s behind reading it (the "
+    "device holds {held} s), so it was not lost by reading late":
+        "소리 장치가 지난 {sec}초 동안 소리를 {n}번 놓쳤지만, 이 프로그램은 많아야 {late}초 늦었으므로 늦게 읽어 잃은 소리는 "
+        "아닙니다 (장치가 {held}초를 담음)",
+    "{n} second(s) of sound was dropped on the way out in the last {sec} s (the server or the network fell behind)":
+        "지난 {sec}초 동안 보내는 길에 소리 {n}초를 버렸습니다 (서버나 네트워크가 뒤처짐)",
     "could not open the log file {path}: {error}": "로그 파일을 열지 못했습니다 {path}: {error}",
     "no word from the server yet; starting with screen and sound on": "아직 서버의 말이 없어 화면과 소리를 켠 채로 시작합니다",
     "capturing.": "캡처 중.",
@@ -707,7 +739,7 @@ def _windows_mac(limit: int = 128) -> list:
     listed = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID)
     if listed is None:
-        raise RuntimeError("no list of windows")
+        raise RuntimeError(t("no list of windows"))   # said as why in the log's line, in its language
     out = []
     for w in listed:
         if len(out) >= limit:
@@ -967,7 +999,7 @@ class FrontWindow:
                 got = _windows_mac()
             else:
                 got = self.x11.stack() if self.x11 is not None else None
-            self.unlisted = "" if got is not None else "no list of windows"
+            self.unlisted = "" if got is not None else t("no list of windows")   # said in the log's line, in its language
             return got
         except Exception as exc:
             self.unlisted = f"{type(exc).__name__}: {exc}"
@@ -988,8 +1020,8 @@ class FrontWindow:
         if not self.limit:
             return ""
         if self.broke:
-            return self.broke
-        return "no word from the window manager" if self.limit == "none" else self.unlisted
+            return self.broke                     # the system's own error, as it says it
+        return t("no word from the window manager") if self.limit == "none" else self.unlisted
 
 
 def _vstack(top: Image.Image, bottom: Image.Image) -> Image.Image:
@@ -1353,6 +1385,7 @@ class Sender:
         self.quit_by_person = False  # Quit pressed in the tray: the one end that also ends a server this start brought up
         self.restart_asked = False   # the tray's Restart, ./sidenote capture-restart, or a deploy's (Updater)
         self.restart_pending = False # a deploy asked for one at a quiet moment (Updater)
+        self.auto_update = True      # a deploy's restart is taken (Updater): main() sets it off for --no-auto-update and --once
         self.last_frame_ts = 0.0     # when a screen last went out: a restart waits for the screen to rest
 
     @property
@@ -1421,15 +1454,27 @@ class Sender:
         """Keep reading the socket. websocket-client answers the server's keepalive pings
         only inside recv(), and uvicorn drops a client that never answers them after
         ping interval + timeout (~40s), which would also reset a scroll being stitched.
-        When the server does close, mark the socket dead so the next send reconnects."""
+        A message it cannot act on is let go and the reading goes on. When the reading ends (the server closed, a frame
+        the library would not take), mark the socket dead so the next send reconnects, and close it."""
         try:
             while True:
-                self._on_message(ws.recv())
+                raw = ws.recv()
+                try:
+                    self._on_message(raw)
+                except Exception:   # a message it cannot act on is let go: the reading goes on, and with it the pings
+                    pass
         except Exception:
             pass
         with self._lock:
             if self._ws is ws:
                 self._ws = None
+        # Nothing reads this socket any more, and nothing answers the server's pings on it: closed, so the server is not
+        # left holding a connection that looks open. Outside the lock: a close waits a moment for the server's reply.
+        try:
+            ws.close()
+            ws.shutdown()   # close() returns at once, the socket left open, when a close was sent already: shut either way
+        except Exception:
+            pass
 
     def _on_message(self, raw) -> None:
         """What the panel asked for: {"type": "control", "screen": bool, "audio": bool, "stitch": bool,
@@ -1438,6 +1483,9 @@ class Sender:
             msg = json.loads(raw)
         except Exception:
             return
+        if not isinstance(msg, dict):   # JSON but no object (a list, a number, a string): no message this program knows
+            return
+        app = os.environ.get("SIDENOTE_SUPERVISED") == "1"   # under the desktop app, which has no ./sidenote to name
         if msg.get("type") == "quit":
             if msg.get("reason") == "taken_over":   # another capture program connected to this server: it feeds it now
                 by = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", str(msg.get("by") or "?"))[:80]   # its words, no terminal codes
@@ -1445,18 +1493,25 @@ class Sender:
                 self.taken_over = True
             elif msg.get("reason") == "panel":     # Quit on the panel's Capture connection
                 print("[control] " + t("Quit from the panel"))
-            else:
-                print("[control] " + t("The server asked this program to quit (./sidenote capture-stop)"))
+            else:   # ./sidenote capture-stop or down; under the app, the app ending (or the API)
+                print("[control] " + (t("The server asked this program to quit") if app
+                                      else t("The server asked this program to quit (./sidenote capture-stop)")))
             self.quit_asked = True
             return
         if msg.get("type") == "restart":
             if self.taken_over:   # another program feeds the server: a copy of this one would take it back
                 return
             if msg.get("quiet"):           # a deploy with new code for this program: at a quiet moment (Updater)
+                if not getattr(self, "auto_update", True):   # --no-auto-update: no Updater runs to take it, so it is not
+                    # waited for; the code running now goes on until a restart is asked for (the tray's Restart capture).
+                    # Said as asked for, not as a deploy: the API asks for one too, and the desktop app passes the switch
+                    print("[control] " + t("A restart at a quiet moment was asked for: not taken by this program (--no-auto-update)"))
+                    return
                 print("[control] " + t("New code was deployed: restarting at a quiet moment (./sidenote up)"))
                 self.restart_pending = True
             else:   # the panel's Capture connection, or ./sidenote capture-restart: the tray's Restart, asked from elsewhere
                 print("[control] " + (t("Restarting from the panel") if msg.get("reason") == "panel"
+                                      else t("The server asked this program to restart") if app
                                       else t("The server asked this program to restart (./sidenote capture-restart)")))
                 self.restart_asked = self.quit_asked = True
             return
@@ -1470,11 +1525,13 @@ class Sender:
                 print("[control] " + said[(k, msg[k])])
         if isinstance(msg.get("stitch"), bool) and msg["stitch"] != self.wants["stitch"]:
             self.wants["stitch"] = msg["stitch"]
-            print("[control] " + (t("scroll stitching on (from the panel)") if msg["stitch"] else t("scroll stitching off (from the panel)")))
+            # by the panel's own name for the switch, as its Korean has always said it
+            print("[control] " + (t("Join scrolled screens on (from the panel)") if msg["stitch"] else t("Join scrolled screens off (from the panel)")))
         m = msg.get("monitor")
         if isinstance(m, int) and not isinstance(m, bool) and m >= 0 and m != self.wants["monitor"]:
             self.wants["monitor"] = m
-            print("[control] " + t("monitor {n} (from the panel)", n=m))
+            # 0 is All monitors, said by its name as the panel's Monitor says it, never as a monitor of that number
+            print("[control] " + (t("all monitors (from the panel)") if m == 0 else t("monitor {n} (from the panel)", n=m)))
         follow = msg.get("monitor_follow")    # absent from an older server's message: it stays off
         if isinstance(follow, bool) and follow != self.wants.get("monitor_follow", False):
             self.wants["monitor_follow"] = follow
@@ -1605,8 +1662,9 @@ class ScreenFollow:
     it brought a new screen when what rests now is one against what rested before (new_screen). A video never rests, so
     it never brings one. The reading moves to the monitor where the newest such screen came to rest since the last move,
     unless the monitor being read rested on a new screen of its own after that change began, and FOLLOW_HOLD_SEC after
-    the last move at the earliest. With the switch off, one monitor, or all of them read as one picture (0), it reads
-    the chosen one, and a change of any of those takes it back there at once."""
+    the last move at the earliest, unless the monitor being read could not be looked at (a window of Skip windows shows
+    there): nothing is read there to stay for. With the switch off, one monitor, or all of them read as one picture (0),
+    it reads the chosen one, and a change of any of those takes it back there at once."""
 
     def __init__(self, still: float, looks: int | None = None, hold: float | None = None):
         self.still = still            # signature MAD between two looks at or under which a screen is at rest
@@ -1642,7 +1700,8 @@ class ScreenFollow:
     def look(self, monitor: int, sig, prof, now: float) -> None:
         """One look at `monitor`: its signature and row profile at `now`. None for both when it could not be looked at
         (a window of Skip windows shows there, a grab that failed): no move goes there then, and its next look starts it
-        afresh."""
+        afresh. The monitor being read is fed None while a window of Skip windows shows there, and is then no place to
+        hold the reading at (pick)."""
         if sig is None:
             self.seen.pop(monitor, None)          # what it showed before says nothing of what it shows after
             return
@@ -1676,9 +1735,9 @@ class ScreenFollow:
         if not self.active:
             self.reading = self.chosen
             return self.reading
-        if now - self.moved < self.hold:          # moved a moment ago
+        read = self.seen.get(self.reading)        # None while the monitor read could not be looked at (look)
+        if now - self.moved < self.hold and read is not None:   # moved a moment ago, to a monitor that can be read
             return self.reading
-        read = self.seen.get(self.reading)
         best = None
         for k, m in self.seen.items():
             if k == self.reading or m["new"] is None or m["new"] <= self.moved:
@@ -1777,6 +1836,8 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
     said_why = ""         # why the windows cannot be read here, said once for each reason
     told_limit = ""       # what the server was last told of that (caps, skip_limit)
     skipping = False      # a window of Skip windows is on screen: nothing is grabbed or sent while it is
+    skipped_by = None     # the words a skip was last made by: a skip that ends as they change was ended by them, not by the window
+    skipped_on = None     # the monitor a skip was last made on: one that ends as following moves the reading was ended by the move
     slowed = False        # looking less often because the screen stopped changing: said on each flip
     looks: list[float] = []            # how long each look took, for the cost line below
     look_t0 = look_cpu0 = 0.0          # start of the window those looks are counted over
@@ -1801,6 +1862,34 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
         prev_prof = prev_full = last_full = None
         last_scroll = 0
 
+    def follow_watch(sct, shot, found, words, held: bool) -> None:
+        """Following the changing screen: every FOLLOW_LOOK_SEC the monitor read and each of the others (watch_look) are
+        looked at, read the same way, and the reading moves where a new screen came to rest (ScreenFollow). The monitor
+        read is looked at through this poll's grab (`shot`, its panel `found`), or not at all (None) while a window of
+        Skip windows shows there: the others are looked at all the same, so that a new screen that comes to rest on one of
+        them, the chosen monitor too, takes the reading away from it. `held`: a scrolled problem being joined there holds
+        the reading."""
+        nonlocal next_watch, reading, monitor, told_following
+        now = time.time()
+        if not follow.active or now < next_watch:
+            return
+        next_watch = now + FOLLOW_LOOK_SEC
+        follow.look(reading, *(follow_reading(shot, found) if shot is not None else (None, None)), now)
+        for k in range(1, len(sct.monitors)):
+            if k != reading:
+                follow.look(k, *watch_look(sct, sct.monitors[k], front, words), now)
+        if held:
+            follow.stay(now)
+        if follow.pick(now) != reading:   # one line for each move, which says monitors and nothing they show
+            print("[screen] " + t("a new screen came to rest on monitor {to}: reading it instead of monitor {at}",
+                                  to=follow.reading, at=reading))
+            reading, monitor = follow.reading, sct.monitors[follow.reading]
+            start_over()   # its screen goes out as soon as it is at rest, as a screen chosen in the panel
+        if follow.following != told_following:
+            told_following = follow.following
+            sender.set_caps(following=told_following)
+
+    reading = monitor = None   # the monitor read now, and its place: set at each start of the block below
     while not stop.is_set():
         try:
             with _grabber()() as sct:
@@ -1808,7 +1897,9 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                 index = asked if 0 <= asked < len(sct.monitors) else 1
                 if index != asked:
                     print("[screen] " + t("monitor {asked} not found; {n} attached. Using 1.", asked=asked, n=len(sct.monitors) - 1))
-                    print("         " + t("./sidenote capture --list-monitors shows them."))
+                    # the desktop app has no ./sidenote to run, and its panel lists the monitors where one is chosen
+                    print("         " + (t("Monitor in Solver settings lists them.") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
+                                          else t("./sidenote capture --list-monitors shows them.")))
                 monitor = sct.monitors[index]
                 sizes = [[m["width"], m["height"]] for m in sct.monitors[1:]]
                 # Following looks at monitors this tool's panel may be on, and paints the panel over first so that its
@@ -1821,7 +1912,9 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     told_monitors, told_sees = sizes, sees_windows
                 if not failing:
                     mode = t("scroll-stitch") if sender.wants["stitch"] else t("single-shot")
-                    print("[screen] " + t("capturing monitor {i}: {w}x{h} ({mode})", i=index, w=monitor["width"], h=monitor["height"], mode=mode))
+                    print("[screen] " + (t("capturing all monitors: {w}x{h} ({mode})", w=monitor["width"], h=monitor["height"], mode=mode)
+                                         if index == 0 else   # All monitors, by its name: mss's monitor 0 is no monitor of that number
+                                         t("capturing monitor {i}: {w}x{h} ({mode})", i=index, w=monitor["width"], h=monitor["height"], mode=mode)))
                 screens = display_signature()
                 # Each start of this block reads the chosen monitor: another one chosen in the panel, the monitors read
                 # again or a grab that failed leave nothing of what following had seen
@@ -1906,13 +1999,24 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                     if skip != skipping:           # a skip starts or ends: the panel's card and the tray say so
                         skipping = skip
                         print("[screen] " + (t("A window to skip is on screen: no screen is sent while it is") if skip else
+                                             # the panel's words changed (emptied, or none names it now): the window may be
+                                             # on screen still, so that is not what is said
+                                             t("Skip windows changed: capturing the screen again") if words != skipped_by else
+                                             # the reading moved to another monitor: the window may still show where it was
+                                             t("Reading another monitor: capturing the screen again") if monitor != skipped_on else
                                              t("The window to skip is no longer on screen: capturing the screen again")))
                         sender.set_caps(skipping=skip)
                     if skip:
+                        skipped_by = words         # the words it is skipped by, for the line when it ends
+                        skipped_on = dict(monitor) # and the monitor by its place and size (a block started again has new ones)
                         if args.once:              # the one screen asked for may not be sent
                             print("[screen] " + t("A window to skip is on screen, so nothing was sent (--once)"))
                             stop.set()
                             break
+                        # Nothing of this monitor is grabbed, but following goes on looking at the others, so a reading it
+                        # moved here leaves for a new screen that comes to rest elsewhere, on the chosen monitor too. No
+                        # join holds it: nothing is joined while nothing is grabbed.
+                        follow_watch(sct, None, None, words, False)
                         stop.wait(period)          # looked at again on the next poll: capture goes on once it is gone
                         continue
                     shot = sct.grab(monitor)
@@ -2001,26 +2105,10 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
 
                     prev_full = full   # the poll before the next one, for a join that starts then
 
-                    # Following the changing screen: every FOLLOW_LOOK_SEC the monitor read (this poll's grab, its panel
-                    # found above) and each of the others (watch_look) are looked at, read the same way, and the reading
-                    # moves where a new screen came to rest (ScreenFollow). A scrolled problem being joined holds it.
-                    now = time.time()
-                    if follow.active and now >= next_watch:
-                        next_watch = now + FOLLOW_LOOK_SEC
-                        follow.look(reading, *follow_reading(shot, found), now)
-                        for k in range(1, len(sct.monitors)):
-                            if k != reading:
-                                follow.look(k, *watch_look(sct, sct.monitors[k], front, words), now)
-                        if auto_stitch or (stitcher is not None and stitcher.joining()):   # its own join, or the panel's
-                            follow.stay(now)
-                        if follow.pick(now) != reading:   # one line for each move, which says monitors and nothing they show
-                            print("[screen] " + t("a new screen came to rest on monitor {to}: reading it instead of monitor {at}",
-                                                  to=follow.reading, at=reading))
-                            reading, monitor = follow.reading, sct.monitors[follow.reading]
-                            start_over()   # its screen goes out as soon as it is at rest, as a screen chosen in the panel
-                        if follow.following != told_following:
-                            told_following = follow.following
-                            sender.set_caps(following=told_following)
+                    # Following the changing screen (follow_watch): the monitor read through this poll's grab, its panel
+                    # found above, and the others now and then. A scrolled problem being joined, by its own join or the
+                    # panel's, holds the reading.
+                    follow_watch(sct, shot, found, words, auto_stitch or (stitcher is not None and stitcher.joining()))
 
                     # What the looking costs, written to the log now and then. The loop is this
                     # program's whole expense and from the server's side it is invisible, so it is
@@ -2062,6 +2150,14 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                 else:
                     print("[screen] " + t("could not capture the screen ({error}); retrying every 2 s", error=f"{type(exc).__name__}: {exc}"))
                 failing = True
+            # Following had moved the reading off the chosen monitor: the next start of the block reads the chosen one
+            # again and keeps nothing it had seen, which is said as a move is, in the log and to the panel (caps)
+            if follow.following is not None:
+                print("[screen] " + t("the capture failed: back to monitor {n}", n=follow.chosen))
+                follow.reset()   # as that start does: said once, however many starts fail after it
+            if follow.following != told_following:
+                told_following = follow.following
+                sender.set_caps(following=told_following)
             start_over()
             stop.wait(2.0)
 
@@ -2149,14 +2245,18 @@ def _gap_line(n: int, late: float, step: float) -> str:
     `late` is how far behind the device it was at worst (see audio_loop), `step` the longest stretch of its own
     work between two reads. Sound is lost by reading late only when the device's buffer fills, and a read takes
     at most AUDIO_READ_SEC of what is waiting before it returns, so a reader that lost sound that way comes back
-    at least AUDIO_BUFFER_SEC - AUDIO_READ_SEC behind: under that, the sound went missing on Windows' side."""
-    head = f"[audio] the sound device dropped sound {n} time(s) in the last {AUDIO_GAP_NOTE_SEC:.0f} s"
+    at least AUDIO_BUFFER_SEC - AUDIO_READ_SEC behind: under that, the sound went missing on Windows' side.
+
+    Said in the program's language, the numbers as they are: what it says is why the sound went missing."""
+    said = {"n": n, "sec": f"{AUDIO_GAP_NOTE_SEC:.0f}", "held": f"{AUDIO_BUFFER_SEC:g}"}   # in both of the lines below
     if late >= AUDIO_BUFFER_SEC - AUDIO_READ_SEC:   # far enough behind for the buffer to have filled
-        return (f"{head}; this program fell {late:.1f} s behind reading it (the device holds "
-                f"{AUDIO_BUFFER_SEC:g} s; the longest step between two reads took {step:.2f} s)")
+        return "[audio] " + t("the sound device dropped sound {n} time(s) in the last {sec} s; this program fell {late} s "
+                              "behind reading it (the device holds {held} s; the longest step between two reads took {step} s)",
+                              late=f"{late:.1f}", step=f"{step:.2f}", **said)
     # The buffer cannot have filled: the device, or the Windows audio engine, lost it before it was read.
-    return (f"{head}; this program was at most {late:.2f} s behind reading it (the device holds "
-            f"{AUDIO_BUFFER_SEC:g} s), so it was not lost by reading late")
+    return "[audio] " + t("the sound device dropped sound {n} time(s) in the last {sec} s; this program was at most {late} s "
+                          "behind reading it (the device holds {held} s), so it was not lost by reading late",
+                          late=f"{late:.2f}", **said)
 
 
 def _rise(lags: list) -> tuple:
@@ -2254,9 +2354,10 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
                     window["late"] = max(window["late"], lag - window["lo"])     # the most it rose above that
                     if time.time() - noted >= AUDIO_GAP_NOTE_SEC:
                         say_gaps()
-                        if behind:
-                            print(f"[audio] {behind} second(s) of sound was dropped on the way out in the last "
-                                  f"{AUDIO_GAP_NOTE_SEC:.0f} s (the server or the network fell behind)")
+                        if behind:   # in the program's language, as the line before it: it says who fell behind
+                            print("[audio] " + t("{n} second(s) of sound was dropped on the way out in the last {sec} s "
+                                                 "(the server or the network fell behind)",
+                                                 n=behind, sec=f"{AUDIO_GAP_NOTE_SEC:.0f}"))
                             behind = 0
                         # The next minute starts from the last three reads, not from this one alone: a read that
                         # comes back late returns the oldest sound first, and the packet the device flagged after its
@@ -2302,8 +2403,9 @@ def mac_loopback(sc) -> str:
     for m in sc.all_microphones():
         if any(w in str(m.name).lower() for w in MAC_LOOPBACK):
             return str(m.name)
-    raise RuntimeError("no loopback input on this Mac: install BlackHole (brew install blackhole-2ch), make a Multi-Output "
-                       "Device of the speakers and BlackHole the output, or name an input with --audio-device")
+    # said inside the line of a device that could not record, in the program's language as that line is
+    raise RuntimeError(t("no loopback input on this Mac: install BlackHole (brew install blackhole-2ch), make a Multi-Output "
+                         "Device of the speakers and BlackHole the output, or name an input with --audio-device"))
 
 
 LOG_MAX_BYTES = 4_000_000   # one file, kept small enough to open: the launcher rotates it at start
@@ -3217,11 +3319,13 @@ def start_tray(sender, stop: threading.Event, args):
         return state_text()
 
     def taking() -> list:
-        """What is being taken now, in the menu's words."""
+        """What is being taken now, in the menu's words: the sound only while a device for it is open as well, which caps
+        says (audio False: the sound library or the device failed, the panel's card says Device error), the switch on or not."""
         on = []
         if sender.wants.get("screen"):
             on.append(t("Screen"))
-        if sender.wants.get("audio", True) and not args.no_audio:   # the panel's key is "audio"
+        if (sender.wants.get("audio", True) and not args.no_audio            # the panel's key is "audio"
+                and getattr(sender, "caps", {}).get("audio") is not False):   # a program that says nothing of it: as before
             on.append(t("Sound"))
         return on
 
@@ -3321,7 +3425,8 @@ def start_tray(sender, stop: threading.Event, args):
         changes; once a second is enough for a menu nobody holds open while it changes."""
         shown = None
         while not stop.is_set():
-            now = (sender.connected, bool(sender.wants.get("screen")), bool(sender.wants.get("audio")), skipped())
+            # the switches' checks, and the state line: what is taken (a sound device that failed or came back too) and a skip
+            now = (sender.connected, bool(sender.wants.get("screen")), bool(sender.wants.get("audio")), tuple(taking()), skipped())
             if now != shown:
                 shown = now
                 try:
@@ -3668,6 +3773,8 @@ def main() -> None:
         sender.caps["flags"] = flags
     # which code this is, sent with every hello: ./sidenote up asks for a restart when it deployed other code
     sender.caps["code"] = code_mark(os.path.abspath(__file__))
+    # and whether that restart is taken: no Updater runs below for these two, so the request is said and let go
+    sender.auto_update = not (args.once or args.no_auto_update)
     sender.who = who_am_i(args)   # and what it is, for the panel's Capture connection
     # Connect and take the panel's switches before grabbing anything: with the screen switched off
     # nothing is captured at all, not even a first frame. No server yet: start as switched on.
@@ -3683,12 +3790,18 @@ def main() -> None:
         worker.start()
     tray = None if (args.once or args.no_tray) else start_tray(sender, stop, args)
     # Started without a window (--log, as ./sidenote capture does) there is no console for Ctrl+C to reach.
-    # with no tray icon (--no-tray, or no pystray) there is no Quit in it to name
-    print("[main] " + t("capturing.") + " " + (t("Ctrl+C to stop.") if not args.log else
-                                  t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
-                                  t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
+    # with no tray icon (--no-tray, or no pystray) there is no Quit in it to name. Under the desktop app neither a console
+    # nor ./sidenote is there: what it prints goes to capture.log, and its Quit Sidenote ends the app (desktop/app.py)
+    if os.environ.get("SIDENOTE_SUPERVISED") == "1":
+        how = (t("To end it: Quit Sidenote on the panel's Capture connection.") if tray is None
+               else t("To end it: Quit Sidenote in the tray icon."))
+    else:
+        how = (t("Ctrl+C to stop.") if not args.log else
+               t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
+               t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
+    print("[main] " + t("capturing.") + " " + how
           + ("" if tray is None else " " + t("The tray icon opens the panel and switches the screen and the sound on and off.")))
-    updater = None if (args.once or args.no_auto_update) else Updater(os.path.abspath(__file__), args.server)
+    updater = Updater(os.path.abspath(__file__), args.server) if sender.auto_update else None
 
     def wait_until_done() -> None:
         while not stop.is_set():   # a loop that is done (--once) ends this too

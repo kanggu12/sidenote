@@ -96,6 +96,8 @@ def group_practice(br, s):
     stored = p.js("() => [localStorage.getItem('sidenote-practice'), Date.now()]")
     check("on: kept in this browser, as when it was turned on", stored[0] is not None and abs(int(stored[0]) - stored[1]) < 5000, stored)
     check("...and the menu says so", p.js(seg)[0][1] == "true", p.js(seg))
+    tag = "() => { const g = document.getElementById('practice-tag'); return g && !g.hidden && g.getClientRects().length ? g.textContent.trim() : null; }"
+    check("...and the bar, beside the release, for as long as it is on", p.js(tag) == "연습", p.js(tag))
     check("the answers from before it was turned on show as they did", not held_state(p, 10)["held"] and not held_state(p, 11)["held"]
           and "옛 답 열쇠말" in text_of(p, 10) and "보이는 답" in text_of(p, 11), [held_state(p, 10), held_state(p, 11)])
     spy(p)
@@ -243,6 +245,7 @@ def group_practice(br, s):
     menu_pick(p, "off")
     check("off: every answer shows whole again", not any(held_state(p, i)["held"] for i in (12, 13, 14, 17)) and "한 줄 답" in text_of(p, 13) and "닫힌 동안의 답" in text_of(p, 17))
     check("...and the server's retry with it", "다시 푼 답 열쇠말" in text_of(p, 14), text_of(p, 14)[-200:])
+    check("...and the bar no longer says Practice", p.js(tag) is None, p.js(tag))
     menu_pick(p, "on")
     check("on again: those it kept back are kept back again, those opened stay open", held_state(p, 13)["held"] and held_state(p, 14)["held"] and not held_state(p, 12)["held"])
     # Two more answers: the one kept back is now older than the three that stay open

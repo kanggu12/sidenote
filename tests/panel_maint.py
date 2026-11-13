@@ -4,15 +4,18 @@
     PANEL_DIR=/an/older/copy/of/panel ...        # watch the checks fail there
 
 Checked: the gear menu opens it on its Checks with the keyboard on Close, Escape closes it and gives the keyboard back; the
-checks drawn as the server words them, a pill a state, a fix with its command and Copy, and a key to the section the fix
-is in; the Report's period asked of the server, its answers, marks by engine, source and type, first tokens, spend, the reasons
-analyses stopped in the server's words and the local model's troubles, the days the latest first, a period with none said;
-the Log's failures and everything (each asked of the server as such), the newest first, a failure in the bad colour,
-the server's log with a key that copies it; the Models with their marks, Remove asking twice before it sends model_delete,
-the answer said and the list read again, Download sending llm_pull and the bar of a download under way; a backup asked of
-the server and saved under the name it gives, with what it holds said, and the way to put one back for where the server
-runs; an answer the server could not give said; the arrows between the tabs; and at a phone's width nothing wider than the
-page, a command's words whole.
+log named apart from the answers kept; the checks drawn as the server words them, a pill a state, a fix with its command and
+Copy, and a key to where the fix is done, its words saying where: a section of the sheet, a section of Solver settings, the
+Capture connection or a switch on the page, each pressed (none for a place the panel does not know); no checks at all said;
+the Report's period asked of the server, its answers, marks by engine, source and type, first tokens, spend with the parts
+that make it up, the reasons analyses stopped in the server's words and the local model's troubles, the days the latest
+first, a period with none said; the Log's failures and everything (each asked of the server as such), the newest first, a
+failure in the bad colour, the server's log with a key that copies it; the Models with their marks, Remove asking twice
+before it sends model_delete, the answer said and the list read again, Download sending llm_pull and the bar of a download
+under way, also for a page opened while one runs, as the status or the list says it, and none left once it failed; a backup
+asked of the server and saved under the name it gives, with what it holds said, and the way to put one back for where the
+server runs; an answer the server could not give said in the warning colour, readable in both themes; the arrows between
+the tabs; and at a phone's width nothing wider than the page, a command's words whole.
 """
 from __future__ import annotations
 
@@ -33,8 +36,21 @@ CHECKS = [
     {"id": "server", "name": "Sidenote 서버", "state": "ok", "said": "버전 0.9.1", "fix": "", "cmd": "", "go": ""},
     {"id": "capture", "name": "캡처 프로그램", "state": "bad", "said": "연결 안 됨", "fix": "서버 터미널에서 실행", "cmd": "./sidenote capture", "go": ""},
     {"id": "speech", "name": "음성 인식", "state": "off", "said": "서버에서 꺼짐", "fix": "", "cmd": "", "go": ""},
-    {"id": "errors", "name": "오류", "state": "warn", "said": "최근 24시간에 2건", "fix": "기록에서 보기", "cmd": "", "go": "log"},
+    {"id": "errors", "name": "오류", "state": "warn", "said": "최근 24시간에 2건", "fix": "로그에서 보기", "cmd": "", "go": "log"},
 ]
+# fixes done outside the sheet, one of each kind of place the server names (go), and one the panel does not know
+GOES = [
+    {"id": "monitor", "name": "화면 캡처", "state": "warn", "said": "연결 뒤 화면 없음", "fix": "고른 모니터 확인", "cmd": "", "go": "settings:capture"},
+    {"id": "agent", "name": "Claude Code", "state": "off", "said": "꺼 둠", "fix": "풀이 설정에서 켜기", "cmd": "", "go": "settings:agent"},
+    {"id": "capture", "name": "캡처 프로그램", "state": "bad", "said": "연결 안 됨", "fix": "내 PC에서 시작", "cmd": "", "go": "connection"},
+    {"id": "screen", "name": "화면 캡처", "state": "off", "said": "꺼 둠", "fix": "캡처 카드에서 켜기", "cmd": "", "go": "switch:sw-screen"},
+    {"id": "later", "name": "다른 것", "state": "warn", "said": "확인 필요", "fix": "다른 곳에서", "cmd": "", "go": "elsewhere:somewhere"},
+]
+# what the keys of GOES say, and where each leaves the keyboard or what it opens
+GO_KEYS = "() => Object.fromEntries([...document.querySelectorAll('#maint-body .maint-check')].map((r) => [r.dataset.check, r.querySelector('[data-maint-go]')?.textContent ?? null]))"
+WHERE = """() => ({ maint: document.getElementById('maint-overlay').hidden === false, settings: document.getElementById('settings-overlay').hidden === false,
+  capture: document.getElementById('capture-overlay').hidden === false, tab: document.querySelector('#settings-body .set-tab[aria-selected="true"]')?.dataset.sec || '',
+  focus: document.activeElement?.id || '' })"""
 EVENTS = [{"ts": NOW - 10, "event": "agent_error", "id": 7, "error": "the plan's limit"},
           {"ts": NOW - 20, "event": "analysis_done", "id": 6, "engine": "local", "elapsed": 3.2}]
 LINES = [f"2026 INFO sidenote.app line {i}" for i in range(5)]
@@ -97,6 +113,15 @@ def group_open(br, s) -> None:
     check("the gear menu's Maintenance opens it on its Checks, the keyboard on Close", got["shown"] and got["focus"] == "maint-close"
           and got["tabs"][0] == ["check", "true"] and [t[0] for t in got["tabs"]] == ["check", "report", "log", "models", "backup"]
           and got["item"] == "관리", got)
+    # every item of the gear menu has its mark: one with none had the mark's square drawn filled in
+    marks = p.js("""() => [...document.querySelectorAll('.menu .item')].filter((b) => !b.hidden).map((b) => [b.id,
+      getComputedStyle(b, '::before').getPropertyValue('--m').trim() !== '' || getComputedStyle(b, '::before').maskImage !== 'none'])""")
+    check("every item of the gear menu has its own mark, Maintenance's among them", marks and all(m for _, m in marks), marks)
+    # 기록 is the answers kept (Clear history, a backup's history): the server's log is 로그 in its tab and the sheet's line
+    words = p.js("""() => ({ tab: document.querySelector('#maint-body [data-maint-sec="log"]')?.textContent || '',
+      lede: document.querySelector('#maint .lede')?.textContent || '', clear: document.getElementById('clear')?.textContent || '' })""")
+    check("the log is 로그 in its tab and the sheet's line, 기록 left to the answers kept", words["tab"] == "로그"
+          and words["lede"] == "점검, 보고서, 로그, 모델, 백업" and "기록" in words["clear"], words)
     p.page.keyboard.press("Escape")
     p.wait(150)
     check("Escape closes it and gives the keyboard back to the gear", not p.js(SHOWN) and p.js("() => document.activeElement.id") == "more",
@@ -115,13 +140,13 @@ def group_checks(br, s) -> None:
     rows = p.js("""() => [...document.querySelectorAll('#maint-body .maint-check')].map((r) => ({ id: r.dataset.check,
       name: r.querySelector('.lbl').textContent, state: r.dataset.state, colour: r.querySelector('.pill').dataset.state, pill: r.querySelector('.pill').textContent,
       said: r.querySelector('.help').textContent, copy: r.querySelector('[data-copy]')?.dataset.copy || '',
-      go: r.querySelector('[data-maint-go]')?.dataset.maintGo || '' }))""")
+      go: r.querySelector('[data-maint-go]')?.dataset.maintGo || '', key: r.querySelector('[data-maint-go]')?.textContent || '' }))""")
     check("a row a part, as the server words it, a pill a state", [r["id"] for r in rows] == ["server", "capture", "speech", "errors"]
           and [r["state"] for r in rows] == ["ok", "bad", "off", "warn"] and [r["pill"] for r in rows] == ["정상", "고칠 것", "꺼 둠", "확인 필요"]
           and rows[1]["said"] == "연결 안 됨", rows)
     check("...switched off on purpose in grey, as a card at rest: no fault", rows[2]["colour"] == "idle", rows[2])
     check("...a fix with its command and the key that copies it", rows[1]["copy"] == "./sidenote capture", rows[1])
-    check("...and a key to the section the fix is in", rows[3]["go"] == "log", rows[3])
+    check("...and a key to the section the fix is in, named by it", rows[3]["go"] == "log" and rows[3]["key"] == "로그 열기", rows[3])
     p.js("() => document.querySelector('#maint-body [data-maint-go=\"log\"]').click()")
     p.page.wait_for_timeout(400)
     check("which opens it", p.js("() => document.querySelector('#maint-body [data-maint-sec=\"log\"]').getAttribute('aria-selected')") == "true")
@@ -129,6 +154,64 @@ def group_checks(br, s) -> None:
     check("each section read from the server as it is shown", asked[:1] == ["/api/v1/check"] and "/api/v1/log" in asked
           and "/api/v1/log/server" in asked, asked)
     check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+    # a server that lists no checks at all: said, where nothing under Check again read as a list on its way
+    s.api["GET /api/v1/check"] = (200, {"ok": True, "checks": []}, {})
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    opened(p)
+    p.page.wait_for_function("() => !!document.querySelector('#maint-body .maint-tools .when')", timeout=4000)   # read: its time is said
+    said = p.js("() => [...document.querySelectorAll('#maint-body .set-pane > :not(.maint-tools)')].map((e) => [e.className, e.textContent])")
+    check("no checks at all: said under Check again", said == [["cap", "점검할 것 없음"]], said)
+    p.close()
+
+
+def group_goes(br, s) -> None:
+    """A fix done outside the sheet: its key says where it goes, and goes there, the sheet closed (one sheet at a time)."""
+    if not T.group("a fix done elsewhere"):
+        return
+    stand_api(s)
+    s.api["GET /api/v1/check"] = (200, {"ok": True, "checks": GOES}, {})
+
+    def fresh():
+        """Maintenance on its Checks, over a page that has the server's settings (their sections' names)"""
+        p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+        p.send(support.settings_message())
+        opened(p)
+        p.page.wait_for_function("() => document.querySelectorAll('#maint-body .maint-check').length > 0", timeout=4000)
+        return p
+
+    p = fresh()
+    keys = p.js(GO_KEYS)
+    capture = p.js("() => settingsMeta.sections.find(([s]) => s === 'capture')[1]")   # the Capture section's name, as its tab has it
+    check("each key says where it goes: a section of Solver settings by its tab's name, the agent's by the agent's",
+          keys.get("monitor") == f"풀이 설정의 {capture} 열기" and keys.get("agent") == "풀이 설정의 Claude 열기", keys)
+    check("...the Capture connection, and a switch on the page by what it turns on", keys.get("capture") == "캡처 연결 열기"
+          and keys.get("screen") == "화면 캡처 스위치로 이동", keys)
+    check("...and a place the panel does not know has no key", keys.get("later") is None, keys)
+    p.js("() => document.querySelector('#maint-body [data-check=\"monitor\"] [data-maint-go]')?.click()")   # none on an older panel: its checks fail on what is not there
+    p.wait(300)
+    got = p.js(WHERE)
+    check("pressed: Solver settings opens on that section, the sheet closed", got["settings"] and not got["maint"] and got["tab"] == "capture", got)
+    p.page.keyboard.press("Escape")
+    p.wait(150)
+    check("...and closed, the keyboard is back on the gear the sheet was opened from", p.js(WHERE)["focus"] == "more", p.js(WHERE))
+    errors = list(p.errors)                                   # what each page threw, said once at the end
+    p.close()
+    p = fresh()
+    p.js("() => document.querySelector('#maint-body [data-check=\"capture\"] [data-maint-go]')?.click()")
+    p.wait(300)
+    got = p.js(WHERE)
+    check("the Capture connection's key opens it, the sheet closed", got["capture"] and not got["maint"], got)
+    errors += p.errors
+    p.close()
+    p = fresh()
+    p.js("() => document.querySelector('#maint-body [data-check=\"screen\"] [data-maint-go]')?.click()")
+    p.wait(300)
+    got = p.js(WHERE)
+    check("a switch's key closes the sheet and puts the keyboard on that switch", not (got["maint"] or got["settings"] or got["capture"])
+          and got["focus"] == "sw-screen", got)
+    errors += p.errors
+    check("the pages threw nothing", not errors, errors[:2])
     p.close()
 
 
@@ -182,10 +265,11 @@ def group_report(br, s) -> None:
           and got["coding"] != "coding",
           r.get("verdicts"))
     check("the first token of each engine and way in, its median and slow tenth",
-          r.get("first") == ["첫 토큰", "", f"{got['agent']}, 화면: 중앙 1.5초 · 느린 10% 3초 · 답 6개\n이 PC의 모델, 음성: 중앙 0.8초 · 느린 10% 1.3초 · 답 2개"],
+          r.get("first") == ["첫 토큰", "", f"{got['agent']}, 화면: 중앙값 1.5초 · 느린 10% 3초 · 답 6개\n이 PC의 모델, 음성: 중앙값 0.8초 · 느린 10% 1.3초 · 답 2개"],
           r.get("first"))
+    # each amount held to the word before it by a no-break space, so a narrow line never starts with one
     check("the spend, all of it, and what the answers, follow-ups and empty screens took of it",
-          r.get("cost") == [f"{got['agent']} 비용", "$0.30", "답 $0.25 · 추가 질문 $0.050 · 풀 것 없음 $0"], r.get("cost"))
+          r.get("cost") == [f"{got['agent']} 비용", "$0.30", "답\u00a0$0.25 · 추가 질문\u00a0$0.050 · 풀 것 없음\u00a0$0"], r.get("cost"))
     check("why analyses stopped, in the server's words for each reason", r.get("cancelled") == ["답 전에 멈춤", "3", "새 화면 2 · 일시정지 1"],
           r.get("cancelled"))
     check("the local model's troubles, only those there were", r.get("local") == ["이 PC의 모델", "", "GPU 바쁨 2 · 멈춰서 다시 띄움 1"],
@@ -216,6 +300,18 @@ def group_report(br, s) -> None:
     said = p.js("() => [...document.querySelectorAll('#maint-body [data-sum=\"verdicts\"] :is(.num, .help)')].map((e) => e.textContent)")
     check("...and with no answer marked, the way to mark one", said == ["-", "답 카드의 맞음·틀림으로 채점"], said)
     check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+    # the agent paid for answers with no head line too (a refusal, a turn that ran away): the line names them, so its parts
+    # make up the total, $0.25 + $0.05 + $0 + $0.05 of $0.35
+    headless = {**REPORT, "days": [{**REPORT["days"][0], "cost_usd": 0.35}, REPORT["days"][1]],
+                "period": {**REPORT["period"], "cost_usd": {**REPORT["period"]["cost_usd"], "headless": 0.05, "headless_turns": 1}}}
+    s.api["GET /api/v1/report"] = (200, headless, {})
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    opened(p)
+    tab(p, "report")
+    p.page.wait_for_function("() => !!document.querySelector('#maint-body [data-sum=\"cost\"]')", timeout=4000)
+    said = p.js("() => [...document.querySelectorAll('#maint-body [data-sum=\"cost\"] :is(.num, .help)')].map((e) => e.textContent)")
+    check("the spend's parts add up to it: the answers with no head line named with the rest", said == ["$0.35", "답\u00a0$0.25 · 추가 질문\u00a0$0.050 · 풀 것 없음\u00a0$0 · 머리줄 없는 답\u00a0$0.050"], said)
     p.close()
     # English writes a day longer than Korean ("Fri, Nov 13" against "11.13(금)"): the days' table at a phone's width in it
     s.api["GET /api/v1/report"] = (200, {**REPORT, "days": [{**d, "day": f"2026-11-1{i}", "cost_usd": 0.534} for i, d in enumerate(REPORT["days"] * 3)]}, {})
@@ -281,6 +377,68 @@ def group_models(br, s) -> None:
     said = p.js("() => document.querySelector('#maint-body .set-pane .cap.warn')?.textContent || ''")
     check("a list the server could not give: said", "does not answer" in said, said)
     p.close()
+
+
+ROW_E4B = """() => { const r = [...document.querySelectorAll('#maint-body .maint-model')].find((x) => x.querySelector('.name').textContent === 'sidenote-gemma4:e4b');
+  return { pill: r?.querySelector('[data-maint-pulling]')?.textContent || '', key: r?.querySelector('[data-maint-pull]')?.textContent || '',
+           others: [...document.querySelectorAll('#maint-body [data-maint-pull]')].map((b) => b.disabled) }; }"""
+UNDER_WAY = {"model": "sidenote-gemma4:e4b", "status": "pulling", "completed": 4, "total": 10}
+
+
+def group_pulled_before(br, s) -> None:
+    """A page opened while a download runs: the server says it in its status and in the list, before any progress comes (and
+    none comes for minutes while a downloaded model is made ready)"""
+    if not T.group("a download under way before the page opened"):
+        return
+    stand_api(s)
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    p.send({"type": "status", "engines": {**h.ENGINES, "local": {**h.ENGINES["local"], "pulling": dict(UNDER_WAY)}}})
+    opened(p)
+    tab(p, "models")
+    p.page.wait_for_function("() => document.querySelectorAll('#maint-body .maint-model').length > 0", timeout=4000)
+    got = p.js(ROW_E4B)
+    check("said in the status alone: the model's pill shows how far it is, and no Download", got["pill"] == "받는 중 40%" and not got["key"], got)
+    p.send({"type": "llm_pull", "model": "sidenote-gemma4:e4b", "status": "failed", "error": "no space left"})
+    p.page.wait_for_function("() => !!document.querySelector('#maint-body [data-maint-pull]')", timeout=4000)
+    got = p.js(ROW_E4B)
+    check("...failed: Download again, nothing left of it as under way", got["key"] == "받기" and not got["pill"] and got["others"] == [False], got)
+    p.close()
+    s.api["GET /api/v1/models"] = (200, {**MODELS, "pulling": dict(UNDER_WAY)}, {})
+    p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
+    opened(p)
+    tab(p, "models")
+    p.page.wait_for_function("() => document.querySelectorAll('#maint-body .maint-model').length > 0", timeout=4000)
+    got = p.js(ROW_E4B)
+    check("said in the list alone: the same", got["pill"] == "받는 중 40%" and not got["key"], got)
+    check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+
+
+def group_unanswered(br, s) -> None:
+    """What the server could not give, in the warning colour (as a setting's reason is), not a note's grey, readable in both
+    themes"""
+    if not T.group("an answer the server could not give"):
+        return
+    stand_api(s)
+    for key in [k for k in s.api if k.startswith("GET ")]:
+        s.api[key] = (500, {"ok": False, "error": "database is locked"}, {})
+    for theme in ("light", "dark"):
+        p = Page(br, s, [row(1)], w=1440, h=900, settle=500, theme=theme)
+        opened(p)
+        p.page.wait_for_function("() => !!document.querySelector('#maint-body .cap.warn')", timeout=4000)
+        got = p.js("""() => { const said = document.querySelector('#maint-body .cap.warn'), pane = document.querySelector('#maint-body .set-pane');
+          const probe = (css) => { const e = document.createElement('p'); e.className = css[0]; e.style.color = css[1]; pane.append(e);
+            const c = getComputedStyle(e).color; e.remove(); return c; };
+          const r = said.getBoundingClientRect();
+          return { text: said.textContent, colour: getComputedStyle(said).color, warn: probe(['', 'var(--warn)']), note: probe(['cap', '']),
+                   box: [Math.floor(r.left), Math.floor(r.top), Math.ceil(r.right), Math.ceil(r.bottom)],
+                   rgb: getComputedStyle(said).color.match(/[\\d.]+/g).map(Number) }; }""")
+        ratio = h.contrast(got["rgb"], h.background_of(br, p.page.screenshot(), got["box"]))
+        check(f"{theme}: the server's words, in the warning colour where a note is grey", got["text"] == "database is locked"
+              and got["colour"] == got["warn"] and got["colour"] != got["note"], got)
+        check(f"{theme}: ...read at 4.5:1 or better", ratio >= 4.5, f"{ratio:.2f}")
+        check(f"{theme}: the page threw nothing", not p.errors, p.errors[:2])
+        p.close()
 
 
 def group_pulling(br, s) -> None:
@@ -369,8 +527,8 @@ def group_keys_and_phone(br, s) -> None:
                    out: [...document.querySelectorAll('#maint-body *')].filter((e) => { const r = e.getBoundingClientRect();
                      return r.width && (r.right > sheet.right + 1 || r.left < sheet.left - 1); }).map((e) => e.className || e.tagName).slice(0, 4) }; }""")
         check(f"at 390 px, {sec}: nothing wider than the sheet or the page", wide["side"] <= 0 and not wide["out"], wide)
-    split = p.js("() => [...document.querySelectorAll('#maint-body .way-cmd .tok')].filter((t) => t.getClientRects().length > 1).map((t) => t.textContent)")
-    check("...a command's words whole, the line broken between them", not split, split)
+        cut = p.js(h.CUT_PIECES, "#maint-body")
+        check(f"...{sec}: a command's words whole, the line broken between them", not cut, cut)
     check("the page threw nothing", not p.errors, p.errors[:2])
     p.close()
 
@@ -383,11 +541,14 @@ def main():
         s = Stand("maint")
         group_open(br, s)
         group_checks(br, s)
+        group_goes(br, s)
         group_report(br, s)
         group_log(br, s)
         group_models(br, s)
         group_pulling(br, s)
+        group_pulled_before(br, s)
         group_backup(br, s)
+        group_unanswered(br, s)
         group_keys_and_phone(br, s)
         br.close()
     return T.end()

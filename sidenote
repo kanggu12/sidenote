@@ -112,7 +112,7 @@ BUSY_MODEL="$(setting SIDENOTE_LOCAL_BUSY_MODEL auto)"         # for while the G
 # The models `llm pull` fetches when none are named: the ones set, or for "auto" the largest measured model that fits
 # this machine's GPU and its smaller one (server/models.py reads the profiles, server/hardware.py the GPU). Nothing
 # when no NVIDIA or AMD GPU has room for the smallest: the cloud agent then solves every problem. A Mac's own GPU is out
-# of a container's reach: with Docker on a Mac the model runs in Ollama for Mac, named in .env (README).
+# of a container's reach: with Docker on a Mac the model runs in Ollama for Mac, named in .env (docs/README.md, With Docker).
 models_to_pull() {
   python3 - "$LOCAL_MODEL" "$BUSY_MODEL" <<'PY'
 import sys
@@ -211,12 +211,21 @@ ask_yes() {
   case "$answer" in y|Y|yes|Yes|YES) return 0 ;; esac
   return 1
 }
+# -h or --help among the words after a command: that command's own lines of the help are printed, and nothing is done
+# (help_for, before the commands at the end). `./sidenote --help` itself is the whole help.
+help_asked() {
+  [ $# -gt 1 ] || return 1   # a command and at least one word after it
+  local a; shift             # the command's name is not one of its words
+  for a in "$@"; do case "$a" in -h|--help) return 0 ;; esac; done
+  return 1
+}
 # Reading /health, the GPU and the model list all go through python3. Without it the GPU above silently counted as none
-# and `up` ended in the middle of its status with status 127 and no word of why, so it is said first. help needs nothing.
+# and `up` ended in the middle of its status with status 127 and no word of why, so it is said first. help needs nothing,
+# and neither does a command's own help.
 if ! command -v python3 >/dev/null 2>&1; then
   case "${1:-help}" in
     help|-h|--help) ;;
-    *) die "$(L "python3 is not installed, and ./sidenote needs it to read the server's state and the GPU. Install it (on Ubuntu or Debian: sudo apt install python3) and run this again." \
+    *) help_asked "$@" || die "$(L "python3 is not installed, and ./sidenote needs it to read the server's state and the GPU. Install it (on Ubuntu or Debian: sudo apt install python3) and run this again." \
                 "python3가 설치되어 있지 않습니다. ./sidenote가 서버 상태와 GPU를 읽는 데 필요합니다. 설치한 뒤(Ubuntu, Debian: sudo apt install python3) 다시 실행하세요.")" ;;
   esac
 fi
@@ -318,6 +327,25 @@ winps() { (cd "$WIN_CWD" && "$PS_EXE" -NoProfile -Command "[Console]::OutputEnco
 # A single quote inside a PowerShell single-quoted string has to be written twice. Paths come from
 # Windows and can hold one (a user folder under a name with an apostrophe), and it ended the string.
 ps_quote() { printf '%s' "${1//\'/\'\'}"; }
+# A word as a shell reads it back, for the commands printed to be typed again (restore's, llm rm's): as it is when it
+# holds nothing a shell acts on, else in single quotes, a quote inside written '\''. Printed as it was, a path with a
+# space in it came back as two words, and restore refused them. Cut by prefix and suffix rather than with ${//}, whose
+# replacement text bash 5.2 reads for & and the backslash before one.
+shell_word() {
+  case "$1" in
+    *[![:alnum:]_./:@%+=,-]*|'') ;;                # something a shell acts on, or nothing at all: quoted below
+    *) printf '%s' "$1"; return 0 ;;               # letters, digits and the marks of a path or a model's name
+  esac
+  local rest=$1 out=''
+  while :; do
+    case "$rest" in *\'*) ;; *) break ;; esac      # no quote left in what is still to go
+    out=$out${rest%%\'*}"'\\''"                    # what comes before the quote, then the quote ended, escaped, reopened
+    rest=${rest#*\'}                               # and what comes after it
+  done
+  printf "'%s%s'" "$out" "$rest"
+}
+# Several words so, one space between them
+shell_words() { local w sep=""; for w in "$@"; do printf '%s%s' "$sep" "$(shell_word "$w")"; sep=" "; done; }
 
 # Every curl here talks to this PC's own server: a proxy set in WSL would send 127.0.0.1 to the proxy, and up then waited
 # four minutes to say the server was unreachable.
@@ -325,7 +353,18 @@ ps_quote() { printf '%s' "${1//\'/\'\'}"; }
 # `command` builtin fails inside a function called from `||`, `if` or `until`, as health is while the server starts
 CURL_BIN="$(command -v curl 2>/dev/null || echo curl)"
 curl() { "$CURL_BIN" --noproxy '*' "$@"; }
-health() { curl -fsS --max-time 3 "$URL/health" 2>/dev/null; }
+# The server's /health, printed when it is Sidenote's server that answers: JSON with "ok": true and the analyzer it runs,
+# as the desktop app reads it (desktop/app.py, health). Another program on the port answered 200 as well and was taken for
+# the server: with a web page status said it ran and then ended without a word, with JSON of its own ({"ok": true}) in a
+# traceback, and install said the server was already running. Anything else is no server here.
+health() {
+  local body
+  body="$(curl -fsS --max-time 3 "$URL/health" 2>/dev/null)" || return 1   # nothing answers, or not with 200
+  python3 -c 'import json, sys
+d = json.loads(sys.stdin.read())
+sys.exit(0 if isinstance(d, dict) and d.get("ok") is True and "analyzer" in d else 1)' <<<"$body" 2>/dev/null || return 1
+  printf '%s\n' "$body"
+}
 # The cloud agent signs in with this PC's own login: Claude Code's (~/.claude) or Codex's (~/.codex), each mounted
 # into the container. Claude Code on a Mac keeps its login in the Keychain, which the container cannot read: there the
 # server signs in with a token in .env (CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token`), so that token is the login.
@@ -366,7 +405,13 @@ in_image() {
   if running; then docker exec -e SIDENOTE_LANG="$UI_LANG" sidenote python -m server.report "$@"
   else
     docker image inspect sidenote:local >/dev/null 2>&1 || die "$(L "No image yet. Run ./sidenote up first" "이미지가 없습니다. 먼저 ./sidenote up을 실행하세요")"
-    docker run --rm -e TZ="$(host_tz)" -e SIDENOTE_LANG="$UI_LANG" -v "$LOG_PATH:/data/logs:ro" --entrypoint python sidenote:local -m server.report "$@"
+    # The log folder is mounted only when it is there. Docker makes a mount's missing folder itself, and each missing one
+    # above it, as root with mode 755: a report made the folder that up makes this user's alone (ensure_dirs), and left
+    # the folders above it root's. With none, the report is given the folder's path, which the container does not have
+    # either, and says there is no such folder.
+    local logs=(-v "$LOG_PATH:/data/logs:ro")
+    [ -d "$LOG_PATH" ] || logs=(-e SIDENOTE_LOG_DIR="$LOG_PATH")
+    docker run --rm -e TZ="$(host_tz)" -e SIDENOTE_LANG="$UI_LANG" "${logs[@]}" --entrypoint python sidenote:local -m server.report "$@"
   fi
 }
 
@@ -622,15 +667,18 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   [ -n "$xv" ] && export SIDENOTE_CODEX_VERSION="$xv"
   echo "$(L "${B}Starting the server${N} ${D}(the first time, and after an agent CLI update, building the image takes a while)${N}" \
             "${B}서버를 시작합니다${N} ${D}(처음과 에이전트 CLI 업데이트 뒤에는 이미지 빌드에 시간이 걸립니다)${N}")"
-  local rc=0 out; out="$(mktemp)"
-  local nopull=() services=()
   if offline; then
-    # Said here, in words that name the way out: compose would stop on a pull it was told not to make, or on a build's base image
+    # Said here, in words that name the way out: compose would stop on a pull it was told not to make, or on a build's base
+    # image. Before the temporary file below is made: an end here left it behind.
     local image
     for image in sidenote:local sidenote-runner:local; do
       docker image inspect "$image" >/dev/null 2>&1 || die "$(L "$image is not on this PC, and with SIDENOTE_OFFLINE=1 it is neither built nor pulled. Load the bundle: docs/air-gapped.md" \
                                                                 "$image 이미지가 이 PC에 없고, SIDENOTE_OFFLINE=1이면 빌드도 내려받기도 하지 않습니다. 묶음을 불러오세요: docs/air-gapped.md")"
     done
+  fi
+  local rc=0 out; out="$(mktemp)"   # what compose printed, read for its reason when it fails; each end below removes it
+  local nopull=() services=()
+  if offline; then
     nopull=(--pull never)
     # Named one by one to leave the search engine out: it only asks the internet, and its image need not come along
     services=(server runner)
@@ -977,6 +1025,16 @@ cmd_logs() {
 
 cmd_login() {   # the cloud agent uses this PC's own login; this signs it in when it is not
   local which="${1:-$AGENT}"   # ./sidenote login codex, or the agent the server is set to use
+  # The agent the server is set to use has no login when it is off, or the stand-in for tests: that is said, with the
+  # way to check a real one. Both were called an unknown agent. (Typed after login, either word is no agent, as below.)
+  if [ -z "${1:-}" ]; then
+    case "$AGENT" in
+      off) die "$(L "The agent is off (SIDENOTE_AGENT=off), so there is no login to check. To check one anyway: ./sidenote login claude-code, or ./sidenote login codex" \
+                    "에이전트가 꺼져 있어(SIDENOTE_AGENT=off) 확인할 로그인이 없습니다. 그래도 확인하려면: ./sidenote login claude-code 또는 ./sidenote login codex")" ;;
+      mock) die "$(L "The agent is the stand-in for tests (mock), which takes no login. To check a real one: ./sidenote login claude-code, or ./sidenote login codex" \
+                     "에이전트가 테스트용 목업(mock)이라 로그인이 필요 없습니다. 실제 에이전트를 확인하려면: ./sidenote login claude-code 또는 ./sidenote login codex")" ;;
+    esac
+  fi
   case "$which" in
     codex) login_codex ;;
     claude|claude-code|"") if [ "$ON_MAC" = 1 ]; then login_claude_token; return 0; fi; login_claude ;;
@@ -1377,12 +1435,13 @@ cmd_capture() {
     return
   fi
   need_win
-  # before the monitor list or the help is asked of it too: without Python cmd.exe's own English line was all, with status 0
+  # before the monitor list is asked of it too: without Python cmd.exe's own English line was all, with status 0
   win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
                                               "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
-  # Only listing the monitors, or the options: capture.py answers and ends, so it runs here and now.
+  # Only listing the monitors: capture.py answers and ends, so it runs here and now. (The options are in the launcher's
+  # own help, which capture --help prints before anything here runs.)
   for a in ${opts[@]+"${opts[@]}"}; do
-    case "$a" in --list-monitors|--help|-h)
+    case "$a" in --list-monitors)
       (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
       return 0 ;;
     esac
@@ -1551,8 +1610,8 @@ cmd_capture_here() {
   done
   packages="$(here_packages)" || { setup_capture_here; packages="$(here_packages)"; } \
     || die "$(L "The capture packages did not install. ./sidenote setup-capture shows why." "캡처 패키지가 설치되지 않았습니다. ./sidenote setup-capture로 원인을 확인하세요.")"
-  for a in ${opts[@]+"${opts[@]}"}; do
-    case "$a" in --list-monitors|--help|-h) "$(here_py)" -X utf8 -u client/capture.py ${opts[@]+"${opts[@]}"}; return 0 ;; esac
+  for a in ${opts[@]+"${opts[@]}"}; do   # the monitor list, as on WSL (capture --help is the launcher's own help)
+    case "$a" in --list-monitors) "$(here_py)" -X utf8 -u client/capture.py ${opts[@]+"${opts[@]}"}; return 0 ;; esac
   done
   [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
                                     "X11 화면이 없습니다(DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽으니 데스크톱 세션에서 실행하세요.")"
@@ -1590,7 +1649,9 @@ cmd_capture_here() {
     n=$((n + 1)); sleep 0.5
   done
   capture_started "$base" || { bad "$(L "The capture program did not start. See what stops it with ./sidenote capture --console." "캡처 프로그램이 시작되지 않았습니다. ./sidenote capture --console로 원인을 확인하세요.")"; return 1; }
-  if [ "$packages" = tray ]; then
+  local tray=1   # --no-tray: no icon, whatever the packages allow (it was said to be in the notification area)
+  for a in ${opts[@]+"${opts[@]}"}; do if [ "$a" = --no-tray ]; then tray=0; fi; done
+  if [ "$packages" = tray ] && [ "$tray" = 1 ]; then
     ok "$(L "Screen and sound capture started ${D}(a tray icon, where the desktop shows them)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(트레이 아이콘은 데스크톱의 알림 영역에)${N}")"
   else
     ok "$(L "Screen and sound capture started ${D}(no tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(트레이 아이콘 없이)${N}")"
@@ -1691,8 +1752,9 @@ llm_rm() {
   printf '%s' "$shown"
   if [ "$yes" != 1 ]; then
     # No terminal to answer at: the line that removes them without the question
-    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To remove them: ./sidenote llm rm ${asked[*]} --yes" \
-                         "답할 터미널이 없습니다. 지우려면: ./sidenote llm rm ${asked[*]} --yes")"
+    # (each name as a shell reads it back, so the line can be typed again as it is printed)
+    local again; again="./sidenote llm rm $(shell_words "${asked[@]}") --yes"
+    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To remove them: $again" "답할 터미널이 없습니다. 지우려면: $again")"
     if ! ask_yes "$(L "Remove them?" "지울까요?")"; then
       echo "  $(L "Nothing removed." "아무것도 지우지 않았습니다.")"
       exit 1
@@ -1857,7 +1919,7 @@ cmd_version() {   # what is actually installed and running, in one place
   local img; img="$(docker image inspect sidenote:local --format '{{slice .Id 7 19}}  {{slice .Created 0 10}}' 2>/dev/null || true)"
   printf '  %s%s\n' "$(L 'Server image    ' '서버 이미지     ')" "${img:-$(L "not built yet" "아직 빌드하지 않음")}"
   printf '  %s%s\n' "$(L 'Panel build     ' '패널 빌드       ')" \
-    "$(curl -fsS --max-time 3 "$URL/health" 2>/dev/null | json 'd.get("build") or "-"' 2>/dev/null || L "server off" "서버 꺼짐")"
+    "$(health | json 'd.get("build") or "-"' 2>/dev/null || L "server off" "서버 꺼짐")"   # Sidenote's server alone (health)
   local cv; cv="$(claude_version)"   # empty when this PC has no Claude Code, shown as "-"
   printf "  Claude Code     %s $(L "(this PC) / %s (container)" "(이 PC) / %s (컨테이너)")\n" "${cv:--}" \
     "$(docker exec sidenote claude --version 2>/dev/null | awk '{print $1}' || echo '-')"
@@ -2086,11 +2148,19 @@ a.close()'
 # sidenote-backup.txt (what made it, and when). It holds the answers and, with Keep what is heard, what people said: it
 # is this user's alone (umask 077), and a file already there is never written over.
 cmd_backup() {
-  local usage; usage="$(L "Usage: ./sidenote backup [file]   (by default ./sidenote-backup-<date>-<time>.tar.gz, in this folder)" \
-                          "사용법: ./sidenote backup [파일]   (기본은 이 폴더의 ./sidenote-backup-<날짜>-<시각>.tar.gz)")"
+  local usage; usage="$(L "Usage: ./sidenote backup [file or folder]   (by default ./sidenote-backup-<date>-<time>.tar.gz: in this folder, or in the one named)" \
+                          "사용법: ./sidenote backup [파일 또는 폴더]   (기본은 ./sidenote-backup-<날짜>-<시각>.tar.gz: 이 폴더나 적은 폴더에)")"
   [ $# -le 1 ] || die "$usage"
   case "${1:-}" in -*) die "$usage" ;; esac   # an option where the file's name goes: this command has none
-  local file; file="$(from_caller "${1:-sidenote-backup-$(date +%Y%m%d-%H%M%S).tar.gz}")"
+  local name; name="sidenote-backup-$(date +%Y%m%d-%H%M%S).tar.gz"   # the file's name when only a folder is given, or nothing
+  local file; file="$(from_caller "${1:-$name}")"
+  # A folder named (".", ~/backups, a name that ends in /) gets the file in it, under that name. It was taken for the
+  # file itself: "." was said to be a file there already, and a folder that was not there ended the same way.
+  case "$file" in */) [ -d "$file" ] || die "$(L "No such folder: $file" "그런 폴더가 없습니다: $file")" ;; esac
+  if [ -d "$file" ]; then
+    local folder; folder="$(cd "$file" 2>/dev/null && pwd)" || folder="$file"   # its path without a "." or a / at its end
+    file="${folder%/}/$name"
+  fi
   if [ -e "$file" ] || [ -L "$file" ]; then
     die "$(L "$file is there already, and a backup writes over no file. Name another one." "$file 파일이 이미 있습니다. 백업은 있는 파일에 덮어쓰지 않으니 다른 이름을 적으세요.")"
   fi
@@ -2162,7 +2232,8 @@ cmd_backup() {
   if [ "$left" -gt 0 ]; then
     echo "  ${D}$(L "Recently deleted is left out of it: $left" "최근 삭제는 넣지 않았습니다: ${left}개")${N}"
   fi
-  echo "  ${D}$(L "(to put it back: ./sidenote restore $file)" "(되돌리려면: ./sidenote restore $file)")${N}"
+  local again; again="./sidenote restore $(shell_word "$file")"   # to be typed back as it is printed
+  echo "  ${D}$(L "(to put it back: $again)" "(되돌리려면: $again)")${N}"
 }
 backup_cleanup() {   # backup's temporary files, by name, whatever ended it
   rm -f -- "$LOG_PATH/.backup.sqlite" 2>/dev/null || true   # the server's copy: never left in the folder
@@ -2234,9 +2305,9 @@ cmd_restore() {
   echo "  $(L "It replaces the history and settings in $LOG_PATH. What is there now is kept, in a before-restore folder beside them." \
               "$LOG_PATH의 기록과 설정을 백업의 것으로 바꿉니다. 지금 있는 것은 그 옆 before-restore 폴더에 남깁니다.")"
   if [ "$yes" != 1 ]; then
-    # no terminal to answer at: the line that restores without the question
-    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To restore it: ./sidenote restore $file --yes" \
-                         "답할 터미널이 없습니다. 복원하려면: ./sidenote restore $file --yes")"
+    # no terminal to answer at: the line that restores without the question, the file as a shell reads it back
+    local again; again="./sidenote restore $(shell_word "$file") --yes"
+    [ -t 0 ] || die "$(L "Asked with no terminal to answer at. To restore it: $again" "답할 터미널이 없습니다. 복원하려면: $again")"
     if ! ask_yes "$(L "Restore it?" "복원할까요?")"; then
       echo "  $(L "Nothing changed." "바꾼 것은 없습니다.")"
       exit 1
@@ -2594,7 +2665,7 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote llm rm MODEL   Remove a downloaded model, with its tuned copy (asks first; --yes does not)
 
   ${B}History and settings${N}
-    ./sidenote backup [FILE]  Copy the history and settings into one file (by default ./sidenote-backup-<date>-<time>.tar.gz)
+    ./sidenote backup [FILE]  Copy the history and settings into one file (by default ./sidenote-backup-<date>-<time>.tar.gz, here or in a folder named)
     ./sidenote restore FILE   Put a backup's history and settings in place (what was there is kept beside; asks first, --yes does not)
 
   ${B}Status and logs${N}
@@ -2655,7 +2726,7 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote llm rm 모델    받아 둔 모델과 그 조정본 지우기 (먼저 묻고, --yes면 묻지 않음)
 
   ${B}기록과 설정${N}
-    ./sidenote backup [파일]  기록과 설정을 파일 하나로 복사 (기본: ./sidenote-backup-<날짜>-<시각>.tar.gz)
+    ./sidenote backup [파일]  기록과 설정을 파일 하나로 복사 (기본: ./sidenote-backup-<날짜>-<시각>.tar.gz, 폴더를 적으면 그 안에)
     ./sidenote restore 파일   백업의 기록과 설정으로 바꾸기 (있던 것은 옆에 남김. 먼저 묻고, --yes면 묻지 않음)
 
   ${B}상태와 로그${N}
@@ -2680,6 +2751,33 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
   로그 폴더: $LOG_PATH
 KOHELP
 }
+
+# One command's lines of the help above, in its language: each line that starts with ./sidenote and the command (four
+# spaces in), with the lines under it indented further. The other names are the help's own (start is up, stop is down,
+# setup-windows is setup-capture). For llm and gpu the word after the command picks its line (llm pull, gpu off), and
+# all of theirs are printed when no line has that word. Fails, printing nothing, for a name that is no command's.
+help_for() {
+  local name="$1" sub="${2:-}" lines
+  case "$name" in start) name=up ;; stop) name=down ;; setup-windows) name="setup-capture" ;; --version) name=version ;; esac
+  case "$name" in llm|gpu) ;; *) sub="" ;; esac   # the only commands with words of their own after them
+  case "$sub" in -*) sub="" ;; esac               # an option is no such word
+  lines="$(cmd_help | awk -v c="$name" -v s="$sub" '
+    # a command line: is it this command, and its line for that word ("list|logs" has two)
+    /^    \.\/sidenote / { cur = ($2 == c); hit = (cur && s != "" && index("|" $3 "|", "|" s "|") > 0) }
+    # a line that names no command and is not indented under one (a heading, a blank, the CI switch): the entry has ended
+    !/^    \.\/sidenote / && !/^      / { cur = 0; hit = 0 }
+    cur { all = all $0 "\n" }
+    hit { some = some $0 "\n" }
+    END { printf "%s", (some != "" ? some : all) }')"
+  [ -n "$lines" ] || return 1
+  printf '%s\n' "$lines"
+}
+
+# A command asked for its help (-h or --help among its words): its lines of the help, and nothing is done. Taken as one
+# more word, --help stopped everything (down), ended the capture (capture-stop), opened the browser (open), made the
+# desktop shortcut (shortcut), ran pip (setup-capture) and asked for a model of that name (llm pull). A name that is no
+# command's goes on to the commands below, which say so.
+if help_asked "$@" && help_for "$1" "${2:-}"; then exit 0; fi
 
 case "${1:-help}" in
   install) shift; cmd_install "$@" ;;

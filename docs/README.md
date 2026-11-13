@@ -10,7 +10,8 @@ It runs in one of three ways:
   everything on this PC, with Ollama for the local model (section 3).
 - **With Docker** (Linux, Windows with WSL 2, or a Mac): `./sidenote <command>`, typed in a terminal in this repository's
   folder, runs the server in containers and adds web search for the local model and a sandbox for code checks.
-  `./sidenote help` lists the commands. Most of this guide describes this setup.
+  `./sidenote help` lists the commands; `--help` after a command prints its own lines of that list and does nothing
+  else. Most of this guide describes this setup.
 - **On Kubernetes**: the Helm chart (section 16).
 
 The panel, the server's messages and the commands speak English, or Korean when the browser (for the panel) or the
@@ -61,8 +62,8 @@ virtual environment of its own (`.venv-capture`).
 
 ## 2. Requirements
 
-What each setup needs before its first start. The memory, GPU and disk each model needs, with what was measured, are in the
-README's [What it runs on](../README.md#what-it-runs-on).
+What each setup needs before its first start. The memory, GPU and disk each model needs, with what was measured, are in
+[What was measured](#what-was-measured), at the end of this section.
 
 - **The app**: Windows 10 or 11; macOS 14 or newer on Apple silicon; or Linux with an X11 session and glibc 2.35 or
   newer (Ubuntu 22.04 or newer, Debian 12 or newer). [Ollama](https://ollama.com/download) runs the local model. On a
@@ -72,9 +73,8 @@ README's [What it runs on](../README.md#what-it-runs-on).
   and for an NVIDIA GPU on Linux the NVIDIA Container Toolkit. `./sidenote doctor` checks the Compose version. On Windows, also Python 3 for Windows (the `py` command); `./sidenote setup-capture`
   installs the capture program's packages into it.
 - **Docker on a Mac**: Docker Desktop, `python3`, and [Ollama for Mac](https://ollama.com/download), which runs the
-  local model on Apple silicon's GPU (Docker on a Mac has none): the README's
-  [local model](../README.md#the-local-model-optional) part. For the sound, a loopback input such as BlackHole. Not yet
-  measured on a Mac: how fast the models are there and how well they answer.
+  local model on Apple silicon's GPU (Docker on a Mac has none): [With Docker](#with-docker) says how. For the sound, a
+  loopback input such as BlackHole. Not yet measured on a Mac: how fast the models are there and how well they answer.
 - **The local model**: an NVIDIA or AMD GPU, or a Mac's Apple silicon. Sidenote reads its memory and picks the largest
   measured model that fits: `gemma4:26b` on 24 GB, `gemma4:e4b` on 10 to 22 GB, `gemma4:e2b` on 8 GB. A Mac's GPU works
   in the Mac's own memory and gets as much of it as macOS lets it use (two thirds on a Mac with up to 36 GB, three
@@ -86,6 +86,55 @@ README's [What it runs on](../README.md#what-it-runs-on).
   WSL (`~/.claude`, `~/.codex`); `./sidenote login codex` signs Codex in even without `codex` in WSL. The server uses the
   CLI's login as it is (section 3). Docker on a Mac cannot read Claude Code's login, which the Mac keeps in the
   Keychain: there `./sidenote login` gives the server a token of its own.
+
+### What was measured
+
+| | No local model | `gemma4:e4b` | `gemma4:26b` (recommended) |
+|:---|:---|:---|:---|
+| GPU | none: the agent answers | 10 GB or more, NVIDIA or AMD | 24 GB, such as an RTX 3090 or 4090 |
+| Memory | 8 GB | 16 GB | 32 GB |
+| A Mac's memory, shared with its GPU | any | 16 to 24 GB | 32 GB or more |
+| Disk, beside the app or the images | none | 6.6 GB | 18 GB |
+
+Measured on the test PC (Ryzen 9 9950X, RTX 4090 24 GB): the server takes about 0.1 GB of memory, the speech models
+1.8 GB, and Ollama with the 26b 14 GB of memory beside 22 GB of the GPU's; the rest of each figure is room for the system
+and the browser. The speech models run on the CPU and take 2.1 GB of disk: each sentence is written down by
+`large-v3-turbo`, a sentence of 5 s in about 4 s, and the live words by `small`, 15 s of steady speech in about 8 s of
+CPU time. **Speech model** in the panel's settings picks `small` for a lighter PC. The app downloads as 111 MB on
+Windows, 76 MB on macOS and 217 MB on Linux; with Docker, the images take about 8.5 GB, Ollama's 5.6 GB of it.
+
+How fast the models are on a Mac, and how well they answer there, has not been measured yet. CI builds the Mac app on
+macOS 15 and runs it there: its server and its capture program, opened as the Finder opens it, opened again and quit as
+macOS quits it at log out. CI also runs the Docker setup's control script and capture program on macOS. Outside CI the
+app has not been used on a Mac yet.
+
+| GPU memory | Local model | Right, of 56 | Code passing, of 7 | Spoken, of 8 | Empty screen |
+|:---:|:---:|---:|---:|---:|---:|
+| 24 GB or more | `gemma4:26b` | 51 | 7 | 8 | 1.3 s |
+| 10 to 22 GB | `gemma4:e4b` | 34 | 3 | 8 | 0.7 s |
+| 8 GB | `gemma4:e2b` | 24 | 1 | 7 | 0.65 s |
+| 6 GB or less, or no GPU | none: the agent answers | | | | |
+
+Each local model alone, with the cloud agent off, on an RTX 4090: 56 real screens and spoken questions with known
+answers, 7 of them coding problems whose code is run. The last column is how long it takes to decide that a screen has
+nothing to solve. With the agent on, what the small models miss most (code, multi-step reasoning) goes to the agent.
+Most of the screens are Korean and were answered in Korean; asked to answer in English, the 26b got 52 of the 56 right.
+
+Any other OpenAI-compatible server that takes images (LM Studio, llama.cpp's server, vLLM) can be used too: set
+`SIDENOTE_LOCAL_URL` (its `/v1` address) and `SIDENOTE_LOCAL_MODEL`. With Gemma 4 E4B, vLLM got 39 of 56 and llama.cpp's
+server 35, against Ollama's 38 in that separate run ([how to start
+them](air-gapped.md#with-a-model-server-you-already-run)). Reports from other GPUs are welcome: [open a hardware
+report](https://github.com/kanggu12/sidenote/issues/new?template=hardware_report.yml).
+
+| | The app on Windows | The app on macOS | The app on Linux (X11) | Docker | Kubernetes |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| NVIDIA GPU | yes | no | yes | yes | yes |
+| AMD GPU | yes, through Ollama | no | yes, through Ollama | Linux, with ROCm | yes, with ROCm |
+| Apple silicon's GPU | no | yes, through Ollama | no | on a Mac, through Ollama for Mac | no |
+| No GPU | the agent answers | the agent answers | the agent answers | the agent answers | the agent answers |
+| Web search for the local model | no | no | no | yes | yes |
+| Code checks in a sandbox | no | no | no | yes | yes |
+| [No internet](air-gapped.md) | yes | yes | yes | yes | yes |
 
 ## 3. First time
 
@@ -122,6 +171,11 @@ To install from a browser instead, download `Sidenote-windows-x64.zip`, `Sidenot
   choose **Open Anyway** at the bottom (on macOS 14, right-click the app, choose **Open**, then **Open** again). The
   quick start's `curl` leaves the zip unmarked, so macOS does not ask there.
 - **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
+
+To check a download: each release lists the SHA-256 of its files in `SHA256SUMS`. Run `sha256sum -c --ignore-missing
+SHA256SUMS` in the download folder; on macOS compare `shasum -a 256 Sidenote-macos-arm64.zip`, and in PowerShell
+`Get-FileHash Sidenote-windows-x64.zip`, with its line there. GitHub also records where each file was built (from 0.1.1
+on): `gh attestation verify Sidenote-windows-x64.zip --repo kanggu12/sidenote`.
 
 When it starts, the app starts Ollama if it is installed but not running, and while it runs it starts again any part it
 started that stops. **Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the
@@ -178,6 +232,20 @@ hand). The steps of `install`, by hand:
 ./sidenote setup-capture   # install the capture packages: into Windows Python, or .venv-capture on Linux and macOS
 ./sidenote shortcut        # a desktop shortcut that starts the server and the capture program (Windows)
 ./sidenote doctor          # check the setup
+```
+
+On a Mac, the first capture asks for **Screen Recording** for your terminal: allow it, then run `./sidenote capture
+--up` again. Docker on a Mac has no GPU, so the local model runs in Ollama on the Mac, which the server asks. In the
+`sidenote` folder, with [Homebrew](https://brew.sh):
+
+```bash
+M=e4b                       # 26b on a Mac of 32 GB or more
+brew install ollama && brew services start ollama
+ollama pull gemma4:$M
+printf "FROM gemma4:$M\nPARAMETER num_ctx 16384\nPARAMETER num_batch 1152\n" > /tmp/Modelfile
+ollama create sidenote-gemma4:$M -f /tmp/Modelfile
+printf "SIDENOTE_LOCAL_URL=http://host.docker.internal:11434/v1\nSIDENOTE_LOCAL_MODEL=sidenote-gemma4:$M\n" >> .env
+./sidenote up
 ```
 
 ### The cloud agent
@@ -246,7 +314,8 @@ what it is about works:
    switch, **Model** and **Problems the agent solves**. One of the two is enough.
 3. **Screen**: the capture as its card says it, the screen the server receives (**Show the screen it receives**),
    **Monitor**, **Follow the changing screen** and **Skip windows**. With no capture program connected it says that
-   comes first, with the way back to the first step. On a Mac the capture program needs **Screen Recording**.
+   comes first, with the way back to the first step, and **Show the screen it receives** waits for one. On a Mac the
+   capture program needs **Screen Recording**.
 4. **Sound**, which is optional: what is heard as it comes, with **Solve spoken problems** and **Speech language**.
 5. **Try it**: **Open the sample problem** opens a question in a new tab. With that tab on the screen, the step
    follows the answer it gets and offers **See the answer**.
@@ -255,9 +324,19 @@ Its settings are the rows of **Solver settings**, and change the same values.
 
 ## 4. Everyday use
 
-Start Sidenote, stop it, and lend the GPU to other work. With the app, start it (`Sidenote.exe`, **Sidenote** in
-Applications, or the Linux `Sidenote`) and quit it from its icon in the tray or the menu bar; the rest of this section
-is the Docker setup.
+Start Sidenote, stop it, and lend the GPU to other work.
+
+| To | The app | Docker |
+|:---|:---|:---|
+| Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
+| Open the panel | the tray icon (on macOS, **Open the panel** in its menu), or open the app again | `./sidenote open` |
+| See what runs | the panel's cards | `./sidenote status` |
+| Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
+| Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
+| Read the logs | `logs` in the data folder: `%LOCALAPPDATA%\Sidenote`, `~/Library/Application Support/Sidenote` or `~/.local/share/sidenote` | `./sidenote logs` |
+
+With the app, start it (`Sidenote.exe`, **Sidenote** in Applications, or the Linux `Sidenote`) and quit it from its icon
+in the tray or the menu bar; the rest of this section is the Docker setup.
 
 ```bash
 ./sidenote up        # start the server; when it is running, rebuild only what changed and show the status
@@ -365,7 +444,8 @@ of the same name. It is also the setup guide's first step.
   **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
   **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.
 - With none connected, it waits, with the seconds since the sheet opened, and past a minute says where to look for why
-  (`./sidenote capture --console` prints what stops it). When one connects, it says so with the PC it is on.
+  (`./sidenote capture --console` prints what stops it, with its **Copy** key). When one connects, it says so with the
+  PC it is on.
 - **The ways to start one**, by where the server runs: on the server's own PC `./sidenote capture` in its terminal, or the
   desktop shortcut on Windows; under **From another PC**, or first for a server in a cluster, three steps: this server's
   port on that PC (for a cluster, the `kubectl port-forward` the panel came through, with its namespace and service), the
@@ -489,8 +569,8 @@ When a newer release of Sidenote is out, the alert bar says so in a band of its 
 next release shows again. The server asks GitHub once a day (section 14); **Check for new versions** in **Solver
 settings** turns that off.
 
-A short notice says what just happened, such as an export written or a capture switched off, under the top bar for a few
-seconds. It has the band's form: a mark for its kind (a circle with *i* for something to know, a tick for what you asked
+A short notice says what just happened, such as an export written or a capture switched off, in the top bar for a few
+seconds (under it when its words need more room, such as on a phone). It never covers a band about a fault. It has the band's form: a mark for its kind (a circle with *i* for something to know, a tick for what you asked
 for done, a triangle for what was not done or failed), the fact in bold, then what follows or what to do. One about an
 earlier answer has **To the answer**. If the server connection drops or the capture program stops while you are reading
 further down, a notice says that too. A solution that was being written when the connection dropped stays as far as it
@@ -586,7 +666,8 @@ marks the current one, whose screen the right column shows.
 ### Practice
 
 Practice is for trying a problem before reading its solution. With **Practice** on in the gear menu, each answer that
-arrives shows its question and keeps the rest back. The answers that were there before stay as they are.
+arrives shows its question and keeps the rest back. The answers that were there before stay as they are. While it is on,
+the top bar says **Practice** beside the version.
 
 - **Show a hint** shows the solution's next part: its sections in their order (such as the approach, the code and the
   complexity), or its steps one by one. Beside it, how many hints there are and how many are shown.
@@ -1121,15 +1202,18 @@ switch and setting, and what the panels are told as it happens. See [API](API.md
 - **Checks**: each part in the order a first start sets it up, the server, the capture program, the screen, speech
   recognition, this PC's model, the agent, web search, the code runner, the disk, the GPU and the errors of the last
   day, with how it stands (**Fine**, **Look at it**, **Needs fixing**, **Switched off**, **Waiting**), what was found
-  and what to do: a command with its **Copy** key, or a key to the section the fix is in. **Check again** reads them
-  again. A part switched off on purpose is no fault. The disk is a fault under 1 GB free on the data folder's disk and a
-  warning under 5 GB.
+  and what to do: a command with its **Copy** key, or a key to where it is done, named for the place: a section of
+  this sheet or of **Solver settings**, the **Capture connection**, or a switch on its card, which the key closes the
+  sheet for and puts the keyboard on. **Check again** reads them again. A part switched off on purpose is no fault. The
+  disk is a fault under 1 GB free on the data folder's disk and a warning under 5 GB. The errors are the answers that
+  ended in one, as **Report** counts them: the agent failing at a question this PC's model then answered is none.
 - **Report**: what `./sidenote report` counts, for **Today**, **7 days** or **30 days**: the answers with the
   follow-ups, the screens with nothing to solve, the cancels and the errors; how many of the answers marked on their
   cards were right (**Right/judged**), all of them and by engine, by screen or speech and by type; how long each engine
-  took to its first word, the median and the slowest tenth; what the agent cost; why analyses stopped before their
-  answer; and the local model's troubles (the GPU busy, a timeout, a restart). Under them the days, the latest first,
-  with the answers, the right of the marked, the median response and the spend.
+  took to its first word, the median and the slowest tenth; what the agent cost, on the answers, the follow-ups, the
+  screens with nothing to solve and the answers with no head line; why analyses stopped before their answer; and the
+  local model's troubles (the GPU busy, a timeout, a restart). Under them the days, the latest first, with the answers,
+  the right of the marked, the median response and the spend.
 - **Log**: the latest events, newest first, the failures and what held work back (**Failures**, as
   `./sidenote events --errors`) or all of them (**Everything**), each with its fields; and the last 200 lines of the
   server's log, with a key that copies them.
@@ -1286,13 +1370,15 @@ leaves it out of what it compares; elsewhere the row is grayed out with the reas
   not count; a video never holds still. Something that redraws as a whole by itself, such as a dashboard turning its
   pages, counts as a new screen like any other.
 - It stays where it is when a new screen settled on the monitor it reads as well, while it joins a scrolled problem
-  there, and for 10 seconds after each move. A **Drawn region** is cleared when it moves, as when another **Monitor** is
-  chosen.
+  there, and for 10 seconds after each move, unless a window of **Skip windows** shows on the monitor it reads. A
+  **Drawn region** is cleared when it moves, as when another **Monitor** is chosen.
 - **Monitor** on the capture card names the monitor read, with **following** after it while that is not the chosen one
   (`#2 1920x1080 · following`). The capture program's log has one line for each move, with the two monitors' numbers
   and nothing of what they show.
 - The other monitors are looked at every 1.5 seconds and never sent. One that shows a window of **Skip windows** is not
-  looked at, and the panel itself is painted over first, so an answer appearing in it is no new screen. Each look is a
+  looked at, and the panel itself is painted over first, so an answer appearing in it is no new screen. While such a
+  window shows on the monitor it reads, nothing of that one is taken either, and the others are still looked at: a new
+  screen that settles on one of them, the chosen monitor too, takes the reading there. Each look is a
   screen grab, read at about 1280 pixels on its longer side: a look at a 1440x2560 monitor took about 26 ms of CPU,
   about 1 second a minute, and a look at a 3840x2160 one about 40 ms, under 2 seconds a minute, beside the 13 to 18
   seconds a minute the capture program spends reading a 3840x2160 monitor itself.
@@ -1616,6 +1702,8 @@ What leaves this PC, what can reach what, and what is kept.
 
 ### What is kept
 
+- What it keeps (the answers, and with **Keep what is heard** on, the sentences heard) is on this PC only, readable by
+  your user alone. `./sidenote backup` copies it, and `./sidenote uninstall --yes --data` removes it with the rest.
 - Full screen images are not saved. With **Keep answers** on, each answer keeps a small thumbnail of its screen in
   `history.sqlite` (90 days, 200 MB at most; a starred answer until it is unstarred).
 - With **Keep what is heard** on (off by default), every sentence heard is kept in `history.sqlite`, with its time, its
@@ -1700,10 +1788,11 @@ use on this PC too, and the capture packages in Windows Python, which other prog
 start Windows programs, `py -3 "<the repository>\client\launch.pyw" --remove` in a Windows terminal removes the
 shortcut and its icon.
 
-`./sidenote backup [FILE]` writes the history and the settings into one file (`.tar.gz`), and never over a file that is
-there. Recently deleted is left out of it, and a link among those files is refused. `./sidenote restore FILE` puts them
-back: it stops a running server for the swap and starts it again, and keeps what was there in a `before-restore-<when>`
-folder in the log folder, each one until `./sidenote uninstall --data`. `./sidenote llm rm MODEL` removes
+`./sidenote backup [FILE]` writes the history and the settings into one file (`.tar.gz`; given a folder, a file in it
+named for the date and time), and never over a file that is there. Recently deleted is left out of it, and a link among
+those files is refused. `./sidenote restore FILE` puts them back: it stops a running server for the swap and starts it
+again, and keeps what was there in a `before-restore-<when>` folder in the log folder, each one until
+`./sidenote uninstall --data`. `./sidenote llm rm MODEL` removes
 a model from the models' volume, and says so when it was the one set for solving. `restore` and `llm rm` ask first, and
 with no terminal to ask in they take `--yes` instead.
 
@@ -1809,7 +1898,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 어둡게 | Dark | **Settings** menu |
 | 풀이 설정 | Solver settings | **Settings** menu, the settings sheet |
 | 관리 | Maintenance | **Settings** menu, and its sheet |
-| 점검 · 보고서 · 기록 · 모델 · 백업 | Checks · Report · Log · Models · Backup | **Maintenance**: its sections |
+| 점검 · 보고서 · 로그 · 모델 · 백업 | Checks · Report · Log · Models · Backup | **Maintenance**: its sections |
 | 정상 · 확인 필요 · 고칠 것 · 꺼 둠 · 기다림 | Fine · Look at it · Needs fixing · Switched off · Waiting | **Maintenance**, **Checks**: how each part stands |
 | 다시 점검 | Check again | **Maintenance**, **Checks** |
 | 오늘 · 7일 · 30일 | Today · 7 days · 30 days | **Maintenance**, **Report**: the period it counts |
@@ -1821,7 +1910,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 기록 지우기 | Clear history | **Settings** menu |
 | 캡처 연결 | Capture connection | **Settings** menu, and its sheet; the tray menu; the setup guide's first step (**Connection** in English) |
 | 연결하기 | Connect | the capture card's foot and the alert bar, with no capture program connected |
-| 관리 | Manage | the capture card's foot, with a capture program connected |
+| 연결 관리 | Manage | the capture card's foot, with a capture program connected |
 | 캡처 프로그램 | Capture program | **Capture connection**: its card |
 | 다시 시작 | Restart | **Capture connection** |
 | 프로그램 끝내기 | Quit the program | **Capture connection** |

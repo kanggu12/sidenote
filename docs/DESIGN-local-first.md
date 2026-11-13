@@ -47,6 +47,16 @@ Other facts the design relies on:
   heavy work.
 - Without thinking, multiple choice with a trap option was wrong 8 of 8 times; hidden calculation 1 to 2 of 6.
 
+In the author's own use since, the screens with nothing to solve stayed on the GPU:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/chart-screening-dark.svg">
+  <img alt="Bar chart of screens with nothing to solve, by day from Oct 26 to Nov 2. On Oct 27, before local-first screening, 158 of them went to the paid agent. From Oct 28 on almost all stayed on the GPU: 459 on the GPU that day, and only a sliver sent to the agent on any day after" src="assets/chart-screening-light.svg" width="100%">
+</picture>
+
+<sub>From the author's own use, Oct 26 to Nov 2, read from Sidenote's event log. Before local-first screening, an
+empty screen sent to the agent cost a median of 15.0k input tokens.</sub>
+
 ## 3. Pipeline
 
 <picture>
@@ -540,3 +550,17 @@ against the facts of the day they were measured (the newest Ollama was then v0.4
    133.3 (the fastest rate then; the usual rate is now the median); the next two went to the e4b (57 s with the model
    change, then 18 s), all three answers right. The e4b is pulled with the default model; the panel can switch this
    off or pick another pulled model.
+
+## 14. Beside other tools
+
+What this design does that the tools near it do not, and the one thing it leaves out by choice:
+
+| | Sidenote | Interview and meeting copilots | Screen recorders with search | Local screen agents |
+|:---|:---:|:---:|:---:|:---:|
+| Answers the problem on screen as it appears | yes | yes | no, they search what was seen | some |
+| A model on your own GPU looks first | yes | rarely | for indexing | yes |
+| Uses your Claude Code or Codex sign-in | yes | rarely | no | no |
+| Picks a model for your GPU's memory | yes | no | no | no |
+| Runs code answers on the problem's examples | yes | no | no | no |
+| Hides itself from screen sharing and proctors | no, by design | several do | no | no |
+| License | MIT | many closed, some GPL | mixed | mixed |

@@ -57,7 +57,8 @@ The icon in the notification area has **Open the panel**, **Screen capture**, **
 after a start that brought the server up, which ends that server too), in Korean with
 `SIDENOTE_LANG=ko`
 ([section 18 of the user guide](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#18-panel-labels) lists
-each label). The line under **Open the panel** says what is being sent. On Linux the icon appears where the desktop
+each label). The line under **Open the panel** says what is being sent: the sound only while its device is open, as the
+panel's sound card says. On Linux the icon appears where the desktop
 shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu.
 
 <img alt="The tray menu under sidenote capture v0.8.0: Open the panel; the state, Capturing: Screen · Sound; the Screen
@@ -79,7 +80,9 @@ With several monitors the panel's **Monitor** picks the one the program reads. *
 where a new screen settled: a large part of that monitor changed, held still for two looks, and is not the same lines
 moved up (a chat taking a message). It goes back to the chosen monitor the same way, and stays at least 10 seconds after
 a move. What it sees of the other monitors stays in the program, compared and never sent; a monitor that shows a window
-of **Skip windows** is not looked at, and this tool's own panel is painted over first. Each move is one line of the log,
+of **Skip windows** is not looked at, and this tool's own panel is painted over first. While one shows on the monitor it
+reads, the others are still looked at, and a new screen settling on one of them, the chosen monitor too, takes the
+reading there without the 10 seconds. Each move is one line of the log,
 with the two monitors' numbers, and the program tells the server which monitor it reads (`following`), which the
 panel's capture card shows. A program or a server from before this setting leaves it off. Each look is a screen grab,
 read at about 1280 pixels on its longer side: a look at a 1440x2560 monitor took about 26 ms of CPU, and at a 3840x2160

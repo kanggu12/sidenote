@@ -10,10 +10,12 @@ stitcher away on the poll after it was made.
 """
 import base64
 import io
+import os
 import sys
 import threading
 import time
 import types
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "client"))   # client/ of the repository
@@ -167,6 +169,104 @@ real.quit_asked = False
 real._on_message('not json')
 real._on_message('{"type": "other"}')
 check("a message it does not know does not end it", real.quit_asked is False, str(real.quit_asked))
+# Join scrolled screens switched from the panel is said by the panel's name for it, in English too ("scroll stitching")
+lang, capture.LANG = capture.LANG, "en"
+with redirect_stdout(io.StringIO()) as out:
+    real._on_message('{"type": "control", "stitch": true}')
+capture.LANG = lang
+check("Join scrolled screens switched from the panel is said by the panel's name for it", "Join scrolled screens on (from the panel)" in out.getvalue(),
+      out.getvalue())
+
+# Under the desktop app (SIDENOTE_SUPERVISED) there is no ./sidenote to name: a quit or a restart through the server comes
+# from the app ending or from the API there, and the lines said ./sidenote capture-stop and capture-restart all the same
+said = {}
+for kind, message in (("quit", '{"type": "quit"}'), ("restart", '{"type": "restart"}')):
+    for app in (False, True):
+        os.environ.pop("SIDENOTE_SUPERVISED", None)
+        if app:
+            os.environ["SIDENOTE_SUPERVISED"] = "1"
+        real.quit_asked = real.restart_asked = False
+        real.taken_over = False
+        with redirect_stdout(io.StringIO()) as out:
+            real._on_message(message)
+        said[(kind, app)] = out.getvalue()
+os.environ.pop("SIDENOTE_SUPERVISED", None)
+check("a quit or a restart through the server names ./sidenote where it is run, and not under the desktop app",
+      "./sidenote capture-stop" in said[("quit", False)] and "./sidenote capture-restart" in said[("restart", False)]
+      and not any("./sidenote" in said[(k, True)] for k in ("quit", "restart")) and all(said.values()), said)
+
+# The panel's All monitors is monitor 0 to mss, and the program said "monitor 0" for it
+with redirect_stdout(io.StringIO()) as out:
+    real._on_message('{"type": "control", "monitor": 0}')
+    real._on_message('{"type": "control", "monitor": 2}')
+check("All monitors chosen in the panel is said by its name, another monitor by its number",
+      capture.t("all monitors (from the panel)") in out.getvalue() and capture.t("monitor {n} (from the panel)", n=2) in out.getvalue()
+      and capture.t("monitor {n} (from the panel)", n=0) not in out.getvalue(), out.getvalue())
+real.wants["monitor"] = 1
+
+# What the server sends that is JSON but no object (a list, a number, a string): read as a message, it raised in the reading
+# thread, which ended there. What the server said after it was never taken, nothing answered its pings, and the socket was
+# left open with nothing reading it. And a socket whose reading ends (a frame the library will not take) is closed.
+from websockets.sync.server import serve      # noqa: E402  (a package of the server's: server/requirements.txt)
+
+
+class Peer:
+    """The server's side of one connection, run in a thread: it sends `script` after the hello, and notes the close."""
+
+    def __init__(self, script):
+        self.script, self.sent, self.closed = script, threading.Event(), threading.Event()
+        self.server = serve(self.handle, "127.0.0.1", 0)
+        self.url = f"ws://127.0.0.1:{self.server.socket.getsockname()[1]}/ingest"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def handle(self, ws):
+        ws.recv()                                 # the program's hello
+        for raw, text in self.script:
+            ws.send(raw, text=text)
+        self.sent.set()
+        try:
+            while True:
+                ws.recv(timeout=30)               # until the program closes it, or this suite lets it go below
+        except TimeoutError:
+            return
+        except Exception:
+            self.closed.set()
+
+    def end(self, held):
+        """The program's socket shut from this side, whatever the program did with it, and the server closed: its
+        connection's thread is no daemon, and one left waiting would keep this suite from ending."""
+        if held is not None:
+            held.abort()                          # wakes a read still waiting on it
+            held.shutdown()
+        self.server.shutdown()
+
+
+def wait(cond, limit=5.0):
+    end = time.time() + limit
+    while time.time() < end and not cond():
+        time.sleep(0.05)
+    return cond()
+
+
+peer = Peer([(raw, True) for raw in ("[1, 2]", "42", '"text"', "null", '{"type": "control", "screen": false}')])
+prog = capture.Sender(peer.url)
+with redirect_stdout(io.StringIO()):
+    prog.keepalive()                              # connects, says its hello, and starts reading
+    held = prog._ws                               # the socket it read, for the end below
+    taken = peer.sent.wait(5) and wait(lambda: prog.wants["screen"] is False)
+check("JSON that is no object is let go: the reading goes on, and the message after it is taken",
+      taken and prog.connected and not peer.closed.is_set(), (prog.wants["screen"], prog.connected))
+peer.end(held)
+
+peer = Peer([(b"\xff\xfe", True)])                # a text frame that is no UTF-8: the library raises as it reads it
+prog = capture.Sender(peer.url)
+with redirect_stdout(io.StringIO()):
+    prog.keepalive()
+    held = prog._ws
+    ended = peer.sent.wait(5) and wait(lambda: not prog.connected)
+    shut = peer.closed.wait(8)                    # the program's own close, before this suite shuts anything
+check("a socket whose reading ended is closed, not left open with nothing reading it", ended and shut, (ended, shut))
+peer.end(held)
 
 # No server to send to: the loop must not grab and encode screens for nobody (a 4K PNG three
 # times a second on the PC this tool is supposed to leave alone).
@@ -198,6 +298,37 @@ off = run(scrolled, no_auto_stitch=True)
 check("with automatic joining off a scrolled screen is sent a screen at a time",
       bool(off) and not any(m.get("extra") for m in off),
       f"{len(off)} sent, {sum(1 for m in off if m.get('extra'))} of them joined")
+
+
+# --- what the loop says as it starts: All monitors by its name, and a monitor that is not there pointed to where the
+# monitors are listed, which under the desktop app is the panel's Monitor: there is no ./sidenote there
+def said_at_start(app=False, **wants):
+    """The lines the loop printed over a few polls, under the desktop app (SIDENOTE_SUPERVISED) or not."""
+    lines = []
+    os.environ.pop("SIDENOTE_SUPERVISED", None)
+    if app:
+        os.environ["SIDENOTE_SUPERVISED"] = "1"
+    capture.print = lambda *a, **k: lines.append(" ".join(str(x) for x in a))   # the program's own print, kept
+    try:
+        run([page(0)] * 3, **wants)
+    finally:
+        del capture.print
+        os.environ.pop("SIDENOTE_SUPERVISED", None)
+    return "\n".join(lines)
+
+
+mode = capture.t("single-shot")
+lines = said_at_start(monitor=0)
+check("All monitors read: said by its name, not as monitor 0",
+      capture.t("capturing all monitors: {w}x{h} ({mode})", w=1600, h=900, mode=mode) in lines
+      and capture.t("capturing monitor {i}: {w}x{h} ({mode})", i=0, w=1600, h=900, mode=mode) not in lines, lines[:400])
+lines = said_at_start(monitor=3)
+check("a monitor that is not there: the first one read, and ./sidenote capture --list-monitors named where it runs",
+      capture.t("monitor {asked} not found; {n} attached. Using 1.", asked=3, n=1) in lines
+      and capture.t("./sidenote capture --list-monitors shows them.") in lines, lines[:400])
+lines = said_at_start(app=True, monitor=3)
+check("...and under the desktop app the panel's Monitor, with no ./sidenote named",
+      capture.t("Monitor in Solver settings lists them.") in lines and "./sidenote" not in lines, lines[:400])
 
 print(f"\n==== {len(PASS)} of {len(PASS) + len(FAIL)} as expected")
 sys.exit(1 if FAIL else 0)

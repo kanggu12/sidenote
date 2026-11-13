@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -538,6 +539,7 @@ try:
     front.read(), front.stack()
     check("a window manager that keeps neither the list nor the window in front: nothing can be skipped, and that is said",
           front.limit == "none" and bool(front.why), (front.limit, front.why))
+    whys = [front.why]
 
     class FrontOnly(Silent):
         says_front = True
@@ -545,6 +547,11 @@ try:
     front = cap.FrontWindow()
     front.read(), front.stack()
     check("one that says which is in front and keeps no list: that window alone counts, and that is said", front.limit == "front" and bool(front.why), (front.limit, front.why))
+    whys.append(front.why)
+    # the reason sits in a line of the log said in the program's language (SIDENOTE_LANG=ko here): it was English in it
+    check("...each reason in the program's language, as the line it is said in",
+          whys == [cap.t("no word from the window manager"), cap.t("no list of windows")]
+          and not any(re.search("[A-Za-z]", w) for w in whys), whys)
 finally:
     cap._X11Front = real_x11
     for k, v in saved_env.items():
@@ -760,7 +767,7 @@ try:
     quartz.windows = None
     broken = cap.FrontWindow()
     check("a list that cannot be read skips nothing, and says so",
-          not cap.skip_now(broken, default, MAC_SCREEN) and broken.limit == "none" and "no list of windows" in broken.why,
+          not cap.skip_now(broken, default, MAC_SCREEN) and broken.limit == "none" and cap.t("no list of windows") in broken.why,
           (broken.limit, broken.why))
     check("...and the panel's window is then not looked for", cap.window_rects(MAC_SCREEN) is None)
 finally:
@@ -929,13 +936,31 @@ check("...and with none, nothing is skipped", until(lambda: s.caps.get("skipping
 stop.set()
 thread.join(timeout=3)
 said = out.getvalue()
-check("the log says that a skip started and ended", said.count(cap.t("A window to skip is on screen: no screen is sent while it is")) == 3
-      and said.count(cap.t("The window to skip is no longer on screen: capturing the screen again")) == 3,
-      said[-600:])
+# the last of the three ended by the panel emptying its words, with the window still in front: that is said as such
+check("the log says that a skip started and ended, and how: the window gone, or the words changed",
+      said.count(cap.t("A window to skip is on screen: no screen is sent while it is")) == 3
+      and said.count(cap.t("The window to skip is no longer on screen: capturing the screen again")) == 2
+      and said.count(cap.t("Skip windows changed: capturing the screen again")) == 1, said[-600:])
 check("...and never which window: no title and no program in it",
       not any(w in said for w in ("Bitwarden", "bitwarden", "1password", "Login", "Code.exe", "Problem 2")), said[-600:])
 check("...nor in what was sent", not any(any(w in json.dumps(m) for w in ("Bitwarden", "Login", "1password"))
                                          for m in s.sent if m.get("type") != "frame"), [m for m in s.sent if m.get("type") != "frame"])
+
+# The panel's words changed while a window is skipped, so that none of them names it: the screen is taken again with the
+# window still there, which the log said was no longer on screen
+FakeMSS.frames, FakeMSS.pos, Front.now = [screen(BLUE)], 0, BITWARDEN
+s = Sender()
+stop, thread, out = start(s)
+began = until(lambda: s.caps.get("skipping") is True)
+s.wants["skip_windows"] = words("KeePass")        # what a control message with other words does
+ended = until(lambda: s.caps.get("skipping") is False)
+stop.set()
+thread.join(timeout=3)
+said = out.getvalue()
+check("the words changed so that none names the window in front: taken again, and the log says the words changed",
+      began and ended and said.count(cap.t("Skip windows changed: capturing the screen again")) == 1
+      and cap.t("The window to skip is no longer on screen: capturing the screen again") not in said, said[-400:])
+Front.now = ("Problem 1 - Chrome", "chrome.exe")
 
 # A window brought to the front while the screen is being grabbed: that grab is not sent. The screen is red while it
 # is in front, and settled, so without the look after the grab it would have gone out.

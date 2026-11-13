@@ -81,6 +81,25 @@ class Panel:
         return None
 
 
+def failed_card(client) -> int:
+    """A card that ended in an error, told to the panels as the worker tells them of one (its start, then its error, through
+    the server's own broadcast, on its loop): an answer this server gave an id to, which the history never held."""
+    async def fail() -> int:
+        A.STATE.analysis_seq += 1          # its id, as the worker gives one
+        seq = A.STATE.analysis_seq
+        await A.broadcast({"type": "analysis_start", "id": seq, "ts": time.time(), "thumb": None, "transcript": "",
+                           "pages": 0, "trigger": "screen"})
+        await A.broadcast({"type": "error", "id": seq, "text": "RuntimeError: the model server stopped", "hint": ""})
+        return seq
+    return client.portal.call(fail)
+
+
+def deletes_written(*ids) -> list:
+    """The answer_delete events the server wrote for these ids."""
+    lines = (Path(LOGS) / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    return [e for e in map(json.loads, lines) if e.get("event") == "answer_delete" and e.get("id") in ids]
+
+
 def png_b64(seed=0):
     """A screen with a few dark bars standing for lines of text (the change detector reads edges)."""
     im = Image.new("RGB", (640, 400), "white")
@@ -539,9 +558,13 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
                   and p.wait(lambda m: m.get("type") == "star" and m.get("id") == seq, after=n) is not None, r.json())
             check("...and the list of starred ones has it",
                   [a["id"] for a in c.get("/api/v1/answers", params={"starred": "true"}).json()["answers"]] == [seq])
-            r = c.put("/api/v1/answers/424242/star", json={"starred": True})
+            failed = failed_card(c)   # an answer there was, which the history does not hold
+            r = c.put(f"/api/v1/answers/{failed}/star", json={"starred": True})
             check("a star on an answer not kept is a 409 in the panel's words", r.status_code == 409
                   and r.json()["error"] == t("Not starred: this answer is not in the saved history"), r.json())
+            r = c.put("/api/v1/answers/424242/star", json={"starred": True})
+            check("...and on an id no answer has had, a 404, as a delete and a put back give it", r.status_code == 404
+                  and r.json()["error"] == "no answer 424242: GET /api/v1/answers lists them", r.json())
             r = c.put(f"/api/v1/answers/{seq}/star", json={"starred": "yes"})
             check("...and a star that is not true or false is a 400", r.status_code == 400)
             mark = lambda: (c.get(f"/api/v1/answers/{seq}").json().get("answer") or {}).get("verdict", "not said")  # noqa: E731
@@ -560,9 +583,12 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             r = c.put(f"/api/v1/answers/{seq}/verdict", json={"verdict": None})
             check("...and taken off with null", r.json() == {"ok": True, "id": seq, "verdict": None} and mark() is None
                   and p.wait(judged(None), after=n) is not None, r.json())
-            r = c.put("/api/v1/answers/424242/verdict", json={"verdict": "right"})
+            r = c.put(f"/api/v1/answers/{failed}/verdict", json={"verdict": "right"})
             check("a verdict on an answer not kept is a 409 in the panel's words", r.status_code == 409
                   and r.json().get("error") == t("Not marked: this answer is not in the saved history"), r.json())
+            r = c.put("/api/v1/answers/424242/verdict", json={"verdict": "right"})
+            check("...and on an id no answer has had, a 404, as a delete and a put back give it", r.status_code == 404
+                  and r.json()["error"] == "no answer 424242: GET /api/v1/answers lists them", r.json())
             codes = [c.put(f"/api/v1/answers/{seq}/verdict", json=b).status_code for b in ({"verdict": "yes"}, {"verdict": True}, {}, {"starred": True})]
             check("...and a body with no verdict, or one that is not right, wrong or null, is a 400 that changes nothing",
                   codes == [400, 400, 400, 400] and mark() is None, codes)
@@ -749,11 +775,26 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
             finally:
                 A.LIVE.pop(live, None)
             n = len(p.msgs)
-            r = c.request("DELETE", "/api/v1/answers/424242", json={})
-            told = p.wait(deleted_(424242), after=n)
-            check("an answer the history does not hold: the panels drop its card, and it is said to be held nowhere",
-                  r.status_code == 200 and r.json() == {"ok": True, "id": 424242, "kept": False, "until": None, "count": 0}
+            r = c.request("DELETE", f"/api/v1/answers/{failed}", json={})
+            told = p.wait(deleted_(failed), after=n)
+            check("an answer the history does not hold (its card ended in an error): the panels drop its card, and it is said "
+                  "to be held nowhere", r.status_code == 200
+                  and r.json() == {"ok": True, "id": failed, "kept": False, "until": None, "count": 0}
                   and told is not None and told.get("kept") is False, [r.json(), told])
+            # Ids are the time in milliseconds: a number no answer had was below the last one given out, and was deleted
+            n = len(p.msgs)
+            gone = c.request("DELETE", "/api/v1/answers/424242", json={})
+            back = c.post("/api/v1/answers/424242/restore", json={})
+            ran = c.post("/api/v1/commands", json={"type": "answer_delete", "id": 424243})
+            time.sleep(0.3)
+            check("an id no answer has had: a 404 to delete it, and to put it back after",
+                  gone.status_code == 404 and gone.json()["error"] == "no answer 424242: GET /api/v1/answers lists them"
+                  and back.status_code == 404, [gone.json(), back.json()])
+            check("...refused through /commands in the panel's words",
+                  [m.get("text") for m in ran.json().get("replies", [])] == [t("Not deleted: no answer has this id")], ran.json())
+            check("...with no panel told and no event written of either", deletes_written(424242, 424243) == []
+                  and not [m for m in p.msgs[n:] if m.get("type") in ("answer_deleted", "answer_restored")],
+                  [deletes_written(424242, 424243), [m for m in p.msgs[n:] if m.get("type") in ("answer_deleted", "answer_restored")]])
             # two answers more, one of them left in Recently deleted for Clear history to take
             n = len(p.msgs)
             c.post("/api/v1/reanalyze", json={})

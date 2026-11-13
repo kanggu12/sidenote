@@ -34,8 +34,8 @@ timezone: UTC
 networkPolicy:
   enabled: true
 
-# The coding agent the server asks for the problems that need reasoning (the repository's README.md,
-# "Choosing the cloud agent").
+# The coding agent the server asks for the problems that need reasoning (the repository's docs/README.md,
+# "The cloud agent").
 agent:
   # claude-code    the Claude Code CLI in the server image, signed in with a login from the Secret
   # codex          the Codex CLI, signed in with a login from the Secret

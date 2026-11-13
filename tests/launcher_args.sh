@@ -73,7 +73,12 @@
 # - capture-stop names the tray icon's Quit first, and within down Windows out of reach is one quiet line;
 # - capture --console refused by a capture program already running ends 1 and stops nothing;
 # - interop off: the language and the launcher's own setup command reach launch.pyw, and with a capture program
-#   holding its guard for the server, launch.pyw opens the panel and starts no second one.
+#   holding its guard for the server, launch.pyw opens the panel and starts no second one;
+# - --help after a command prints that command's lines of the help and does nothing else, with no python3 too;
+# - another program answering on the port is no server: status says off, install starts it, open opens nothing;
+# - login with the agent off, or the stand-in for tests, says so;
+# - the lines printed to be typed again (restore, llm rm) read back as the words asked, and backup takes a folder;
+# - events and report with the server off mount no log folder that is not there, and up leaves no temporary file.
 set -uo pipefail                      # not -e: a failing check has to print and go on to the next
 
 here="$(cd "$(dirname "$0")" && pwd)"             # this script's folder, whatever the caller's cwd
@@ -175,7 +180,8 @@ exit 0
 STUB
 
 # curl: the server's /health (a capture program counts as connected once it was started) and /capture/quit.
-# With state/server-down every request fails the way curl does when nothing listens.
+# With state/server-down every request fails the way curl does when nothing listens. Each /health answer has the
+# "ok": true and the analyzer the server's own has, which is how the launcher knows it from another program's.
 cat > "$work/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\0' "$@" > "$FAKE/calls/curl.$(date +%s%N)"
@@ -190,7 +196,7 @@ case "$*" in
              fi
              if [ -f "$FAKE/state/health.json" ]; then cat "$FAKE/state/health.json"; exit 0; fi
              n=0; [ -f "$FAKE/state/running" ] && n=1
-             printf '{"ok": true, "audio": true, "paused": false, "engines": {"ready": true}, '
+             printf '{"ok": true, "analyzer": "local", "audio": true, "paused": false, "engines": {"ready": true}, '
              printf '"capture": {"clients": %d, "screen_on": true, "audio_on": true}}\n' "$n" ;;
 esac
 exit 0
@@ -259,6 +265,13 @@ case "$1" in
   # With state/image-in-use, the way Docker refuses to remove an image a container of another project runs
   image) if [ "$2" = rm ] && [ -f "$FAKE/state/image-in-use" ] && [[ $* == *ollama/ollama* ]]; then exit 1; fi
          if [ "$2" = inspect ] && [ -f "$FAKE/state/no-image" ]; then exit 1; fi ;;
+  # A throwaway container with a folder of this PC mounted (-v source:target): Docker makes a source that is missing, and
+  # each missing folder above it, itself (as root, mode 755). Made here too, and each one written down in state/docker-made
+  run) prev=""
+       for a in "$@"; do
+         if [ "$prev" = -v ]; then src="${a%%:*}"; [ -e "$src" ] || { mkdir -p "$src"; echo "$src" >> "$FAKE/state/docker-made"; }; fi
+         prev="$a"
+       done ;;
 esac
 exit 0
 STUB
@@ -310,6 +323,9 @@ if [ "${1:-}" = -m ] && [ "${2:-}" = pip ]; then
   printf '%s\0' "$@" > "$FAKE/calls/pip.$(date +%s%N)"
   echo "pip 24.0"; exit 0
 fi
+for a in "$@"; do                                 # the capture program itself: started, as pgrep then counts it
+  if [ "$a" = client/capture.py ]; then touch "$FAKE/state/linux-capture"; exit 0; fi
+done
 echo tray                                         # the capture packages' question: all there
 STUB
 cat > "$work/venvbin/python3" <<'STUB'
@@ -804,7 +820,7 @@ o_pull="$(once && echo y)"
 state; run install; o_install="$(once && echo y)"; noname="$(said "맞는 모델: ," && echo y)"; cpu="$(cpu_lines)"
 state; run doctor; o_doctor="$(once && echo y)"; cpu="$cpu$(cpu_lines)"
 state; cat > "$work/state/health.json" <<'JSON'
-{"ok": true, "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
+{"ok": true, "analyzer": "local", "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
  "engines": {"ready": true,
    "local": {"present": true, "on": true, "ok": false, "missing": true, "model": "sidenote-gemma4:26b", "fits": false, "gpu_gb": null},
    "agent": {"present": true, "ok": true, "product": "Claude Code", "method": "claude.ai", "mode": "hard", "effective": "all", "payload": "crop"}}}
@@ -818,7 +834,7 @@ else bad "with no GPU that fits, llm pull, install, doctor and status say the sa
 # 38. The engines in status by the panel's names: the local model idle or on GPU, Solver settings, and what the agent
 #     takes beside what it sends (English, where the old names were).
 health_with() { cat > "$work/state/health.json" <<JSON
-{"ok": true, "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
+{"ok": true, "analyzer": "local", "audio": true, "paused": false, "capture": {"clients": 0, "screen_on": true, "audio_on": true},
  "engines": {"ready": true, "local": $1,
    "agent": {"present": true, "ok": true, "product": "Claude Code", "method": "claude.ai", "mode": "hard", "effective": "hard", "payload": "crop"}}}
 JSON
@@ -1067,6 +1083,15 @@ if [ "$lup_rc" = 0 ] && grep -qF "already running" <<<"$lup" && [ "$lopened" -gt
   ok "on Linux, capture --up with the capture running opens the panel and ends well; a plain capture is told and fails"
 else bad "on Linux, capture --up with the capture running opens the panel and ends well; a plain capture is told and fails" \
          "--up rc $lup_rc, opened $lopened: $(tail -1 <<<"$lup") | plain rc $lplain_rc: $(tail -1 <<<"$lplain")"; fi
+# A capture started on a Linux desktop says where its tray icon is, and with --no-tray that it has none: it said there
+# was one in the notification area
+state; EXTRA_ENV="$lnx" run capture; lstart="$(cat "$work/out")"
+state; EXTRA_ENV="$lnx" run capture --no-tray; lnotray="$(cat "$work/out")"; lnotray_rc="$(cat "$work/rc")"
+if grep -qF "(a tray icon, where the desktop shows them)" <<<"$lstart" && [ "$lnotray_rc" = 0 ] && grep -qF "(no tray icon)" <<<"$lnotray" \
+   && ! grep -qF "a tray icon, where" <<<"$lnotray"; then
+  ok "on Linux, a capture started says where its tray icon is, and with --no-tray that it has none"
+else bad "on Linux, a capture started says where its tray icon is, and with --no-tray that it has none" \
+         "plain: $(grep -F "capture started" <<<"$lstart" | tail -1) | --no-tray rc $lnotray_rc: $(grep -F "capture started" <<<"$lnotray" | tail -1)"; fi
 
 # 46. Claude Code on a Mac keeps its login in the Keychain, which the server in Docker cannot read, so there the login that
 #     counts is a token in .env. With the Mac's own Claude Code signed in and no token, doctor says the agent is not signed
@@ -1804,6 +1829,152 @@ if [ "$i_bogus_rc" != 0 ] && grep -qF "Unknown option: --with-modles (./sidenote
   ok "install and restart say an option they do not know, and do nothing"
 else bad "install and restart say an option they do not know, and do nothing" \
          "install rc $i_bogus_rc calls $i_calls: $(tail -2 <<<"$i_bogus" | tr '\n' '|') | restart rc $r_bogus_rc calls $r_calls: $(tail -2 <<<"$r_bogus" | tr '\n' '|')"; fi
+
+# --- a command's own help, the server that answers, an agent with no login, what is printed to be typed again ----------
+# 69. --help (or -h) after a command prints that command's lines of the help, as `help` prints them, and does nothing
+#     else: no Docker, no Windows program, no server asked, no browser, no pip. Taken as one more word it stopped
+#     everything (down), ended the capture (capture-stop), opened the browser (open), made the shortcut (shortcut), ran
+#     pip (setup-capture) and asked for a model named --help (llm pull). llm and gpu take the word after them, the other
+#     names are the help's own, a name that is no command's is said as before, and no python3 is needed.
+#     Each case: "<what is typed>;<the start of each of its lines>;<how many lines>" (the lines under one are indented)
+help_cases=("down --help;down;1" "stop -h;down;1" "capture-stop --help;capture-stop;1" "open --help;open;1"
+            "shortcut --help;shortcut;1" "shortcut --remove --help;shortcut;1" "setup-capture --help;setup-capture;2"
+            "setup-windows -h;setup-capture;2" "llm pull --help;llm pull;1" "llm --help;llm;3" "llm rm gemma4:e4b --help;llm rm;1"
+            "llm logs --help;llm list|logs;1" "gpu off --help;gpu off|on;1" "gpu --help;gpu;2" "login --help;login;1"
+            "login codex --help;login;1" "capture --monitor 2 --help;capture;9" "capture -h;capture;9" "up --now --help;up;4"
+            "start --help;up;4" "restart -h;restart;2" "backup --help;backup;1" "restore x.tar.gz --help;restore;1"
+            "status --help;status;1" "events -n 5 --help;events;1" "report --help;report;1" "stats --help;stats;1"
+            "logs --help;logs;1" "doctor --help;doctor;1" "install --help;install;1" "uninstall --yes --help;uninstall;1"
+            "version --help;version;1" "capture-restart --help;capture-restart;1" "qa --help;qa;1")
+helped=""
+for lang in en ko; do
+  state; EXTRA_ENV="SIDENOTE_LANG=$lang" run help; whole="$(cat "$work/out")"
+  for c in "${help_cases[@]}"; do
+    IFS=';' read -r typed start n <<<"$c"
+    if [ "$lang" = ko ]; then case "$typed" in down*|llm\ pull*|capture\ -h|gpu\ off*|open*) ;; *) continue ;; esac; fi   # a few in Korean
+    read -r -a argv <<<"$typed"
+    state running server-running; EXTRA_ENV="SIDENOTE_LANG=$lang" run "${argv[@]}"
+    got="$(cat "$work/out")"; why=""
+    [ "$(cat "$work/rc")" = 0 ] || why="exit $(cat "$work/rc")"
+    [ "$(grep -c '' <<<"$got")" = "$n" ] || why="$why, $(grep -c '' <<<"$got") lines"
+    [[ $(head -1 <<<"$got") == "    ./sidenote $start "* ]] || why="$why, first line: $(head -1 <<<"$got" | cut -c1-60)"
+    while IFS= read -r line; do   # each line is the command's own, or one under it, and is the help's word for word
+      [[ $line == "    ./sidenote $start "* || $line == "      "* ]] || why="$why, not its line: ${line:0:50}"
+      grep -qxF -- "$line" <<<"$whole" || why="$why, not in the help: ${line:0:50}"
+    done <<<"$got"
+    [ -z "$(ls -A "$work/calls")" ] || why="$why, called: $(ls "$work/calls" | sed 's/\..*//' | sort -u | tr '\n' ' ')"
+    [ -z "$why" ] || helped="$helped [$lang] $typed: ${why#, };"
+  done
+done
+state; EXTRA_ENV="SIDENOTE_LANG=en" run nosuch --help; h_unknown_rc="$(cat "$work/rc")"; h_unknown="$(head -1 "$work/out")"
+state; EXTRA_ENV="PATH=$work/bin:$work/nopy SIDENOTE_LANG=en" run down --help; h_nopy_rc="$(cat "$work/rc")"; h_nopy="$(cat "$work/out")"
+if [ -z "$helped" ] && [ "$h_unknown_rc" = 1 ] && [ "$h_unknown" = "Unknown command: nosuch" ] \
+   && [ "$h_nopy_rc" = 0 ] && [[ $h_nopy == "    ./sidenote down "* ]]; then
+  ok "--help after a command prints its own lines of the help and does nothing else, in both languages and with no python3"
+else bad "--help after a command prints its own lines of the help and does nothing else, in both languages and with no python3" \
+         "${helped:-} unknown: rc $h_unknown_rc '$h_unknown'; no python3: rc $h_nopy_rc '$(head -1 <<<"$h_nopy")'"; fi
+
+# 70. Only Sidenote's server is taken for the server: another program on the port that answers 200, with a web page or with
+#     JSON of its own ({"ok": true} and no analyzer, or ok false), is no server. status says the server is off and ends
+#     well (it said "running", then ended 1 without a word or in a KeyError traceback), install starts the server rather
+#     than saying it runs, and open says it is off and opens nothing. The server's own answer still reads as running.
+foreign=""
+for answer in '<!doctype html><html><body>another program</body></html>' '{"ok": true}' '{"ok": false, "analyzer": "local"}'; do
+  state; printf '%s\n' "$answer" > "$work/state/health.json"
+  EXTRA_ENV="SIDENOTE_LANG=en" run status; f_status="$(cat "$work/out")"; f_status_rc="$(cat "$work/rc")"
+  EXTRA_ENV="SIDENOTE_LANG=en" run install; f_install="$(cat "$work/out")"; last_call docker up; f_up=${#CALL[@]}
+  EXTRA_ENV="SIDENOTE_LANG=en" run open; f_open="$(cat "$work/out")"; f_open_rc="$(cat "$work/rc")"; last_call cmd start; f_start=${#CALL[@]}
+  if [ "$f_status_rc" != 0 ] || ! grep -qF "Server: off" <<<"$f_status" || grep -qE "Server: running|Traceback" <<<"$f_status"; then
+    foreign="$foreign status, $answer: exit $f_status_rc, $(tr '\n' '|' <<<"$f_status" | head -c 160);"
+  fi
+  if grep -qF "Already running" <<<"$f_install" || [ "$f_up" = 0 ]; then foreign="$foreign install, $answer: compose up $f_up;"; fi
+  if [ "$f_open_rc" = 0 ] || [ "$f_start" != 0 ] || ! grep -qF "The server is off" <<<"$f_open"; then
+    foreign="$foreign open, $answer: exit $f_open_rc, browser $f_start;"
+  fi
+done
+state; EXTRA_ENV="SIDENOTE_LANG=en" run status; f_own="$(cat "$work/out")"
+if [ -z "$foreign" ] && grep -qF "Server: running" <<<"$f_own"; then
+  ok "another program answering on the port is no server: status says off, install starts it, open opens nothing"
+else bad "another program answering on the port is no server: status says off, install starts it, open opens nothing" \
+         "${foreign:-} own server: $(grep -F "Server:" <<<"$f_own" | head -1)"; fi
+
+# 71. login with the agent off, or the stand-in for tests (SIDENOTE_AGENT=mock, or SIDENOTE_ANALYZER=mock with no agent
+#     named), says that, with the way to check a real one, and ends 1 having signed nothing in: both were called an
+#     unknown agent. An agent named after login still signs in, and a word that names none is still unknown.
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_AGENT=off" run login; l_off="$(cat "$work/out")"; l_off_rc="$(cat "$work/rc")"
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_AGENT=mock" run login; l_mock="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_ANALYZER=mock" run login; l_amock="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_AGENT=off" run login; l_ko="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_AGENT=off" run login codex; l_codex="$(cat "$work/out")"
+state; EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_AGENT=off" run login bogus; l_bogus="$(cat "$work/out")"
+if [ "$l_off_rc" = 1 ] && grep -qF "The agent is off (SIDENOTE_AGENT=off), so there is no login to check" <<<"$l_off" \
+   && grep -qF "./sidenote login codex" <<<"$l_off" && grep -qF "The agent is the stand-in for tests (mock)" <<<"$l_mock" \
+   && grep -qF "The agent is the stand-in for tests (mock)" <<<"$l_amock" && grep -qF "에이전트가 꺼져 있어(SIDENOTE_AGENT=off)" <<<"$l_ko" \
+   && ! grep -qF "Unknown agent" <<<"$l_off$l_mock$l_amock" && ! grep -qF "알 수 없는 에이전트" <<<"$l_ko" \
+   && grep -qF "./sidenote login codex" <<<"$l_codex" && ! grep -qF "The agent is off" <<<"$l_codex" \
+   && grep -qF "Unknown agent: bogus" <<<"$l_bogus"; then
+  ok "login with the agent off or the stand-in for tests says so, and an agent named after login still signs in"
+else bad "login with the agent off or the stand-in for tests says so, and an agent named after login still signs in" \
+         "off (exit $l_off_rc): $(tail -1 <<<"$l_off") | mock: $(tail -1 <<<"$l_mock") | analyzer mock: $(tail -1 <<<"$l_amock") | ko: $(tail -1 <<<"$l_ko") | codex: $(tail -1 <<<"$l_codex") | bogus: $(tail -1 <<<"$l_bogus")"; fi
+
+# 72. The lines printed to be typed again name a path with a space or a quote in it as one word: backup's restore line,
+#     restore's line with --yes when there is no terminal to ask in, and llm rm's. Read back by a shell, each gives the
+#     words it was asked with; printed as they were, the path came back as two words, which restore refused.
+words_of() { local line="$1"; set --; eval "set -- $line" 2>/dev/null || return 1; printf '<%s>' "$@"; }   # as a shell reads them
+rm -rf "$logs" && mkdir -p "$logs" && printf '{"lang": "en"}\n' > "$logs/.settings.json"
+spaced="$here/my backups"; mkdir -p "$spaced"; q_file="$spaced/it's a backup.tar.gz"; rm -f "$q_file"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$q_file"; q_backup_rc="$(cat "$work/rc")"
+q_back="$(grep -F "(to put it back: ./sidenote restore " "$work/out" | sed 's/.*(to put it back: \.\/sidenote restore //; s/)$//')"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run restore "$q_file"; q_rest="$(grep -F "To restore it: ./sidenote restore " "$work/out" | sed 's/.*To restore it: \.\/sidenote restore //')"
+state llm-running llm-models; EXTRA_ENV="SIDENOTE_LANG=en" run llm rm gemma4:e4b "no such"
+q_rm="$(grep -F "To remove them: ./sidenote llm rm " "$work/out" | sed 's/.*To remove them: \.\/sidenote llm rm //')"
+if [ "$q_backup_rc" = 0 ] && [ "$(words_of "$q_back")" = "<$q_file>" ] && [ "$(words_of "$q_rest")" = "<$q_file><--yes>" ] \
+   && [ "$(words_of "$q_rm")" = "<gemma4:e4b><no such><--yes>" ]; then
+  ok "the lines printed to be typed again (restore after backup, restore --yes, llm rm --yes) read back as the words asked"
+else bad "the lines printed to be typed again (restore after backup, restore --yes, llm rm --yes) read back as the words asked" \
+         "backup exit $q_backup_rc: '$q_back' | restore: '$q_rest' | llm rm: '$q_rm'"; fi
+
+# 73. backup given a folder makes its file in it, named for the date and time: "." in the folder it is typed in, a
+#     folder by its path, and one that is not there (a name that ends in /) is said as such. "." was said to be a file
+#     that was there already, and no backup was made.
+mkdir -p "$here/into" "$here/dot"; rm -rf "$here/nowhere"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/into"; f_into_rc="$(cat "$work/rc")"
+f_into="$(ls "$here/into"/sidenote-backup-*.tar.gz 2>/dev/null | head -1)"
+state; (cd "$here/dot" && EXTRA_ENV="SIDENOTE_LANG=en" run backup .); f_dot_rc="$(cat "$work/rc")"; f_dot_out="$(cat "$work/out")"
+f_dot="$(ls "$here/dot"/sidenote-backup-*.tar.gz 2>/dev/null | head -1)"
+state; EXTRA_ENV="SIDENOTE_LANG=en" run backup "$here/nowhere/"; f_none_rc="$(cat "$work/rc")"; f_none="$(cat "$work/out")"
+if [ "$f_into_rc" = 0 ] && [ -n "$f_into" ] && tar -tzf "$f_into" 2>/dev/null | grep -qx .settings.json \
+   && [ "$f_dot_rc" = 0 ] && [ -n "$f_dot" ] && grep -qF "Backed up: $f_dot (" <<<"$f_dot_out" \
+   && [ "$f_none_rc" = 1 ] && grep -qF "No such folder: $here/nowhere/" <<<"$f_none" && [ ! -e "$here/nowhere" ]; then
+  ok "backup into a folder (., or one by its path) makes its file there, and one that is not there is said"
+else bad "backup into a folder (., or one by its path) makes its file there, and one that is not there is said" \
+         "folder: exit $f_into_rc ${f_into:-no file} | .: exit $f_dot_rc ${f_dot:-no file}, $(tail -3 <<<"$f_dot_out" | head -1) | none: exit $f_none_rc $(tail -1 <<<"$f_none")"; fi
+
+# 74. events and report with the server off read the log folder in a throwaway container, which mounts it only when it is
+#     there: Docker makes a missing one itself, and each missing folder above it, as root with mode 755, where up makes it
+#     this user's alone. With none the report is given the folder's path, and nothing is made; with one it is mounted
+#     read-only, as it was.
+gone_logs="$work/nothere/logs"; rm -rf "$work/nothere"
+state; EXTRA_ENV="SIDENOTE_LOG_PATH=$gone_logs" run events; last_call docker run; e_call=" ${CALL[*]-} "; e_made="$(cat "$work/state/docker-made" 2>/dev/null)"
+state; EXTRA_ENV="SIDENOTE_LOG_PATH=$gone_logs" run report --days 3; last_call docker run; r_call=" ${CALL[*]-} "
+r_made="$(cat "$work/state/docker-made" 2>/dev/null)"
+mkdir -p "$logs"; state; run events -n 5; last_call docker run; h_call=" ${CALL[*]-} "
+if [ ! -e "$work/nothere" ] && [ -z "$e_made$r_made" ] && [[ $e_call == *" -e SIDENOTE_LOG_DIR=$gone_logs "* ]] && [[ $e_call != *" -v "* ]] \
+   && [[ $r_call == *" -e SIDENOTE_LOG_DIR=$gone_logs "*" server.report report --days 3 " ]] && [[ $h_call == *" -v $logs:/data/logs:ro "* ]]; then
+  ok "events and report with the server off mount the log folder only when it is there, and make none"
+else bad "events and report with the server off mount the log folder only when it is there, and make none" \
+         "made: ${e_made:-}${r_made:-none} | events:$e_call | report:$r_call | with the folder:$h_call"; fi
+
+# 75. up that ends before compose (offline, with an image that is not here) leaves no temporary file behind, nor does one
+#     that starts the server
+mkdir -p "$work/uptmp" && rm -rf "$work/uptmp"/*
+state no-image; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LANG=en TMPDIR=$work/uptmp" run up; t_rc="$(cat "$work/rc")"; t_out="$(cat "$work/out")"
+t_left="$(ls -A "$work/uptmp")"
+state; EXTRA_ENV="SIDENOTE_LANG=en TMPDIR=$work/uptmp" run up; t2_rc="$(cat "$work/rc")"; t2_left="$(ls -A "$work/uptmp")"
+if [ "$t_rc" != 0 ] && grep -qF "sidenote:local is not on this PC" <<<"$t_out" && [ -z "$t_left" ] && [ "$t2_rc" = 0 ] && [ -z "$t2_left" ]; then
+  ok "up leaves no temporary file behind, when it ends early as when it starts the server"
+else bad "up leaves no temporary file behind, when it ends early as when it starts the server" \
+         "early: exit $t_rc, left: ${t_left:-nothing}, $(tail -1 <<<"$t_out") | started: exit $t2_rc, left: ${t2_left:-nothing}"; fi
 
 printf '  ==== %d of %d as expected\n' "$pass" "$((pass + fail))"
 [ "$fail" = 0 ]

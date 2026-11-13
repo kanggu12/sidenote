@@ -454,7 +454,10 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as client:
         check("...no panel drops it, and the history keeps it", p1.got(("answer_deleted",), n1) == [] and p2.got(KINDS, n2) == []
               and A.HISTORY.get(SEQ + 2) is not None and SEQ + 2 not in A.STATE.deleted_cards)
         A.LIVE.pop(SEQ + 2, None)
-        n1, n2 = tell(ws1, type="answer_delete", id=SEQ + 900)   # an error's card, or an answer written with Keep answers off
+        # A card of an earlier run the history never held (an error's, one written with Keep answers off), still on a panel
+        # open across the restart: this server holds nothing of it, and a panel's delete takes it from every panel all the
+        # same (a program naming an id no answer had is refused: api_check.py)
+        n1, n2 = tell(ws1, type="answer_delete", id=SEQ + 900)
         a, b = p1.wait(is_("answer_deleted", SEQ + 900), after=n1), p2.wait(is_("answer_deleted", SEQ + 900), after=n2)
         check("an answer the history never held is dropped by every panel, and said to be held nowhere",
               a is not None and b is not None and b.get("kept") is False and b.get("until") is None and b.get("n") == 0, [a, b])
@@ -750,6 +753,18 @@ A.note_deleted(A.DELETED_CARDS_MAX + 100, True)
 check("one said again counts as the newest, with what is said of it now", A.STATE.deleted_cards.get(100) is False
       and 101 not in A.STATE.deleted_cards and len(A.STATE.deleted_cards) == A.DELETED_CARDS_MAX)
 A.STATE.deleted_cards.clear()
+
+print("\n[an answer deleted for good, past the bound of the ids remembered as purged]")
+# Its card's id stayed among the ids given out: once more answers than the bound had gone for good after it, a program's
+# delete of it was taken (200, every panel told) where it has no answer
+A.STATE.cards.clear()
+A.STATE.purged.clear()
+A.note_card(777001)
+A.forget_purged([777001] + list(range(900000, 900000 + A.DELETED_CARDS_MAX + 1)))
+check("an answer deleted for good has no answer still, once its id is past the bound of those remembered as purged",
+      777001 not in A.STATE.purged and not asyncio.run(A.had_answer(777001)), [777001 in A.STATE.cards, 777001 in A.STATE.purged])
+A.STATE.cards.clear()
+A.STATE.purged.clear()
 
 print("\n[what the final review found]")
 f = new_file("review")

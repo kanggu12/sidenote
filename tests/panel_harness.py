@@ -279,6 +279,34 @@ def background_of(browser, png: bytes, box: list) -> list:
     return out
 
 
+# A command's pieces cut across two lines while each alone fits its line: its words, and the parts of a word with a path in it,
+# cut before each single slash after a letter or a digit as the panel cuts them (app.js, cmdWords). Measured from the text,
+# however it is marked up (a piece inside an inline block is one box to getClientRects, whatever its lines), as [piece, its
+# width alone, its line's room] for each one cut. `root`: the selector of what holds the commands
+CUT_PIECES = """(root) => { const out = [];
+  for (const c of document.querySelectorAll(root + ' code.cmd')) {
+    if (!c.getClientRects().length) continue;                       // folded away
+    const st = getComputedStyle(c), room = c.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+    const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) {
+      const text = walk.currentNode; let at = 0;
+      for (const word of text.textContent.split(' ')) {
+        for (const piece of word.split(/(?<=[A-Za-z0-9])(?=\\/(?!\\/))/)) {
+          const r = document.createRange(); r.setStart(text, at); r.setEnd(text, at + piece.length); at += piece.length;
+          if (!piece) continue;
+          const lines = new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
+          const one = document.createElement('span'); one.textContent = piece;   // the piece on a line of its own, in the chip's font
+          one.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+          c.append(one); const natural = one.getBoundingClientRect().width; one.remove();
+          if (lines > 1 && natural <= room) out.push([piece, Math.round(natural), Math.round(room)]);
+        }
+        at += 1;                                                    // the space after the word
+      }
+    }
+  }
+  return out; }"""
+
+
 def contrast(a: list, b: list) -> float:
     def lum(c):
         v = [x / 255 for x in c[:3]]

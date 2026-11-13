@@ -6,7 +6,8 @@
 Each of these was found on real answers at six sizes, and is checked here as it is now:
   hidden   the contents' list held at nine lines showed three of a day's five answers and cut the card under the third, and Solver
            settings left three settings under a pane's edge at 1366x768, with nothing to say more was there: the foot of each
-           fades while more is below, and not once its end is in view; a search hit past a row's ellipsis is brought into it
+           fades while more is below, and not once its end is in view; five bands at 1366x768 stand whole in their box, which
+           fades at its foot where they do not fit; a search hit past a row's ellipsis is brought into it
   words    the capture program not connected is said one way (the card, the band, the screen card's pill, the sheet) and started in
            the server's terminal, where ./sidenote is; the notebook is a notebook (노트) everywhere; a local model that is missing
            is not said to be switched off; the agent card's scale is named as its setting is
@@ -17,9 +18,12 @@ Each of these was found on real answers at six sizes, and is checked here as it 
   times    the capture program's connected time reads 03:15 PM like every time in the panel; a day of one answer gives one time,
            not a range from it to itself
   the rest the ask box after a start of the server says what can be asked before why; the update band's close key stays on
-           its line on a phone; a long inline command breaks between its words only; an analysis stopped by Free GPU says so.
-           Practice switched gives no notice: one in the bar hides the bands there for its seconds (note 122), and the
-           menu's On and Off say it
+           its line on a phone; a long inline command breaks between its words only; an analysis stopped by Free GPU says so,
+           Reanalyze in its note presses as the bar's key, and its cut-off code has no Run; a notice never hides a fault's
+           band in the bar, standing beside the bands or under the bar; a long notice on a phone shows all its words under
+           the bar; on a phone the bands go with the page unless one is a fault; Free GPU is orange only with the memory
+           nearly full; inline code in a table cell shows its tint. Practice switched gives no notice: one in the bar hides
+           the bands there for its seconds (note 122); the bar says Practice while it is on (panel_study)
 """
 from __future__ import annotations
 
@@ -63,6 +67,45 @@ def group_hidden(br, s) -> None:
     p = Page(br, s, many(3), w=1920, h=1080, settle=500)
     got = p.js(EDGE, "#history")
     check("a list that shows whole is not faded", got and not got["scrolls"] and not got["more"] and got["mask"] == "none", got)
+    p.close()
+
+    # Five bands (the capture program away, a region, a new build, paused, a newer release) have a third of the window: at
+    # 1366x768 the fifth stood under the box's foot, with nothing to say so
+    def five(p):
+        now = p.js("() => Date.now() / 1000")
+        p.js("() => { buildAtLoad = 'aaa'; }")
+        p.send({"type": "status", "text": "connected", "paused": True, "build": "bbb", "version": "0.10.0", "engines": h.ENGINES,
+                "update": {"version": "0.10.1", "url": "https://github.com/kanggu12/sidenote/releases/tag/v0.10.1"}},
+               {**h.CAPTURE, "now": now, "last_frame": now - 2, "last_audio": now - 3, "clients": 0},
+               {"type": "settings", "values": {"roi_box": [0.1, 0.2, 0.6, 0.8]}})
+        p.wait(500)
+        return p.js("""() => { const a = document.getElementById('alerts'), f = getComputedStyle(a, '::after');
+          return { bands: a.querySelectorAll('.alert').length, scrolls: a.scrollHeight > a.clientHeight + 1, more: a.classList.contains('more-below'),
+                   fade: f.content !== 'none' && f.backgroundImage.includes('gradient') }; }""")
+    p = Page(br, s, many(6), w=1366, h=768, settle=600)
+    got = five(p)
+    check("five bands at 1366x768 stand whole in their box", got == {"bands": 5, "scrolls": False, "more": False, "fade": False}, got)
+    p.close()
+    # four bands at 800x600 are 4 px past their box: no fade over the last band for that
+    p = Page(br, s, many(6), w=800, h=600, settle=600)
+    now = p.js("() => Date.now() / 1000")
+    p.js("() => { buildAtLoad = 'aaa'; }")
+    p.send({"type": "status", "text": "connected", "paused": True, "build": "bbb", "version": "0.10.0", "engines": h.ENGINES},
+           {**h.CAPTURE, "now": now, "last_frame": now - 2, "last_audio": now - 3, "clients": 0},
+           {"type": "settings", "values": {"roi_box": [0.1, 0.2, 0.6, 0.8]}})
+    p.wait(500)
+    got = p.js("""() => { const a = document.getElementById('alerts');
+      return { bands: a.querySelectorAll('.alert').length, over: a.scrollHeight - a.clientHeight, more: a.classList.contains('more-below') }; }""")
+    check("...and four of them a few pixels past it are not faded for that", got["bands"] == 4 and 0 < got["over"] <= 12 and not got["more"], got)
+    p.close()
+    p = Page(br, s, many(6), w=1280, h=600, settle=600)
+    got = five(p)
+    check("...and where they do not, its foot fades while a band is under it", got == {"bands": 5, "scrolls": True, "more": True, "fade": True}, got)
+    p.js("() => { const a = document.getElementById('alerts'); a.scrollTop = a.scrollHeight; a.dispatchEvent(new Event('scroll')); }")
+    p.wait(150)
+    got = p.js("""() => { const a = document.getElementById('alerts');
+      return { more: a.classList.contains('more-below'), fade: getComputedStyle(a, '::after').content !== 'none' }; }""")
+    check("...and not once the last band is in view", got == {"more": False, "fade": False}, got)
     p.close()
 
     # Solver settings at 1366x768: a pane longer than its room
@@ -270,6 +313,127 @@ def group_rest(br, s) -> None:
     p.wait(250)
     said = p.js("() => document.querySelector('.entry[data-id=\"905\"] .cap.stopped')?.textContent || ''")
     check("an analysis stopped by Free GPU says so, not just 'stopped'", "GPU를 비워서 멈춤" in said, said)
+    # Reanalyze named in that note, and in the paused band, is the key itself: it looked like the bar's and did nothing
+    p.send({"type": "status", "paused": True})
+    p.wait(300)
+    sent = p.js("""async () => { const out = [];
+      for (const sel of ['.entry[data-id="905"] .cap.stopped .key-hint', '#alerts .alert .key-hint']) {
+        const k = document.querySelector(sel); window.__sent.length = 0; reanalyzedAt = 0;
+        k?.click(); out.push(k ? k.tagName + ':' + window.__sent.filter((m) => m.type === 'reanalyze').length : 'none'); }
+      return out; }""")
+    check("Reanalyze named in a stopped answer's note and in the paused band presses as the bar's key", sent == ["BUTTON:1", "BUTTON:1"], sent)
+    p.send({"type": "status", "paused": False})
+    # Free GPU is an ordinary key while the GPU has room, in the warning's orange only while its memory is nearly full: always
+    # orange beside the green of a model loaded, it read as a warning about nothing
+    look = """() => { const k = document.getElementById('gpu-release'), [r, g, b] = getComputedStyle(k).color.match(/\\d+/g).map(Number);
+      return { shown: !k.hidden, orange: r - b > 80 && r > 150 }; }"""
+    rest = p.js(look)
+    p.send({"type": "gpu", "used": 22300, "total": 23028, "util": 41, "temp": 55, "power": 180})
+    p.wait(250)
+    full = p.js(look)
+    p.send(h.GPU)
+    p.wait(250)
+    check("Free GPU at rest with the memory at 70%: an ordinary key; nearly full: orange", [rest, full] == [{"shown": True, "orange": False}, {"shown": True, "orange": True}],
+          [rest, full])
+    # A stopped answer's code ends where it was cut off: Copy, and no Run (which failed on its last half line); a whole
+    # one keeps its Run
+    p.answer(907, "algorithm", "두 수의 합", "3", "풀이\n\n```python\nprint(sum(map(int, input().split())))\n```\n")
+    p.answer(908, "algorithm", "세 수의 합", "6", "풀이\n\n```python\nnums = list(map(int, input().split()))\nprint(sum(nu", final=False)
+    p.send({"type": "analysis_cancelled", "id": 908, "reason": "gpu_released"})
+    p.wait(400)
+    got = p.js("""() => Object.fromEntries([907, 908].map((i) => { const e = document.querySelector(`.entry[data-id="${i}"]`);
+      return [i, { code: !!e?.querySelector('.md pre > code'), copy: !!e?.querySelector('.md pre .codebar .copy'), run: !!e?.querySelector('.runbox .run') }]; }))""")
+    check("a stopped answer's cut-off code has Copy and no Run; a whole one keeps its Run",
+          got == {"907": {"code": True, "copy": True, "run": True}, "908": {"code": True, "copy": True, "run": False}}, got)
+    p.close()
+
+    # A fault's band in the bar stays in sight while a notice shows: the notice stands beside the bands, in the bar, where
+    # its words fit there, and under the bar where they do not
+    p = Page(br, s, [row(1)], w=1920, h=1080, settle=500)
+    p.drop()
+    p.page.wait_for_function("() => !!document.querySelector('#alerts .alert.bad')", timeout=8000)
+    where = """() => { const b = document.querySelector('#alerts .alert.bad'), t = document.querySelector('#toast > .alert');
+      const bs = getComputedStyle(document.getElementById('alerts')), br = b.getBoundingClientRect(), tr = t.getBoundingClientRect();
+      const bar = document.querySelector('.bar').getBoundingClientRect();
+      const apart = tr.top >= br.bottom || tr.bottom <= br.top || tr.left >= br.right || tr.right <= br.left;
+      return { band: bs.visibility === 'visible' && +bs.opacity > 0.9, apart, inBar: tr.bottom <= bar.bottom + 1,
+               toast: document.getElementById('toast').classList.contains('show') }; }"""
+    p.js("() => toast('복사됨')")
+    p.wait(400)
+    seen = p.js(where)
+    check("a fault's band in the bar stays in sight while a notice shows, the notice beside it in the bar",
+          seen == {"band": True, "apart": True, "inBar": True, "toast": True}, seen)
+    p.js("() => toast('긴 알림: ' + '가나다라마바사 '.repeat(14))")
+    p.wait(400)
+    seen = p.js(where)
+    check("...and one too long for the room beside it stands under the bar, the band still in sight",
+          seen == {"band": True, "apart": True, "inBar": False, "toast": True}, seen)
+    p.close()
+
+    # A long notice to act on, on a phone: under the bar, all its words on the lines they take, where one line in the
+    # signals' row cut it to "로컬 모델이 응답하지 않아 에이..." with the rest in a title no finger can rest on
+    p = Page(br, s, [row(1)], w=390, h=844, settle=500)
+    p.js("() => toast('로컬 모델이 응답하지 않아 에이전트가 대신 풀었음: 다음 문제부터 로컬 모델로 돌아감 (CUDA error: out of memory)', () => {}, 'warn')")
+    p.wait(400)
+    got = p.js("""() => { const t = document.querySelector('#toast > .alert'), m = t.querySelector('.msg'), r = t.getBoundingClientRect();
+      const bar = document.querySelector('.bar').getBoundingClientRect();
+      return { whole: m.scrollWidth <= m.clientWidth + 1 && m.scrollHeight <= m.clientHeight + 1, under: r.top >= bar.bottom - 1,
+               inside: r.left >= 0 && r.right <= innerWidth, key: !!t.querySelector('.btn') }; }""")
+    check("a long notice on a phone stands under the bar with all its words, its key beside them", got == {"whole": True, "under": True, "inside": True,
+          "key": True}, got)
+    p.close()
+
+    # On a phone the bands go with the page as it scrolls, unless one is a fault: stuck under the bar, the capture program's
+    # band took a sixth of the screen while the answers were read
+    p = Page(br, s, many(6), w=390, h=844, settle=600)
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "now": now, "last_frame": now - 2, "last_audio": now - 3, "clients": 0})
+    p.wait(400)
+    held = """() => { const a = document.getElementById('alerts'), bar = document.querySelector('.bar').getBoundingClientRect();
+      scrollTo(0, 1600); const r = a.getBoundingClientRect();
+      return { bands: a.children.length, stuck: r.bottom > bar.bottom + 1, held: getComputedStyle(document.documentElement).getPropertyValue('--alerts-h').trim() }; }"""
+    p.js("() => scrollTo(0, 0)")
+    p.wait(200)
+    got = p.js(held)
+    check("a phone scrolled: the capture program's band goes with the page, holding nothing under the bar", got == {"bands": 1, "stuck": False, "held": "0px"},
+          got)
+    p.drop()
+    p.page.wait_for_function("() => !!document.querySelector('#alerts .alert.bad')", timeout=8000)
+    p.js("() => scrollTo(0, 0)")
+    p.wait(300)
+    got = p.js(held)
+    check("...and a fault's band stays in sight under the bar", got["stuck"] and got["held"] != "0px", got)
+    p.close()
+
+    # On a phone a notice under the bar stays under the bands' strip as the page scrolls back to the top: placed while the
+    # strip was scrolled away, the strip came back in under it
+    p = Page(br, s, many(6), w=390, h=844, settle=600)
+    now = p.js("() => Date.now() / 1000")
+    p.send({**h.CAPTURE, "now": now, "last_frame": now - 2, "last_audio": now - 3, "clients": 0})
+    p.wait(300)
+    p.js("() => scrollTo(0, 1600)")
+    p.wait(300)
+    p.js("() => toast('로컬 모델이 응답하지 않아 에이전트가 대신 풀었음: 다음 문제부터 로컬 모델로 돌아감 (CUDA error: out of memory)', () => {}, 'warn')")
+    p.wait(300)
+    p.js("() => scrollTo(0, 0)")
+    p.wait(500)
+    got = p.js("""() => { const t = document.querySelector('#toast > .alert').getBoundingClientRect(), b = document.getElementById('alerts').getBoundingClientRect();
+      return { below: document.documentElement.classList.contains('toast-below'), clear: t.top >= b.bottom - 1 || t.bottom <= b.top + 1 }; }""")
+    check("a notice under the bar on a phone stays clear of the bands as the page scrolls back to them", got == {"below": True, "clear": True}, got)
+    p.close()
+
+    # A wide touch screen: a notice under the bar leaves the bands in the bar drawn, where they faded out for it
+    p = Page(br, s, [row(1)], w=1280, h=800, settle=500)
+    p.js("""() => { const real = window.matchMedia.bind(window);
+      window.matchMedia = (q) => (q.includes('hover: none') ? { matches: true, media: q, addEventListener() {}, removeEventListener() {},
+        addListener() {}, removeListener() {} } : real(q)); }""")
+    p.send({"type": "status", "paused": True})
+    p.wait(300)
+    p.js("() => toast('로컬 모델이 응답하지 않아 에이전트가 대신 풀었음: 다음 문제부터 로컬 모델로 돌아감 (CUDA error: out of memory) ' + '가나다 '.repeat(20), () => {}, 'warn')")
+    p.wait(400)
+    got = p.js("""() => { const a = getComputedStyle(document.getElementById('alerts')), r = document.documentElement.classList;
+      return { inBar: r.contains('bands-in-bar'), below: r.contains('toast-below'), drawn: a.visibility === 'visible' && +a.opacity > 0.9 }; }""")
+    check("a wide touch screen: a notice under the bar leaves the bands in the bar drawn", got == {"inBar": True, "below": True, "drawn": True}, got)
     p.close()
 
     # the update band on a phone
@@ -281,6 +445,20 @@ def group_rest(br, s) -> None:
       return { keyTop: a.top, msgTop: b.top, msgBottom: b.bottom }; }""")
     check("the update band's close key stays on the line of its words on a phone", got and got["keyTop"] < got["msgBottom"], got)
     p.close()
+
+    # Inline code in a table cell shows its tint against the cell: 7 levels off, its air read as spaces in "( sec=krb5p )"
+    body = "| 항목 | NFSv4 |\n|---|---|\n| 보안 | Kerberos (`sec=krb5p`) |\n"
+    for theme in ("light", "dark"):
+        p = Page(br, s, [row(1, body=body)], w=1366, h=768, settle=600)
+        p.js(f"() => document.documentElement.setAttribute('data-theme', '{theme}')")
+        p.wait(200)
+        got = p.js("""() => { const c = [...document.querySelectorAll('.md td code')].find((x) => x.textContent === 'sec=krb5p');
+          if (!c) return null; const rgb = (el) => getComputedStyle(el).backgroundColor.match(/[\\d.]+/g).slice(0, 3).map(Number);
+          let host = c.closest('td'), b = getComputedStyle(host).backgroundColor;
+          while (host && /rgba\\(0, 0, 0, 0\\)|transparent/.test(b)) { host = host.parentElement; b = host ? getComputedStyle(host).backgroundColor : ''; }
+          const [x, y] = [rgb(c), rgb(host)]; return Math.max(...x.map((v, i) => Math.abs(v - y[i]))); }""")
+        check(f"inline code in a table cell shows its tint against the cell ({theme})", got is not None and got >= 12, got)
+        p.close()
 
     # a long inline command in a table cell
     body = ("| 하는 일 | 명령 |\n|---|---|\n| 클라이언트 마운트 | `mount -t cifs //srv/share /mnt -o user=kim` |\n| 끝 | `umount /mnt` |\n")

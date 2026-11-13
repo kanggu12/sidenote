@@ -400,7 +400,10 @@ const REDO_MARK = mark('<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"
 const ROI_MARK = mark('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>', 1.9);
 // A key named in a sentence, with its mark: the keys show only the mark, so the word alone names nothing to look for
 const keyHint = (m, word) => `<span class="key-hint">${m}${word}</span>`;
-const REDO_KEY = () => keyHint(REDO_MARK, t("Reanalyze"));
+// Reanalyze named in a sentence (the paused band, a stopped answer, a failed one) is that key itself, pressed where it is
+// read: drawn as the bar's key with its mark, it was pressed and did nothing
+const REDO_KEY = () => `<button type="button" class="key-hint act" data-act="reanalyze" title="${escapeHtml(t("Analyze the screen now (or the problem heard) again"))}">`
+  + `${REDO_MARK}${t("Reanalyze")}</button>`;
 const RUN_MARK = mark('<path d="M7 4.5l12 7.5-12 7.5z" fill="currentColor" stroke-linejoin="round"/>', 1.4);
 const STDIN_MARK = mark('<path d="M4 4.5h9M4 9h6"/><path d="M12 13.5h8M17 10.5l3 3-3 3"/>'
   + '<path d="M4 19.5h8"/>');
@@ -442,6 +445,11 @@ function addRunBox(code) {
   // command three times its height.
   const kind = code.closest("[data-kind]")?.dataset.kind;
   if (lang === "bash" && kind !== "algorithm" && kind !== "coding") return;
+  // The code of an answer or a reply that was stopped, or failed, part way ends where it was cut off: run, it failed on
+  // its last half line as though the solution were wrong. Copy stays, for what was written
+  const owner = code.closest("[data-turn]") || code.closest(".entry");
+  const whose = owner?.dataset.turn != null ? turns.get(idOf(owner.dataset.turn)) : owner ? items.get(idOf(owner.dataset.id)) : null;
+  if (whose && (whose.stopped || whose.error)) return;
   // Run and Input belong at the bottom of the code box: they sit in a bar of their own at the foot of the code, over
   // the input and the output they open, which come under it. They had been moved up into the code's head bar beside
   // Copy, because a foot under every block made a one-line shell command three times its height; a shell block
@@ -2666,6 +2674,7 @@ function hideGpu() {
   clearTimeout(gpuStale);
   gpuSeen = [];
   $("gpu-viz").hidden = true;
+  $("gpu-release").classList.remove("full");   // with no reading, nothing says the memory is full
 }
 function drawGpu(m) {
   if (m.none) { hideGpu(); return; }
@@ -2679,6 +2688,8 @@ function drawGpu(m) {
   const line = gpuSeen.map((v, i) => `${at(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const left = gpuSeen.length ? at(0).toFixed(1) : W;
   const full = Math.round((m.used / m.total) * 100);
+  // Free GPU in the warning's orange only while the memory is nearly full, when freeing it is worth a look (index.html)
+  $("gpu-release").classList.toggle("full", full >= 90);
   const viz = $("gpu-viz"), kept = viz.querySelector(".meter i");
   if (kept) {
     const [useB, memB] = viz.querySelectorAll(".k > b"), small = viz.querySelectorAll("small")[1];
@@ -2919,6 +2930,13 @@ function noticeMsg(text, cmd = "") {
 // moves by their height: in the bar at the top they take none and scrolled they float under it, as before; out of it they
 // take their room at the top and keep it scrolled. Floating there, they lay over the first answer and its keys.
 let bandsRoom = false;
+// The height the bands hold under the bar as the page scrolls (--alerts-h: where a jump lands, the ribbon's sticky top):
+// none where they go with the page instead, on a phone with no fault among them (index.html)
+function bandsHeld(el) {
+  if (!el) return 0;
+  const pos = getComputedStyle(el).position;
+  return pos === "relative" || pos === "static" ? 0 : Math.ceil(el.getBoundingClientRect().height);
+}
 function placeBands() {
   // From the name's line, with the release tag beside it: from the name alone, the bands' box lay over the tag and took its clicks
   const shown = document.querySelector(".signals"), sig = (shown?.offsetParent ? shown : document.querySelector(".brand-line"))?.getBoundingClientRect(), act = document.querySelector(".actions")?.getBoundingClientRect();
@@ -2939,12 +2957,17 @@ function placeBands() {
   }
   bandsRoom = !fits;   // out of the bar they are a strip of its, with their room at the top of the page (index.html)
   document.documentElement.classList.toggle("bands-room", bandsRoom && !!bands?.children.length);
-  if (bands) document.documentElement.style.setProperty("--alerts-h", `${Math.ceil(bands.getBoundingClientRect().height)}px`);
+  if (bands) document.documentElement.style.setProperty("--alerts-h", `${bandsHeld(bands)}px`);
   document.documentElement.classList.toggle("no-anchor", !!bands?.children.length && window.scrollY < 300);
 
 }
 addEventListener("resize", placeBands);
 addEventListener("scroll", () => schedule("bands", placeBands), { passive: true });
+// A notice under the bar stands under the bands' strip as it is in view now: on a phone the strip goes with the page, and
+// scrolled back to the top it came in under the notice, which hid it for the notice's seconds (placeToast)
+addEventListener("scroll", () => {
+  if ($("toast").classList.contains("show") && document.documentElement.classList.contains("toast-below")) schedule("toast", placeToast);
+}, { passive: true });
 // ---------- the version, and a newer release ----------
 // The server's release (status.version) stands beside the name in the bar and at the foot of the gear menu. A newer one, found by the server's check of
 // GitHub (server/updates.py, status.update), is one line in the band: its number, a link to its release notes, and a key
@@ -3081,6 +3104,7 @@ function renderAlerts() {
   bandsSaid = new Set(titles);       // one that went and comes back is said again
   if (fresh.length) announce(fresh.join(" · "));
   placeBands();
+  if ($("toast").classList.contains("show")) placeToast();   // a fault's band that came up under a notice moves it off the bar
 }
 
 // ---------- the thread: one notebook page that keeps filling, newest at the bottom ----------
@@ -3806,6 +3830,8 @@ function followCards(stored) {
 function syncPracticeSeg() {
   const on = practiceSince != null;
   document.querySelectorAll("#practice-seg button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.practice === "on") === on)));
+  const tag = $("practice-tag");
+  if (tag && tag.hidden === on) { tag.hidden = !on; placeBands(); }   // in the bar while on: the bands' room beside it is measured again
 }
 // The day in a span of its own, marked when it is today: a phone's window leaves it out there (index.html, .day.today), the time
 // alone, so the kind, the time and an answer's six keys keep one line. The whole of it stays on the pointer
@@ -5053,6 +5079,15 @@ function exportAnki() {
 // contents' card would cut it off at its edge, and its glass would hold a fixed menu inside itself
 let exportAt = "";   // where the key stood when the menu opened: the menu goes when the key moves
 const exportWhere = () => { const b = $("hist-export").getBoundingClientRect(); return `${Math.round(b.top)}:${Math.round(b.left)}`; };
+// A key in the window with room under it for a list of `h` px to hang from, the page scrolled as far as it goes for it: at
+// the window's foot (a phone's column, the contents' filters and Export under the notebook) the list opened over its key
+// instead and ran across the top edge of the contents' card. The room is asked as the key's scroll margin, so whichever of
+// its boxes scrolls gives it; at most half the window, for a long list that then scrolls inside itself (comboPlace)
+function roomUnder(key, h) {
+  key.style.scrollMarginBottom = `${Math.ceil(Math.min(h, innerHeight / 2) + 6 + 8)}px`;   // the gap to the list, the list, the window's edge
+  key.scrollIntoView({ block: "nearest", behavior: "instant" });
+  key.style.scrollMarginBottom = "";
+}
 function exportMenu(open, back = false) {
   const m = $("export-menu"), key = $("hist-export");
   if (!open) {
@@ -5063,11 +5098,11 @@ function exportMenu(open, back = false) {
     return;
   }
   toggleMenu(false); comboClose(false);                    // one menu open at a time
-  key.scrollIntoView({ block: "nearest", behavior: "instant" });   // the key in the window, for the menu to hang from
   m.hidden = false;
   key.setAttribute("aria-expanded", "true");
   // Under the key, its right edge on the key's, inside the window; over it when there is no room under it
   m.style.left = "8px"; m.style.top = "8px";               // measured first where nothing squeezes it
+  roomUnder(key, m.offsetHeight);                          // the key in the window with room under it, for the menu to hang from
   const b = key.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
   const up = b.bottom + 6 + h > innerHeight - 8 && b.top - 6 - h >= 8;
   m.classList.toggle("up", up);
@@ -5578,6 +5613,12 @@ function handle(m) {
     // the model download the local model's card started: its progress, then done or why it failed
     case "llm_pull":
       pullNow = m.status === "done" || m.status === "failed" ? null : m;
+      // ended: what the Models list and the last status said of it ended too. The status that says so comes after this
+      // message, once the server has looked at the local model again, and the list until it is read again
+      if (!pullNow) {
+        if (maint.models?.pulling) maint.models.pulling = null;
+        if (eng()?.local?.pulling) delete eng().local.pulling;
+      }
       if (m.status === "failed") toast(t("The download of {model} failed: {error}", { model: m.model || "", error: m.error || "" }), null, "bad");
       if (m.status === "done") toast(t("{model} is ready", { model: m.model || "" }), null, "done");
       renderAll();
@@ -5847,9 +5888,14 @@ function settingRow(item) {
   // A switch for what this server was started without is drawn off: nothing it holds is done. The kept value is the server's and
   // shows again with the feature; one dimmed for a setting it needs (ACTIVE_WHEN, needs) keeps its value, used once that is on
   const shown = item.kind === "bool" && UNAVAILABLE[item.key]?.() ? false : v;
+  // the server's help, its last full stop dropped where more follows it on the line
+  const help = extra || why ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "";
+  // why it cannot be used now, set apart from what comes before it as the panel's facts are (" · "): after a space alone it
+  // read as the help's own last words, the colour the one thing that told them apart
+  const said = why ? `${help || extra ? " · " : ""}<span class="warn">${escapeHtml(why)}</span>` : "";
   return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, shown, !!why)}</span>
     ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
-    <p class="help">${escapeHtml(extra ? (item.help || "").replace(/[.。]\s*$/, "") : item.help || "")}${extra}${why ? ` <span class="warn">${escapeHtml(why)}</span>` : ""}</p>${item.key === "speech_terms" ? termsHtml() : ""}</div>`;
+    <p class="help">${escapeHtml(help)}${extra}${said}</p>${item.key === "speech_terms" ? termsHtml() : ""}</div>`;
 }
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
 // sections become tabs down the side, so every setting is one click from any other.
@@ -6374,6 +6420,9 @@ function comboToggle(btn) {
   btn.setAttribute("aria-expanded", "true");
   if (btn.dataset.proxy) document.body.appendChild(list);   // the card's frosted glass would hold a fixed list inside itself, cut off
   comboOpen = { btn, list, home };
+  // a filter of the contents: the page gives the list room under its key first, as Export's menu does (the sheets' lists stay
+  // inside their pane, which comboPlace keeps them to)
+  if (btn.dataset.proxy) roomUnder(btn, list.offsetHeight);
   comboPlace();
   const opts = [...list.querySelectorAll("li")];
   comboMove(Math.max(0, opts.findIndex((o) => o.getAttribute("aria-selected") === "true")));
@@ -6503,14 +6552,47 @@ function placeToast() {
   const sig = sigEl?.offsetParent && sigEl.getBoundingClientRect().width ? sigEl.getBoundingClientRect() : null;
   const ownRow = !!sig && sig.top >= keys.bottom - 1;       // the signals under the name and the keys, a row of their own
   const mid = (keys.top + keys.bottom) / 2;                 // the name's and the keys' row
-  const rooms = [{ l: (sig && !ownRow ? sig.right : brand.right) + 16, r: keys.left - 12, y: mid, h: 38, over: false }];
-  if (sig && !ownRow) rooms.push({ l: brand.right + 16, r: keys.left - 12, y: mid, h: 38, over: true });
-  if (ownRow) rooms.push({ l: sig.left, r: sig.right, y: (sig.top + sig.bottom) / 2, h: Math.max(26, Math.min(38, bar.bottom - keys.bottom - 8)), over: true });
   // its words' own width, one line: measured with the whole window for room, as laid out (offsetWidth): the hidden notice is
   // drawn at .98 of its size, and its drawn width chose a room 2% too narrow
   root.style.setProperty("--toast-l", "0px"); root.style.setProperty("--toast-r", "0px");
   const need = (el.firstElementChild?.offsetWidth || 0) + 1;
-  const room = rooms.find((x) => x.r - x.l >= need) || rooms.reduce((a, b) => (b.r - b.l > a.r - a.l ? b : a));
+  const fits = (x) => x.r - x.l >= need;
+  // A fault's band in the bar (the server gone, a capture that failed) stays in sight while the notice shows: standing in
+  // the bands' place, the notice hid them for as long as it showed (12 s with an Undo). It takes the bar's room beside the
+  // bands instead, right or left of them, where its words fit there
+  const fault = root.classList.contains("bands-in-bar") && !!document.querySelector("#alerts .alert.bad");
+  const rooms = [];
+  if (fault) {
+    const shown = [...document.querySelectorAll("#alerts .alert")].map((b) => b.getBoundingClientRect());
+    const bandsL = Math.min(...shown.map((b) => b.left)), bandsR = Math.max(...shown.map((b) => b.right));
+    rooms.push({ l: bandsR + 12, r: keys.left - 12, y: mid, h: 38, over: false },                                 // right of the bands
+      { l: (sig && !ownRow ? sig.right : brand.right) + 16, r: bandsL - 12, y: mid, h: 38, over: false });       // left of them
+  } else {
+    rooms.push({ l: (sig && !ownRow ? sig.right : brand.right) + 16, r: keys.left - 12, y: mid, h: 38, over: false });
+    if (sig && !ownRow) rooms.push({ l: brand.right + 16, r: keys.left - 12, y: mid, h: 38, over: true });
+    if (ownRow) rooms.push({ l: sig.left, r: sig.right, y: (sig.top + sig.bottom) / 2, h: Math.max(26, Math.min(38, bar.bottom - keys.bottom - 8)), over: true });
+  }
+  // Under the bar, over the page, on as many lines as its words take (five at most): where a fault's band leaves no room
+  // in the bar for them, and on a phone or a touch screen where no room holds them on one line, as no pointer rests there
+  // for the rest of them (its title): "로컬 모델이 응답하지 않아 에이..." was all a phone showed of a notice to act on
+  const below = !rooms.some(fits) && (fault || window.matchMedia("(max-width: 600px), (hover: none)").matches);
+  // the bands stay drawn under a notice that does not take their place (index.html): one beside them, or under the bar,
+  // where on a wide touch screen they faded out of the bar for a notice that stood under it
+  root.classList.toggle("keep-bands", fault || below);
+  root.classList.toggle("toast-below", below);              // its top edge at --toast-y, its words wrapped (index.html)
+  if (below) {
+    // under the bands' strip too where it stands under the bar (one column), as wide as its words up to 560 px, centred
+    const bands = $("alerts"), strip = !root.classList.contains("bands-in-bar") && bands?.children.length ? bands.getBoundingClientRect() : null;
+    const top = Math.max(bar.bottom, strip && strip.bottom < window.innerHeight / 2 ? strip.bottom : 0) + 8;
+    const w = Math.min(need, 560, window.innerWidth - 32), l = Math.max(16, (window.innerWidth - w) / 2);
+    root.style.setProperty("--toast-l", `${Math.round(l)}px`);
+    root.style.setProperty("--toast-r", `${Math.round(Math.max(16, window.innerWidth - l - w))}px`);
+    root.style.setProperty("--toast-y", `${Math.round(top)}px`);
+    root.style.setProperty("--toast-h", "38px");
+    root.classList.remove("toast-over-signals");
+    return;
+  }
+  const room = rooms.find(fits) || rooms.reduce((a, b) => (b.r - b.l > a.r - a.l ? b : a));
   root.style.setProperty("--toast-l", `${Math.round(room.l)}px`);
   root.style.setProperty("--toast-r", `${Math.round(window.innerWidth - room.r)}px`);
   root.style.setProperty("--toast-y", `${Math.round(room.y)}px`);
@@ -6777,6 +6859,7 @@ document.addEventListener("click", (e) => {
   if (act?.dataset.act === "update-hide") hideUpdate(act.dataset.version || "");
   if (act?.dataset.act === "gpu") send({ type: "gpu_release" });
   if (act?.dataset.act === "gpu-load") gpuLoad();
+  if (act?.dataset.act === "reanalyze") reanalyze();   // the key named in a sentence (REDO_KEY), as the bar's own
   const cf = e.target.closest("[data-confirm]");
   if (cf && send({ type: "agent_confirm_reply", cid: cf.dataset.confirm, send: cf.dataset.send === "1" })) {
     confirms.delete(cf.dataset.confirm); renderTail();
@@ -7110,6 +7193,12 @@ function cameBack(id, how) {
   threadChanged();
   const el = entryEl(id);
   if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  // Undo gives the keyboard back to the answer that came back, on its own Delete key, and brings it into view: it stayed on
+  // the Delete key of the card that took this one's place as it went, where the next Enter deleted a second answer
+  if (how === "undo" && el) {
+    el.querySelector(":scope > .row.head [data-delete]")?.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "nearest" });
+  }
 }
 // The notice after a delete pressed here, with its Undo: what became of the answer, and for how long it can be put back
 function offerUndo(id, said) {
@@ -7339,6 +7428,57 @@ let maintSection = "check", maintOpener = null;
 const maint = { check: null, report: null, days: 7, events: null, failures: true, log: null, models: null, backup: null, busy: "" };
 // The words of a check's state, on its pill in its colour (index.html, .pill[data-state])
 const CHECK_WORD = { ok: () => t("Fine"), warn: () => t("Look at it"), bad: () => t("Needs fixing"), off: () => t("Switched off"), idle: () => t("Waiting") };
+// Where a check's fix is done, as the server names it (go): a section of this sheet ("log"); a section of Solver settings
+// ("settings:capture"); the Capture connection ("connection"); or a switch on the page ("switch:sw-screen"). The switches a
+// fix may send to, each by the name of what it turns on and off: the capture card's two and the agent's card's
+const MAINT_SWITCHES = { "sw-screen": () => t("Screen capture"), "sw-audio": () => t("Sound capture"), "sw-agent": () => AG() };
+// A go split at its first colon into its kind and what it names: "settings:capture" is ["settings", "capture"]
+function maintGoParts(go) {
+  const at = go.indexOf(":");                                   // -1 for a go of one word ("log", "connection")
+  return at < 0 ? [go, ""] : [go.slice(0, at), go.slice(at + 1)];
+}
+// The words of the key to where a fix is done: where it goes, named as the panel names it there. "" for a place this panel
+// does not know (a later server's), which then gets no key
+function maintGoWords(go) {
+  go = String(go || "");                                        // an older server's check has no go, or an empty one
+  const sec = MAINT_SECTIONS.find(([id]) => id === go);
+  if (sec) return t("Open {section}", { section: sec[1]() });   // a section of this sheet, by its tab's name
+  const [kind, arg] = maintGoParts(go);
+  if (kind === "settings") {
+    // the section by its tab's name (the agent's by its short name, as renderSettings writes it); the sheet alone until the
+    // server has said its sections, or for one it does not have
+    const title = settingsMeta?.sections.find(([s]) => s === arg)?.[1];
+    return title ? t("Open {section} in Solver settings", { section: arg === "agent" ? AGS() : title }) : t("Open {section}", { section: t("Solver settings") });
+  }
+  if (go === "connection") return t("Open {section}", { section: t("Capture connection") });   // the sheet, by the menu's name for it
+  if (kind === "switch" && MAINT_SWITCHES[arg]) return t("Go to the {name} switch", { name: MAINT_SWITCHES[arg]() });
+  return "";
+}
+// A fix's key pressed: to that section of this sheet, or out of the sheet to where the fix is done. One sheet at a time, as
+// the menu opens them: this one closes first, and the keyboard it gives back to the gear is where the next one goes back to
+function maintGo(go) {
+  if (MAINT_SECTIONS.some(([id]) => id === go)) {
+    maintSection = go; renderMaint();
+    $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true });   // the keyboard on its tab
+    loadMaint(maintSection);
+    return;
+  }
+  const [kind, arg] = maintGoParts(go);
+  closeMaint();
+  if (kind === "settings") {
+    // shown on that section when the server has it; renderSettings keeps the first one otherwise
+    if (settingsMeta?.sections.some(([s]) => s === arg)) settingsSection = arg;
+    openSettings();
+  } else if (go === "connection") openCapture();
+  else if (kind === "switch" && MAINT_SWITCHES[arg]) {
+    const sw = $(arg);
+    // the switch brought into the window where it is out of it (a phone's column, the cards under the notebook), the reader's
+    // place left alone where it is in view; then the keyboard on it. One that cannot be pressed now (no capture program to
+    // switch) takes no focus, and its card in view says why
+    sw?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    sw?.focus({ preventScroll: true });
+  }
+}
 // A read of the API: its JSON, or {error} with the server's words or what went wrong on the way
 async function apiGet(path) {
   try {
@@ -7388,11 +7528,9 @@ function maintWhen(ts) {
   const d = new Date(ts * 1000), today = new Date();
   return d.toDateString() === today.toDateString() ? fmtClock(ts * 1000) : `${fmtDay(ts * 1000)} ${fmtClock(ts * 1000)}`;
 }
-// A command with its Copy key, as the Capture connection gives one: each word a piece of its own, so a narrow line breaks
-// between words and never inside a file's name (index.html, .way-cmd .tok)
+// A command with its Copy key, as the Capture connection gives one (cmdChip)
 function maintCmd(cmd) {
-  const words = cmd.split(" ").map((w) => `<span class="tok">${escapeHtml(w)}</span>`).join(" ");
-  return `<span class="way-cmd"><code class="cmd">${words}</code><button type="button" class="btn sm" data-copy="${escapeHtml(cmd)}">${COPY_MARK}<span>${t("Copy")}</span></button></span>`;
+  return cmdChip(cmd);
 }
 function maintCheck() {
   const got = maint.check;
@@ -7400,11 +7538,12 @@ function maintCheck() {
     + (got && !got.error ? `<span class="when">${t("Checked {when}", { when: fmtClock(maint.checkAt || Date.now()) })}</span>` : "") + `</div>`;
   if (!got) return tools + `<p class="cap">${t("Reading")}</p>`;
   if (got.error) return tools + `<p class="cap warn">${escapeHtml(got.error)}</p>`;
-  // a row a part: its name and the state's word, what was found, and what to do, with its command or the section it is in
-  return tools + (got.checks || []).map((c) => {
-    const go = c.go && MAINT_SECTIONS.find(([id]) => id === c.go);
+  // a row a part: its name and the state's word, what was found, and what to do, with its command or a key to where it is
+  // done (maintGoWords: the words say where it goes)
+  const rows = (got.checks || []).map((c) => {
+    const go = maintGoWords(c.go);
     const fix = c.fix || c.cmd || go
-      ? `<p class="help fix">${escapeHtml(c.fix || "")}${go ? ` <button type="button" class="btn sm" data-maint-go="${escapeHtml(c.go)}">${t("Open {section}", { section: go[1]() })}</button>` : ""}`
+      ? `<p class="help fix">${escapeHtml(c.fix || "")}${go ? ` <button type="button" class="btn sm" data-maint-go="${escapeHtml(c.go)}">${escapeHtml(go)}</button>` : ""}`
         + `${c.cmd ? maintCmd(c.cmd) : ""}</p>` : "";
     // Switched off on purpose is no fault: grey, as a card at rest (the skin colours a pill's "off" red, the state of a switch
     // the person turned off on a card), the row keeping the server's own state
@@ -7412,6 +7551,8 @@ function maintCheck() {
       + `<span class="ctl"><span class="pill" data-state="${c.state === "off" ? "idle" : escapeHtml(c.state)}">${(CHECK_WORD[c.state] || CHECK_WORD.idle)()}</span></span>`
       + `<p class="help">${escapeHtml(c.said || "")}</p>${fix}</div>`;
   }).join("");
+  // none at all, said where the list goes: nothing under Check again read as a list still on its way
+  return tools + (rows || `<p class="cap">${t("Nothing to check")}</p>`);
 }
 // The periods a report covers, as ./sidenote report --days counts them: whole calendar days, today and the ones before it
 const REPORT_DAYS = [[1, () => t("Today")], [7, () => t("7 days")], [30, () => t("30 days")]];
@@ -7463,8 +7604,14 @@ function maintReport() {
     { engine: engines[f.engine] || f.engine, p50: maintSec(f.p50), p90: maintSec(f.p90), n: f.n }))).join("<br>"));
   }
   const c = p.cost_usd || {};
-  out += row("cost", escapeHtml(t("{agent} cost", { agent: AG() })), maintUsd(sum("cost_usd")), escapeHtml(t("Answers {a} · Follow-ups {f} · Nothing to solve {e}",
-    { a: maintUsd(c.answers || 0), f: maintUsd(c.followups || 0), e: maintUsd(c.empty || 0) })));
+  // what the spend went on, in the order ./sidenote report prints it: the answers, the follow-ups, the screens with nothing
+  // to solve, and the answers with no head line (a refusal, a turn that ran away), which the total holds as well and the
+  // line left out; said only when the agent was paid for any, as a local answer costs nothing
+  const headless = Number(c.headless) > 0 ? ` · ${t("Answers with no head line {h}", { h: maintUsd(Number(c.headless)) })}` : "";
+  // each amount held to the word before it (a no-break space): on a phone the line broke before "$0.050", left alone at the
+  // start of the next line
+  out += row("cost", escapeHtml(t("{agent} cost", { agent: AG() })), maintUsd(sum("cost_usd")), escapeHtml((t("Answers {a} · Follow-ups {f} · Nothing to solve {e}",
+    { a: maintUsd(c.answers || 0), f: maintUsd(c.followups || 0), e: maintUsd(c.empty || 0) }) + headless).replace(/ (?=\$)/g, "\u00a0")));
   // why analyses stopped before their answers, in the report's own words for each reason (the server's, names.cancelled)
   const stopped = Object.entries(p.cancelled || {});
   if (stopped.length) {
@@ -7511,7 +7658,12 @@ function maintLog() {
 // A size in GB with one decimal, from bytes or from GB
 const maintGb = (bytes, gb) => (bytes ? (bytes / 1024 ** 3).toFixed(1) : gb ? Number(gb).toFixed(1) : "");
 function maintModels() {
-  const got = maint.models, pulling = pullNow;   // the download under way, as the local model's card follows it
+  // the download under way: as its progress messages say it (llm_pull), else as the server said it when the list was read or
+  // in its last status, for a page opened while one runs (a model being prepared after its download sends no progress for
+  // minutes); the end of a download takes the last two with it (the llm_pull message, done or failed), and one read in the
+  // moment the server says it ended is no download under way
+  const going = (x) => (x && x.status !== "done" && x.status !== "failed" ? x : null);
+  const got = maint.models, pulling = pullNow || going(got?.pulling) || going(eng()?.local?.pulling);
   const tools = `<div class="maint-tools"><button type="button" class="btn sm" data-maint="models">${t("Refresh")}</button></div>`;
   if (!got) return tools + `<p class="cap">${t("Reading")}</p>`;
   if (got.error) return tools + `<p class="cap warn">${escapeHtml(got.error)}</p>`;
@@ -7600,7 +7752,7 @@ $("maint-body").addEventListener("click", (e) => {
   const tab = e.target.closest("[data-maint-sec]");
   if (tab) { maintSection = tab.dataset.maintSec; renderMaint(); tab.isConnected || $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true }); loadMaint(maintSection); return; }
   const go = e.target.closest("[data-maint-go]");
-  if (go) { maintSection = go.dataset.maintGo; renderMaint(); $("maint-body").querySelector(`[data-maint-sec="${maintSection}"]`)?.focus({ preventScroll: true }); loadMaint(maintSection); return; }
+  if (go) { maintGo(go.dataset.maintGo); return; }
   const fail = e.target.closest("[data-maint-failures]");
   if (fail) { maint.failures = fail.dataset.maintFailures === "1"; maint.events = null; renderMaint(); loadMaint("log"); return; }
   const days = e.target.closest("[data-maint-days]");
@@ -7733,7 +7885,9 @@ function noteCapture(before) {
   } else if (capture.clients === 0 && capWaitFrom == null) capWaitFrom = Date.now();
 }
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-// The wait, with its seconds; past a minute, where to look for why
+// The seconds the sheet or the guide has waited with no program, 0 before the wait began
+const capWaited = () => (capWaitFrom ? Math.max(0, Math.floor((Date.now() - capWaitFrom) / 1000)) : 0);
+// The wait, with its seconds (where to look for why, past a minute, is a part of its own: capHint)
 function capWait() {
   if (wsState !== "up" || capture.clients == null) return "";
   if (capture.clients > 0) {
@@ -7741,34 +7895,53 @@ function capWait() {
     return Date.now() - capArrived.at < 60000 && capture.since === capArrived.since
       ? `<p class="setup-try done">${TICK_MARK}<span>${who ? t("Connected: {who}", { who }) : t("Connected")}</span></p>` : "";
   }
-  const secs = capWaitFrom ? Math.max(0, Math.floor((Date.now() - capWaitFrom) / 1000)) : 0, where = whereNow();
-  const why = secs < 60 ? ""
-    : where === "desktop" ? t("Nothing yet · quit Sidenote and start it again")
-    : where === "cluster" ? t("Nothing yet · check the port-forward, and the last lines the program printed")
-    : t("Nothing yet · {cmd} shows what stops it", { cmd: `<code class="cmd">./sidenote capture --console</code>` });
-  return `<p class="setup-try"><span class="spin"></span><span>${t("Waiting for the capture program")} <span class="secs">${mmss(secs)}</span></span></p>`
-    + (why ? `<p class="setup-note warn">${why}</p>` : "");
+  return `<p class="setup-try"><span class="spin"></span><span>${t("Waiting for the capture program")} <span class="secs">${mmss(capWaited())}</span></span></p>`;
+}
+// Past a minute of waiting, where to look for why, by where this server runs; the command to look with has its Copy key, as
+// every command on the sheet has. A part of its own, so the seconds ticking above it do not draw its key again every second
+// (a press would land on a key gone, and a copied key's tick would last under a second)
+function capHint() {
+  if (wsState !== "up" || capture.clients !== 0 || capWaited() < 60) return "";
+  const where = whereNow(), look = "./sidenote capture --console";
+  if (where === "desktop") return `<p class="setup-note warn">${t("Nothing yet · quit Sidenote and start it again")}</p>`;
+  if (where === "cluster") return `<p class="setup-note warn">${t("Nothing yet · check the port-forward, and the last lines the program printed")}</p>`;
+  return `<p class="setup-note warn with-key"><span>${t("Nothing yet · {cmd} shows what stops it", { cmd: `<code class="cmd">${look}</code>` })}</span>`
+    + `${copyKey(look)}</p>`;
 }
 // The ways to start one, by where this server runs, each command with its Copy key. On the server's own PC first; another
 // PC's three steps (its port, the program, its start) are the ways themselves in a cluster and folded under them otherwise
 let capMore = false;   // "From another PC" opened here: kept open across a redraw (keepFold)
 // The fold as it was left, put back on a part drawn again: kept out of the part's words, so opening it redraws nothing
 function keepFold(body) { for (const d of body.querySelectorAll("details.ways-more")) if (d.open !== capMore) d.open = capMore; }
+// A command's words as its chip draws them (index.html, .way-cmd .tok): each a piece of its own, so a narrow line breaks
+// between them and never at a word's own hyphen ("--server", "notes-sidenote-server"). A word with a path in it is cut
+// before each single slash that follows a letter or a digit ("ws://127.0.0.1:8777" and "/ingest", "svc" and
+// "/notes-sidenote-server"): a word longer than the line breaks there, as an address is broken in print, and not inside a
+// name ("/ing|est" on a phone). A piece alone wider than its line still breaks inside itself
+function cmdWords(c) {
+  return c.split(" ").map((w) => w.split(/(?<=[A-Za-z0-9])(?=\/(?!\/))/)
+    .map((x) => `<span class="tok">${escapeHtml(x)}</span>`).join("")).join(" ");
+}
+// The key that copies a command: its mark and its word, as on every command of the panel
+function copyKey(c) {
+  return `<button type="button" class="btn sm" data-copy="${escapeHtml(c)}">${COPY_MARK}<span>${t("Copy")}</span></button>`;
+}
+// A command and its Copy key on one line: the Capture connection's ways, the guide's first step and Maintenance
+function cmdChip(c) {
+  return `<span class="way-cmd"><code class="cmd">${cmdWords(c)}</code>${copyKey(c)}</span>`;
+}
 function captureWays() {
   if (wsState !== "up" || capture.clients == null) return "";   // nothing known: the band says the server is away
   const where = whereNow(), on = capture.clients > 0;
   if (where === "desktop") return on ? "" : `<p class="setup-note">${t("The Sidenote app starts it with the server, and quitting it ends the app")}</p>`;
-  // each word of a command a piece of its own, so a narrow line breaks between words and never after a word's own hyphen or
-  // slash ("--server", "/ingest"); a word wider than the line breaks inside itself (index.html, .tok)
-  const words = (c) => c.split(" ").map((w) => `<span class="tok">${escapeHtml(w)}</span>`).join(" ");
-  const cmd = (c) => `<span class="way-cmd"><code class="cmd">${words(c)}</code><button type="button" class="btn sm" data-copy="${escapeHtml(c)}">${COPY_MARK}<span>${t("Copy")}</span></button></span>`;
+  const cmd = cmdChip;   // each command with its Copy key
   const step = (n, what, how) => `<li>${n ? `<span class="n" aria-hidden="true">${n}</span>` : ""}<div class="way"><div class="t">${what}</div>${how}</div></li>`;
   const win = /Win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
   const py = win ? "py -3" : "python3", port = panelPort(), f = status.forward, zip = captureZip();
   const forward = where === "cluster" && f
     ? cmd(`kubectl --namespace ${f.namespace} port-forward svc/${f.service} ${port}:${f.port}`)
       + `<p class="d">${t("The port-forward this panel came through: keep it running")}</p>`
-    : `<span class="way-cmd"><code class="cmd">${words(`ssh -L ${port}:127.0.0.1:${port}`)} <var class="tok">${t("server PC")}</var></code></span>`
+    : `<span class="way-cmd"><code class="cmd">${cmdWords(`ssh -L ${port}:127.0.0.1:${port}`)} <var class="tok">${t("server PC")}</var></code></span>`
       + `<p class="d">${t("Any forward to the server's {port} on 127.0.0.1 of that PC", { port })}</p>`;
   const elsewhere = step(1, t("Forward the server's port"), forward)
     + step(2, t("The capture program and Python 3.10 or newer"), `<p class="d"><a href="${escapeHtml(zip.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(zip.name)}</a>`
@@ -7797,6 +7970,7 @@ function captureParts() {
   return [
     ["card", setupCard(t("Capture program"), progState(true))],
     ["wait", capWait()],
+    ["hint", capHint()],
     ["acts", captureActs()],
     ["ways", captureWays()],
     ["rows-h", settingsMeta ? `<h3 class="ways-h">${t("What it does")}</h3>` : ""],
@@ -7914,6 +8088,7 @@ function setupParts(id) {
       ["lede", `<p class="setup-lede">${t("The capture program sends the screen and the sound of the PC it runs on to this server · one program at a time")}</p>`],
       ["card", setupCard(t("Capture program"), progState(true))],
       ["wait", capWait()],
+      ["hint", capHint()],
       ["ways", capture.clients > 0 ? "" : captureWays()],
     ];
   }
@@ -7931,12 +8106,16 @@ function setupParts(id) {
       ? `<figure class="setup-shot"><img src="${escapeHtml(setupShot.url)}" alt="${escapeHtml(t("The screen Sidenote receives"))}">`
         + `<figcaption>${setupShot.live ? t("Screen now") : t("Last screen {when}", { when: fmtAgo(serverNow() - setupShot.ts) })}</figcaption></figure>`
       : setupShot?.text ? `<p class="setup-note warn">${escapeHtml(setupShot.text)}</p>` : "";
+    const none = up && capture.clients === 0;   // known to have no capture program: nothing sends a screen
     return [
       ["lede", `<p class="setup-lede">${t("What Sidenote reads: the screen the capture program sends, of the monitor chosen below")}</p>`],
       ["card", setupCard(t("Screen capture"), screenState())],
-      ["first", up && capture.clients === 0 ? `<p class="setup-note warn with-key"><span>${t("The capture program comes first")}</span>`
+      ["first", none ? `<p class="setup-note warn with-key" id="setup-first"><span>${t("The capture program comes first")}</span>`
         + `<button type="button" class="btn sm" data-setup="connect">${t("Capture connection")}</button></p>` : ""],
-      ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${up ? "" : " disabled"}>${t("Show the screen it receives")}</button></div>`],
+      // the screen it receives comes from the capture program: with none connected the key cannot be pressed, and says why
+      // as a setting that cannot be used says it: the note above it is its description, and its tooltip
+      ["act", `<div class="setup-act"><button type="button" class="btn sm" data-setup="shot"${!up || none ? " disabled" : ""}`
+        + `${none ? ` aria-describedby="setup-first" title="${escapeHtml(t("The capture program comes first"))}"` : ""}>${t("Show the screen it receives")}</button></div>`],
       ["shot", shot],
       ["mac", onMac() ? `<p class="setup-note">${t("On a Mac, the capture program needs Screen Recording in System Settings, Privacy & Security")}</p>` : ""],
       ["rows", setupRows("monitor", "monitor_follow", "skip_windows")],
@@ -8371,7 +8550,7 @@ function connect() {
     // One column (index.html: 1000 px and narrower) puts the rail under the thread, where it does not follow: the
     // index is then shown whole, not as a box inside a page that scrolls anyway.
     if (oneColumn.matches) {
-      if (alerts) document.documentElement.style.setProperty("--alerts-h", `${Math.ceil(alerts.getBoundingClientRect().height)}px`);
+      if (alerts) document.documentElement.style.setProperty("--alerts-h", `${bandsHeld(alerts)}px`);
       if (list && list.style.maxHeight) list.style.maxHeight = "";
       if (rail.style.top) rail.style.top = "";
       rail.classList.remove("stick", "drift", ...RAIL_STEPS);   // narrowed from two columns: it stands in the page
@@ -8487,12 +8666,15 @@ function connect() {
   if (window.ResizeObserver && alerts) new ResizeObserver(fitRail).observe(alerts);
 }
 
-// A box that scrolls inside itself (the contents' list, a sheet's pane) says there is more under its foot: its last lines fade
-// out while more is below (index.html, .more-below). Its scrollbar is thin, overlaid on some systems: answers and settings stood
-// under a straight cut with nothing to say so. Marked as it scrolls, as its words change and as its size does
+// A box that scrolls inside itself (the contents' list, a sheet's pane, the bands past a third of the window) says there is
+// more under its foot: its last lines fade out while more is below (index.html, .more-below). Its scrollbar is thin, overlaid
+// on some systems: answers, settings and a fifth band stood under a straight cut with nothing to say so. Marked as it
+// scrolls, as its words change and as its size does
 {
-  const SCROLLERS = "#history, .set-pane";
-  const mark = (el) => el.classList.toggle("more-below", el.scrollHeight - el.clientHeight - el.scrollTop > 2);
+  const SCROLLERS = "#history, .set-pane, #alerts";
+  // the bands' box past 12 px only, a band's own air: its fade (34 px) over the last band for 4 px of it out of sight washed
+  // out a whole band's words and keys
+  const mark = (el) => el.classList.toggle("more-below", el.scrollHeight - el.clientHeight - el.scrollTop > (el.id === "alerts" ? 12 : 2));
   const markAll = () => document.querySelectorAll(SCROLLERS).forEach(mark);
   let due = 0;   // one look per frame, however many changes came in it
   const soon = () => { if (!due) due = requestAnimationFrame(() => { due = 0; markAll(); }); };
@@ -8501,7 +8683,7 @@ function connect() {
   addEventListener("resize", soon);
   const sized = window.ResizeObserver ? new ResizeObserver(soon) : null;   // a sheet opened, the list's height set (fitRail)
   const changed = new MutationObserver(soon);                              // rows and settings drawn, a pane shown
-  for (const id of ["history", "settings-body", "setup-body", "capture-body", "maint-body"]) {
+  for (const id of ["history", "settings-body", "setup-body", "capture-body", "maint-body", "alerts"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     changed.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });

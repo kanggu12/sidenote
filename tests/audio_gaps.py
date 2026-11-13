@@ -10,9 +10,12 @@ A fake device here keeps time the way a real one does: sound is ready at the pac
 holds AUDIO_BUFFER_SEC of it, and a reader away for longer loses the oldest and gets soundcard's warning. Cases:
 a gap the device makes while the reader keeps up, a reader that stalls past the buffer, sound handed back ahead
 of the clock (soundcard's made-up silence overlapping the sound after it), and a gap just before sound is
-switched off, which used to wait for sound to be switched on again before it was said.
+switched off, which used to wait for sound to be switched on again before it was said. And the lines in the
+program's language: they say why the sound went missing, and were English under SIDENOTE_LANG=ko.
   python tests/audio_gaps.py [path to capture.py]"""
 import importlib.util
+import os
+import re
 import sys
 import threading
 import time
@@ -22,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+os.environ["SIDENOTE_LANG"] = "en"   # the lines as written, which the checks below read; Korean is asked for by name after
 # the capture program of this repository (this file is in tests/), or an older copy named on the command line
 spec = importlib.util.spec_from_file_location(
     "cap", sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).resolve().parents[1] / "client" / "capture.py"))
@@ -158,6 +162,39 @@ cap.AUDIO_GAP_NOTE_SEC = 30.0  # the minute never comes: only switching off can 
 said = run({"gap_at": 3}, 1.0, switch_off_at=0.4)
 check("a gap just before sound is switched off is said when it stops, not when it comes back",
       len(said) == 1, f"{said}")
+
+# ---- in the program's language (SIDENOTE_LANG=ko): these lines say why sound went missing, the device, this program or
+# the way out, and the rest of what the program says is translated. They stayed English, as the lines of measurements do.
+english = re.compile(r"\b(sound|device|program|behind|reading|dropped|server|network)\b", re.I)
+cap.LANG = "ko"
+gap_lines = [cap._gap_line(2, 1.5, 0.4), cap._gap_line(1, 0.02, 0.01)]   # far enough behind for the buffer to fill, and not
+check("the lines on the sound the device dropped are said in Korean under ko, the numbers as they are",
+      all(re.search("[가-힣]", x) and not english.search(x) for x in gap_lines)
+      and "1.5" in gap_lines[0] and "0.40" in gap_lines[0] and "0.02" in gap_lines[1], gap_lines)
+
+
+class Stuck(Sender):
+    """A socket that takes nothing in time: what waits to go out fills up, and the oldest of it is dropped."""
+
+    def send(self, message):
+        time.sleep(2)                              # one send that hangs: the device is read on a thread of its own all the same
+
+
+plain, queued = Sender, cap.AUDIO_QUEUE_SEC
+Sender, cap.AUDIO_QUEUE_SEC, cap.AUDIO_GAP_NOTE_SEC = Stuck, 0.1, 0.6   # two reads may wait, and the minute shortened
+run({}, 1.0)
+Sender, cap.AUDIO_QUEUE_SEC = plain, queued
+way_out = [x for x in lines if x.startswith("[audio]") and "fake speaker" not in x]   # all it said but the device it opened
+check("...and so is the line on the sound dropped on its way out", bool(way_out)
+      and all(re.search("[가-힣]", x) and not english.search(x) for x in way_out), way_out or lines[-4:])
+try:
+    cap.mac_loopback(types.SimpleNamespace(all_microphones=lambda: []))   # a Mac with no loopback input to record from
+    told = ""
+except RuntimeError as exc:                        # said inside the line of a device that could not record
+    told = str(exc)
+check("...and why a Mac records no sound, the commands and the names kept", bool(re.search("[가-힣]", told))
+      and "BlackHole" in told and "brew install blackhole-2ch" in told and "--audio-device" in told, told)
+cap.LANG = "en"
 
 print(f"\n==== {len(OK)} of {len(OK) + len(BAD)} as expected")
 if BAD:
