@@ -551,7 +551,7 @@ notebook carry the same readings.
   - **Clear history**, which takes a second press; an answer still being written stays. Starred answers go with the
     rest, and so does **Recently deleted**.
 
-The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.10.0**, and opens that
+The version of Sidenote the server runs stands beside the name in the top bar, such as **v0.10.1**, and opens that
 release's notes.
 
 The speech language is not in this menu: it is in **Solver settings**, in its **Speech** section.
