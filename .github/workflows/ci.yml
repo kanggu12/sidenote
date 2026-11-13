@@ -109,8 +109,9 @@ jobs:
   panel:
     name: panel suites (${{ matrix.part.name }})
     runs-on: ubuntu-24.04
-    # Four jobs at once, about as long as each other: in one, the suites took 25 minutes. The audit of the layout is split by
-    # its groups (the release notice in the band at 9 widths took 254 s of its 633 here); tests/README.md
+    # Five jobs at once, about as long as each other: in one, the suites took 25 minutes. The audit of the layout is split by
+    # its groups (the release notice in the band at 9 widths took 254 s of its 633 here; what opens over the page, over half of
+    # the rest, came within 10 s of its 1800 s alone with the rest, and past them once); tests/README.md
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +119,8 @@ jobs:
           - { id: suites, name: "most suites", suites: "", skip_suites: "panel_layout panel_design panel_update", skip: "", only: "" }
           - { id: design, name: "design", suites: "panel_design panel_update", skip_suites: "", skip: "", only: "" }
           - { id: layout-band, name: "layout: the band", suites: "panel_layout", skip_suites: "", skip: "", only: "the release notice" }
-          - { id: layout-rest, name: "layout: the rest", suites: "panel_layout", skip_suites: "", skip: "the release notice", only: "" }
+          - { id: layout-over, name: "layout: what opens over the page", suites: "panel_layout", skip_suites: "", skip: "", only: "what opens over the page" }
+          - { id: layout-rest, name: "layout: the rest", suites: "panel_layout", skip_suites: "", skip: "the release notice,what opens over the page", only: "" }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
