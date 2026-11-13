@@ -91,8 +91,9 @@ python docker/fetch_vendor.py docker/vendor.json panel/vendor
 tests/run.sh panel
 ```
 
-The panel group runs as four jobs at once, chosen with `SUITES` and `SKIP_SUITES`, and `panel_layout` split by its
-groups with `ONLY` and `SKIP` (the matrix in `ci.yml`): its longest group is the release notice in the band.
+The panel group runs as five jobs at once, chosen with `SUITES` and `SKIP_SUITES`, and `panel_layout` split by its
+groups with `ONLY` and `SKIP` (the matrix in `ci.yml`): its longest groups, the release notice in the band and what opens
+over the page, are jobs of their own.
 
 The measurement data is not there, so the checks that read it are skipped, and each suite that skipped some says how
 many and why in its line (see "The measurement data" below). Every other check runs as it does locally.
