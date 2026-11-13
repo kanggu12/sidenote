@@ -296,8 +296,8 @@ def _defs() -> list[Setting]:
         # replaces it with the real ones. Without that, the panel's list held "1" alone with nothing connected,
         # so all monitors could not be chosen at all.
         Setting("monitor", "int", 1, "capture", t("Monitor"),
-                t("All monitors takes them as one picture and sees a problem on any of them. On Windows the panel's "
-                  "own window is covered before it is sent"),
+                t("All monitors: every monitor in one picture, so a problem on any of them is seen. On Windows the "
+                  "panel's own window is covered before it is sent"),
                 [(0, t("All monitors")), (1, t("Monitor {i}", i=1)), (2, t("Monitor {i}", i=2))]),
         # The capture program carries it out (client/capture.py, ScreenFollow), told in its control message: off, it
         # reads the monitor above and nothing else. It looks at the others now and then to know where a new screen

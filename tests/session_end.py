@@ -11,7 +11,8 @@ the server too, through that checkout's ./sidenote down. Nothing else ends it. C
 - the capture program itself (a real server on a free port, a private Xvfb display, stand-ins for its screen grabber
   and its tray library, and a checkout whose ./sidenote only writes down that it ran): Quit pressed in the tray ends it
   with 0 and runs ./sidenote down; asked to quit through the server, taken over by another capture program, or quit
-  where no checkout was handed to it, it runs nothing.
+  where no checkout was handed to it, it runs nothing; a deploy's restart under --no-auto-update is said and let go;
+  and started as the desktop app starts it, it says how to end it there, naming neither Ctrl+C nor ./sidenote.
 
     .venv/bin/python tests/session_end.py
 """
@@ -344,13 +345,14 @@ try:
         for name, text in STAND_INS.items():
             (stand_in / name).write_text(text, encoding="utf-8")
 
-        def program(folder: Path, hand: bool = True, press: str = "", more: tuple = ()):
+        def program(folder: Path, hand: bool = True, press: str = "", more: tuple = (), app: bool = False):
             """The capture program of this checkout as the launcher starts it, the checkout handed to it or not, with what the
-            stand-in tray presses."""
+            stand-in tray presses; with `app`, as the desktop app starts it (SIDENOTE_SUPERVISED)."""
             run_dir = tempfile.mkdtemp(prefix="sidenote-session-run-")   # its guard's file, away from the user's
             env = {**{k: v for k, v in os.environ.items() if k not in ("SIDENOTE_CAPTURE_RUN", "SIDENOTE_SUPERVISED")},
                    "DISPLAY": f":{number}", "XDG_RUNTIME_DIR": run_dir, "SIDENOTE_LANG": "en",
-                   "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(stand_in), "STAND_IN_PRESS": press}
+                   "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(stand_in), "STAND_IN_PRESS": press,
+                   **({"SIDENOTE_SUPERVISED": "1"} if app else {})}
             args = [sys.executable, "-u", str(folder / "client" / "capture.py"), "--server", f"ws://127.0.0.1:{PORT}/ingest",
                     "--no-audio", "--no-auto-update", *more] + (["--stop-server-on-quit", str(folder)] if hand else [])
             return subprocess.Popen(args, env=env, cwd=run_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -390,6 +392,11 @@ try:
             # Following the changing screen has moved nothing at a start: the chosen monitor is read, and said from the hello
             caps = status().get("caps") or {}
             check("...and that it reads the chosen monitor (following: null)", "following" in caps and caps["following"] is None, caps)
+            # A deploy's restart, as ./sidenote up asks it of a program whose code is not the one it deployed: these run with
+            # --no-auto-update, as the desktop app starts its own, so no Updater takes it. It said it would restart at a
+            # quiet moment all the same
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT}/capture/restart?quiet=1", data=b"", method="POST")
+            urllib.request.urlopen(req, timeout=10).close()
             req = urllib.request.Request(f"http://127.0.0.1:{PORT}/capture/quit", data=b"", method="POST")
             urllib.request.urlopen(req, timeout=10).close()     # ./sidenote capture-stop, as down asks it first
             rc, out = ended(prog)
@@ -398,6 +405,9 @@ try:
                 prog.kill()
         check("asked to quit through the server (capture-stop, down): it ends with 0 and runs nothing",
               connected and rc == 0 and ran(asked, 3) == "", f"exit {rc}, ran {ran(asked)!r}: {out[-300:]}")
+        check("...and a restart at a quiet moment under --no-auto-update before it: said as asked for and let go, not as a deploy",
+              "A restart at a quiet moment was asked for: not taken by this program (--no-auto-update)" in out
+              and "restarting at a quiet moment" not in out and "New code was deployed" not in out, out[-500:])
         wait_for(lambda: status()["clients"] == 0, 10)
 
         taken = checkout("taken", program=True)
@@ -431,6 +441,24 @@ try:
                 prog.kill()
         check("Quit pressed where no checkout was handed (the server was up before): it ends with 0 and runs nothing",
               rc == 0 and ran(plain, 3) == "" and "Stopping the server" not in out, f"exit {rc}: {out[-300:]}")
+        wait_for(lambda: status()["clients"] == 0, 10)
+
+        # Under the desktop app what it prints goes to the app's capture.log: there is no console for Ctrl+C there nor a
+        # ./sidenote to run, and its Quit Sidenote ends the app. Its start line said "Ctrl+C to stop." all the same, and the
+        # app's own quit (through the server, as the app asks it when it ends) named ./sidenote capture-stop
+        under_app = checkout("app", program=True)
+        prog = program(under_app, hand=False, app=True)
+        try:
+            connected = wait_for(lambda: status()["clients"] == 1, 30)
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT}/capture/quit", data=b"", method="POST")
+            urllib.request.urlopen(req, timeout=10).close()     # what the app asks when it ends (desktop/app.py)
+            rc, out = ended(prog)
+        finally:
+            if prog.poll() is None:
+                prog.kill()
+        check("under the desktop app: the start line names Quit Sidenote in the tray icon, and nothing it says names Ctrl+C "
+              "or ./sidenote", connected and rc == 0 and "To end it: Quit Sidenote in the tray icon." in out
+              and "Ctrl+C" not in out and "./sidenote" not in out, f"exit {rc}: {out[-500:]}")
 finally:
     if up is not None:   # the private display, however this ended: a check that raised left it running for an hour
         up[1].kill()

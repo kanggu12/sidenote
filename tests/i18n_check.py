@@ -1,6 +1,7 @@
 """The server's words in English or Korean: English with no language set, the panel's language once a panel says it
 (ui_lang), Korean words that are the old ones from server/locale/ko.json, a level on every notice, ./sidenote report
-in the terminal's language, and the line that asks the models for an English answer only in English.
+in the terminal's language (its help and errors, and those of stats and events, too), Monitor's help, and the line
+that asks the models for an English answer only in English.
 
     .venv/bin/python tests/i18n_check.py
 
@@ -202,6 +203,15 @@ SETTINGS.dynamic_options.update(saved)
 check("the monitors a capture program names are said in the language of the moment",
       ko_monitors == [(0, "모든 모니터"), (1, "1번 (1920x1080)")]
       and en_monitors == [(0, "All monitors"), (1, "Monitor 1 (1920x1080)")], f"{ko_monitors} {en_monitors}")
+# Monitor's help names its option as the other helps name theirs ("Auto: ...", "Off: ..."): "All monitors takes them" read
+# as a plural with a singular verb
+help_of = lambda: {i["key"]: i["help"] for i in SETTINGS.meta()["items"]}["monitor"]  # noqa: E731
+i18n.set_lang("ko")
+ko_help = help_of()
+i18n.set_lang("en")
+check("Monitor's help in English names All monitors as its option, and the Korean is as it was",
+      help_of().startswith("All monitors: every monitor in one picture, so a problem on any of them is seen.")
+      and ko_help == "모든 모니터는 한 장으로 받아 어느 모니터의 문제든 봄. Windows에서는 패널 창을 가린 뒤 보냄", [help_of(), ko_help])
 
 print("\n[the models' answers]")
 from server import agents, analyzer  # noqa: E402
@@ -279,6 +289,30 @@ check("SIDENOTE_LANG comes before the locale", "날짜" in report("report", "--d
 check("the server it cannot reach is said in the same language",
       "Cannot reach the server" in report("stats", LANG="en_US.UTF-8", SIDENOTE_PORT="9")
       and "서버 연결 실패" in report("stats", LANG="ko_KR.UTF-8", SIDENOTE_PORT="9"))
+# The command line itself: argparse's usage line, headings, -h's help and errors, and the options' own help, were English
+# whatever the terminal's language
+ARGPARSE_EN = re.compile(r"usage:|options:|show this help|error:|argument |invalid|required|expected one")
+helps = {cmd: report(cmd, "--help", LANG="ko_KR.UTF-8") for cmd in ("report", "events", "stats")}
+check("report, events and stats --help in Korean: argparse's words and the options' own",
+      all(f"사용법: sidenote {cmd}" in said and "옵션:" in said and "이 도움말을 보이고 끝냄" in said
+          and not ARGPARSE_EN.search(said) for cmd, said in helps.items())
+      and "오늘을 포함한 날수 (7)" in helps["report"] and "최근 몇 개 (30)" in helps["events"] and "JSON으로 출력" in helps["stats"],
+      helps)
+check("...and what the commands are, under the program's own --help", all(w in report("--help", LANG="ko_KR.UTF-8")
+      for w in ("사용법: sidenote", "명령:", "실행 중인 서버의 지금 수치", "로그 폴더의 최근 이벤트", "하루씩, 그리고 기간 전체의 요약")),
+      report("--help", LANG="ko_KR.UTF-8"))
+en_help = report("report", "--help", LANG="en_US.UTF-8")
+check("...in English for an English terminal", "usage: sidenote report" in en_help and "how many days, today included (7)" in en_help
+      and not HANGUL.search(en_help), en_help)
+said = {"days": report("report", "--days", "x", LANG="ko_KR.UTF-8"), "none": report(LANG="ko_KR.UTF-8"),
+        "which": report("reprot", LANG="ko_KR.UTF-8"), "more": report("events", "--json", LANG="ko_KR.UTF-8")}
+check("an error in Korean: the program and the argument named, what is wrong said",
+      "sidenote report: 오류: 인자 --days: 1 이상의 정수가 아님: x" in said["days"]
+      and "sidenote: 오류: 빠진 인자: {stats,events,report}" in said["none"]
+      and "인자 {stats,events,report}: 고를 수 없는 값: 'reprot'" in said["which"]
+      and "알 수 없는 인자: --json" in said["more"] and not any(ARGPARSE_EN.search(s) for s in said.values()), said)
+check("...and in English for an English terminal", "sidenote report: error: argument --days: not a whole number from 1: x"
+      in report("report", "--days", "x", LANG="en_US.UTF-8"), report("report", "--days", "x", LANG="en_US.UTF-8"))
 
 
 print("\n[the settings' help says the server's own limits]")

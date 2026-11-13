@@ -28,6 +28,9 @@ FREE_BAD_GB = 1.0     # under this: a fault (a model download or the history's n
 FRAME_STALE_SEC = 60  # a connected program whose screen has not come for this long while it is on: something holds it
 # The events that say something failed or was held back, as `./sidenote events --errors` picks them (server/report.py)
 HELD = ("agent_brake", "agent_limit", "local_stuck")
+# An answer that ended in an error, as `./sidenote report` counts a day's errors (server/report.py, report_data): not an
+# agent failure this PC's model then answered (agent_error), nor work held back, which the person got answers through
+ANSWER_ERRORS = ("analysis_error", "followup_error")
 MAX_EVENTS = 1000     # what one request returns at most
 MAX_LOG_LINES = 2000  # the same for the server's log
 BLOCK = 64 * 1024     # how much of a file a backwards read takes at a time
@@ -43,8 +46,10 @@ def _ago(age: float) -> str:
 
 
 def _check(cid: str, name: str, state: str, said: str, fix: str = "", cmd: str = "", go: str = "") -> dict:
-    """One row of the list: what it is about, how it stands, what is known, what to do and a command for it; `go` names a
-    section of the sheet the fix is in (the panel draws a key to it)."""
+    """One row of the list: what it is about, how it stands, what is known, what to do and a command for it; `go` names
+    where in the panel the fix is, for a key to it (docs/API.md, GET /api/v1/check): a section of this sheet ("log"),
+    Solver settings at a section ("settings:agent"), the Capture connection sheet ("connection"), or a switch on the page
+    by its element's id ("switch:sw-screen"). Empty for a fix done in a terminal or outside the panel."""
     return {"id": cid, "name": name, "state": state, "said": said, "fix": fix, "cmd": cmd, "go": go}
 
 
@@ -72,32 +77,36 @@ def checks(f: dict) -> list[dict]:
     cap = f.get("capture") or {}
     where = f.get("where", "")
     if not cap.get("clients"):
-        start = {"desktop": (t("Quit Sidenote and start it again"), ""),
-                 "cluster": (t("Start it on your PC: Capture connection in the menu gives the way"), "")}.get(
-                     where, (t("Run it in the server's terminal"), "./sidenote capture"))
-        out.append(_check("capture", t("Capture program"), BAD, t("Not connected"), start[0], start[1]))
+        # what to do, its command, and where in the panel it is: the ways to start one on the person's own PC are on the
+        # Capture connection sheet; the app's and the terminal's are not in the panel
+        start = {"desktop": (t("Quit Sidenote and start it again"), "", ""),
+                 "cluster": (t("Start it on your PC: Capture connection in the menu gives the way"), "", "connection")}.get(
+                     where, (t("Run it in the server's terminal"), "./sidenote capture", ""))
+        out.append(_check("capture", t("Capture program"), BAD, t("Not connected"), *start))
     else:
         who = cap.get("who") or {}
         pc = " · ".join(x for x in (who.get("host"), who.get("system")) if x)
         theirs, ours = who.get("version") or "", f.get("version", "")
         if theirs and ours and theirs != ours:   # another release: it may not speak what this server does
+            # Capture connection holds the program's Restart key, and says whether a restart takes the server's code
             out.append(_check("capture", t("Capture program"), WARN, t("Release {theirs}, the server's is {ours}", theirs=theirs, ours=ours)
-                              + (f" · {pc}" if pc else ""), t("Restart it to run the server's code")))
+                              + (f" · {pc}" if pc else ""), t("Restart it to run the server's code"), go="connection"))
         else:
             out.append(_check("capture", t("Capture program"), OK, (pc + " · " if pc else "") + t("Connected")))
     # The screen: switched off on purpose is no fault, nor is a window of Skip windows on screen (no screen comes then, on
     # purpose), nor a still screen: the program sends a screen when a change settles, and none while nothing changes. A
     # program connected for a minute that has sent none since it connected is: its first settled screen comes in seconds.
-    if not cap.get("screen_on", True):
-        out.append(_check("screen", t("Screen capture"), OFF, t("Switched off"), t("Turn it on in the capture card")))
+    if not cap.get("screen_on", True):   # the capture card's own switch turns it on again
+        out.append(_check("screen", t("Screen capture"), OFF, t("Switched off"), t("Turn it on in the capture card"),
+                          go="switch:sw-screen"))
     elif cap.get("clients"):
         age, up = cap.get("frame_age"), cap.get("connected_for")
         none_since = age is None or (up is not None and age > up)    # no screen since this program connected
         if cap.get("skipping"):
             out.append(_check("screen", t("Screen capture"), IDLE, t("A window of Skip windows is on screen")))
-        elif none_since and (up is None or up > FRAME_STALE_SEC):
+        elif none_since and (up is None or up > FRAME_STALE_SEC):   # Monitor is among Capture connection's settings
             out.append(_check("screen", t("Screen capture"), WARN, t("No screen since it connected"),
-                              t("Check the monitor chosen in Capture connection")))
+                              t("Check the monitor chosen in Capture connection"), go="connection"))
         elif none_since:
             out.append(_check("screen", t("Screen capture"), IDLE, t("No screen yet")))
         else:
@@ -123,8 +132,9 @@ def checks(f: dict) -> list[dict]:
     loc = f.get("local") or {}
     if not loc.get("present"):
         out.append(_check("local", t("Local model"), OFF, t("Not in this server"), t("Start the server with {cmd}", cmd="SIDENOTE_ANALYZER=local")))
-    elif not loc.get("on"):
-        out.append(_check("local", t("Local model"), OFF, t("Switched off"), t("Turn it on in Solver settings")))
+    elif not loc.get("on"):   # Local model is the first of Solver settings' Solving section (server/settings.py)
+        out.append(_check("local", t("Local model"), OFF, t("Switched off"), t("Turn it on in Solver settings"),
+                          go="settings:solve"))
     elif loc.get("missing"):
         want = loc.get("want") or loc.get("model") or ""
         want = ", ".join(str(w) for w in want) if isinstance(want, (list, tuple)) else str(want)   # models.wanted() gives a list
@@ -143,15 +153,18 @@ def checks(f: dict) -> list[dict]:
     name = ag.get("label") or t("Agent")
     if not ag.get("present"):
         out.append(_check("agent", name, OFF, t("Not in this server")))
-    elif ag.get("mode") == "off":
-        out.append(_check("agent", name, OFF, t("Switched off"), t("Turn it on in Solver settings")))
+    elif ag.get("mode") == "off":   # Problems the agent solves, in Solver settings' section named for the agent
+        out.append(_check("agent", name, OFF, t("Switched off"), t("Turn it on in Solver settings"), go="settings:agent"))
     elif not ag.get("ok") and ag.get("installed") is False:
         out.append(_check("agent", name, OFF, t("Not installed on this PC")))
     elif not ag.get("ok"):
         login = ag.get("login") or ""
         out.append(_check("agent", name, WARN, t("Not signed in"), t("Sign in from the server's terminal") if login else "", login))
     elif ag.get("limit_until"):
-        until = time.strftime("%H:%M", time.localtime(ag["limit_until"]))
+        at = time.localtime(ag["limit_until"])
+        # the clock alone for a limit that ends today; the date with it otherwise, as the pipeline writes the same limit
+        # (pipeline.limit_left): a weekly limit ends days later, and "until 03:00" read as tonight's
+        until = time.strftime("%H:%M" if at[:3] == time.localtime()[:3] else "%m-%d %H:%M", at)
         out.append(_check("agent", name, WARN, t("At its plan's limit until {when}", when=until)))
     else:
         out.append(_check("agent", name, OK, ag.get("model") or t("Signed in")))
@@ -181,7 +194,8 @@ def checks(f: dict) -> list[dict]:
                           t("Free GPU in the local model's card, or close what else uses it") if share > 0.97 else ""))
     else:
         out.append(_check("gpu", "GPU", IDLE, t("No reading")))
-    # What failed in the last day, from the events: a key to the Log section, where they are
+    # The answers that ended in an error in the last day, from the events (errors_since): a key to the Log section, where
+    # they are among the failures
     errors = f.get("errors_day")
     if errors is not None:
         out.append(_check("errors", t("Errors"), WARN if errors else OK,
@@ -222,9 +236,9 @@ def is_error(e: dict) -> bool:
     return name.endswith("_error") or name in HELD
 
 
-def recent_events(log_dir: Path, errors: bool = False, limit: int = 200, since: float = 0.0) -> list[dict]:
-    """The latest events, newest first: all of them or only the failures, at most `limit`, none before `since`. Read
-    from the end of events.jsonl, then of its rotated files, until enough are found."""
+def recent_events(log_dir: Path, errors: bool = False, limit: int = 200, since: float = 0.0, kinds: tuple = ()) -> list[dict]:
+    """The latest events, newest first: all of them, only the failures, or only those of `kinds`, at most `limit`, none
+    before `since`. Read from the end of events.jsonl, then of its rotated files, until enough are found."""
     limit = max(0, min(int(limit), MAX_EVENTS))
     out = []
     for path in _files(log_dir, "events.jsonl"):
@@ -241,13 +255,16 @@ def recent_events(log_dir: Path, errors: bool = False, limit: int = 200, since: 
                 return out                # older ones follow, all before `since`
             if errors and not is_error(e):
                 continue
+            if kinds and e.get("event") not in kinds:
+                continue
             out.append(e)
     return out
 
 
 def errors_since(log_dir: Path, since: float) -> int:
-    """How many failures there were from `since` on (the checks' last day)"""
-    return len(recent_events(log_dir, errors=True, limit=MAX_EVENTS, since=since))
+    """How many answers ended in an error from `since` on (the checks' last day), counted as ./sidenote report counts a
+    day's errors (ANSWER_ERRORS): an agent failure whose question this PC's model then answered is not one"""
+    return len(recent_events(log_dir, limit=MAX_EVENTS, since=since, kinds=ANSWER_ERRORS))
 
 
 def log_tail(log_dir: Path, lines: int = 200) -> list[str]:
@@ -370,8 +387,10 @@ def sweep_backups(log_dir: Path) -> int:
 
 
 def stream_backup(archive: Path, block: int = BLOCK):
-    """The archive's bytes, a block at a time, and the archive gone after the last one, or when the download stops first
-    (a cancelled download closes this generator, and its finally runs): nothing of the history stays behind."""
+    """The archive's bytes, a block at a time, and the archive gone after the last one, or when the download stops after
+    one (a cancelled download closes this generator, and its finally runs): nothing of the history stays behind. A
+    generator's finally runs only once it has started, so a download that stops before its first block is the response's
+    to clear (app.py, BackupResponse)."""
     try:
         with archive.open("rb") as fh:
             while chunk := fh.read(block):
@@ -381,12 +400,14 @@ def stream_backup(archive: Path, block: int = BLOCK):
 
 
 def remove_backup(archive: Path) -> None:
-    """The archive and its folder, once sent (or when sending failed)"""
+    """The archive and its folder, once sent (or when sending failed). Called by both the generator and the response, so
+    one gone already is no fault; and on Windows a file still open (the generator holding it between two blocks) cannot
+    be removed: the generator's own finally takes it once it is closed"""
     try:
         archive.unlink()
-    except FileNotFoundError:
+    except OSError:              # gone already, or held open on Windows
         pass
     try:
         archive.parent.rmdir()
-    except OSError:
+    except OSError:              # gone already, or not empty while the archive is held
         pass

@@ -184,6 +184,9 @@ def group_gone(br, s):
     check("z is Undo while the notice offers it", p.js(SENT)[-1] == {"type": "answer_restore", "id": 100}, p.js(SENT))
     restored(p, 100, rows[0], n=1)
     check("...and the answer is back first in the notebook", p.js(SHOWN)[:1] == [100], p.js(SHOWN))
+    back = p.js("""() => { const k = document.activeElement, r = entryEl(100)?.getBoundingClientRect();
+      return { key: k?.dataset?.delete != null ? idOf(k.dataset.delete) : k?.tagName, seen: !!r && r.top >= -1 && r.top < innerHeight }; }""")
+    check("...the keyboard on its own Delete key, not the next card's, and the answer in view", back == {"key": 100, "seen": True}, back)
     p.js("() => document.activeElement.blur()")
     p.page.keyboard.press("z")
     p.wait(100)

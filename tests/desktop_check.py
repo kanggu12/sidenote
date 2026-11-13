@@ -9,6 +9,7 @@ import http.server
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -60,6 +61,42 @@ with tempfile.TemporaryDirectory() as bins:
           == "claude-code")
     check("...and SIDENOTE_AGENT, when set, wins", app.server_env({"PATH": bins, "SIDENOTE_AGENT": "off"}, Path("/d"), 1)
           ["SIDENOTE_AGENT"] == "off")
+    # An analyzer mode that names its agent keeps it: the CLI found was set over it, and the server ran Claude Code for a PC
+    # set to the Anthropic API
+    modes = [app.server_env({"PATH": bins, "SIDENOTE_ANALYZER": m}, Path("/d"), 1).get("SIDENOTE_AGENT") for m in ("cli", "api", "Claude", "mock")]
+    check("...and not over an analyzer mode that names its own agent (cli, api, claude, mock)", modes == [None, None, None, None], modes)
+    # The CLI's full path for the agent by every name the server takes for it (server/config.py), SIDENOTE_CLAUDE's too:
+    # on Windows the server cannot start claude.cmd by its bare name, and the panel said "Not installed"
+    claude, codex = shutil.which("claude", path=bins), shutil.which("codex", path=bins)
+    named = [({"SIDENOTE_AGENT": "claude"}, claude), ({"SIDENOTE_AGENT": "cli"}, claude),
+             ({"SIDENOTE_AGENT": "claude-cli"}, claude), ({"SIDENOTE_AGENT": " Claude-Code "}, claude),
+             ({"SIDENOTE_AGENT": "CODEX"}, codex),
+             ({"SIDENOTE_CLAUDE": "claude-code"}, claude), ({"SIDENOTE_CLAUDE": "Codex"}, codex),
+             ({"SIDENOTE_AGENT": "no-such-agent"}, claude),     # the server runs Claude Code for a name it does not know
+             ({"SIDENOTE_AGENT": "off"}, None), ({"SIDENOTE_AGENT": "API"}, None), ({"SIDENOTE_AGENT": "mock"}, None),
+             ({"SIDENOTE_CLAUDE": "anthropic-api"}, None)]      # no CLI to find for those
+    got = [app.server_env({"PATH": bins, **given}, Path("/d"), 1).get("SIDENOTE_AGENT_BIN") for given, _ in named]
+    check("the agent's CLI by its full path under each of the agent's names, in any case, and none for an agent with no CLI",
+          got == [want for _, want in named], [(given, path) for (given, want), path in zip(named, got) if path != want])
+    kept = [app.server_env({"PATH": bins, "SIDENOTE_AGENT": "claude-code", name: "/opt/claude/bin/claude"}, Path("/d"), 1)
+            for name in ("SIDENOTE_AGENT_BIN", "SIDENOTE_CLAUDE_BIN")]
+    check("...and a CLI path already given, under either of its names, is the one the server gets",
+          kept[0]["SIDENOTE_AGENT_BIN"] == "/opt/claude/bin/claude" and "SIDENOTE_AGENT_BIN" not in kept[1], kept)
+# The app's reading of the agent's name against the server's own (server/config.py, read again for each setting in a
+# process of its own), so the two cannot part: the analyzer modes that name an agent, and no setting at all, included
+settings = ([given for given, _ in named] + [{"SIDENOTE_ANALYZER": a} for a in ("api", "claude", "cli", "Mock", "local", "x")]
+            + [{}])
+server_read = ("import importlib, json, os, sys\nimport server.config as c\nout = []\n"
+               "for env in json.loads(sys.argv[1]):\n"
+               "    for k in ('SIDENOTE_AGENT', 'SIDENOTE_CLAUDE', 'SIDENOTE_ANALYZER'):\n        os.environ.pop(k, None)\n"
+               "    os.environ.update(env)\n    out.append(importlib.reload(c).CONFIG.agent)\nprint(json.dumps(out))\n")
+done = subprocess.run([sys.executable, "-c", server_read, json.dumps(settings)], cwd=str(ROOT), capture_output=True,
+                      text=True, timeout=60)
+theirs = json.loads(done.stdout) if done.returncode == 0 else done.stderr[-300:]
+ours = [app.agent_of(given) for given in settings] if hasattr(app, "agent_of") else None
+check("...the agent named as the server reads the name, for every setting above and with none",
+      ours == theirs, [(given, mine, server) for given, mine, server in zip(settings, ours or [], theirs) if mine != server]
+      if isinstance(theirs, list) else theirs)
 check("the speech decoder's threads follow SIDENOTE_WHISPER_THREADS",
       app.server_env({"SIDENOTE_WHISPER_THREADS": "2"}, Path("/d"), 1)["OMP_NUM_THREADS"] == "2")
 
@@ -118,6 +155,22 @@ with socket.socket() as s:
     check("a port something listens on is not free", not app.port_free(busy))
 free = app.free_port()
 check("a port nothing listens on is free", app.port_free(free))
+
+print("[SIDENOTE_PORT, read as the server reads it]")
+# The app itself with one that names no port: it goes on with 8777, where it ended in a traceback before its log or a
+# window (the Windows app has no console, so nothing was seen); and with one that does, its help names that as the default
+said = {raw: subprocess.run([sys.executable, "-m", "desktop", "--help"], cwd=str(ROOT), capture_output=True, text=True,
+                            timeout=60, env={**os.environ, "SIDENOTE_PORT": raw}) for raw in ("abc", "8790.0")}
+words = {raw: " ".join(done.stdout.split()) for raw, done in said.items()}   # argparse wraps its lines where it likes
+check("a SIDENOTE_PORT that names no port leaves the app on 8777, and one that does is the default its help names",
+      said["abc"].returncode == 0 and "(default 8777:" in words["abc"]
+      and said["8790.0"].returncode == 0 and "(default 8790:" in words["8790.0"],
+      {raw: (done.returncode, done.stderr.strip()[-200:] or words[raw][-160:]) for raw, done in said.items()})
+read_port = getattr(app, "port_setting", None)
+raws = ("", " 8790 ", "8791.0", "abc", "0", "70000", "-1", "inf", "nan")
+ports = [read_port({"SIDENOTE_PORT": raw}) for raw in raws] if read_port else None
+check("...a port's number taken, spaces round it and 8791.0 too, and a word, 0, 70000, -1, inf and nan read as 8777",
+      ports == [8777, 8790, 8791, 8777, 8777, 8777, 8777, 8777, 8777], ports)
 
 print("[the watch over the children]")
 

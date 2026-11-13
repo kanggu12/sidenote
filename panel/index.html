@@ -344,6 +344,13 @@
   .brand-ver { margin-left: 6px; padding: 3px 6px; font-family: var(--mono); font-size: 11.5px; line-height: 1;
     color: var(--ink-2); text-decoration: none; border: 1px solid var(--rule); white-space: nowrap; }
   .brand-ver:hover, .brand-ver:focus-visible { color: var(--ink); border-color: var(--ink-2); }
+  /* Practice on, beside the release, for as long as it keeps the next answers back (app.js, syncPracticeSeg): turned on,
+     nothing on the page changed and nothing said so until the next answer came held. The blue pen of a chosen state */
+  .practice-tag { margin-left: 6px; padding: 3px 7px; font-size: 11.5px; font-weight: 650; line-height: 1; white-space: nowrap;
+    color: var(--ink-2); border: 1px solid var(--rule); }
+  :root[data-skin="classic"] .practice-tag { color: var(--pen-blue); border-color: var(--pen-blue-line); background: var(--pen-blue-soft); }
+  /* On a phone it takes the release's place while it shows: with both, the bar's keys went down to a row of their own */
+  @media (max-width: 440px) { .brand-line:has(.practice-tag:not([hidden])) .brand-ver { display: none; } }
   /* The five signals are one reading, so they sit together in one well set into the bar, the way Slack sets its
      search box into its top bar. */
   .signals { display: flex; align-items: center; gap: 4px 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2);
@@ -794,6 +801,9 @@
   .md :not(pre) > code, .asked code { background: var(--code-bar);
     padding: .08em .36em; border-radius: 5px; font-size: .86em; color: var(--ink);
     overflow-wrap: break-word; }
+  /* In a table the cell is the code's own grey (--code), which the chip's grey was 7 levels off in the light theme: the
+     chip did not show, and its air read as spaces round it, "( sec=krb5p )". A shade of the ink there, as on a sheet */
+  .md td :not(pre) > code, .md th :not(pre) > code, .md :is(td, th) > code { background: color-mix(in srgb, var(--ink) 8%, var(--code)); }
 
   /* Run a code solution and show its real output, right under the block. */
   /* The run box is the foot of the block above it, not a second box under it: the block gives up
@@ -1606,11 +1616,12 @@
   /* ---- Classic is a notebook: its material, on its own greys, written in what a note is written in: red, blue, yellow and white pens. Paper with a little
      grain and its own dot grid, the page on a stack of pages with holes punched down its margin. The right column is glass over
      the desk, colourless. The frame of the panel (buttons, switches, cards) stays graphite and white: the pens' colours,
-     yellow and red and white, are for what is written on the page. The page itself stays solid: it is read. All under data-skin="classic". ---- */
-  :root[data-skin="classic"][data-theme="dark"] { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; }
-  :root[data-skin="classic"][data-theme="light"] { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; }
-  @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; } }
-  @media (prefers-color-scheme: light) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; } }
+     yellow and red and white, are for what is written on the page, and the blue pen, faintly, for what is chosen in the
+     frame (a choice pressed, the tab or step open, the keyboard's ring) and for the cloud agent's name on an answer. The page itself stays solid: it is read. All under data-skin="classic". ---- */
+  :root[data-skin="classic"][data-theme="dark"] { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; --pen-blue: #8ab4f8; --pen-blue-soft: color-mix(in srgb, #8ab4f8 15%, var(--sheet)); --pen-blue-line: color-mix(in srgb, #8ab4f8 55%, transparent); }
+  :root[data-skin="classic"][data-theme="light"] { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; --pen-blue: #1a56c4; --pen-blue-soft: color-mix(in srgb, #1a56c4 8%, var(--sheet)); --pen-blue-line: color-mix(in srgb, #1a56c4 45%, transparent); }
+  @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #ff4545; --t-short: #8ab4f8; --t-essay: #f4f2ea; --t-coding: #6fcf97; --t-algorithm: #8ab4f8; --t-math: #ff4545; --t-work: #6fcf97; --t-diagram: #8ab4f8; --t-other: #e3e4e5; --t-followup: #f4f2ea; --pen: #e3e4e5; --pen-hi: #ffffff; --pen-ink: #161719; --pen-soft: rgba(227, 228, 229, .14); --switch-on: #8e9095; --margin: #d92b2b; --hl: #8e9095; --tk-fn: #8ab4f8; --tk-kw: #ff6a5e; --tk-type: #6fcf97; --series-1: #8ab4f8; --in-1: #0b1a30; --series-2: #e02b2b; --in-2: #ffffff; --series-3: #2eb67d; --in-3: #06170f; --viz-a: #2eb67d; --viz-b: #8ab4f8; --viz-c: #e5484d; --viz-d: #6fcf97; --hl-yellow: rgba(242, 199, 68, .78); --hl-top: 84%; --hl-bot: 100%; --pen-red: #ff6a5e; --pen-blue: #8ab4f8; --pen-blue-soft: color-mix(in srgb, #8ab4f8 15%, var(--sheet)); --pen-blue-line: color-mix(in srgb, #8ab4f8 55%, transparent); } }
+  @media (prefers-color-scheme: light) { :root[data-skin="classic"]:not([data-theme]) { --t-mcq: #d4101c; --t-short: #1a56c4; --t-essay: #1d1c1d; --t-coding: #0a7a4e; --t-algorithm: #1a56c4; --t-math: #d4101c; --t-work: #0a7a4e; --t-diagram: #1a56c4; --t-other: #454245; --t-followup: #1d1c1d; --pen: #1d1c1d; --pen-hi: #000000; --pen-ink: #ffffff; --pen-soft: #ececec; --switch-on: #454245; --margin: #e8453f; --hl: #616061; --tk-fn: #1a56c4; --tk-kw: #d4101c; --tk-type: #0a7a4e; --series-1: #1a56c4; --in-1: #ffffff; --series-2: #d4101c; --in-2: #ffffff; --series-3: #007a5a; --in-3: #ffffff; --viz-a: #007a5a; --viz-b: #1a56c4; --viz-c: #d4101c; --viz-d: #0a7a4e; --pen-red: #d4101c; --pen-blue: #1a56c4; --pen-blue-soft: color-mix(in srgb, #1a56c4 8%, var(--sheet)); --pen-blue-line: color-mix(in srgb, #1a56c4 45%, transparent); } }
   :root[data-skin="classic"][data-theme="dark"] { --lamp-glow: rgba(255, 255, 255, .03); --page-dot: rgba(255, 255, 255, .11); --tone-mix: 4%; --stack-1: #1a1b1e; --stack-2: #17181a; --pool-1: rgba(255, 255, 255, .05); --pool-2: rgba(255, 255, 255, .03); --pool-3: rgba(255, 255, 255, .04); }
   @media (prefers-color-scheme: dark) { :root[data-skin="classic"]:not([data-theme]) { --lamp-glow: rgba(255, 255, 255, .03); --page-dot: rgba(255, 255, 255, .11); --tone-mix: 4%; --stack-1: #1a1b1e; --stack-2: #17181a; --pool-1: rgba(255, 255, 255, .05); --pool-2: rgba(255, 255, 255, .03); --pool-3: rgba(255, 255, 255, .04); } }
   @media (prefers-color-scheme: light) { :root[data-skin="classic"]:not([data-theme]) { --lamp-glow: rgba(255, 255, 255, .4); --page-dot: rgba(29, 28, 29, .13); --tone-mix: 4%; --stack-1: #f6f6f6; --stack-2: #eeeeee; --pool-1: rgba(0, 0, 0, .05); --pool-2: rgba(0, 0, 0, .03); --pool-3: rgba(0, 0, 0, .04); } }
@@ -1789,8 +1800,10 @@
   :root[data-skin="classic"] .shot[data-of="now"] { outline: 2px solid var(--viz-a); outline-offset: -2px; }
   :root[data-skin="classic"] .shot[data-of="answer"] { outline: 1px solid var(--rule-2); outline-offset: -1px; }
   :root[data-skin="classic"] .shot[data-of="last"], :root[data-skin="classic"] .shot[data-of="none"] { outline: 1px dashed var(--rule-2); outline-offset: -1px; }
-  /* What takes something away looks it */
-  :root[data-skin="classic"] #gpu-release { color: #e8912d; border-color: color-mix(in srgb, #e8912d 60%, transparent); background: color-mix(in srgb, #e8912d 10%, transparent); }
+  /* What takes something away looks it under the pointer, and at rest only while the GPU's memory is nearly full (.full,
+     app.js drawGpu), when freeing it is worth a look: orange at all times beside the green of a model loaded, it read as a
+     warning about nothing */
+  :root[data-skin="classic"] #gpu-release.full { color: #e8912d; border-color: color-mix(in srgb, #e8912d 60%, transparent); background: color-mix(in srgb, #e8912d 10%, transparent); }
   :root[data-skin="classic"] #gpu-release:hover:not(:disabled) { color: #fff; background: #e8912d; border-color: #e8912d; }
   /* The opening: the shape of the page in placeholders, then what is there fades in; no flash of anything else */
   :root[data-skin="classic"] .boot > div { border-radius: 2px; background-color: var(--sheet); background-image:
@@ -1827,7 +1840,9 @@
   :root[data-skin="classic"] :is(.signal[data-state="off"], .pill[data-state="off"]) { color: var(--pen-red); }
   :root[data-skin="classic"] .signal[data-state="off"] .dot, :root[data-skin="classic"] .pill[data-state="off"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--pen-red); box-shadow: 0 0 5px color-mix(in srgb, var(--pen-red) 35%, transparent); }
   :root[data-skin="classic"] .src[data-state="off"] .src-name svg { color: var(--pen-red); }
-  :root[data-skin="classic"] .switch[aria-checked="false"] { background: color-mix(in srgb, var(--pen-red) 22%, var(--well)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pen-red) 70%, transparent); }
+  /* Red for off is the capture card's screen and sound switches' alone (the rail's own rules, below), so that one turned off
+     is not forgotten (note 95): a switch at rest, the agent's or a setting's (Join scrolled screens, Follow the changing
+     screen, off by default), is the plain grey well of .switch, since red there read as a fault in every settings sheet */
   :root[data-skin="classic"] .switch[aria-checked="true"] { background: #1f9460; }
   :root[data-skin="classic"] .switch[data-idle="true"][aria-checked="true"] { background: color-mix(in srgb, #2eb67d 45%, var(--rule-2)); }
   /* The readings are all in the right column, which is in view beside the answers; a fault comes up as a band. The bar holds the name and
@@ -1910,15 +1925,35 @@
   :root[data-skin="classic"] .menu .seg { padding: 0 0 10px; gap: 4px; background: none; }
   :root[data-skin="classic"] .menu .seg button { flex: 1; height: 30px; background: rgba(255, 255, 255, .05); border: 1px solid transparent; box-shadow: none; color: var(--ink-2); font-weight: 500; }
   :root[data-skin="classic"] .menu .seg button:hover { background: rgba(255, 255, 255, .1); color: var(--ink); }
-  :root[data-skin="classic"] .menu .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, .1); border-color: transparent; color: var(--ink); font-weight: 650; box-shadow: var(--sunken); }
+  :root[data-skin="classic"] .menu .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--pen-blue) 18%, transparent); border-color: transparent; color: var(--pen-blue); font-weight: 650; box-shadow: var(--sunken); }
   :root[data-skin="classic"][data-theme="light"] .menu .seg button { background: rgba(0, 0, 0, .04); }
-  :root[data-skin="classic"][data-theme="light"] .menu .seg button[aria-pressed="true"] { background: rgba(0, 0, 0, .08); box-shadow: var(--sunken); }
+  :root[data-skin="classic"][data-theme="light"] .menu .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--pen-blue) 11%, transparent); box-shadow: var(--sunken); }
   /* In a sheet the chosen choice's edge is a rule, not the ink colour of the focus ring beside it */
-  :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { border-color: var(--rule-2); }
+  :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { border-color: var(--pen-blue-line); }
   /* On and off told apart at a glance in a sheet's rows (of nine types, the ones on read only by a bolder word on a
      darker well): those not chosen are muted words, the chosen full ink in a rim, and a ticked type carries its tick */
   :root[data-skin="classic"] .set .seg button:not([aria-pressed="true"]) { color: var(--graphite); font-weight: 500; }
-  :root[data-skin="classic"] .set .seg button[aria-pressed="true"] { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  :root[data-skin="classic"] .set .seg button[aria-pressed="true"] { color: var(--pen-blue); border-color: var(--pen-blue-line); background: var(--pen-blue-soft); }
+  /* a choice not taken answers the pointer with a breath of the same pen */
+  :root[data-skin="classic"] .set .seg button:not([aria-pressed="true"]):not(:disabled):hover { background: color-mix(in srgb, var(--pen-blue) 5%, var(--sheet-2)); }
+  /* the open tab of a sheet and the open step of the setup guide: the tint, the words in the pen, and a short stroke of
+     it down the tab's inner edge, kept with the pressed well */
+  :root[data-skin="classic"] :is(.set-tab, .setup-step)[aria-selected="true"] { background: var(--pen-blue-soft); color: var(--pen-blue);
+    box-shadow: inset 2.5px 0 0 var(--pen-blue), var(--sunken); }
+  /* the keyboard's ring, and a box of words that has the keyboard, in the same pen */
+  :root[data-skin="classic"] :focus-visible { outline-color: var(--pen-blue); }
+  :root[data-skin="classic"] :is(.set textarea.words, .set textarea.terms-text, .askbox input):focus-visible { border-color: var(--pen-blue); }
+  /* who answered, on an answer's foot: this PC's model in the green it has, the cloud agent in the blue pen, as the
+     diagrams of the user guide draw them */
+  :root[data-skin="classic"] .meta .by.cloud { color: var(--pen-blue); --lamp: var(--pen-blue); }
+  /* the way forward on a sheet, one key each: the setup guide's next step, Pick from text's Add, Maintenance's backup.
+     Outlined in the blue pen over its tint, the other keys staying graphite */
+  :root[data-skin="classic"] :is(#setup-next, [data-terms="add"], [data-maint="backup"]):not(:disabled) { color: var(--pen-blue);
+    border-color: var(--pen-blue-line); background: var(--pen-blue-soft); }
+  :root[data-skin="classic"] :is(#setup-next, [data-terms="add"], [data-maint="backup"]):hover:not(:disabled) {
+    background: color-mix(in srgb, var(--pen-blue) 16%, var(--sheet)); border-color: var(--pen-blue); color: var(--pen-blue); }
+  /* a key on a sheet under the pointer: its edge in the same pen, faintly */
+  :root[data-skin="classic"] .card.settings .btn:hover:not(:disabled) { border-color: var(--pen-blue-line); }
   .set .seg.checks button[aria-pressed="true"]::before { content: ""; display: inline-block; width: 11px; height: 11px; margin: 0 5px 0 -2px;
     vertical-align: -1px; background: currentColor;
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -2111,11 +2146,18 @@
   :root[data-skin="classic"] .toast.show { transform: none; }
   :root[data-skin="classic"] .toast > .alert { height: var(--toast-h, 38px); padding-top: 0; padding-bottom: 0; flex-wrap: nowrap; }
   :root[data-skin="classic"] .toast > .alert .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Under the bar (html.toast-below, placeToast: a fault's band leaving it no room in the bar, a phone with no room for its
+     words on one line), its top edge stands at --toast-y and its words take up to five lines, none cut where no pointer
+     can rest on it for the rest: at three, a fallback's notice on a phone still lost its cause */
+  html.toast-below[data-skin="classic"] .toast { translate: none; }
+  html.toast-below[data-skin="classic"] .toast > .alert { height: auto; min-height: var(--toast-h, 38px); padding-top: 8px; padding-bottom: 8px; }
+  html.toast-below[data-skin="classic"] .toast > .alert .msg { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; }
   /* What the notice stands over gives it the room while it shows and comes back after: the signals it covers, the bands
-     in the bar where it stands in their place. Faded out, not left under its glass, whose blur showed their edges */
+     in the bar where it stands in their place. Faded out, not left under its glass, whose blur showed their edges. A fault's
+     band is never given up: the notice stands beside the bands or under the bar instead (html.keep-bands, placeToast) */
   :root[data-skin="classic"] :is(.signals, .alerts) { transition: opacity .2s var(--ease); }
   html.toast-over-signals[data-skin="classic"]:has(#toast.show) .signals,
-  html.bands-in-bar[data-skin="classic"]:has(#toast.show) .alerts { opacity: 0; visibility: hidden; transition: opacity .2s var(--ease), visibility 0s .2s; }
+  html.bands-in-bar[data-skin="classic"]:not(.keep-bands):has(#toast.show) .alerts { opacity: 0; visibility: hidden; transition: opacity .2s var(--ease), visibility 0s .2s; }
   /* A notice that floats over the page is frosted glass, as the panel's other floating layers are: the sheet's colour
      well under half, over a blur that keeps its words clear and the page behind still showing, the glass's line and
      lit top edge, the lift's shadow. Its kind shows in its mark alone, so it reads at once without standing out; the
@@ -2124,6 +2166,9 @@
     border: 1px solid var(--glass-line) !important; backdrop-filter: blur(10px) saturate(170%); -webkit-backdrop-filter: blur(10px) saturate(170%);
     box-shadow: var(--edge), var(--lift) !important; }
   :root[data-skin="classic"] .toast > .alert:not(.confirm) .msg b { color: var(--ink) !important; }
+  /* Under the bar it lies over the page's cards (html.toast-below): the sheet's own colour, whole, so their edges do not run
+     under it, as they did under the glass (note 122) */
+  html.toast-below[data-skin="classic"] .toast > .alert:not(.confirm) { background: var(--sheet) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
   /* Loading onto the GPU: the button says so with a bar running along its foot, and a press stops it */
   :root[data-skin="classic"] #gpu-load.loading { position: relative; overflow: hidden; color: #ff9f43; border-color: color-mix(in srgb, #ff9f43 60%, transparent); }
   #gpu-load.loading::after { content: ""; position: absolute; left: 0; bottom: 0; width: 40%; height: 2px; background: currentColor; animation: load-run 1.1s ease-in-out infinite alternate; }
@@ -2184,7 +2229,7 @@
   :root[data-skin="classic"][data-theme="light"] { --state-on: #007a5a; --state-warn: #b35f00; }
   :root[data-skin="classic"][data-theme="light"] #gpu-load, :root[data-skin="classic"][data-theme="light"] #gpu-load:hover:not(:disabled) { color: var(--state-on); border-color: color-mix(in srgb, var(--state-on) 60%, transparent); }
   :root[data-skin="classic"][data-theme="light"] #gpu-load.loading, :root[data-skin="classic"][data-theme="light"] #gpu-load.loading:hover:not(:disabled) { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 60%, transparent); }
-  :root[data-skin="classic"][data-theme="light"] #gpu-release { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 60%, transparent); }
+  :root[data-skin="classic"][data-theme="light"] #gpu-release.full { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 60%, transparent); }
   :root[data-skin="classic"][data-theme="light"] #gpu-release:hover:not(:disabled) { color: #fff; background: var(--state-warn); border-color: var(--state-warn); }
   :root[data-skin="classic"][data-theme="light"] .actions #pause:is(:hover, :not(:hover)):not(:active) { color: var(--state-on); border: 1.5px solid var(--state-on); background: color-mix(in srgb, var(--state-on) 12%, #fff); }
   :root[data-skin="classic"][data-theme="light"] .actions #pause.on:is(:hover, :not(:hover)):not(:active) { color: var(--state-warn); border: 1.5px solid var(--state-warn); background: color-mix(in srgb, var(--state-warn) 12%, #fff); }
@@ -2252,8 +2297,9 @@
   :root[data-skin="classic"][data-theme="light"] .rail .steps3 i:not(.on) { background: rgba(0, 0, 0, .08); box-shadow: none; }
   /* GPU Release: the words read at a glance */
   /* #ffb878: #ffb066 measured 4.47:1 on the dark card under its tint, short of 4.5 */
-  :root[data-skin="classic"] .rail #gpu-release:not(:hover):not(:active) { color: #ffb878; font-weight: 650; border-color: color-mix(in srgb, #ffb878 65%, transparent); background: linear-gradient(180deg, rgba(255, 159, 67, .24), rgba(255, 159, 67, .1)); }
-  :root[data-skin="classic"][data-theme="light"] .rail #gpu-release:not(:hover):not(:active) { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 65%, transparent); background: linear-gradient(180deg, #fff, rgba(255, 159, 67, .12)); }
+  :root[data-skin="classic"] .rail #gpu-release { font-weight: 650; }   /* its weight, full or not: the same under the pointer (below) */
+  :root[data-skin="classic"] .rail #gpu-release.full:not(:hover):not(:active) { color: #ffb878; border-color: color-mix(in srgb, #ffb878 65%, transparent); background: linear-gradient(180deg, rgba(255, 159, 67, .24), rgba(255, 159, 67, .1)); }
+  :root[data-skin="classic"][data-theme="light"] .rail #gpu-release.full:not(:hover):not(:active) { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 65%, transparent); background: linear-gradient(180deg, #fff, rgba(255, 159, 67, .12)); }
   /* The thread and the contents, the glass of the connection card: see-through over the page, with a sheen from the upper left and a lit top edge */
   :root[data-skin="classic"] .sheet { background-color: color-mix(in srgb, var(--page-sheet, var(--sheet)) 66%, transparent);
     background-image: linear-gradient(145deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .012) 40%), var(--grain), radial-gradient(var(--page-dot) 1px, transparent 1.3px);
@@ -2365,6 +2411,11 @@
      1 px out it read as a word of its own */
   .key-hint { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px 0 5px; margin: 0 0 0 1px; font-weight: 650; white-space: nowrap; color: var(--ink); background: color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 2px; }
   .key-hint svg { width: 13px; height: 13px; flex: none; }
+  /* One that is the key it names (Reanalyze, app.js REDO_KEY) presses like one: the chip's look, a button's manners */
+  button.key-hint { font: inherit; font-weight: 650; line-height: inherit; border: 0; cursor: pointer; vertical-align: baseline;
+    transition: background-color .15s var(--ease), color .15s var(--ease); }
+  button.key-hint:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
+  button.key-hint:active { background: color-mix(in srgb, var(--ink) 22%, transparent); }
   /* The gear is a key of the same set as the two beside it */
   :root[data-skin="classic"] .actions #more:not(:active):not(:hover) { color: var(--ink); background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .07)); border: 1px solid rgba(255, 255, 255, .18); border-top-color: rgba(255, 255, 255, .34); box-shadow: 0 3px 8px -3px rgba(0, 0, 0, .55); }
   :root[data-skin="classic"][data-theme="light"] .actions #more:not(:active):not(:hover) { background: linear-gradient(180deg, #fff, rgba(255, 255, 255, .6)); border-color: rgba(0, 0, 0, .14); }
@@ -3082,6 +3133,21 @@
      there and scrolled alike, so the page never jumps as it scrolls; floating, they lay over the first answer, whose keys
      could not be pressed. Up to a third of the window, past which they scroll inside themselves rather than spill over. */
   html.bands-room:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty) { overflow-y: auto; }
+  /* On a phone they go with the page, unless one is a fault: stuck under the bar, the capture program's band took 136 px of
+     an 844 px screen while the answers were read, for what is not done on a phone. The signals in the bar still show each
+     state, and a fault (the server gone) stays in sight under it (--alerts-h: bandsHeld, app.js) */
+  @media (max-width: 600px) {
+    html:not(.bands-in-bar)[data-skin="classic"] .alerts:not(:empty):not(:has(> .alert.bad)) { position: relative; top: auto; }
+  }
+  /* Four bands or more are drawn a little lower each, their keys too, so that five stand whole in the third of a 1366x768
+     window they have: at full height the fifth (a newer release) stood under the box's foot */
+  html:not(.bands-in-bar)[data-skin="classic"] .alerts:has(> .alert:nth-child(4)) .alert:not(.confirm) { padding-top: 6px; padding-bottom: 6px; }
+  html:not(.bands-in-bar)[data-skin="classic"] .alerts:has(> .alert:nth-child(4)) .alert .btn { height: 28px; }
+  /* Where they still do not (a smaller window, a band on two lines), the box's foot fades into the page while a band is
+     under it (more-below, app.js), as the contents' list does; drawn over its foot in the page's colour, where the list's
+     mask showed the thread passing under the box through the fade */
+  #alerts.more-below::after { content: ""; position: sticky; bottom: -10px; flex: none; height: 34px; margin-top: -42px;
+    background: linear-gradient(to bottom, transparent, var(--paper) 88%); pointer-events: none; }
 
   /* ---- Practice, the keyboard shortcuts and Export's menu: parts the panel has, put to these uses ---- */
   /* An answer Practice keeps back: its keys wear the follow-up row's look (.row.asks), how many hints it has stands on their middle */
@@ -3191,7 +3257,9 @@
   .ways .way { min-width: 0; }
   .ways .t { margin: 1px 0 6px; font-size: 13.5px; font-weight: 600; color: var(--ink); word-break: keep-all; }
   .ways .d { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--graphite); word-break: keep-all; }
-  .ways .d a { color: var(--pen); }
+  /* a link on a line of its own (the release's zip, python.org) is a key to press: 24 px tall at least, as a finger needs; as
+     the words of its line it was 15 */
+  .ways .d a { display: inline-block; padding: 3px 0; min-height: 24px; box-sizing: border-box; color: var(--pen); }
   /* a command and its Copy key on one line: a long command breaks inside its chip, the key stays beside it */
   .way-cmd { display: flex; align-items: flex-start; gap: 8px; }
   .way-cmd + .way-cmd, .d + .way-cmd { margin-top: 6px; }
@@ -3209,6 +3277,8 @@
   .maint-tools .seg { padding: 0; }
   .maint-tools .seg button { flex: none; padding: 0 12px; }
   .maint-tools .when { font-size: 12px; color: var(--graphite); }
+  /* what the server could not give, in the warning colour as a setting's reason is: in a note's grey it read as "Reading" */
+  .cap.warn { color: var(--warn); }
   .set .help.fix { color: var(--ink-2); }
   .set .help.fix .btn { margin-left: 6px; vertical-align: baseline; }
   .set .help.fix .way-cmd { display: flex; margin-top: 6px; }
@@ -3261,6 +3331,9 @@
   #export-menu.up { transform-origin: bottom right; }
   /* The marks of the new entries, drawn as the menu's others are */
   :root[data-skin="classic"] .menu h3:has(+ #practice-seg) { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20l1.2-4.4L15.6 5.2a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.4 18.8z'/%3E%3Cpath d='M13.5 7.5l3 3'/%3E%3C/svg%3E"); }
+  /* Maintenance's mark: a wrench, drawn as the others are (a 24 px box, a 1.9 stroke, round ends): without one of its own
+     the item had the mark's square filled in */
+  :root[data-skin="classic"] #open-maint { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15.5 3.6a5 5 0 0 0-5.7 6.6L3.9 16.1a2 2 0 0 0 2.9 2.9l5.9-5.9a5 5 0 0 0 6.6-5.7l-2.8 2.8-2.7-.6-.6-2.7z'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #open-keys { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 14h8'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #export-menu [data-export="md"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3h8l4 4v14H6z'/%3E%3Cpath d='M14 3v4h4M9 12h6M9 16h4'/%3E%3C/svg%3E"); }
   :root[data-skin="classic"] #export-menu [data-export="anki"] { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='7.5' width='13' height='13' rx='2'/%3E%3Cpath d='M8 4h11a2 2 0 0 1 2 2v11'/%3E%3C/svg%3E"); }
@@ -3321,7 +3394,7 @@
   <div class="bar-in">
     <!-- the name, and this server's release beside it on its baseline, linking to its notes (app.js, renderVersion), once the
          server has said it -->
-    <span class="brand-line"><span class="brand" aria-label="Sidenote">sidenote</span><a class="brand-ver" id="brand-ver" target="_blank" rel="noopener noreferrer" hidden></a></span>
+    <span class="brand-line"><span class="brand" aria-label="Sidenote">sidenote</span><a class="brand-ver" id="brand-ver" target="_blank" rel="noopener noreferrer" hidden></a><span class="practice-tag" id="practice-tag" title="New answers show their question first, and their hints and the answer when asked" data-t data-t-title hidden>Practice</span></span>
     <div class="signals" role="group" aria-label="Connection status" data-t-aria>
       <span class="signal" id="sig-server" data-state="idle" data-t><span class="dot"></span>Server</span>
       <span class="signal" id="sig-local" data-state="idle" data-t><span class="dot"></span>Local model</span>

@@ -4,7 +4,8 @@ New (Beta) is switched off, so every check runs on Classic, and one checks that 
     .venv-panel/bin/python tests/panel_new.py
 
 Checked here: the highlighter, the contents staying inside their card, the rail's rows, the connection's rows that open,
-history over a reconnect, the filters' counts and empty state, Export, and the live drawing of a long answer.
+history over a reconnect, the filters' counts and empty state, Export, the lists of Export and the filters opened at a phone's
+foot clear of the contents' card, and the live drawing of a long answer.
 """
 import json
 import re
@@ -438,6 +439,31 @@ def main() -> int:
             const out = new Set(); document.querySelectorAll('.signal[data-state=ok] .dot').forEach((e) => out.add(s(e))); document.querySelectorAll('.pill[data-state=ok]').forEach((e) => out.add(s(e, '::before')));
             document.querySelectorAll('.meta .by').forEach((e) => out.add(s(e, '::before'))); document.querySelectorAll('.facts .lit').forEach((e) => out.add(s(e, '::before'))); return [...out]; }""")
         check("every lamp is the same lamp", len(lamps) == 1, str(lamps))
+        page.close()
+
+        print("[the contents' lists at a phone's foot]")
+        # Export's menu and the two filters' lists, their key at the foot of a phone's window: under the key, the page scrolled
+        # up for them as far as it goes. Opened over the key, they ran across the top edge of the contents' card
+        page, _ = fresh(br, url, width=390, height=844, skin="classic")
+        now = time.time()
+        for i, kind in enumerate(("short", "math", "short", "math", "essay")):
+            push(page, answer(800 + i, now + i, kind=kind))
+        page.wait_for_timeout(600)
+        for name, key, shown in (("Export's menu", "#hist-export", "#export-menu"),
+                                 ("the dates' list", '.combo-btn[data-proxy="hist-day"]', ".combo-list:not([hidden])"),
+                                 ("the types' list", '.combo-btn[data-proxy="hist-kind"]', ".combo-list:not([hidden])")):
+            page.evaluate("(k) => { window.scrollTo(0, 0); document.querySelector(k).scrollIntoView({ block: 'end' }); }", key)   # the key at the window's foot
+            page.wait_for_timeout(150)
+            page.evaluate("(k) => document.querySelector(k).click()", key)
+            page.wait_for_timeout(200)
+            got = page.evaluate("""([k, m]) => { const key = document.querySelector(k).getBoundingClientRect(), list = document.querySelector(m)?.getBoundingClientRect();
+                const card = document.querySelector('.card.history').getBoundingClientRect();
+                return list ? { list: [Math.round(list.top), Math.round(list.bottom)], key: [Math.round(key.top), Math.round(key.bottom)], card: Math.round(card.top), h: innerHeight } : null; }""",
+                                [key, shown])
+            check(f"390 px: {name} opens clear of the contents card's top edge, inside the window",
+                  bool(got) and got["list"][0] >= got["card"] and got["list"][1] <= got["h"], str(got))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
         page.close()
 
         print("[the live drawing of a long answer]")

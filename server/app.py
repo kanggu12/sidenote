@@ -329,6 +329,10 @@ class AppState:
     deleted_cards: dict = field(default_factory=dict)
     # The ids deleted for good, the newest last (bounded as deleted_cards): one is no answer to delete or put back again
     purged: dict = field(default_factory=dict)
+    # The ids this server gave the cards it told the panels of (each analysis_start), the newest last: answers there were
+    # though the history never held them (an error's card, one stopped, one written with Keep answers off), which a program
+    # may delete by their ids, where a number no answer had is none (had_answer). The oldest go past CARDS_MAX
+    cards: dict = field(default_factory=dict)
     supersede_streak: int = 0     # analyses cancelled by screen changes in a row
     gpu_loading: asyncio.Task | None = None   # the panel's Load onto the GPU, while it runs
     repeat_said: int = 0          # the answer the panel was last told is being seen again (said once per answer)
@@ -757,6 +761,17 @@ def window_list(raw) -> list | None:
 # again at once, with its words so far and where it stands. It used to see nothing of it until the answer was done.
 LIVE: dict = {}
 LIVE_MAX_SEC = 1800   # longer than any answer is let run: one that ended with no word of it is not told again for ever
+# The cards' ids remembered (STATE.cards): a panel holds 200 answers at most with their follow-ups, and the screens with
+# nothing to solve take ids too, some thousands in a day of watching; ten thousand ids are well under a megabyte
+CARDS_MAX = 10000
+
+
+def note_card(seq) -> None:
+    """Remember an id given to a card the panels were told of, the oldest going past the bound."""
+    STATE.cards.pop(seq, None)   # said again, it counts as the newest
+    STATE.cards[seq] = None
+    while len(STATE.cards) > CARDS_MAX:
+        STATE.cards.pop(next(iter(STATE.cards)))
 
 
 def note_live(message: dict) -> None:
@@ -766,6 +781,7 @@ def note_live(message: dict) -> None:
         LIVE.pop(old, None)
     if kind == "analysis_start":
         LIVE[key] = {"start": message, "text": "", "stage": None, "at": now}
+        note_card(key)   # an id an answer has from now on, whatever it ends as: done, failed, stopped or not kept
     elif key in LIVE:
         if kind == "delta":
             LIVE[key]["text"] += message.get("text") or ""
@@ -2739,6 +2755,18 @@ def clear_history() -> bool:
         return False
 
 
+async def had_answer(seq: int) -> bool:
+    """Whether an answer has had this id, as far as this server knows: one being written (LIVE), one it gave a card to
+    since it started, done, failed, stopped or not kept (STATE.cards), one remembered as deleted or among the last
+    answers, or one the history holds, shown or in Recently deleted. One deleted for good has none any more, unless the
+    history holds an answer of that id since (a clock set back across a restart gives out ids again). The ids a program
+    names are checked against it: ids are the time in milliseconds, and checked against the last one given out, nearly
+    any number was taken for an answer's."""
+    if seq not in STATE.purged and (seq in LIVE or seq in STATE.cards or seq in STATE.deleted_cards or seq in STATE.answers):
+        return True
+    return await asyncio.to_thread(HISTORY.holds, seq)   # the file is read off the loop
+
+
 def delete_answer(seq: int) -> tuple[bool, dict | None, int]:
     """Move one answer to Recently deleted, on the history's thread: whether the file took the write, what it says of the
     answer ({"deleted", "until"}, or None for one it does not hold), and how many Recently deleted holds now."""
@@ -2776,6 +2804,7 @@ def forget_purged(ids) -> None:
     for seq in ids:
         STATE.answers.pop(seq, None)
         STATE.deleted_cards.pop(seq, None)
+        STATE.cards.pop(seq, None)   # nor its card's id: past the purged ids' bound it was an answer again to a program's delete
         STATE.purged.pop(seq, None)
         STATE.purged[seq] = None
         while len(STATE.purged) > DELETED_CARDS_MAX:
@@ -3873,9 +3902,10 @@ def api_refused(request: Request, write: bool) -> JSONResponse | None:
     origin = request.headers.get("origin")
     if origin and not origin_ok(origin, request.headers.get("host")):   # none, or empty: not a browser, as same_origin
         telemetry.event("refused", path=request.url.path[:120], origin=origin[:120])
-        return api_error(403, "not allowed from another site's page")
+        # in the panel's language, as every error's words (docs/API.md): the Maintenance sheet shows the error it is given
+        return api_error(403, t("not allowed from another site's page"))
     if write and request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
-        return api_error(415, "send JSON (Content-Type: application/json), {} when there is nothing to send")
+        return api_error(415, t("send JSON (Content-Type: application/json), {} when there is nothing to send"))
     return None
 
 
@@ -3898,7 +3928,7 @@ def _finite(value) -> bool:
 def too_large() -> JSONResponse:
     """The 413 of a body over MAX_BODY, with the connection closed after it: left open, uvicorn went on reading the rest
     of the body and dropping it, for as long as the sender went on sending (an endless body in pieces, for ever)."""
-    return api_error(413, f"the body is over {MAX_BODY // (1024 * 1024)} MB", headers={"connection": "close"})
+    return api_error(413, t("the body is over {mb} MB", mb=MAX_BODY // (1024 * 1024)), headers={"connection": "close"})
 
 
 async def api_body(request: Request) -> dict | JSONResponse:
@@ -3922,18 +3952,35 @@ async def api_body(request: Request) -> dict | JSONResponse:
     try:
         data = json.loads(raw, parse_constant=_not_json)
     except (ValueError, RecursionError):   # nested past what Python reads (a thousand levels) is no body either
-        return api_error(400, "the body is not JSON")
+        return api_error(400, t("the body is not JSON"))
     if not isinstance(data, dict):
-        return api_error(400, "the body is a JSON object")
+        return api_error(400, t("the body is a JSON object"))
     try:
         if not _finite(data):
-            return api_error(400, "a number in the body is too large")
+            return api_error(400, t("a number in the body is too large"))
         json.dumps(data, ensure_ascii=False).encode("utf-8")
     except RecursionError:   # read, but nested deeper than the checks walk (some 450 levels): no route takes such a body
-        return api_error(400, "the body is nested too deeply")
+        return api_error(400, t("the body is nested too deeply"))
     except UnicodeEncodeError:
-        return api_error(400, "the body holds text that is not valid Unicode")
+        return api_error(400, t("the body holds text that is not valid Unicode"))
     return data
+
+
+class BackupResponse(StreamingResponse):
+    """A backup's archive sent a block at a time (maintenance.stream_backup), and removed with its folder however the
+    response ends: sent whole, cut after a block, or cut before the first. The generator's own finally runs only once it
+    has started, and a connection gone before the first block (a tab closed while the backup was made, a program's
+    timeout) never starts it: the archive, the whole history in it, stayed in the data folder until the next start."""
+
+    def __init__(self, archive: Path, headers: dict):
+        super().__init__(maintenance.stream_backup(archive), media_type="application/gzip", headers=headers)
+        self.archive = archive
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:   # gone already after a whole send (the generator's finally), so a second removal finds nothing
+            maintenance.remove_backup(self.archive)
 
 
 class Replies:
@@ -4695,11 +4742,20 @@ def create_app() -> FastAPI:
             seq = data.get("id")
             if not isinstance(seq, int) or isinstance(seq, bool):   # an answer's id is a number, as for the star
                 return True
-            if (seq > STATE.analysis_seq or seq in STATE.purged) and not await asyncio.to_thread(HISTORY.holds, seq):
-                # No answer has had this id yet (an id to come would be drawn by no panel), or it was deleted for good:
-                # nothing to delete. A program is told; a panel never sends one. The history holding it decides first: a
-                # clock set back across a restart gives out ids under those of answers already kept
-                if isinstance(reply, Replies):
+            program = isinstance(reply, Replies)   # the API; a panel's own socket otherwise
+            if program:
+                # A program names a number: refused unless an answer has had it (had_answer). Any number under the last
+                # id given out was taken: a 200, an answer_delete event written and every panel told of a card none had
+                unknown = not await had_answer(seq)
+            else:
+                # A panel names a card it shows, which may be one an earlier run of the server gave out and the history
+                # never held (an error's card, one a restart cut off, one written with Keep answers off): this server
+                # knows nothing of it, and it goes from every panel all the same. Refused only an id still to come, which
+                # no panel draws, and one deleted for good; the history holding it decides first, as a clock set back
+                # across a restart gives out ids under those of answers already kept
+                unknown = (seq > STATE.analysis_seq or seq in STATE.purged) and not await asyncio.to_thread(HISTORY.holds, seq)
+            if unknown:   # nothing to delete: a program is told why
+                if program:
                     await reply({"type": "notice", "level": "warn", "text": t("Not deleted: no answer has this id")})
                 return True
             if seq in LIVE:   # its card has no delete key yet; a program is told why
@@ -5224,8 +5280,10 @@ def create_app() -> FastAPI:
         on = body.get("starred")
         if not isinstance(on, bool):
             return api_error(400, 'send {"starred": true or false}')
+        if not await had_answer(seq):   # no answer has had this id: a 404, as a delete and a put back give it
+            return api_error(404, f"no answer {seq}: GET /api/v1/answers lists them")
         why = (await run({"type": "star", "id": seq, "starred": on})).refusal()
-        if why:
+        if why:   # an answer there was, that the history does not hold (Keep answers off, an error's card), in the panel's words
             return api_error(409, why)
         return JSONResponse({"ok": True, "id": seq, "starred": on,
                              "count": await asyncio.to_thread(HISTORY.starred_count)})
@@ -5239,8 +5297,10 @@ def create_app() -> FastAPI:
         verdict = body.get("verdict", "")
         if verdict not in (None, *answers_log.VERDICTS):
             return api_error(400, 'send {"verdict": "right"}, {"verdict": "wrong"}, or {"verdict": null}')
+        if not await had_answer(seq):   # no answer has had this id: a 404, as a delete and a put back give it
+            return api_error(404, f"no answer {seq}: GET /api/v1/answers lists them")
         why = (await run({"type": "verdict", "id": seq, "verdict": verdict})).refusal()
-        if why:   # an answer the history does not hold, in the panel's words
+        if why:   # an answer the history does not hold, or holds in Recently deleted, in the panel's words
             return api_error(409, why)
         return JSONResponse({"ok": True, "id": seq, "verdict": verdict})
 
@@ -5304,8 +5364,8 @@ def create_app() -> FastAPI:
     async def api_answer_delete(request: Request, seq: int):
         if isinstance(body := await write_body(request), JSONResponse):
             return body
-        if (seq > STATE.analysis_seq or seq in STATE.purged) and not await asyncio.to_thread(HISTORY.holds, seq):
-            return api_error(404, f"no answer {seq}: GET /api/v1/answers lists them")   # none has had it, or it went for good
+        if not await had_answer(seq):   # none has had it, or it went for good: a 404, as the star and the verdict give it
+            return api_error(404, f"no answer {seq}: GET /api/v1/answers lists them")
         replies = await run({"type": "answer_delete", "id": seq})
         if (no := refused(replies)) is not None:
             return no
@@ -5397,12 +5457,18 @@ def create_app() -> FastAPI:
 
     # ---- the Maintenance sheet: the checks, the log, the models, a backup (server/maintenance.py)
 
-    def number(request: Request, key: str, default: int) -> int:
-        """A whole number from the query (?limit=50), else `default`; a word that is no number is the default too"""
+    def number(request: Request, key: str, default: int, low: int, high: int) -> int:
+        """A whole number from the query (?limit=50) held to low..high, else `default`: a number past either end is that
+        end (?days=-3 one day, ?days=99999999999 a year), where both were taken as no number and gave the default; a word
+        that is no number is the default"""
         raw = request.query_params.get(key, "")
-        # ASCII digits only ("²" is a digit to isdigit() and no number to int()), and nine at most (past Python's limit on
-        # a number's digits, int() raises): both were a 500
-        return int(raw) if raw.isascii() and raw.isdigit() and len(raw) <= 9 else default
+        sign, digits = (-1, raw[1:]) if raw[:1] == "-" else (1, raw)
+        # ASCII digits only: "²" is a digit to isdigit() and no number to int(), which was a 500
+        if not (digits.isascii() and digits.isdigit()):
+            return default
+        # past nine digits it is past every end these take; int() is not asked (past 4300 digits it raises, a 500)
+        value = sign * (int(digits) if len(digits) <= 9 else 10 ** 9)
+        return min(max(value, low), high)
 
     @api("GET", "/api/v1/check", "how each part stands, with what to do about it: the server, the capture program, the "
                                  "screen, speech, this PC's model, the agent, web search, the code runner, the disk, the "
@@ -5422,7 +5488,7 @@ def create_app() -> FastAPI:
         names = {"cancelled": {k: t(v) for k, v in report.CANCEL_NAMES.items()}}
         if not telemetry.LOG_DIR:                                   # no log folder: no events to count
             return JSONResponse({"ok": True, "days": [], "period": {}, "names": names})
-        days = min(max(number(request, "days", 7), 1), 366)        # a year at most: a month of events is tens of MB
+        days = number(request, "days", 7, 1, 366)                   # a year at most: a month of events is tens of MB
         data = await asyncio.to_thread(report.report_data, days, Path(telemetry.LOG_DIR))   # files read off the loop
         return JSONResponse({"ok": True, **data, "names": names})
 
@@ -5434,7 +5500,8 @@ def create_app() -> FastAPI:
         if not telemetry.LOG_DIR:
             return JSONResponse({"ok": True, "events": []})
         errors = request.query_params.get("errors", "") in ("1", "true", "yes")
-        found = await asyncio.to_thread(maintenance.recent_events, Path(telemetry.LOG_DIR), errors, number(request, "limit", 200))
+        limit = number(request, "limit", 200, 0, maintenance.MAX_EVENTS)   # what recent_events gives at most
+        found = await asyncio.to_thread(maintenance.recent_events, Path(telemetry.LOG_DIR), errors, limit)
         return JSONResponse({"ok": True, "events": found})
 
     @api("GET", "/api/v1/log/server", "the last lines of the server's log, oldest first: ?lines=N (200, at most 2000)")
@@ -5443,7 +5510,8 @@ def create_app() -> FastAPI:
             return no
         if not telemetry.LOG_DIR:
             return JSONResponse({"ok": True, "lines": []})
-        lines = await asyncio.to_thread(maintenance.log_tail, Path(telemetry.LOG_DIR), number(request, "lines", 200))
+        count = number(request, "lines", 200, 0, maintenance.MAX_LOG_LINES)   # what log_tail gives at most
+        lines = await asyncio.to_thread(maintenance.log_tail, Path(telemetry.LOG_DIR), count)
         return JSONResponse({"ok": True, "lines": lines})
 
     @api("GET", "/api/v1/models", "the local server's models: each with its size, whether it is on the GPU and whether "
@@ -5452,8 +5520,8 @@ def create_app() -> FastAPI:
         if (no := api_refused(request, write=False)) is not None:
             return no
         rows = await local_model_rows()
-        if rows is None:
-            return api_error(503, "the local model server does not answer, or it is not Ollama")
+        if rows is None:   # said in the panel's language: the sheet's Models shows these words
+            return api_error(503, t("the local model server does not answer, or it is not Ollama"))
         return JSONResponse({"ok": True, "models": rows, "download": pull_allowed(), "pulling": dict(PULL) or None})
 
     @api("DELETE", "/api/v1/models/{name:path}", "remove one of the local server's models, as the Maintenance sheet's "
@@ -5468,7 +5536,7 @@ def create_app() -> FastAPI:
         # by why it was not removed (the reply's "why"): no such model, a download under way, the local server not
         # answering (as /models says it: 503), or the local server refusing
         status = {"missing": 404, "busy": 409, "down": 503}.get(said.get("why"), 502)
-        return api_error(status, said.get("error") or "not removed", model=name)
+        return api_error(status, said.get("error") or t("not removed"), model=name)
 
     @api("POST", "/api/v1/backup", "the history and the settings in one .tar.gz, as ./sidenote backup writes it "
                                    "(./sidenote restore takes it), Recently deleted left out")
@@ -5486,12 +5554,12 @@ def create_app() -> FastAPI:
             return api_error(500, t("The backup could not be made: {why}", why=str(exc)[:200]))
         telemetry.event("backup", held=made["held"], left_out=made["left_out"])
         name = time.strftime("sidenote-backup-%Y%m%d-%H%M%S.tar.gz")
-        # Streamed from the file, which goes after its last block or when the download stops first (stream_backup's
-        # finally): a FileResponse's background task ran only after a whole body was sent, and left a cancelled one's
-        return StreamingResponse(maintenance.stream_backup(archive), media_type="application/gzip",
-                                 headers={"Content-Disposition": f'attachment; filename="{name}"',
-                                          "Content-Length": str(archive.stat().st_size),
-                                          "X-Sidenote-Held": " ".join(made["held"]), "X-Sidenote-Left-Out": str(made["left_out"])})
+        # Streamed from the file, which goes however the download ends (BackupResponse): a FileResponse's background task
+        # ran only after a whole body was sent, and left a cancelled one's
+        return BackupResponse(archive, headers={"Content-Disposition": f'attachment; filename="{name}"',
+                                                "Content-Length": str(archive.stat().st_size),
+                                                "X-Sidenote-Held": " ".join(made["held"]),
+                                                "X-Sidenote-Left-Out": str(made["left_out"])})
 
     @api("PUT", "/api/v1/language/panel", 'the language of the server\'s words, as the panel\'s own, {"lang": "en"}',
          "ui_lang")
@@ -5589,8 +5657,8 @@ def create_app() -> FastAPI:
     async def api_failed(request: Request, exc: Exception):
         """What a route did not see coming, under /api/: said in the API's own shape, a JSON 500 a program can read, where it
         was the framework's plain text. The log has the trace as before (the error goes on to it after this answer)."""
-        if request.url.path.startswith("/api/"):
-            return api_error(500, f"the server could not answer this ({type(exc).__name__}): its log says why")
+        if request.url.path.startswith("/api/"):   # in the panel's language: the Maintenance sheet shows it as it comes
+            return api_error(500, t("the server could not answer this ({what}): its log says why", what=type(exc).__name__))
         return PlainTextResponse("Internal Server Error", status_code=500)
 
     # The panel and its files (index.html, app.js, theme.js, fonts.css, new.css, vendor/), after the routes above.

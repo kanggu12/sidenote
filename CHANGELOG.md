@@ -6,6 +6,70 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- What is chosen in the panel is marked in the blue pen, faintly: a pressed choice in the settings, the gear menu,
+  Maintenance and Pick from text, the open tab of a sheet and the open step of the setup guide, the keyboard's ring, and
+  the one key a sheet goes forward by (Next, Add to Extra terms, Download a backup). The cloud agent's name on an answer
+  takes the same blue.
+- A switch at rest in the settings (one off by default, such as Follow the changing screen) is grey, not red: red for
+  off is left to the screen and sound switches on the capture card.
+- Practice shows in the bar beside the release while it is on. Turned on, nothing on the page changed until the next
+  answer came held back.
+- Reanalyze named in a sentence (the paused band, a stopped or failed answer) is a key that reanalyzes, as the bar's does.
+- Free GPU is an ordinary key while the GPU has room, and orange only while its memory is nearly full.
+- Four bands or more are drawn a little lower each, so that five fit in their third of a 1366x768 window. Where they still
+  do not, the box fades at its foot while a band is under it.
+- On a phone the bands go with the page as it scrolls, unless one is a fault, which stays in sight under the bar.
+- The README is shorter, with one table: the measurements and what each setup supports moved to the user guide's
+  [What was measured](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#what-was-measured), and the
+  comparison with other tools to the local-first design.
+
+### Fixed
+
+- The gear menu's Maintenance has its own mark; a filled square stood in its place.
+- A passing notice no longer hides a fault's band in the bar, such as Server disconnected: it stands beside the bands, or
+  under the bar when there is no room.
+- A long notice on a phone shows all its words, under the bar, where one line cut it short.
+- After Delete and Undo, the keyboard is on the answer that came back, in view. It stayed on the next card's Delete key,
+  where the next Enter deleted a second answer.
+- A stopped or failed answer's code has no Run: it ends where the answer was cut off.
+- Inline code in a table cell shows its tint, where its space read as gaps round it in brackets.
+- A fix in **Maintenance** > **Checks** has a key that says where it is done and goes there: a section of **Solver
+  settings**, the **Capture connection**, or the switch on the capture card.
+- **Maintenance**: the API's errors in the panel's language and in the warning colour, an empty **Checks** said as such,
+  **Errors** counting only the answers that ended in an error, the agent's limit with its date when it ends on another
+  day, a model download still shown after a reload and not left as under way once it failed, and the spend line naming
+  the answers with no head line.
+- A backup whose download was cut short no longer leaves a copy of the history in the data folder.
+- The API refuses an answer id no answer has had, or one deleted for good (404), for delete, put back, star and verdict,
+  where it answered 200 and told every panel; `?days`, `?limit` and `?lines` are held to their ranges.
+- `./sidenote report` leaves out a day of the server's own events alone, refuses `--days` under 1 and `-n` under 0, says
+  when there is no log folder, and speaks the terminal's language, as `stats` and `events` now do.
+- `--help` or `-h` after any command prints that command's lines of the help and runs nothing: `./sidenote down --help`
+  stopped everything.
+- The launcher no longer takes another program answering on the port for the server.
+- The desktop app finds the agent's CLI however `SIDENOTE_AGENT` names it, keeps a CLI path given by hand and an analyzer
+  mode that names its own agent (the Anthropic API ran as Claude Code), and a `SIDENOTE_PORT` that is not a number no
+  longer stops it.
+- `login` with the agent off says so; the commands printed to be typed again quote a path with a space; `backup` into a
+  folder writes its file there; `events` and `report` with no log folder make none; `up` leaves no temporary file.
+- With a window from **Skip windows** over the followed monitor, **Follow the changing screen** still moves to a new
+  screen on the other monitors, and says it moved rather than that the window went; a capture that fails while following
+  goes back to the chosen monitor and says so.
+- The tray no longer says sound is captured when no sound device is open.
+- Under the desktop app the capture program's lines name **Quit Sidenote** and the panel's **Capture connection**, not
+  `./sidenote` commands; with `--no-auto-update`, a restart asked for at a quiet moment is said as not taken, where it
+  said new code was deployed.
+- A message the capture program cannot handle no longer ends its connection, and its line for **Join scrolled screens**
+  calls the switch by that name.
+- The setup guide's **Show the screen it receives** waits for a capture program, and says why.
+- Commands in the sheets break between their words; a setting's reason shows after its help; the capture sheet's links
+  are easier to tap on a phone; **Export** and the contents' filters open under their key; the waiting note's command
+  has a **Copy** key.
+- In Korean: the log is 로그, the capture card's key 연결 관리, the median 중앙값, and the capture program's lines about lost
+  sound and skipped windows are in Korean; a Linux capture started with `--no-tray` says it has no tray icon.
+
 ## [0.10.0] - 2026-11-13
 
 ### Added

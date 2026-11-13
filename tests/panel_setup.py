@@ -86,7 +86,8 @@ def group_way_in(br, s) -> None:
 
 def group_connect(br, s) -> None:
     """The first step, the capture program: its card as the server knows it, the wait for one with its seconds and, past a minute,
-    where to look; the ways to start one; the tick when one comes; and the screen step sending to it where none is connected."""
+    where to look, with the command's Copy key; the ways to start one; the tick when one comes; and the screen step sending to
+    it where none is connected, its key to the screen it receives held with the reason."""
     if not T.group("the capture program's step"):
         return
     p = Page(br, s, [row(1)], w=1440, h=900, settle=500)
@@ -105,6 +106,8 @@ def group_connect(br, s) -> None:
     p.wait(1200)
     hint = p.js("() => document.querySelector('#setup-body .setup-note.warn')?.textContent || ''")
     check("...past a minute, where to look for why", "./sidenote capture --console" in hint, hint)
+    copy = p.js("() => document.querySelector('#setup-body .setup-note.warn [data-copy]')?.dataset.copy || ''")
+    check("...its command with its Copy key, as on the Capture connection", copy == "./sidenote capture --console", copy)
     who = {"host": "DESKTOP-7Q2KD", "system": "Windows 11", "version": "0.8.0", "started": "shortcut", "server": "ws://127.0.0.1:8777/ingest", "ends_server": True}
     now = p.js("() => Date.now() / 1000")
     p.send({**h.CAPTURE, "now": now, "who": who, "since": now})
@@ -119,6 +122,14 @@ def group_connect(br, s) -> None:
     p.send({**h.CAPTURE, "clients": 0, "caps": {}, "now": now})
     go(p, 2)
     p.wait(200)
+    # the screen it receives comes from the program: its key cannot be pressed, the note over it its reason, read with it
+    shot = p.js("""() => { const k = document.querySelector('#setup-body [data-setup="shot"]'), why = document.getElementById(k?.getAttribute('aria-describedby') || '');
+      return { off: !!k?.disabled, why: why?.textContent || '', title: k?.title || '' }; }""")
+    p.js("() => { window.__sent.length = 0; document.querySelector('#setup-body [data-setup=\"shot\"]')?.click(); }")
+    p.wait(150)
+    asked = p.js("() => window.__sent.filter((m) => m.type === 'thumb').length")
+    check("none connected: the screen step's Show the screen it receives cannot be pressed, and says why",
+          shot["off"] and shot["why"].startswith("캡처 프로그램 연결이 먼저") and shot["title"] == "캡처 프로그램 연결이 먼저" and asked == 0, str([shot, asked]))
     p.js("() => document.querySelector('[data-setup=\"connect\"]')?.click()")
     p.wait(250)
     check("none connected: the screen step's key goes back to the capture program's step, the keyboard on it",

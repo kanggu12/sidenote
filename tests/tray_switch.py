@@ -218,6 +218,38 @@ sender.wants["screen"] = False           # what a control message from the panel
 time.sleep(2.5)
 check("the menu is built again when the state it shows changes elsewhere", Icon.built > before,
       f"{before} -> {Icon.built}")
+
+
+def settled(limit=6.0):
+    """Icon.built once the menu has been built for the state as it stands: unchanged across more than one of its rounds."""
+    end, last, since = time.time() + limit, Icon.built, time.time()
+    while time.time() < end:
+        time.sleep(0.1)
+        if Icon.built != last:
+            last, since = Icon.built, time.time()
+        elif time.time() - since > 1.5:          # the menu is looked at again once a second
+            break
+    return last
+
+
+# A sound device that did not open: the program's caps say audio false (audio_loop, as the panel's sound card says Device
+# error), and the state line said "Capturing: Screen · Sound" all the same, the menu not built again for it either
+sender.connected, sender.caps["audio"] = True, True
+sender.wants.update(screen=True, audio=True)
+before = settled()
+sender.caps["audio"] = False                     # the sound library or the device failed
+end = time.time() + 4
+while time.time() < end and Icon.built == before:
+    time.sleep(0.1)
+check("a sound device that fails: the menu is built again for it", Icon.built > before, f"{before} -> {Icon.built}")
+check("...its state line naming the screen alone, as the panel's sound card says the device failed",
+      state_row()["text"] == "캡처 중: 화면" and state_row()["tone"] == "on", state_row())
+check("...while the sound switch keeps its check: it is switched on", items["소리 캡처"].checked(items["소리 캡처"]) is True)
+sender.wants["screen"] = False
+check("...with the screen off as well, nothing is taken", state_row()["text"] == "캡처 중: 없음" and state_row()["tone"] == "idle",
+      state_row())
+sender.wants["screen"], sender.caps["audio"] = True, True
+check("...and the device open again, the sound is named again", state_row()["text"] == "캡처 중: 화면 · 소리", state_row())
 stop.set()
 
 # ---------------------------------------------------------------- the same menu in English

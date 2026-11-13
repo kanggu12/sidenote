@@ -8,12 +8,15 @@ server in a cluster where that command is not the way, and nothing at all of the
 release, how it was started, what its Quit ends). Checked here: the sheet opens from the menu, the capture card's foot, the band
 and the welcome, and from the tray's item of the same name (?open=capture, once, the address put back); its card in each state
 (checking, none, connected, another release, a program that says nothing of itself); the wait for one with its seconds and,
-past a minute, where to look; the ways to start one by where the server runs (its own PC, a cluster's port-forward, the app),
-each command with its Copy key and this page's port in it; the tick when one comes while it is open, and none for one that takes
-over; Restart and Quit sent to the server, Quit asking twice and saying under the app that it ends Sidenote; the settings the
-program carries out, pressed as in Solver settings; Follow the changing screen right after Monitor here, in the guide's Screen
-step and in Solver settings, dimmed with why where it has nowhere to move, and the screen card naming the monitor it
-followed to; the card's foot; and the sheet at a phone's width. All of it made up.
+past a minute, where to look, its command with a Copy key that stays while the seconds go on; the ways to start one by where
+the server runs (its own PC, a cluster's port-forward, the app), each command with its Copy key and this page's port in it;
+the tick when one comes while it is open, and none for one that takes over; Restart and Quit sent to the server, Quit asking
+twice and saying under the app that it ends Sidenote; the settings the program carries out, pressed as in Solver settings;
+Follow the changing screen right after Monitor here, in the guide's Screen step and in Solver settings, dimmed with why where
+it has nowhere to move, the reason set apart from its help, and the screen card naming the monitor it followed to; the
+card's foot, its key named for what it opens; and the sheet at a phone's width: its commands broken at their spaces and
+before an address's slash, never inside a piece that fits its line, and the links over them tall enough to press. All of it
+made up.
 """
 from __future__ import annotations
 
@@ -90,7 +93,7 @@ def group_way_in(br, s) -> None:
     check("Escape closes it, the keyboard back on the gear", not p.js(SHOWN) and p.js("() => document.activeElement?.id") == "more",
           str(p.js("() => document.activeElement?.id")))
     foot = p.js("() => ({ shown: !document.getElementById('cap-prog')?.hidden, key: document.getElementById('cap-open')?.textContent })")
-    check("the capture card's foot has the key to it: Manage, with a program connected", foot == {"shown": True, "key": "관리"}, str(foot))
+    check("the capture card's foot has the key to it: Manage, with a program connected", foot == {"shown": True, "key": "연결 관리"}, str(foot))
     p.js("() => document.getElementById('cap-open')?.click()")
     p.wait(250)
     check("...and it opens the sheet", p.js(SHOWN))
@@ -165,6 +168,11 @@ def group_none(br, s) -> None:
     p.wait(1200)
     got = sheet(p)
     check("past a minute: the seconds go on, and where to look for why", got["wait"].startswith("1:0") and "./sidenote capture --console" in got["hint"], str(got))
+    key = p.js("() => { const k = document.querySelector('#capture-body .setup-note.warn [data-copy]'); window.__hintKey = k; return k?.dataset.copy || ''; }")
+    p.wait(1200)   # the seconds above it go on, drawn again each second
+    kept = p.js("() => !!window.__hintKey && window.__hintKey.isConnected")
+    check("...its command with the Copy key every command has, left where it is while the seconds go on", key == "./sidenote capture --console" and kept,
+          str([key, kept]))
     p.page.keyboard.press("Escape")
     p.wait(150)
     # A server in a cluster: the port-forward this panel came through, the program and its start; no ./sidenote here
@@ -322,6 +330,9 @@ def group_foot(br, s) -> None:
     foot = p.js("() => ({ text: document.getElementById('cap-who')?.textContent, title: document.getElementById('cap-who')?.title, state: document.getElementById('cap-prog')?.dataset.state })")
     check("connected: its PC and release on the line, its system too in the tooltip",
           foot == {"text": "DESKTOP-7Q2KD · v0.8.0", "title": "DESKTOP-7Q2KD · Windows 11 · v0.8.0", "state": "ok"}, str(foot))
+    # its key opens the Capture connection: named for it, not with the gear menu's word for Maintenance (관리)
+    words = p.js("() => [document.getElementById('cap-open')?.textContent, document.getElementById('open-maint')?.textContent]")
+    check("...and its key says what it opens, in words no other key of the page has", words[0] == "연결 관리" and words[0] != words[1], str(words))
     program(p, {**WHO, "version": "0.7.0"})
     foot = p.js("() => ({ state: document.getElementById('cap-prog')?.dataset.state, warn: document.querySelector('#cap-who .warn')?.textContent })")
     check("...another release in the warning's colour", foot == {"state": "warn", "warn": "v0.7.0"}, str(foot))
@@ -337,7 +348,7 @@ def group_foot(br, s) -> None:
 
 FOLLOW_ROW = """(where) => { const k = document.querySelector(where + ' [data-set="monitor_follow"]'), r = k?.closest('.set');
   return r ? { dim: r.getAttribute('aria-disabled'), off: !!k.disabled, why: r.querySelector('.warn')?.textContent || '',
-               label: r.querySelector('.lbl')?.textContent || '' } : null; }"""
+               label: r.querySelector('.lbl')?.textContent || '', help: [...r.querySelectorAll('.help')].pop()?.textContent || '' } : null; }"""
 TWO = [[0, "모든 모니터"], [1, "1번 (3840x2160)"], [2, "2번 (1440x2560)"]]   # the Monitor row's choices a program of two monitors gives
 ONE = [[0, "모든 모니터"], [1, "1번 (1920x1080)"]]
 
@@ -357,8 +368,8 @@ def group_follow(br, s) -> None:
     rows = sheet(p)["rows"]
     check("the Capture connection holds it right after Monitor", rows[:4] == ["monitor", "monitor_follow", "stitch", "skip_windows"], str(rows))
     got = p.js(FOLLOW_ROW, "#capture-body")
-    check("...two monitors: a switch to press, nothing in its way, in Korean", got == {"dim": "false", "off": False, "why": "", "label": "바뀐 화면 따라가기"},
-          str(got))
+    check("...two monitors: a switch to press, nothing in its way, in Korean", {k: v for k, v in (got or {}).items() if k != "help"}
+          == {"dim": "false", "off": False, "why": "", "label": "바뀐 화면 따라가기"}, str(got))
     p.js("() => { window.__sent.length = 0; document.querySelector('#capture-body [data-set=\"monitor_follow\"]')?.click(); }")
     p.wait(200)
     sent = p.js("() => window.__sent.filter((m) => m.type === 'setting')")
@@ -368,6 +379,11 @@ def group_follow(br, s) -> None:
     got = p.js(FOLLOW_ROW, "#capture-body")
     check("a program of one monitor: dimmed, not pressable, and says why", got and got["dim"] == "true" and got["off"]
           and got["why"] == "모니터가 두 대 이상일 때 씀", str(got))
+    # the reason set apart from the help as the panel's facts are, and the help one phrase (no full stop in it) that says it
+    # comes back again: run together, "…고른 모니터만 모니터가 두 대 이상일 때 씀" read as one sentence
+    said = (got or {}).get("help", "")
+    check("...the reason after the help and a dot, the help one phrase that goes and comes back",
+          said.endswith(" · 모니터가 두 대 이상일 때 씀") and "." not in said and "돌아오" in said, said)
     p.send({"type": "settings", "values": {"monitor": 0}, "options": {"monitor": TWO}})
     p.wait(250)
     got = p.js(FOLLOW_ROW, "#capture-body")
@@ -463,35 +479,31 @@ def group_narrow(br, s) -> None:
           return { where: w, side: c.scrollWidth - c.clientWidth, page: document.documentElement.scrollWidth - innerWidth, out }; }""", where))
         p.js("() => closeCapture()")
     check("at 360 px nothing runs out of the sheet sideways, in each state", all(x["side"] <= 0 and x["page"] <= 0 and x["out"] == 0 for x in got), str(got))
-    # a command broken inside a word that fits its line ("requirements.txt", "/ingest") reads as two commands
-    server(p, "container")
-    program(p, clients=0)
-    p.js("() => { openCapture(); const d = document.querySelector('#capture-body details.ways-more'); d.open = true; d.dispatchEvent(new Event('toggle')); }")
-    p.wait(250)
-    cut = p.js("""() => { const out = [];
-      for (const c of document.querySelectorAll('#capture-body .ways code.cmd')) {
-        const st = getComputedStyle(c), room = c.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
-        // each word of its text, however it is marked up: on more lines than one, while on one line of its own (a copy kept
-        // from wrapping, in the chip's font) it fits the chip
-        const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
-        while (walk.nextNode()) {
-          const text = walk.currentNode; let at = 0;
-          for (const word of text.textContent.split(' ')) {
-            const r = document.createRange(); r.setStart(text, at); r.setEnd(text, at + word.length); at += word.length + 1;
-            if (!word) continue;
-            const lines = new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
-            const one = document.createElement('span'); one.textContent = word;
-            one.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
-            c.append(one); const natural = one.getBoundingClientRect().width; one.remove();
-            if (lines > 1 && natural <= room) out.push([word, Math.round(natural), Math.round(room)]);
-          }
-        }
-      }
-      return out; }""")
-    check("...and its commands break at their spaces, a word cut only where it is wider than its line", not cut, str(cut))
-    p.js("() => closeCapture()")
     check("no page errors", not p.errors, str(p.errors[:2]))
     p.close()
+    # A command broken inside a word that fits its line ("requirements.txt") reads as two commands, and an address or a
+    # service broken inside a name ("ws://127.0.0.1:8777/ing|est", "svc/notes-sidenote-|server") as two names: a line breaks
+    # at a space, or before an address's slash, and inside a piece only where that piece alone is wider than the line. The
+    # links over the commands are keys a finger presses
+    for width, hh in ((390, 844), (360, 740)):
+        p = Page(br, s, [row(1)], w=width, h=hh, settle=500)
+        p.send(support.settings_message())
+        for where in ("cluster", "container"):
+            if where == "cluster":
+                p.send(CLUSTER)
+            else:
+                server(p, where)
+            program(p, clients=0)
+            p.js("() => { openCapture(); const d = document.querySelector('#capture-body details.ways-more'); if (d) { d.open = true; d.dispatchEvent(new Event('toggle')); } }")
+            p.wait(250)
+            cut = p.js(h.CUT_PIECES, "#capture-body .ways")
+            check(f"{width} px, {where}: its commands break at their spaces and before an address's slash, a piece cut only where it alone is wider than its line",
+                  not cut, str(cut))
+            tall = p.js("() => [...document.querySelectorAll('#capture-body .ways .d a')].map((a) => [a.textContent, Math.round(a.getBoundingClientRect().height * 10) / 10])")
+            check(f"{width} px, {where}: the links over them 24 px tall at least", tall and all(t >= 24 for _, t in tall), str(tall))
+            p.js("() => closeCapture()")
+        check(f"{width} px: no page errors", not p.errors, str(p.errors[:2]))
+        p.close()
 
 
 def main():

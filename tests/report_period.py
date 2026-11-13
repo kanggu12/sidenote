@@ -1,6 +1,8 @@
 """./sidenote report: the period's numbers by engine, the agent's cost split, the GPU and the example checks, in one
-order whatever the language, and in the terminal's words for them in English and in Korean; and the answers marked right
-or wrong in the panel, each by its last mark, by engine, by how the problem came and by type, and in the table of days.
+order whatever the language, and in the terminal's words for them in English and in Korean; the answers marked right
+or wrong in the panel, each by its last mark, by engine, by how the problem came and by type, and in the table of days;
+no row for a day of the server's own events alone, a period of fewer than one day refused, and no log folder said as
+./sidenote events says it.
 
     .venv/bin/python tests/report_period.py
 """
@@ -225,5 +227,46 @@ with tempfile.TemporaryDirectory() as d:   # a period with answers and no marks
     day = next((line for line in text.splitlines() if re.match(r"\d{4}-\d\d-\d\d ", line)), "")
     check("none marked: the period says so in a line, and the day's column has a dash",
           "맞음/채점  채점한 답 없음" in text and cell(text.splitlines()[0], day, "맞음/채점") == "-", text)
+
+print("[days with nothing to count, and the command line]")
+# A day whose events are only the server's own (it started, a setting changed, a capture program connected) has no row: a
+# row of zeros hid "No records", here and in the panel's Report, which reads report_data too
+own = [{"ts": now, "event": "server_start", "version": "x"}, {"ts": now, "event": "control", "action": "pause"},
+       {"ts": now, "event": "capture_connect", "info": "capture/test"}, {"ts": now - 86400, "event": "server_start"}]
+with tempfile.TemporaryDirectory() as d:
+    Path(d, "events.jsonl").write_text("\n".join(json.dumps(e) for e in own) + "\n", encoding="utf-8")
+    report.LOG_DIR = Path(d)
+    check("days of the server's own events alone: no rows, in the panel's Report as in --json",
+          report.report_data(7, Path(d))["days"] == [], report.report_data(7, Path(d))["days"])
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main(["report", "--days", "7"])
+    check("...and the table says there are no records", out.getvalue().strip() == t("No records in the last {n} day(s)", n=7),
+          out.getvalue())
+    Path(d, "events.jsonl").write_text("\n".join(json.dumps(e) for e in own + [marks[-1]]) + "\n", encoding="utf-8")
+    check("...a day with an answer among them has its row", [r["day"] for r in report.report_data(7, Path(d))["days"]]
+          == [day_of(now)], report.report_data(7, Path(d))["days"])
+    # No period of none or fewer days: --days 0 and -3 were taken, and said there were no records in the last -3 days
+    for days in ("0", "-3"):
+        got = subprocess.run([sys.executable, "-m", "server.report", "report", "--days", days], cwd=ROOT, capture_output=True,
+                             text=True, env={**os.environ, "SIDENOTE_LOG_DIR": d, "PYTHONIOENCODING": "utf-8"})
+        check(f"--days {days} is refused, in the terminal's words, and nothing reported", got.returncode == 2
+              and got.stdout == "" and t("not a whole number from {low}: {value}", low=1, value=days) in got.stderr,
+              [got.returncode, got.stdout[-200:], got.stderr[-200:]])
+    got = subprocess.run([sys.executable, "-m", "server.report", "events", "-n", "-1"], cwd=ROOT, capture_output=True,
+                         text=True, env={**os.environ, "SIDENOTE_LOG_DIR": d, "PYTHONIOENCODING": "utf-8"})
+    check("...and so is a count of events under 0 (-n 0 shows none)", got.returncode == 2 and got.stdout == ""
+          and t("not a whole number from {low}: {value}", low=0, value="-1") in got.stderr, [got.returncode, got.stderr[-200:]])
+# With no log folder, report says so as events does: it said there were no records, as if a folder had been read
+gone = Path(tempfile.mkdtemp(prefix="sidenote-gone-")) / "logs"
+report.LOG_DIR = gone
+said = {}
+for cmd in ("report", "events"):
+    out = io.StringIO()
+    with redirect_stdout(out):
+        report.main([cmd])
+    said[cmd] = out.getvalue().strip()
+check("no log folder: report and events say the same, naming the folder",
+      said["report"] == said["events"] == t("No log folder: {dir}", dir=gone), said)
 print(f"==== {len(PASS)} of {len(PASS) + len(FAIL)} as expected")
 sys.exit(1 if FAIL else 0)   # tests/run.sh counts a suite by its exit status

@@ -7,17 +7,21 @@ file ./sidenote backup writes; then the routes, as a program and the panel call 
 Checked:
   checks   each part's state and words from made-up facts: the capture program off by where the server runs, another
            release, a screen that does not come, speech off or failed, the local model off, missing or not answering,
-           the agent signed out or at its limit, the disk nearly full, the GPU full, errors of the last day
+           the agent signed out or at its limit (its date when the limit ends on another day), the disk nearly full, the
+           GPU full, errors of the last day; the key to where a fix is in the panel, a place the panel has, and none for
+           a fix in a terminal
   log      the newest events first across a rotated file, the failures alone, a limit, a time before which none come,
-           a cut line skipped; the server log's last lines in their order
+           a cut line skipped; the server log's last lines in their order; the last day's errors, the answers' alone
   models   Ollama's list and what is on the GPU put together, the models in use marked, the offered ones not there after
   backup   the archive's names and kinds (plain files only, sidenote-backup.txt first line), the history copied whole
            with Recently deleted left out and nothing of it left in the file, one file with no -wal, the settings as
            they were; a link in place of the settings refused; nothing to back up said
   routes   /api/v1/check, /report, /log, /log/server, /models (503 with no Ollama), DELETE /models/x (404), POST /backup (the file,
-           with what it holds in its headers, its folder gone after it is sent); another site's page refused, a write
-           that is not JSON refused
+           with what it holds in its headers, its folder gone after it is sent, and after a connection gone before its
+           first block); ?days, ?limit and ?lines past their ends held to them; another site's page refused, a write
+           that is not JSON refused; the errors in the panel's language
 """
+import asyncio
 import io
 import json
 import os
@@ -130,6 +134,14 @@ signed = by_id(M.checks(facts(agent={"ok": False, "login": "claude login"})))
 check("the agent signed out: a warning with the command that signs it in", signed["agent"]["state"] == "warn" and signed["agent"]["cmd"] == "claude login", signed["agent"])
 limit = by_id(M.checks(facts(agent={"limit_until": time.time() + 3600})))
 check("...at its plan's limit: a warning saying until when", limit["agent"]["state"] == "warn" and "until" in limit["agent"]["said"], limit["agent"])
+# A weekly limit ends days later: the clock alone read as tonight's
+later = time.time() + 3 * 86400
+week = by_id(M.checks(facts(agent={"limit_until": later})))["agent"]
+check("...a limit that ends on another day: its date with the clock", week["said"]
+      == f"At its plan's limit until {time.strftime('%m-%d %H:%M', time.localtime(later))}", week["said"])
+tonight = time.mktime(time.localtime()[:3] + (23, 59, 0, 0, 0, -1))
+check("...one that ends today: the clock alone", by_id(M.checks(facts(agent={"limit_until": tonight})))["agent"]["said"]
+      == "At its plan's limit until 23:59")
 check("...not installed, or switched off: no fault", by_id(M.checks(facts(agent={"ok": False, "installed": False})))["agent"]["state"] == "off"
       and by_id(M.checks(facts(agent={"mode": "off"})))["agent"]["state"] == "off")
 full = by_id(M.checks(facts(disk={"free": 0.5 * 1024 ** 3})))
@@ -142,6 +154,58 @@ check("errors in the last day: a warning counting them, and a key to the log", e
       and errs["errors"]["go"] == "log", errs["errors"])
 newer = by_id(M.checks(facts(update={"version": "0.10.0"})))
 check("a newer release: the server's check says so", newer["server"]["state"] == "warn" and "0.10.0" in newer["server"]["said"], newer["server"])
+
+# A fix in the panel has a key to where it is (`go`, docs/API.md): a section of this sheet, Solver settings at a section,
+# Capture connection, or a switch on the page. One done in a terminal or outside the panel has none
+go = lambda part, **changes: by_id(M.checks(facts(**changes)))[part]["go"]  # noqa: E731
+check("the ways to start a capture program on your PC: a key to Capture connection",
+      go("capture", where="cluster", capture={"clients": 0}) == "connection")
+check("...one of another release: Capture connection too, where its Restart is",
+      go("capture", capture={"who": {"host": "PC", "version": "0.8.0"}}) == "connection")
+check("the screen switched off: the capture card's switch", go("screen", capture={"screen_on": False}) == "switch:sw-screen")
+check("...no screen since it connected: Capture connection, where the monitor is chosen",
+      go("screen", capture={"frame_age": None, "connected_for": 120.0}) == "connection")
+check("this PC's model switched off: Solver settings at Solving, where it is",
+      go("local", local={"on": False}) == "settings:solve")
+check("the agent switched off: Solver settings at the agent's section", go("agent", agent={"mode": "off"}) == "settings:agent")
+check("a fix in the server's terminal or outside the panel: no key",
+      go("capture", capture={"clients": 0}) == "" and go("capture", where="desktop", capture={"clients": 0}) == ""
+      and go("speech", speech={"enabled": False}) == "" and go("local", local={"present": False}) == ""
+      and go("local", local={"ok": False}) == "" and go("local", local={"missing": True, "pull": False}) == ""
+      and go("agent", agent={"ok": False, "login": "claude login"}) == "" and go("server", update={"version": "0.10.0"}) == ""
+      and go("disk", disk={"free": 0.5 * 1024 ** 3}) == "")
+# every key names a place the panel has: a section of this sheet, a section of Solver settings, Capture connection, or one
+# of the page's switches; and every fix whose words send the person to one of those places has its key
+from server.settings import sections  # noqa: E402
+
+places = ({"check", "report", "log", "models", "backup", "connection", "switch:sw-screen", "switch:sw-audio", "switch:sw-agent"}
+          | {f"settings:{sid}" for sid, _ in sections()})
+variants = [GOOD, facts(capture={"clients": 0}), facts(where="cluster", capture={"clients": 0}),
+            facts(where="desktop", capture={"clients": 0}), facts(capture={"who": {"host": "PC", "version": "0.8.0"}}),
+            facts(capture={"screen_on": False}), facts(capture={"frame_age": None, "connected_for": 120.0}),
+            facts(speech={"enabled": False}), facts(speech={"available": False, "failed": True}), facts(local={"present": False}),
+            facts(local={"on": False}), facts(local={"missing": True}), facts(local={"missing": True, "pull": False}),
+            facts(local={"ok": False}), facts(agent={"mode": "off"}), facts(agent={"ok": False, "login": "claude login"}),
+            facts(agent={"ok": False, "installed": False}), facts(disk={"free": 0.5 * 1024 ** 3}), facts(gpu={"used": 22900, "total": 23028}),
+            facts(errors_day=3), facts(update={"version": "0.10.0"})]
+rows = [r for v in variants for r in M.checks(v)]
+check("every key names a place the panel has", all(not r["go"] or r["go"] in places for r in rows),
+      sorted({r["go"] for r in rows} - places - {""}))
+named = ("Solver settings", "Capture connection", "capture card", " in Log", " in Models")
+check("...and every fix whose words name one of them has its key", all(r["go"] for r in rows if any(w in r["fix"] for w in named)),
+      [(r["id"], r["fix"]) for r in rows if not r["go"] and any(w in r["fix"] for w in named)])
+
+print("\n[the errors of the last day]")
+# What the report counts as an answer's error: an agent failure this PC's model then answered, a code run that failed and
+# work held back (the agent's limit, the spend brake, a stuck model server) are not answers that failed
+day = Path(tempfile.mkdtemp(prefix="sidenote-maint-day-"))
+kinds = ["analysis_error", "followup_error", "agent_error", "agent_error", "run_error", "agent_limit", "agent_brake",
+         "local_stuck", "analysis_done"]
+(day / "events.jsonl").write_text(json.dumps({"ts": time.time() - 90000, "event": "analysis_error"}) + "\n"   # a day and more ago
+                                  + "".join(json.dumps({"ts": time.time() - 60 + i, "event": k}) + "\n" for i, k in enumerate(kinds)),
+                                  encoding="utf-8")
+check("the errors of the last day: the answers that ended in one, as ./sidenote report counts them",
+      M.errors_since(day, time.time() - 86400) == 2, M.errors_since(day, time.time() - 86400))
 
 print("\n[the log, from its end]")
 logs = Path(tempfile.mkdtemp(prefix="sidenote-maint-log-"))
@@ -275,10 +339,49 @@ sys.path.insert(0, str(ROOT / "tests"))
 from starlette.testclient import TestClient  # noqa: E402
 
 import server.app as A  # noqa: E402
+from server import i18n  # noqa: E402
 from server.settings import SETTINGS  # noqa: E402
 
 SETTINGS.path = None
 ORIGIN = {"origin": "http://127.0.0.1:8777"}
+
+
+def backups() -> int:
+    """How many backups the server has made, by the events it wrote of them."""
+    lines = (Path(LOGS) / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    return sum(1 for line in lines if '"event": "backup"' in line)
+
+
+def cut_backup(spec: str) -> tuple[list, list]:
+    """POST /api/v1/backup as a server hands it to the app (ASGI), its connection gone before the first block of the
+    archive: told as uvicorn tells it (ASGI 2.3: a disconnect where the next message would be, while the response's start
+    is on its way out), or as a server of 2.4 does (the send itself fails). The messages the app sent, and the backup
+    folders in the log folder after it."""
+    sent, asked = [], []
+
+    async def receive():
+        if not asked:                      # the request's body, {} as the panel sends it
+            asked.append(True)
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+        await asyncio.sleep(0)             # then the tab is closed while the backup is made: the connection is gone
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if spec == "2.4":
+            raise OSError("the connection is gone")
+        sent.append(message["type"])
+        await asyncio.sleep(0.05)          # the start on its way out when the disconnect is heard
+
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": spec}, "http_version": "1.1", "method": "POST",
+             "scheme": "http", "path": "/api/v1/backup", "raw_path": b"/api/v1/backup", "root_path": "", "query_string": b"",
+             "headers": [(b"host", b"127.0.0.1:8777"), (b"origin", ORIGIN["origin"].encode()),
+                         (b"content-type", b"application/json"), (b"content-length", b"2")],
+             "client": ("127.0.0.1", 50123), "server": ("127.0.0.1", 8777)}
+    try:
+        asyncio.run(A.app(scope, receive, send))
+    except Exception:                      # 2.4: the failed send ends the app (ClientDisconnect)
+        pass
+    return sent, [p.name for p in Path(LOGS).glob(".backup.*")]
 (Path(LOGS) / "events.jsonl").write_text(json.dumps({"ts": time.time(), "event": "analysis_error", "hint": "timeout"}) + "\n", encoding="utf-8")
 (Path(LOGS) / ".settings.json").write_text("{}", encoding="utf-8")
 with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
@@ -317,6 +420,61 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
           [r.status_code, r.headers.get("content-disposition"), got])
     check("...its folder gone once sent", not [p for p in Path(LOGS).iterdir() if p.name.startswith(".backup.")],
           [p.name for p in Path(LOGS).iterdir()])
+    for spec, how in (("2.3", "told as uvicorn tells it, a disconnect read"), ("2.4", "or as a server whose send fails")):
+        made = backups()
+        sent, left = cut_backup(spec)
+        check(f"a backup whose connection is gone before its first block ({how}): made, and nothing of it left behind",
+              backups() == made + 1 and sent == (["http.response.start"] if spec == "2.3" else []) and left == [],
+              [spec, backups() - made, sent, left])
+        M.sweep_backups(Path(LOGS))   # a folder left by this round is not found again by the next
+    # A number past either end of what a read takes is that end: ?days=-3 one day, and one of eleven digits a year, where
+    # both were taken as no number and gave seven days; ?limit and ?lines the same, at 0 and at their most
+    old = time.time() - 100 * 86400
+    events_file = Path(LOGS) / "events.jsonl"
+    kept_events = events_file.read_text(encoding="utf-8")
+    events_file.write_text(json.dumps({"ts": old, "event": "analysis_done", "type": "essay"}) + "\n"
+                           + json.dumps({"ts": time.time() - 86400 * 2, "event": "analysis_done", "type": "essay"}) + "\n"
+                           + "".join(json.dumps({"ts": time.time() - 1, "event": "analysis_done", "type": "essay"}) + "\n"
+                                     for _ in range(250)), encoding="utf-8")   # all of today, a second ago
+    days_of = lambda q: [d["day"] for d in c.get(f"/api/v1/report?days={q}", headers=ORIGIN).json().get("days", [])]  # noqa: E731
+    today = time.strftime("%Y-%m-%d")
+    check("?days=-3: today alone, the least a report counts", days_of("-3") == [today], days_of("-3"))
+    check("...?days=99999999999: a year, the most it counts (an answer 100 days ago in it)",
+          time.strftime("%Y-%m-%d", time.localtime(old)) in days_of("99999999999"), days_of("99999999999"))
+    check("...and ?days=2 the two days it says (an answer two days ago out of them)", days_of("2") == [today], days_of("2"))
+    n_events = lambda q: len(c.get(f"/api/v1/log?limit={q}", headers=ORIGIN).json().get("events", []))  # noqa: E731
+    check("?limit=-5: none, the least; ?limit=99999999999: all 252, under the most (1000)",
+          n_events("-5") == 0 and n_events("99999999999") == 252, [n_events("-5"), n_events("99999999999")])
+    (Path(LOGS) / "server.log").write_text("".join(f"line {i}\n" for i in range(300)), encoding="utf-8")
+    n_lines = lambda q: len(c.get(f"/api/v1/log/server?lines={q}", headers=ORIGIN).json().get("lines", []))  # noqa: E731
+    check("?lines=-5: none; ?lines=99999999999: all 300, under the most (2000)",
+          n_lines("-5") == 0 and n_lines("99999999999") == 300, [n_lines("-5"), n_lines("99999999999")])
+    check("...a word that is no number is the default: 200", n_events("many") == 200 and n_lines("many") == 200,
+          [n_events("many"), n_lines("many")])
+    # A period with no answers in it, only the server's own events: no days, so the panel says there are no records
+    events_file.write_text(json.dumps({"ts": time.time() - 60, "event": "server_start", "version": "x"}) + "\n"
+                           + json.dumps({"ts": time.time() - 30, "event": "control", "action": "pause"}) + "\n", encoding="utf-8")
+    check("GET /api/v1/report over the server's own events alone: no days", days_of("7") == [], days_of("7"))
+    events_file.write_text(kept_events, encoding="utf-8")
+    # The errors the sheet shows are in the panel's language, as every error's words are (docs/API.md)
+    i18n.set_lang("ko")
+    try:
+        r = c.get("/api/v1/models", headers=ORIGIN)
+        check("GET /api/v1/models with no Ollama, a panel in Korean: its error in Korean", r.status_code == 503
+              and r.json().get("error") == "로컬 LLM 서버가 응답하지 않거나 Ollama가 아님", r.json())
+        r = c.post("/api/v1/backup", headers={"origin": "https://example.com", "content-type": "application/json"}, content="{}")
+        check("...another site's page refused in Korean", r.status_code == 403 and r.json().get("error") == "다른 사이트의 페이지에서는 허용 안 됨", r.json())
+        r = c.post("/api/v1/backup", headers={**ORIGIN, "content-type": "application/json"}, content="[1]")
+        check("...a body that is not an object too", r.status_code == 400 and r.json().get("error") == "본문은 JSON 객체만 받음", r.json())
+        broken_read, A.maintenance_facts = A.maintenance_facts, lambda app: 1 / 0   # a check that fails where nothing expected it
+        try:   # a client that reads the 500 the server answers, where this one raises what the route raised
+            r = TestClient(A.app, base_url="http://127.0.0.1:8777", raise_server_exceptions=False).get("/api/v1/check", headers=ORIGIN)
+        finally:
+            A.maintenance_facts = broken_read
+        check("...and a route that failed on its own: a 500 saying so in Korean", r.status_code == 500
+              and r.json().get("error") == "서버가 답하지 못함 (ZeroDivisionError) · 까닭은 서버 로그에 있음", r.text[:200])
+    finally:
+        i18n.set_lang("en")
     r = c.post("/api/v1/backup", headers={"origin": "https://example.com", "content-type": "application/json"}, content="{}")
     check("another site's page: refused", r.status_code == 403, r.status_code)
     r = c.post("/api/v1/backup", headers={**ORIGIN, "content-type": "text/plain"}, content="x")

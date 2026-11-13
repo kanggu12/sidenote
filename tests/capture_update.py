@@ -7,6 +7,7 @@ moment (Updater), or at once when asked by ./sidenote capture-restart.
 No Windows: a copy of a file stands for capture.py, the server's /health is a small HTTP server, the clock is passed in.
 """
 import hashlib
+import io
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import threading
 import types
+from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -46,6 +48,26 @@ s._on_message(json.dumps({"type": "restart", "quiet": True}))
 check("a deploy's restart waits for a quiet moment", s.restart_pending and not s.quit_asked and not s.restart_asked)
 s._on_message(json.dumps({"type": "restart"}))
 check("capture-restart restarts at once (the loop ends with a restart)", s.quit_asked and s.restart_asked)
+
+# --no-auto-update (the desktop app starts it so): no Updater runs to take a deploy's restart, and the program said it would
+# restart at a quiet moment all the same, and never did
+check("a program takes a deploy's restart unless told otherwise", getattr(capture.Sender("ws://127.0.0.1:1/ingest"), "auto_update", None)
+      is True)
+s = capture.Sender.__new__(capture.Sender)
+s.wants = {"screen": True, "audio": True, "stitch": False, "monitor": 1}
+s.told = threading.Event()
+s.quit_asked = s.restart_asked = s.restart_pending = s.taken_over = False
+s.auto_update = False                        # what main() sets for --no-auto-update and --once
+said = io.StringIO()
+with redirect_stdout(said):
+    s._on_message(json.dumps({"type": "restart", "quiet": True}))
+check("under --no-auto-update a restart at a quiet moment is not waited for, and said as asked for, not as a deploy",
+      not s.restart_pending and not s.quit_asked and not s.restart_asked
+      and capture.t("A restart at a quiet moment was asked for: not taken by this program (--no-auto-update)") in said.getvalue()
+      and "New code was deployed" not in said.getvalue(), said.getvalue())
+with redirect_stdout(io.StringIO()):
+    s._on_message(json.dumps({"type": "restart"}))
+check("...while a restart asked for at once (capture-restart, the tray's, the panel's) still restarts it", s.quit_asked and s.restart_asked)
 
 # the quiet moment
 quiet = {"value": True}

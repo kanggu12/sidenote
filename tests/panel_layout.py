@@ -2009,13 +2009,21 @@ def group_top_layers(br, s):
                 for long in (False, True):
                     p.js("() => toast('Deleted · in Recently deleted for 30 days', () => {}, 'done', '', 'Undo')" if long else "() => toast('Restored', null, 'done')")
                     p.wait(450)
-                    crossed += [f"notice, {at}: {x}" for x in p.js(TOP_CROSS, "#toast")]
+                    cross_now = [f"notice, {at}: {x}" for x in p.js(TOP_CROSS, "#toast")]
+                    # in the bar; or, 600 px wide or less with no room in the bar for its words, under it, whole and opaque: cut
+                    # short there, a phone had no pointer to rest on it for the rest
                     got = p.js("""() => { const t = document.getElementById('toast').getBoundingClientRect(), b = document.querySelector('header.bar').getBoundingClientRect(),
-                        m = document.querySelector('#toast .msg'); return [t.top >= b.top && t.bottom <= b.bottom && t.left >= 0 && t.right <= innerWidth, m.scrollWidth > m.clientWidth + 1]; }""")
-                    if not got[0]:
+                        m = document.querySelector('#toast .msg'), a = getComputedStyle(document.querySelector('#toast > .alert'));
+                        const below = document.documentElement.classList.contains('toast-below');
+                        const solid = !/rgba|color\\(srgb [\\d.]+ [\\d.]+ [\\d.]+ \\//.test(a.backgroundColor) && a.backdropFilter === 'none';
+                        return [below ? t.top >= b.bottom - 1 && solid && innerWidth <= 600 : t.top >= b.top && t.bottom <= b.bottom,
+                                t.left >= 0 && t.right <= innerWidth, m.scrollWidth > m.clientWidth + 1 || m.scrollHeight > m.clientHeight + 1, below]; }""")
+                    if not (got[0] and got[1]):
                         inbar.append(at)
-                    if got[1] and w >= 480:
+                    if got[2] and (w >= 480 or got[3]):
                         cut.append(at)
+                    if not got[3]:   # under the bar it is opaque over the page: the boxes it covers do not show through it
+                        crossed += cross_now
                     p.js("() => { clearTimeout(toast.timer); $('toast').classList.remove('show'); }")
                     p.wait(260)
                 p.js("() => toggleMenu(true)")
@@ -2027,8 +2035,8 @@ def group_top_layers(br, s):
                     sheet.append(at)
                 p.js("() => toggleMenu(false)")
                 p.wait(200)
-    check("a notice stands in the bar, at every width, scroll and band", not inbar, inbar[:4])
-    check("...its words on one line at 480 px and wider", not cut, cut[:4])
+    check("a notice stands in the bar at every width, scroll and band, or at 600 px and less under it, whole and opaque", not inbar, inbar[:4])
+    check("...its words on one line at 480 px and wider, and all of them under the bar", not cut, cut[:4])
     check("the gear menu is a sheet from the bar's foot to the window's", not sheet, sheet[:4])
     check("no box's edge crosses a notice or the gear menu: 6 widths, at the top and scrolled, with no band and with two",
           not crossed, crossed[:6])

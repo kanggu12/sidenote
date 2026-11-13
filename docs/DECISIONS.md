@@ -13,7 +13,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
-| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133) |
+| [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
@@ -2022,10 +2022,15 @@ the bands under the bar once the page was scrolled, the menu hung from its key a
 cards whose edges ran under its glass and crossed its own. Each now stands where it covers no box. A notice stands in
 the bar (`placeToast`), in the first of three rooms its words fit in on one line: the free middle beside the name; over
 the signals where they stand beside the name, which fade out while it shows; the signals' own row where the bar takes
-two. It is cut short with an ellipsis only where none of them holds it, under 480 px. The bands go in the bar wherever
-they fit, scrolled too, and fade out while a notice stands in their place. Where they do not fit they head the thread's
-column as wide as its cards, and once scrolled they stick to the bar's foot with the bar's surface under them, the
-thread passing under them as the page passes under the bar. The gear menu is a sheet from the bar's foot to the
+two. Where none of them holds it on a window 600 px wide or less, or on a touch screen, it stands under the bar instead
+(under the bands' strip where that is in view), in the sheet's own colour, its words on up to five lines: cut short in
+the bar, it gave a phone no pointer to rest on it for the rest. On a wider window with a pointer it is cut short in the
+widest room, its whole on the pointer. The bands go in the bar wherever they fit, scrolled too, and fade out while a
+notice stands in their place, unless one of them is a fault (the server gone, a capture that failed): the notice then
+takes the bar's room beside them, or stands under the bar, as one too long for the bar does, with the bands left drawn. Where
+they do not fit they head the thread's column as wide as its cards, and once scrolled they stick to the bar's foot with
+the bar's surface under them, the thread passing under them as the page passes under the bar. On a phone they go with
+the page instead, unless one is a fault: stuck there, the capture program's band took a sixth of the screen. The gear menu is a sheet from the bar's foot to the
 window's, on the right column's edges, or the window's width in one column, in the sheet colour the settings'
 dropdowns share. tests/panel_layout.py checks it at six widths, at the top and scrolled, with no band and with two: no
 visible box straddles the edge of a notice or of the menu, what passes under the header aside.
@@ -2206,8 +2211,10 @@ ways:
 - The setup guide's last step said "a solving engine and the screen come first" with either one done; it names the
   steps still to do, each a key to its step. The sound step asked to play a video into a server that does not listen.
 - The capture program's console lines were English under `SIDENOTE_LANG=ko` though the program said they were
-  translated. They go through its table now; the lines of measurements stay English, numbers for a report as the
-  server's log is.
+  translated. They go through its table now; the lines of measurements alone (a frame's size, what the looks cost) stay
+  English, numbers for a report as the server's log is. The lines on lost sound say why it was lost, by the device, by
+  the program reading late or on the way out, and are translated with the rest, as are the reasons a line gives inside it
+  (why the windows cannot be read, what a Mac needs to record its sound).
 
 Practice switched gets no notice of its own: one in the bar hides the bands there for its seconds (note 122), and the
 menu's **On** and **Off** say it. `tests/panel_cues.py` checks each of these, and fails 23 of its 29 checks on the panel
@@ -2303,14 +2310,18 @@ from one look to the next, so it never settles; on the upright monitor that box 
 too small to be a new screen.
 
 The reading moves to the monitor where the newest new screen settled since the last move, unless one settled on the
-monitor read after that change began (somebody is working there), and 10 s after the last move at the earliest. The
+monitor read after that change began (somebody is working there), and 10 s after the last move at the earliest, unless a
+window of **Skip windows** shows on the monitor read, where there is nothing to read and so nothing to stay for. The
 chosen monitor is one of the others once the reading has moved, and it comes back the same way. A scrolled problem
 being joined holds the reading where it is, joined by the program's own move or by **Join scrolled screens**. Off, with one monitor, or with **All monitors**, the chosen monitor is read
 at once, and the panel greys the row out with the reason, counting the monitors the **Monitor** row offers. The rules
 are a class of their own (`ScreenFollow`), fed signatures and times.
 
 Nothing of a monitor not read leaves the program. One that shows a window of **Skip windows** is not looked at, and a
-look is let go when one came up while it was grabbed. This tool's panel is painted over before the signature is taken,
+look is let go when one came up while it was grabbed. While one shows on the monitor read, nothing of that monitor is
+grabbed either, and the others are still looked at: a new screen that settles on one of them, the chosen one too, takes
+the reading there. Following that stopped at the skip would hold the reading, and with it the capture, on a monitor that
+cannot be read for as long as the window stays. This tool's panel is painted over before the signature is taken,
 so an answer written there is no new screen; that takes the window list that finds the panel, which the program reads on
 Windows and macOS. Elsewhere (Linux) an answer streaming into the panel on another monitor would be a new screen to move
 to, the panel read as the problem, so the program does not follow there and says so (`follow_ok`), and the panel greys
@@ -2488,3 +2499,21 @@ first; a backup a stopped server was making is removed as the next one starts, s
 deleted answers, stays in the log folder. `tests/maintenance_check.py` checks the server's side and
 `tests/panel_maint.py` the sheet; on the code before, the first stops at its import of `server.maintenance` and the
 second finds no **Maintenance** in the menu.
+
+### <a id="note-134"></a>134. The blue pen for what is chosen
+
+Classic kept its frame graphite and white ([note 95](#note-95)), and a settings sheet read in one grey: a pressed
+choice differed from the others by a darker well and bold words, the open tab by a grey band, and the keyboard's ring
+was the ink. The blue pen, already the classic notebook's for short answers and algorithms, now marks what is chosen in
+the frame, faintly. A pressed choice (in the settings, the gear menu, Maintenance, Pick from text's terms) is drawn in
+its tint with its line round it and its words in it, the well kept; the open tab of a sheet and the open step of the
+setup guide have the tint and a short stroke of the pen down the tab's inner edge; the keyboard's ring is the pen; and
+one key on a sheet that takes it forward (the setup guide's Next, Add to Extra terms, Download a backup) is outlined in
+it over its tint, the other keys staying graphite. The tint is 8% of the pen over the sheet in the light theme and 15%
+in the dark, its line 45% and 55%; the words on it measure 5.9:1 in both, and 5.1:1 at the least, on the gear menu's
+dark glass. The cloud agent's name on an answer's foot takes the same pen, as the user guide's diagrams draw it. Red for
+off is the screen and sound switches' alone, as note 95 has it, so that one turned off is not forgotten; a switch at
+rest (the agent's, a setting off by default such as Follow the changing screen) is the grey well, where red read as a
+fault in every settings sheet. The gear menu's Maintenance had no mark of its own, and its square showed filled in: it
+has a wrench, drawn as the others are, and `tests/panel_maint.py` checks every item of the menu has its mark.
+
