@@ -12,7 +12,7 @@ it. To run it on its own, for a server in Kubernetes or on another machine whose
 
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
-2. Install its packages from the folder of the release's `sidenote-capture-<version>.zip`, or from the repository's
+2. Install its packages from the folder of the release's `Sidenote-0.10.2-Capture.zip`, or from the repository's
    `client` folder: `py -3 -m pip install -r requirements.txt` on Windows, or on Linux and macOS
    `python3 -m pip install -r requirements.txt` in a virtual environment.
 3. Start it there, pointing at the server:

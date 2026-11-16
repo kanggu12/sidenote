@@ -160,8 +160,9 @@ Install Sidenote, start it once, and add what solves: the local model, the cloud
    **Multi-Output Device** of your speakers and BlackHole in **Audio MIDI Setup**, and choose it as the output; macOS
    then asks once for the microphone, as Sidenote hears BlackHole as an input.
 
-To install from a browser instead, download `Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or
-`Sidenote-linux-x64.zip` from the [releases](https://github.com/kanggu12/sidenote/releases/latest):
+To install from a browser instead, download the app for your system from the
+[release](https://github.com/kanggu12/sidenote/releases/latest), `Sidenote-0.10.2-Windows-x64.zip`,
+`Sidenote-0.10.2-macOS-arm64.zip` (Apple silicon) or `Sidenote-0.10.2-Linux-x64.zip`, then:
 
 - **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
   `Sidenote.exe`: it does not start from inside the zip. The app is not signed by a publisher yet, so the first time
@@ -170,12 +171,13 @@ To install from a browser instead, download `Sidenote-windows-x64.zip`, `Sidenot
   stops an app from a browser's download that no publisher signed: in **System Settings**, **Privacy & Security**,
   choose **Open Anyway** at the bottom (on macOS 14, right-click the app, choose **Open**, then **Open** again). The
   quick start's `curl` leaves the zip unmarked, so macOS does not ask there.
-- **Linux**: `unzip Sidenote-linux-x64.zip && ./Sidenote/Sidenote`.
+- **Linux**: `unzip Sidenote-0.10.2-Linux-x64.zip && ./Sidenote/Sidenote`.
 
-To check a download: each release lists the SHA-256 of its files in `SHA256SUMS`. Run `sha256sum -c --ignore-missing
-SHA256SUMS` in the download folder; on macOS compare `shasum -a 256 Sidenote-macos-arm64.zip`, and in PowerShell
-`Get-FileHash Sidenote-windows-x64.zip`, with its line there. GitHub also records where each file was built (from 0.1.1
-on): `gh attestation verify Sidenote-windows-x64.zip --repo kanggu12/sidenote`.
+To check a download: each release lists the SHA-256 of its files in `Sidenote-0.10.2-SHA256SUMS.txt` (`SHA256SUMS`
+before 0.10.2). Run `sha256sum -c --ignore-missing Sidenote-0.10.2-SHA256SUMS.txt` in the download folder; on macOS compare
+`shasum -a 256 Sidenote-0.10.2-macOS-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-0.10.2-Windows-x64.zip`, with its
+line there. GitHub also records where each file was built (from 0.1.1 on):
+`gh attestation verify Sidenote-0.10.2-Windows-x64.zip --repo kanggu12/sidenote`.
 
 When it starts, the app starts Ollama if it is installed but not running, and while it runs it starts again any part it
 started that stops. **Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the
@@ -439,7 +441,7 @@ of the same name. It is also the setup guide's first step.
   or **By hand**) and what its tray's **Quit** ends, the **Address** it was given and **Since** when it is connected. The
   program says these in its hello as it connects; one older than 0.8.0 says none of them. A program of another release
   turns the card amber, with what to do: one started from the server's checkout runs the server's code once restarted,
-  and one elsewhere is replaced from that release's `sidenote-capture` zip.
+  and one elsewhere is replaced from that release's `Sidenote-<version>-Capture.zip`.
 - **Restart** and **Quit the program**, which asks twice, ask the program what its tray's **Restart capture** and
   **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
   **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.

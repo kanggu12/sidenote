@@ -142,8 +142,9 @@ A speech model that is not in the bundle cannot be chosen in the panel: the choi
 
 The apps for Windows, macOS and Linux hold the server and the capture program, so they need no images and no Python
 packages. Bring `models.tar` and `speech.tar` from step 1, the app's zip from the
-[release](https://github.com/kanggu12/sidenote/releases) (`Sidenote-windows-x64.zip`, `Sidenote-macos-arm64.zip` or
-`Sidenote-linux-x64.zip`), and Ollama's own download: on Linux its archive, as its install script needs the internet.
+[release](https://github.com/kanggu12/sidenote/releases) (`Sidenote-0.10.2-Windows-x64.zip`,
+`Sidenote-0.10.2-macOS-arm64.zip` or `Sidenote-0.10.2-Linux-x64.zip`), and Ollama's own download: on Linux its archive,
+as its install script needs the internet.
 
 Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a
 bundle made with Sidenote 0.1.5 or later carries Sidenote's context with it. With an older bundle, quit Ollama from its
@@ -204,8 +205,8 @@ docker tag ollama/ollama:0.40.5 registry.internal/ollama/ollama:0.40.5 && docker
 ```
 
 For an AMD GPU, push `ollama/ollama:0.40.5-rocm` the same way and add `gpuVendor: amd` under `llm` below. Bring the chart,
-`sidenote-<version>.tgz`, from the release, and write a values file that names the registry and turns off what needs the
-internet:
+`Sidenote-0.10.2-Helm-Chart.tgz`, from the release, and write a values file that names the registry and turns off what
+needs the internet:
 
 ```yaml
 # my-values.yaml
@@ -228,7 +229,7 @@ search:
 ```
 
 ```bash
-helm install sidenote sidenote-$V.tgz --namespace sidenote --create-namespace -f my-values.yaml --wait
+helm install sidenote Sidenote-$V-Helm-Chart.tgz --namespace sidenote --create-namespace -f my-values.yaml --wait
 kubectl -n sidenote exec -i deploy/sidenote-llm -- tar xf - --no-same-owner -C /root/.ollama < models.tar
 kubectl -n sidenote exec -i deploy/sidenote-server -- tar xf - --no-same-owner -C /data/hf < speech.tar
 kubectl -n sidenote rollout restart deploy/sidenote-server
@@ -239,7 +240,7 @@ kubectl -n sidenote port-forward svc/sidenote-server 8777:8777    # the panel, a
 and that root cannot read files that kept the owner they had on the other PC. Helm's notes after the install offer a model
 download, which needs the internet; the two `tar` lines put the bundle's models in place instead.
 
-The capture program runs on the PC with the screen, from the release's `sidenote-capture-<version>.zip`, as
+The capture program runs on the PC with the screen, from the release's `Sidenote-0.10.2-Capture.zip`, as
 [the capture program on its own](capture-client.md) says. Install its packages from the bundle's wheels, copied next to it:
 `py -m pip install --no-index --find-links wheels -r requirements.txt` on Windows.
 
