@@ -8,7 +8,7 @@ on the system it is for, from the repository's root, after the packages:
     python docker/fetch_vendor.py docker/vendor.json panel/vendor
     python desktop/build.py
 
-It writes dist/Sidenote/ (dist/Sidenote.app on macOS) and dist/Sidenote-<system>-<machine>.zip, then runs the result
+It writes dist/Sidenote/ (dist/Sidenote.app on macOS) and dist/Sidenote-<version>-<system>-<machine>.zip, then runs the result
 with --check, which starts its server with stand-in models and fails the build when something it needs was left out.
 On macOS it also runs the built capture program against the built server, with its menu bar icon, and quits it.
 """
@@ -285,10 +285,12 @@ def main() -> int:
     if MAC:
         mac_capture_check(exe)
 
-    system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
+    # The release's file says what it is for, as people write the system, and which release it is: a download kept beside
+    # an older one is told apart (Sidenote-0.10.2-Windows-x64.zip)
+    system = {"win32": "Windows", "darwin": "macOS"}.get(sys.platform, "Linux")
     machine = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower(),
                                                                                        platform.machine().lower())
-    name = DIST / f"Sidenote-{system}-{machine}.zip"
+    name = DIST / f"Sidenote-{version()}-{system}-{machine}.zip"
     if MAC:
         # ditto, as the Finder's own Compress does: it keeps the bundle's links and signature, which a plain zip breaks
         name.unlink(missing_ok=True)

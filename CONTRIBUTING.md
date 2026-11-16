@@ -190,12 +190,14 @@ the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a feature, a setting or a platform, raises the minor number (0.2.1 to 0.3.0). One that asks people to change a
   setting, their `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
 - **One place.** The number is written in `server/version.py`. The chart (`version`, `appVersion`), the `V=` lines of
-  [docs/air-gapped.md](docs/air-gapped.md) and the README's release badge follow it, and `tests/version_check.py` fails
-  when one does not.
+  [docs/air-gapped.md](docs/air-gapped.md), the README's release badge and the release's file names where the README and
+  the guides give them (`Sidenote-x.y.z-Windows-x64.zip` and the rest) follow it, and `tests/version_check.py` fails when
+  one does not.
 - **The steps.**
   1. Move what is under `## [Unreleased]` into a new `## [x.y.z] - YYYY-MM-DD` section, under `### Added`, `### Changed`,
      `### Fixed`, `### Removed` or `### Security`, and give it its link at the end of the file.
-  2. Set the number in `server/version.py`, `deploy/helm/sidenote/Chart.yaml` and `docs/air-gapped.md`, then run
+  2. Set the number in `server/version.py`, `deploy/helm/sidenote/Chart.yaml`, `docs/air-gapped.md`, and in the file
+     names of README.md's quick start, the user guide's install, `docs/capture-client.md` and the chart's README, then run
      `sh .github/badges.sh`.
   3. Commit as `Sidenote x.y.z`, tag it `vx.y.z` and push both. `release.yml` checks the number, runs CI and publishes
      ([docs/QA.md](docs/QA.md)).

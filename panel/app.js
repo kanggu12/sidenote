@@ -7809,8 +7809,12 @@ const captureUrl = () => `ws://127.0.0.1:${panelPort()}/ingest`;
 // that does not say its own), from this repository's releases (NOTES_PREFIX, the band's link to a release's notes)
 function captureZip() {
   const v = /^\d+\.\d+\.\d+$/.test(status.version || "") ? status.version : "";
-  return v ? { url: `${NOTES_PREFIX}download/v${v}/sidenote-capture-${v}.zip`, name: `sidenote-capture-${v}.zip` }
-    : { url: `${NOTES_PREFIX}latest`, name: t("the latest release") };
+  if (!v) return { url: `${NOTES_PREFIX}latest`, name: t("the latest release") };
+  // the release's files are named for it from 0.10.2 (Sidenote-0.10.2-Capture.zip); one before kept sidenote-capture-0.10.1.zip
+  const [major, minor, patch] = v.split(".").map(Number);
+  const named = major > 0 || minor > 10 || (minor === 10 && patch >= 2);
+  const name = named ? `Sidenote-${v}-Capture.zip` : `sidenote-capture-${v}.zip`;
+  return { url: `${NOTES_PREFIX}download/v${v}/${name}`, name };
 }
 // The program's release against the server's: the same, another (a warning), or not said by a program before 0.8.0
 function capVersion(w) {

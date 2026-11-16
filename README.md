@@ -48,7 +48,7 @@ the problem's examples.
 **Windows 10 or 11** (PowerShell)
 
 ```powershell
-curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-windows-x64.zip
+curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-Windows-x64.zip
 mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenote.zip" -C "$env:LOCALAPPDATA\Programs"
 & "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
@@ -57,7 +57,7 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 setting, and once Sidenote is on there, the third starts it again.
 
 ```bash
-curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-macos-arm64.zip
+curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-macOS-arm64.zip
 ditto -x -k /tmp/Sidenote.zip /Applications
 open /Applications/Sidenote.app
 ```
@@ -73,8 +73,8 @@ osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 
 **Linux** with an X11 session (on Ubuntu, Xorg from the gear on the login screen) and glibc 2.35 or newer
 
 ```bash
-curl -fLO https://github.com/kanggu12/sidenote/releases/latest/download/Sidenote-linux-x64.zip
-unzip -oq Sidenote-linux-x64.zip
+curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-Linux-x64.zip
+unzip -oq Sidenote-0.10.2-Linux-x64.zip
 ./Sidenote/Sidenote
 ```
 

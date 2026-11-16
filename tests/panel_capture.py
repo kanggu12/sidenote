@@ -162,6 +162,14 @@ def group_none(br, s) -> None:
           and "https://github.com/kanggu12/sidenote/releases/download/v0.8.0/sidenote-capture-0.8.0.zip" in got["zips"], str(got))
     check("...the placeholder of the forward has no Copy key: what is copied must run as it is",
           not any(c.startswith("ssh ") for c in got["copies"]), str(got["copies"]))
+    # a release from 0.10.2 on names its files for itself (Sidenote-0.10.2-Capture.zip); one before kept its older name, above
+    p.send({"type": "status", "version": "0.10.2", "where": "container", "desktop": False})
+    p.wait(200)
+    zips = sheet(p)["zips"]
+    check("...and a server of 0.10.2 or later points at its release's Sidenote-<version>-Capture.zip",
+          "https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-Capture.zip" in zips, str(zips))
+    server(p)   # the release the rest of the group is about
+    p.wait(200)
     program(p, clients=0)   # a message from the server: the fold stays as it was opened
     check("...and stays unfolded while the server talks", sheet(p)["more"] is True)
     p.js("() => { capWaitFrom = Date.now() - 61000; }")

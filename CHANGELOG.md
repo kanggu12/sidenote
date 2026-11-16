@@ -10,6 +10,10 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ### Changed
 
+- The release's files are named for the release and for what they are: `Sidenote-0.10.2-Windows-x64.zip`,
+  `Sidenote-0.10.2-macOS-arm64.zip` and `Sidenote-0.10.2-Linux-x64.zip` for the app, `Sidenote-0.10.2-Capture.zip` for the
+  capture program on its own (its folder is `Sidenote-Capture`), `Sidenote-0.10.2-Helm-Chart.tgz` and
+  `Sidenote-0.10.2-SHA256SUMS.txt`. The README's quick start downloads this release's files by name.
 - The README shows again how Sidenote compares with the tools near it, and the everyday commands (start, stop, update,
   logs) in a folded table at the end of its quick start.
 
