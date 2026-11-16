@@ -16,7 +16,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125), [138](#note-138) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -2570,3 +2570,33 @@ back 15 and lost 5, C 13 and 5: B wrote `TensorRT-LLM` once where A kept `Cancer
 once, and both read the two readings of a question ending in `하셨던 거죠?` as asking nothing, which A had kept. What
 asks nothing was read as a question once in A and B and never in C, and HiKE's readings stayed as they were but for 3.
 The reading stays as it is.
+
+### <a id="note-138"></a>138. The release's files are the server's and the capture program's, each for its system
+
+A release had the app for three systems, the capture program as Python and the Helm chart, under names that said neither
+which part a file was nor, for the app, which release (`Sidenote-windows-x64.zip`, `sidenote-capture-0.10.1.zip`,
+`sidenote-0.10.1.tgz`). Now each is named for its part, the release and the system:
+
+| Part | Files |
+|:---|:---|
+| The server (the app: the server, its panel and this PC's capture program) | `Sidenote-Server-<version>-Windows-x64.zip`, `-macOS-arm64.zip`, `-Linux-x64.zip`, and `Sidenote-Server-<version>-Helm-Chart.tgz` |
+| The capture program alone | `Sidenote-Capture-<version>-Windows-x64.zip`, `-macOS-arm64.zip`, `-Linux-x64.zip`, and `Sidenote-Capture-<version>-Python.zip` |
+| Both | `Sidenote-<version>-SHA256SUMS.txt` |
+
+The capture program alone used to be Python only, the same file for every system, so it had no system in its name and
+needed Python 3.10 and its packages on the PC with the screen. It is now also built for each system as the app is, by
+`desktop/build.py` after the app, from `desktop/capture_main.py`, which runs `client/capture.py` as it is and stands in
+for `python -c` (its tray menu on Windows). The modules the program imports are named to PyInstaller from its own
+source, since its entry imports almost nothing. Zipped, it is 30 MB for Windows, 18 MB for macOS and 53 MB for Linux,
+where the app is 106, 73 and 208 MB. On macOS it is a bundle of its own (`io.github.kanggu12.sidenote.capture`), which macOS asks for
+Screen Recording as a program of its own. The Python one stays, for the systems with no build (an Intel Mac, Windows or
+Linux on ARM). The README downloads the server by name, so its links name the release (version_check fails when one of
+the guides names another).
+
+Building the capture program alone showed what the app's check had missed on Linux: the speaker sound's library reads
+its C declarations from a file beside it as it is imported, PyInstaller loads the library's own hook for that file by
+importing the package, which on Linux connects to a sound server a build machine lacks, and the hook was dropped. The
+Linux app of 0.10.2 had no `pulseaudio.py.h`, where the Windows and Mac ones had theirs, and its capture program never
+heard the speakers. The file is now collected by name on every system, and both checks look for it: the app's check only
+looks the capture program's packages up off Windows (importing them connects to the display and the sound server), and
+a package found is not a package that imports.

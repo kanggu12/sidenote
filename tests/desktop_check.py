@@ -1,7 +1,7 @@
 """Sidenote on one PC without Docker (desktop/app.py): the server's environment on the host, the data folder on each
 system, the capped log files, the port check, the watch that starts a stopped child again and stops when the capture
-program is quit, the `python -c` the Windows app stands in for, and the whole start and stop on a spare port with
-stand-in models.
+program is quit, the `python -c` the Windows app stands in for, the whole start and stop on a spare port with
+stand-in models, and the capture program alone (desktop/capture_main.py): its `-c`, its --check and its own options.
 
     .venv/bin/python tests/desktop_check.py
 """
@@ -722,6 +722,35 @@ done = subprocess.run([sys.executable, "-m", "desktop", "--check"], cwd=str(ROOT
 lines = done.stdout.strip().splitlines()
 check("it starts the server with stand-in models, gets its panel, and ends with ok",
       done.returncode == 0 and lines[-1:] == ["ok"], done.stdout[-600:] + done.stderr[-600:])
+
+print("[the capture program alone (desktop/capture_main.py), from the checkout]")
+# `-c CODE ARGS` as python -c: the capture program runs its tray menu's script so with sys.executable on Windows, which is
+# the executable itself in the build
+done = subprocess.run([sys.executable, str(ROOT / "desktop" / "capture_main.py"), "-c", "import sys; print(sys.argv)", "a", "b c"],
+                      cwd=str(ROOT), capture_output=True, text=True, timeout=60)
+check("-c runs the code with its arguments, as python -c does", done.returncode == 0 and done.stdout.strip() == "['-c', 'a', 'b c']",
+      done.stdout + done.stderr[-300:])
+# --check: what it imports and looks up, the sound library's file beside it, and the program's own --help, into a report file
+with tempfile.TemporaryDirectory(prefix="sidenote-capture-check-") as d:
+    report = Path(d) / "check.log"
+    done = subprocess.run([sys.executable, str(ROOT / "desktop" / "capture_main.py"), "--check"], cwd=str(ROOT),
+                          capture_output=True, text=True, timeout=120, env={**os.environ, "SIDENOTE_CHECK_LOG": str(report)})
+    said = report.read_text(encoding="utf-8") if report.is_file() else ""
+    # Where the capture program's packages are installed (the desktop job, a checkout with client/requirements.txt), all of
+    # it is found; where they are not (the server suites' job), the report names what is missing and the exit says so
+    import importlib.util
+    have = all(importlib.util.find_spec(m) for m in ("mss", "soundcard", "pystray"))
+    last = (said.strip().splitlines() or [""])[-1]
+    check("--check writes its report to SIDENOTE_CHECK_LOG: the program's options, then ok"
+          + ("" if have else " (here: what is missing, and exit 1)"),
+          "--server SERVER" in said and ((done.returncode == 0 and last.startswith("ok: ")) if have
+                                         else (done.returncode == 1 and "mss: ModuleNotFoundError" in said)),
+          said[-600:] + done.stderr[-300:])
+# Its arguments are the capture program's own: --help is the program's, which ends with 0
+done = subprocess.run([sys.executable, str(ROOT / "desktop" / "capture_main.py"), "--help"], cwd=str(ROOT), capture_output=True,
+                      text=True, timeout=60)
+check("...and any other arguments are the capture program's own (--help prints its options)",
+      done.returncode == 0 and "--server SERVER" in done.stdout and "--no-auto-update" in done.stdout, done.stdout[-300:] + done.stderr[-300:])
 
 print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)
