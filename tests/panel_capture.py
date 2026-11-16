@@ -157,25 +157,20 @@ def group_none(br, s) -> None:
     p.js("() => { const d = document.querySelector('#capture-body details.ways-more'); d.open = true; d.dispatchEvent(new Event('toggle')); }")
     p.wait(200)
     got = sheet(p)
-    check("unfolded: the port forwarded over ssh, the release's capture zip of the server's release, its packages and its start, this page's port in them",
+    check("unfolded: the port forwarded over ssh, the page of the server's release (0.8.0 has no build of its own), its packages and its start, this page's port in them",
           got["cmds"][1:] == [f"ssh -L {port}:127.0.0.1:{port} 서버 PC", "python3 -m pip install -r requirements.txt", f"python3 capture.py --server ws://127.0.0.1:{port}/ingest"]
-          and "https://github.com/kanggu12/sidenote/releases/download/v0.8.0/sidenote-capture-0.8.0.zip" in got["zips"], str(got))
+          and "https://github.com/kanggu12/sidenote/releases/tag/v0.8.0" in got["zips"], str(got))
     check("...the placeholder of the forward has no Copy key: what is copied must run as it is",
           not any(c.startswith("ssh ") for c in got["copies"]), str(got["copies"]))
-    # a release from 0.10.2 on names its files for itself (Sidenote-0.10.2-Capture.zip); one before kept its older name, above
-    p.send({"type": "status", "version": "0.10.2", "where": "container", "desktop": False})
-    p.wait(200)
-    zips = sheet(p)["zips"]
-    check("...and a server of 0.10.2 points at its release's Sidenote-0.10.2-Capture.zip",
-          "https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-Capture.zip" in zips, str(zips))
-    # From 0.11.0 the release has the capture program built for each system: this browser's (Linux here) and its start,
-    # with the Python one for another system, and no Python steps
-    p.send({"type": "status", "version": "0.11.0", "where": "container", "desktop": False})
+    # From 0.11.1 the release has the capture program built for each system, named in lowercase: this browser's (Linux
+    # here) and its start, with the Python source for any other system, and no Python steps. A release before that (above,
+    # 0.8.0) is pointed at its page, which lists its files under the names they had
+    p.send({"type": "status", "version": "0.11.1", "where": "container", "desktop": False})
     p.wait(200)
     got = sheet(p)
-    dl = "https://github.com/kanggu12/sidenote/releases/download/v0.11.0/"
-    check("...and one of 0.11.0 or later: this system's own build of the capture program, the Python one for another, and its start",
-          got["zips"] == [dl + "Sidenote-Capture-0.11.0-Linux-x64.zip", dl + "Sidenote-Capture-0.11.0-Python.zip"]
+    dl = "https://github.com/kanggu12/sidenote/releases/download/v0.11.1/"
+    check("...and one of 0.11.1 or later: this system's own build of the capture program, the Python one for another, and its start",
+          got["zips"] == [dl + "sidenote-capture-0.11.1-linux-x64.zip", dl + "sidenote-capture-0.11.1-python-any-os.zip"]
           and got["cmds"][1:] == [f"ssh -L {port}:127.0.0.1:{port} 서버 PC",
                                   f"./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:{port}/ingest"],
           str([got["zips"], got["cmds"]]))
@@ -273,14 +268,14 @@ def group_connected(br, s) -> None:
     facts = dict(got["facts"])
     check("another release, started by hand elsewhere: the card warns, and says where the server's release is",
           got["state"] == "warn" and facts.get("버전") == "v0.7.0 · 서버는 v0.8.0" and facts.get("시작 방식") == "직접 실행 · 끝내도 서버는 그대로"
-          and got["link"].endswith("/v0.8.0/sidenote-capture-0.8.0.zip"), str(got))
+          and got["link"].endswith("/releases/tag/v0.8.0"), str(got))
     check("...a program that took over is not one that came: no tick", not got["tick"], str(got["tick"]))
-    # the note's link is the build for the system that program runs on, where the release has one (0.11.0 on)
-    p.send({"type": "status", "version": "0.11.0", "where": "container", "desktop": False})
+    # the note's link is the build for the system that program runs on, where the release has one (0.11.1 on)
+    p.send({"type": "status", "version": "0.11.1", "where": "container", "desktop": False})
     p.wait(200)
     got = sheet(p)
-    check("...and from 0.11.0 it is the build for the system that program says it runs on (macOS here)",
-          got["link"].endswith("/v0.11.0/Sidenote-Capture-0.11.0-macOS-arm64.zip"), str(got["link"]))
+    check("...and from 0.11.1 it is the build for the system that program says it runs on (macOS here)",
+          got["link"].endswith("/v0.11.1/sidenote-capture-0.11.1-macos-arm64.zip"), str(got["link"]))
     server(p)
     program(p, {**WHO, "host": "LAPTOP-9", "system": "macOS 15.1", "version": "0.7.0", "started": "own", "ends_server": False}, ago=5)
     program(p, {**WHO, "version": "0.7.0"})

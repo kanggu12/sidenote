@@ -9,8 +9,8 @@ goes to a server elsewhere. Run it on the system it is for, from the repository'
     python docker/fetch_vendor.py docker/vendor.json panel/vendor
     python desktop/build.py
 
-It writes dist/Sidenote/ (dist/Sidenote.app on macOS) and dist/Sidenote-Server-<version>-<system>-<machine>.zip, and
-dist/Sidenote-Capture/ (dist/Sidenote-Capture.app) and dist/Sidenote-Capture-<version>-<system>-<machine>.zip. Each is run
+It writes dist/Sidenote/ (dist/Sidenote.app on macOS) and dist/sidenote-server-<version>-<system>-<machine>.zip, and
+dist/Sidenote-Capture/ (dist/Sidenote-Capture.app) and dist/sidenote-capture-<version>-<system>-<machine>.zip. Each is run
 with --check before its zip is made: the app starts its server with stand-in models, the capture program imports what it
 needs and reads its options, and either fails the build when something was left out. On macOS both capture programs, the
 app's and the one alone, are also run against the built server, with their menu bar icons, and quit.
@@ -249,7 +249,7 @@ def mac_icon(path: Path) -> Path:
 
 
 # The capture program alone (desktop/capture_main.py): the name of its folder, executable and Mac bundle, as the release's
-# file is named (Sidenote-Capture-<version>-<system>-<machine>.zip), and the bundle's own identity, so macOS asks it for
+# file is named (sidenote-capture-<version>-<system>-<machine>.zip), and the bundle's own identity, so macOS asks it for
 # Screen Recording as a program of its own
 CAPTURE_NAME = "Sidenote-Capture"
 CAPTURE_BUNDLE_ID = "io.github.kanggu12.sidenote.capture"
@@ -273,8 +273,9 @@ def capture_imports() -> list[str]:
 
 
 def system_machine() -> tuple[str, str]:
-    """The system and the machine as the release's file names say them: Windows, macOS or Linux, and x64 or arm64."""
-    system = {"win32": "Windows", "darwin": "macOS"}.get(sys.platform, "Linux")
+    """The system and the machine as the release's file names say them, every letter lowercase as in the rest of the name
+    (one name with both cases is one more thing to get right when it is typed): windows, macos or linux, x64 or arm64."""
+    system = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
     machine = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower(),
                                                                                        platform.machine().lower())
     return system, machine
@@ -385,10 +386,10 @@ def main() -> int:
         mac_capture_check(exe, [str(capture_exe)])     # the capture program alone, against the app's server
 
     # Each release file says what it is (the server with its panel and this PC's capture program, or the capture program
-    # alone), which release, and the system it runs on as people write it: Sidenote-Server-0.11.0-Windows-x64.zip
+    # alone), which release, and the system it runs on: sidenote-server-0.11.1-windows-x64.zip
     system, machine = system_machine()
-    zip_up(DIST / ("Sidenote.app" if MAC else "Sidenote"), DIST / f"Sidenote-Server-{version()}-{system}-{machine}.zip")
-    zip_up(DIST / (f"{CAPTURE_NAME}.app" if MAC else CAPTURE_NAME), DIST / f"Sidenote-Capture-{version()}-{system}-{machine}.zip")
+    zip_up(DIST / ("Sidenote.app" if MAC else "Sidenote"), DIST / f"sidenote-server-{version()}-{system}-{machine}.zip")
+    zip_up(DIST / (f"{CAPTURE_NAME}.app" if MAC else CAPTURE_NAME), DIST / f"sidenote-capture-{version()}-{system}-{machine}.zip")
     return 0
 
 

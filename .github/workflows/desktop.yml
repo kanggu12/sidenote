@@ -104,5 +104,5 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: Sidenote-${{ runner.os }}
-          path: dist/Sidenote-*.zip
+          path: dist/sidenote-*.zip
           retention-days: 14

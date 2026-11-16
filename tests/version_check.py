@@ -154,27 +154,34 @@ check("no list item in the documents starts with a second marker", not doubled, 
 # The release's files are named for it and for what they are (release.yml, desktop/build.py), and the README and the guides that
 # name one name this release's: the quick start downloads by name, and a name left at the last release is a dead link
 files = release[release.find("          files: |"):].split("\n")[1:5]
-check("the release attaches the desktop job's zips, the chart, the capture program as Python and the checksums, named for their part",
-      [f.strip() for f in files] == ["dist/app/Sidenote-*.zip", "dist/Sidenote-Server-${{ steps.v.outputs.version }}-Helm-Chart.tgz",
-                                     "dist/Sidenote-Capture-${{ steps.v.outputs.version }}-Python.zip",
-                                     "dist/Sidenote-${{ steps.v.outputs.version }}-SHA256SUMS.txt"], files)
-check("...and the desktop job's zips are the server and the capture program alone, each for its system (Sidenote-Server-<version>-Windows-x64.zip)",
-      'DIST / f"Sidenote-Server-{version()}-{system}-{machine}.zip"' in doc("desktop", "build.py")
-      and 'DIST / f"Sidenote-Capture-{version()}-{system}-{machine}.zip"' in doc("desktop", "build.py")
-      and '{"win32": "Windows", "darwin": "macOS"}.get(sys.platform, "Linux")' in doc("desktop", "build.py"))
+check("the release attaches the desktop job's zips, the chart, the capture program as Python source and the checksums, named for their part",
+      [f.strip() for f in files] == ["dist/app/sidenote-*.zip", "dist/sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz",
+                                     "dist/sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip",
+                                     "dist/sidenote-${{ steps.v.outputs.version }}-sha256sums.txt"], files)
+check("...and the desktop job's zips are the server and the capture program alone, each for its system (sidenote-server-<version>-windows-x64.zip)",
+      'DIST / f"sidenote-server-{version()}-{system}-{machine}.zip"' in doc("desktop", "build.py")
+      and 'DIST / f"sidenote-capture-{version()}-{system}-{machine}.zip"' in doc("desktop", "build.py")
+      and '{"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")' in doc("desktop", "build.py"))
+# every letter of a release file's name lowercase, outside the workflow's own expressions: one name with both cases is one
+# more thing to get right when it is typed (Sidenote-Server-0.11.0-Windows-x64.zip was the last)
+literal = [re.sub(r"\$\{\{[^}]*\}\}", "", f.strip()) for f in files]
+check("...every one of them named in lowercase", literal and all(f == f.lower() for f in literal), literal)
 named_docs = {name: doc(*name.split("/")) for name in ("README.md", "docs/README.md", "docs/air-gapped.md", "docs/capture-client.md",
                                                        "deploy/helm/sidenote/README.md")}
 stale = sorted({(name, v) for name, text in named_docs.items()
-                for v in re.findall(r"Sidenote-(?:Server-|Capture-)?(\d+\.\d+\.\d+)-|/releases/download/v(\d+\.\d+\.\d+)/", text)
+                for v in re.findall(r"(?i)sidenote-(?:server-|capture-)?(\d+\.\d+\.\d+)-|/releases/download/v(\d+\.\d+\.\d+)/", text)
                 for v in v if v and v != VERSION})
 check(f"the README and the guides name this release's files ({VERSION}) wherever they name one", not stale, stale)
+capitals = sorted({(name, m) for name, text in named_docs.items()
+                   for m in re.findall(rf"[\w.-]*(?i:sidenote)-[\w.-]*{re.escape(VERSION)}[\w.-]*", text) if m != m.lower()})
+check("...in lowercase, as the release names them", not capitals, capitals)
 quick = doc("README.md").split("## Quick start")[1].split("### ")[0]
 check("...and the quick start downloads the server of this release for each system, by its name",
-      all(f"/releases/download/v{VERSION}/Sidenote-Server-{VERSION}-{what}.zip" in quick for what in ("Windows-x64", "macOS-arm64", "Linux-x64"))
+      all(f"/releases/download/v{VERSION}/sidenote-server-{VERSION}-{what}.zip" in quick for what in ("windows-x64", "macos-arm64", "linux-x64"))
       and "/releases/latest/download/" not in quick, quick[:200])
 capture_doc = doc("docs", "capture-client.md")
 pictures = re.findall(r'src="(assets/[^"]+)"', capture_doc)
-check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/Sidenote-Capture-Python/assets/" in release for p in pictures), pictures)
+check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/sidenote-capture/assets/" in release for p in pictures), pictures)
 # ...and what the capture program reads beside itself, its version found there: 0.6.0's zip left out client/logo.png and
 # the version, and unpacked from it the windows wrote their name in words where the logo stands and showed no version.
 # The zip's folder is made here by the release step itself (its shell lines up to the zip), in a folder of its own whose
@@ -187,7 +194,7 @@ made.mkdir()
 for part in ("client", "docs", "server"):
     (made / part).symlink_to(ROOT / part)
 ran = subprocess.run(["bash", "-euc", "\n".join(lines)], cwd=made, capture_output=True, text=True, timeout=60)
-folder = made / "dist" / "Sidenote-Capture-Python"
+folder = made / "dist" / "sidenote-capture"
 beside = set()
 for prog in ("capture.py", "launch.pyw"):
     # by the folder of __file__, or by `here`, which is that folder where a function names it so

@@ -193,7 +193,7 @@ the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   setting, their `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
 - **One place.** The number is written in `server/version.py`. The chart (`version`, `appVersion`), the `V=` lines of
   [docs/air-gapped.md](docs/air-gapped.md), the README's release badge and the release's file names where the README and
-  the guides give them (`Sidenote-Server-x.y.z-Windows-x64.zip`, `Sidenote-Capture-x.y.z-macOS-arm64.zip` and the
+  the guides give them (`sidenote-server-x.y.z-windows-x64.zip`, `sidenote-capture-x.y.z-macos-arm64.zip` and the
   rest) follow it, and `tests/version_check.py` fails when
   one does not.
 - **The steps.**
