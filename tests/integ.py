@@ -146,6 +146,31 @@ def test_heads():
     check("within maps into outer", heads.within((0.1, 0.1, 0.5, 0.5), (0.0, 0.0, 0.5, 1.0)) == (0.05, 0.1, 0.25, 0.5))
     # a TYPE inside a code block is not a head
     check("none head on yaml", heads.head_of("```\ntype: none\n```")[0] in ("none", "", "other") or True)
+    # a head written as a JSON block, as the e4b's thinking pass wrote one: the card had no kind and no answer line
+    e4b = ('```json\n{\n  "type": "essay",\n  "answer": "NFS suits Unix,\\n SMB suits Windows.",\n  "region": null,\n'
+           '  "asked": "What are the main differences between NFS and SMB?"\n}\n```\n### Differences\n\nNFS ...')
+    fixed = heads.json_head(e4b)
+    check("a head written as a JSON block becomes the head lines, the answer under it kept",
+          fixed == ("TYPE: essay\nANSWER: NFS suits Unix, SMB suits Windows.\n"
+                    "ASKED: What are the main differences between NFS and SMB?\n### Differences\n\nNFS ...")
+          and heads.head_of(fixed) == ("essay", "NFS suits Unix, SMB suits Windows.")
+          and heads.asked_of(fixed) == "What are the main differences between NFS and SMB?", fixed)
+    with_box = '```\n{"type": "MCQ", "answer": 3, "region": [10, 20, 60.5, 70]}\n```\n본문'
+    check("...a box in it as its REGION line, a number as written, the kind in small letters",
+          heads.json_head(with_box) == "TYPE: mcq\nANSWER: 3\nREGION: 10 20 60.5 70\n본문", heads.json_head(with_box))
+    own = '```json\n{"type": "object", "properties": {"id": {"type": "string"}}}\n```\nThe schema above ...'
+    event = '```json\n{"type": "other", "id": 7}\n```\nAn event of the kind ...'
+    check("a JSON block whose type is no kind a head names, or with no answer or asked beside it, is the answer's own",
+          heads.json_head(own) == own and heads.json_head(event) == event)
+    headed = 'TYPE: coding\nANSWER: x\n```json\n{"type": "essay", "answer": "y"}\n```'
+    listed, broken = '```json\n[1, 2]\n```\nx', '```json\n{"type": "essay", \n```\nx'
+    check("...as is an answer with its head already, and a block that is not one JSON object",
+          heads.json_head(headed) == headed and heads.json_head(listed) == listed and heads.json_head(broken) == broken)
+
+    class Res:   # what the local model's thinking pass hands the pipeline
+        text, model, usage, searches = e4b, "sidenote-gemma4:e4b (think)", None, []
+    out = make_pipeline()[0]._local_outcome(Res(), (0.0, 0.0, 1.0, 1.0), {}, think=True)
+    check("...and the local model's answer comes to the card with the head lines", out.text == fixed, out.text[:80])
 
 
 # ---------- 3. pipeline branches ----------

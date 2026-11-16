@@ -2,6 +2,7 @@
 server, the pipeline and the panel (panel/app.js has the JavaScript twin of head_start)."""
 from __future__ import annotations
 
+import json
 import re
 
 HEAD_LINE = re.compile(r"[^\S\n]*TYPE:[^\S\n]*[a-zA-Z_]+")
@@ -44,6 +45,49 @@ def head_of(text: str) -> tuple[str, str]:
     i = head_start(text)
     m = HEAD_RE.match(text, i) if i is not None else None
     return (m.group(1).lower(), (m.group(2) or "").strip()[:120]) if m else ("", "")
+
+
+# The kinds a head names: the ones solved (settings.SOLVE_TYPES), a follow-up's and nothing to solve. Only a block naming one
+# of these is a head written as JSON; any other JSON at the top of an answer is the answer's own.
+HEAD_KINDS = ("mcq", "short", "essay", "coding", "algorithm", "work", "math", "diagram", "other", "followup", "none")
+# A fenced block that opens the answer and holds one JSON object, the fence's language json or none
+JSON_HEAD_RE = re.compile(r"\s*```[^\S\n]*(?:json)?[^\S\n]*\n[^\S\n]*(\{.*?\})[^\S\n]*\n[^\S\n]*```[^\S\n]*(?:\n|\Z)",
+                          re.S | re.I)
+
+
+def json_head(text: str) -> str:
+    """The answer with a head written as a JSON block in front of it (the e4b's thinking pass did, once in twelve on the
+    test PC: ```json {"type": "essay", "answer": ..., "region": null, "asked": ...}```) put back as the head lines every
+    reader takes. Read as it came, it had no TYPE line, and the card showed no kind and no answer line, with the block on
+    top. Any other text comes back as it is: one with a head already, a block that is not one JSON object, one whose
+    `type` is not a kind a head names, or one with no `answer` or `asked` beside it."""
+    if not text or head_start(text) is not None:   # a head of its own already: read as it is
+        return text
+    m = JSON_HEAD_RE.match(text)                     # a fenced object at the very top, or nothing to do
+    if not m:
+        return text
+    try:
+        head = json.loads(m.group(1))
+    except ValueError:                               # cut short, or not JSON at all: the answer's own block
+        return text
+    kind = head.get("type") if isinstance(head, dict) else None
+    # and a head's own lines beside it: an example the answer opens with may well have a `type` of its own
+    if not isinstance(kind, str) or kind.strip().lower() not in HEAD_KINDS or not ({"answer", "asked"} & set(head)):
+        return text
+
+    def line(value) -> str:     # one line of a value: a number as written, text with its breaks closed up
+        return " ".join(str(value).split()) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+    lines = [f"TYPE: {kind.strip().lower()}"]          # the head's lines in the order the prompt asks for them
+    if line(head.get("answer")):
+        lines.append("ANSWER: " + line(head["answer"]))
+    box = head.get("region")                           # null for a spoken problem; four numbers where it was seen
+    if (isinstance(box, (list, tuple)) and len(box) == 4
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in box)):
+        lines.append("REGION: " + " ".join(f"{v:g}" for v in box))
+    if line(head.get("asked")):
+        lines.append("ASKED: " + line(head["asked"]))
+    rest = text[m.end():].lstrip("\n")                # the answer under the block, as the model wrote it
+    return "\n".join(lines) + ("\n" + rest if rest else "")
 
 
 _NUM = r"(-?\d+(?:\.\d+)?)"

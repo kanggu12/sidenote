@@ -38,7 +38,7 @@ from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, LoadStop
                        speech_request, text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
-from .heads import TALL_BOX, head_of, head_start, parse_region, region_box, within
+from .heads import TALL_BOX, head_of, head_start, json_head, parse_region, region_box, within
 from .i18n import t
 from .settings import SETTINGS
 
@@ -1805,12 +1805,13 @@ class Pipeline:
 
     def _local_outcome(self, res, view, stages, think: bool, windows=None, aspect: float = 0.0) -> Outcome:
         scale = self.engines.local.region_scale
-        region = parse_region(res.text, scale, aspect)
+        text = json_head(res.text)   # a head the model wrote as a JSON block, as the head lines the card and the box read
+        region = parse_region(text, scale, aspect)
         stages = {**stages, "think": think}
-        return Outcome(text=res.text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
+        return Outcome(text=text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
                        region=within(region, view) if region else None,
                        region_placed=placed_region(region, view, windows),
-                       crop_box=self._box(res.text, scale, view, windows, aspect),
+                       crop_box=self._box(text, scale, view, windows, aspect),
                        sent=_searches(getattr(res, "searches", None)), stages=stages)
 
     async def _editor_note(self, local, look, kind: str) -> tuple[str, str]:
@@ -2193,7 +2194,7 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
                                       extra=shown.extra_b64 if shown else (), followup=fu,
                                       first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
                                       stall=CONFIG.local_stuck_sec if can_take else None)
-            return Outcome(text=res.text, model=res.model, usage=res.usage, cost_usd=None, engine="local",
+            return Outcome(text=json_head(res.text), model=res.model, usage=res.usage, cost_usd=None, engine="local",
                            sent=_searches(getattr(res, "searches", None)))
         except asyncio.CancelledError:
             raise

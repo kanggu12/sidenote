@@ -10,11 +10,11 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125) |
 
@@ -649,6 +649,12 @@ video call that takes 5.8 GB needs over 4 GB: the rest would have to come from a
 instead of two (the fast pass's prompt then goes with each thinking pass, 0.7 s becoming 1.0 to 1.7 s, see the compose
 file), or fewer image tokens (small code text blurs), each a loss of quality or speed. So the memory is left as it is,
 and a busy GPU is met by the smaller model and the doubling hold (GpuPace).
+
+Measured again with the desktop holding 1.8 to 2.1 GB of the card, the 26b loaded afresh in a new container for each
+of three rounds in turn: its highest use was 22.2 to 22.4 GB of the 23.0 the card shows with the f16 cache, 21.7 to
+21.8 GB with q8_0. Generating 800 tokens after a prompt of 5,600, f16 gave 49 to 92 tokens a second (median 66) and q8_0
+66 to 81 (median 76), f16 the faster of the two in the last round; the first request of each container read its
+prompt at 164 to 180 tokens a second with f16 and at 90 to 119 with q8_0. The cache stays f16.
 
 ### <a id="note-80"></a>80. A model server that answers nothing is started again
 
@@ -2517,3 +2523,50 @@ rest (the agent's, a setting off by default such as Follow the changing screen) 
 fault in every settings sheet. The gear menu's Maintenance had no mark of its own, and its square showed filled in: it
 has a wrench, drawn as the others are, and `tests/panel_maint.py` checks every item of the menu has its mark.
 
+### <a id="note-135"></a>135. A first pass still writing its answer goes on past its limit
+
+Without the agent to take a problem, the first pass has 45 s (`local_fast_timeout`), and one that ran out was counted as
+a busy GPU: the smaller model was put on the GPU and the problem handed to the thinking pass. The limit is for a pass that
+brings nothing. One that answers the problem itself (an essay with `ROUTE: fast`) writes for longer where the GPU is
+slow: on the test PC, with the desktop holding 3.5 GB of the card, the 26b wrote at about 46 tokens a second, and the
+first spoken essay question of a sitting was still being written at 45 s. Cut there, it was thought again from the
+start by the e4b, loaded in the 26b's place (145 s in all), and the 26b was loaded again for the next question.
+
+Now a first pass that is writing its answer onto the card at the limit goes on to its end, up to `local_timeout`, while
+it writes at no less than half the rate GpuPace calls busy for that model (at any rate before one is known): finishing
+is sooner than starting again on the other model, and under half of that rate an answer of a usual length would not be
+done by `local_timeout`. Its rate is measured when it ends, as any answer's is, so a slow one still puts the smaller
+model in for the next problems. One under half the busy rate, one with nothing on the card yet, and one the agent can
+take are cut at the limit as before. The event log says `local_writes_on`, with the rate. Sixteen spoken questions
+after that first one, on the same sitting, were all answered by the 26b with no model loaded in between.
+
+### <a id="note-136"></a>136. The speech model stays on the processor
+
+Measured on the test PC's card (24 GB, 23.0 of it shown under WSL) with the bench's 88 Korean sentences in call quality:
+large-v3-turbo on the GPU wrote a sentence in 0.47 s with `int8_float16` (1.7 GB of the card) and 0.46 s with `float16`
+(2.7 GB); on the processor, as the server runs it (int8, 4 threads), the same reading took 12.3 s, and the server itself,
+where the live line's model tells the language, wrote a spoken question down 7.7 s (median) after it was said. The words
+were as good: with the same lists, the GPU's readings differed from the processor's on 5 sentences, each in writing a
+term in Latin letters or in Hangul (Helm or 헬름, Paged Attention or 페이즈드 어텐션), and held 233 of the 260 terms
+against 232.
+
+Beside the 26b, which is what the default setup puts on such a card, there is no room for it. With the 26b loaded and
+the speech model kept on the GPU reading a sentence every 4 s, the 26b's generation went from 68 to 74 tokens a second
+to 21, 13 and then 6 over three requests, the card staying at 22.5 GB while WSL moved what did not fit to the PC's
+memory, and one sentence took 76 s. So the speech model stays on the processor. Where the card does have room beside
+the local model (a smaller model, a larger card, the agent alone) the GPU would write each spoken question down several
+seconds sooner; that needs the server's container on the GPU, the CUDA libraries in its image (2.1 GB as pip installs
+them), and the choice made again whenever the local model changes. It is not done.
+
+### <a id="note-137"></a>137. Terms the speech model mishears are put right by the reading as it is
+
+The speech model writes some terms as other words that sound alike (vLLM as `BLM`, gRPC as `지하어 PC`). Before a spoken
+question is solved, the local model reads out of what was heard the question alone (`EXTRACT_SPEECH`), and it was to be
+measured whether giving that reading the speech model's list of terms helps. On the 26b, with what large-v3-turbo wrote
+for the bench's 88 spoken questions, the 81 sentences of HiKE and 12 things said that ask nothing, three ways: the
+reading as it is (A), the list put before what was heard (B), and the list with a line saying to correct to it (C).
+A already wrote `vLLM`, `gRPC`, `Dify` and `n8n` where the speech model had not, 14 terms in all, and lost 4. B brought
+back 15 and lost 5, C 13 and 5: B wrote `TensorRT-LLM` once where A kept `CancerRT-LLM`, C turned `vLLM` into `LLM`
+once, and both read the two readings of a question ending in `하셨던 거죠?` as asking nothing, which A had kept. What
+asks nothing was read as a question once in A and B and never in C, and HiKE's readings stayed as they were but for 3.
+The reading stays as it is.

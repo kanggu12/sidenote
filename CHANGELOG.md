@@ -11,6 +11,15 @@ that only fixes raises the patch number. Each release's section here is its rele
 - The README shows again how Sidenote compares with the tools near it, and the everyday commands (start, stop, update,
   logs) in a folded table at the end of its quick start.
 
+### Fixed
+
+- An answer the local model writes in its first pass is no longer cut when that pass's 45 s run out while it is still
+  being written and the agent cannot take the problem: it goes on to its end, unless it comes at under half the rate that
+  counts the GPU as busy. With the desktop holding part of the card, a spoken essay question was cut there, the GPU
+  counted busy, the smaller model loaded to answer it again from the start, and the larger one loaded again for the next
+  question.
+- An answer of the local model whose head came as a block of JSON shows its kind and its answer line on the card.
+
 ## [0.10.1] - 2026-11-13
 
 ### Changed

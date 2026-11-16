@@ -1454,7 +1454,7 @@ explained where they are read: the change thresholds and the like in `server/con
 | `SIDENOTE_QUIET_SEC` | `8` | How long a small screen change then waits. A new window or page, a question, **Reanalyze** or a drawn region is not held back |
 | `SIDENOTE_QUIET_JUMP_RATIO` | `1.6` | What counts as a new window or page while quiet, as a multiple of `SIDENOTE_CHANGE_THRESHOLD` |
 | `SIDENOTE_LOCAL_TIMEOUT` | `180` | Time limit for one local answer, and for loading the model before it when it is not on the GPU (seconds) |
-| `SIDENOTE_LOCAL_FAST_TIMEOUT` | `45` | Time limit for the first pass, which only says what kind of problem is on screen; running out of it counts as a busy GPU |
+| `SIDENOTE_LOCAL_FAST_TIMEOUT` | `45` | Time limit for the first pass, which mostly only says what kind of problem is on screen; running out of it counts as a busy GPU, except for a pass still writing its answer when the agent cannot take the problem, which goes on to its end ([note 135](DECISIONS.md#note-135)) |
 | `SIDENOTE_LOCAL_FIRST_TOKEN_SEC` | `6` | When the agent could take the screen, the first pass's first token must come within this; nothing by then counts as a busy GPU and the screen goes to the agent at once |
 | `SIDENOTE_LOCAL_COLD_FIRST_TOKEN_SEC` | `45` | The same limit for a model that has not answered since it was loaded, whose prompt cache is still empty |
 | `SIDENOTE_LOCAL_STUCK_SEC` | `60` | A local request with no token for this long, while nothing else is answered either, is checked with a one-token request; a model server that answers that one with nothing is taken off the GPU, and Ollama starts it again and answers the waiting request |

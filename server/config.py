@@ -126,7 +126,8 @@ class Config:
     # The first pass only says what kind of problem is on the screen, which takes a second or two. When
     # the GPU has no room left it can instead bring nothing at all, and waiting the full timeout for that
     # costs three minutes an answer: measured on this machine with its owner working, screen after screen.
-    # Giving up early counts as a busy GPU, so the smaller model takes over.
+    # Giving up early counts as a busy GPU, so the smaller model takes over. A pass that answers the problem itself
+    # and is still writing at this limit, with no agent to take the problem, goes on (analyzer._writes_on).
     local_fast_timeout: float = env_float("SIDENOTE_LOCAL_FAST_TIMEOUT", 45)
     # When the agent can take the screen, the first pass gets this long for its first token once the model is in
     # place. It normally comes within a second or two (p90 2.0 s over a week of screens);
