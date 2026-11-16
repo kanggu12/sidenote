@@ -550,17 +550,3 @@ against the facts of the day they were measured (the newest Ollama was then v0.4
    133.3 (the fastest rate then; the usual rate is now the median); the next two went to the e4b (57 s with the model
    change, then 18 s), all three answers right. The e4b is pulled with the default model; the panel can switch this
    off or pick another pulled model.
-
-## 14. Beside other tools
-
-What this design does that the tools near it do not, and the one thing it leaves out by choice:
-
-| | Sidenote | Interview and meeting copilots | Screen recorders with search | Local screen agents |
-|:---|:---:|:---:|:---:|:---:|
-| Answers the problem on screen as it appears | yes | yes | no, they search what was seen | some |
-| A model on your own GPU looks first | yes | rarely | for indexing | yes |
-| Uses your Claude Code or Codex sign-in | yes | rarely | no | no |
-| Picks a model for your GPU's memory | yes | no | no | no |
-| Runs code answers on the problem's examples | yes | no | no | no |
-| Hides itself from screen sharing and proctors | no, by design | several do | no | no |
-| License | MIT | many closed, some GPL | mixed | mixed |

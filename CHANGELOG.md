@@ -6,6 +6,11 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The README shows again how Sidenote compares with the tools near it, and the everyday commands (start, stop, update,
+  logs) in a folded table at the end of its quick start.
+
 ## [0.10.1] - 2026-11-13
 
 ### Changed
