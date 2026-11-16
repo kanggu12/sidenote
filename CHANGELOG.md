@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-17
+
 ### Changed
 
 - The release's files are named in lowercase alone: `sidenote-server-0.11.1-windows-x64.zip`,
@@ -921,7 +923,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/kanggu12/sidenote/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/kanggu12/sidenote/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/kanggu12/sidenote/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/kanggu12/sidenote/compare/v0.10.0...v0.10.1
