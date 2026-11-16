@@ -93,9 +93,8 @@ git clone https://github.com/kanggu12/sidenote.git && cd sidenote
 [running on Kubernetes](docs/README.md#16-running-on-kubernetes).
 
 The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): the capture program's connection, what
-solves, the screen, the sound and a sample problem to try. Starting, stopping, updating, checking a download and the
-Mac's speaker sound are in the user guide's [First time](docs/README.md#3-first-time) and
-[Everyday use](docs/README.md#4-everyday-use).
+solves, the screen, the sound and a sample problem to try. Checking a download and the Mac's speaker sound are in the
+user guide's [First time](docs/README.md#3-first-time).
 
 ### The local model (optional)
 
@@ -120,6 +119,19 @@ It takes the problems that need reasoning, with an account you already use: [Cla
 Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex), signed in once in a
 terminal with `claude` or `codex login`, or the Anthropic API. The app looks for it when it starts; with Docker,
 `./sidenote login` checks the login ([more](docs/README.md#the-cloud-agent)).
+
+<details>
+<summary>Everyday use: starting, stopping, updating</summary>
+
+| To | The app | Docker |
+|:---|:---|:---|
+| Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
+| Open the panel | the tray icon (on macOS, **Open the panel** in its menu), or open the app again | `./sidenote open` |
+| See what runs | the panel's cards | `./sidenote status` |
+| Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
+| Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
+| Read the logs | `logs` in the data folder: `%LOCALAPPDATA%\Sidenote`, `~/Library/Application Support/Sidenote` or `~/.local/share/sidenote` | `./sidenote logs` |
+</details>
 
 ## What it does
 
@@ -155,6 +167,18 @@ Everything but the cloud agent runs on your PC, or on your own server with Docke
 - **It answers locally first.** Explanations, definitions and short questions come within a second or two.
 - **It hands the hard ones to the agent:** code, algorithms, math, essays and work problems such as a log to debug, with
   only the problem's part of the screen by default. With no agent, the local model thinks them through itself.
+
+## How it compares
+
+| | Sidenote | Interview and meeting copilots | Screen recorders with search | Local screen agents |
+|:---|:---:|:---:|:---:|:---:|
+| Answers the problem on screen as it appears | yes | yes | no, they search what was seen | some |
+| A model on your own GPU looks first | yes | rarely | for indexing | yes |
+| Uses your Claude Code or Codex sign-in | yes | rarely | no | no |
+| Picks a model for your GPU's memory | yes | no | no | no |
+| Runs code answers on the problem's examples | yes | no | no | no |
+| Hides itself from screen sharing and proctors | no, by design | several do | no | no |
+| License | MIT | many closed, some GPL | mixed | mixed |
 
 ## What it runs on
 
