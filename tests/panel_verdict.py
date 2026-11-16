@@ -12,6 +12,7 @@ socket is the checks' own.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -251,17 +252,30 @@ HEAD = """(id) => { const e = entryEl(id), head = e?.querySelector(':scope > .ro
            h: Math.round(head.getBoundingClientRect().height) }; }"""
 
 
+def today_rows() -> list:
+    """Five answers before the newest, today's, from 67 to 47 minutes back, or from just after midnight where the day is younger
+    than that. Counted back from now alone, a run in the first hour after midnight put them on the day before (CI's weekly
+    run, at 00:12): an older day's date stays beside the time, and on a phone its keys take a line of their own by design
+    (index.html, max-width 540px). Made for each page, so a run that goes past midnight dates them on the new day; in the
+    first minute of a day, the next is waited for, so all five are before the newest."""
+    since = time.time() - time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))   # seconds into today
+    if since < 60:
+        time.sleep(61 - since)
+    midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+    # Algorithm and MCQ: the longest kind's word and a short one. The newest has Problem text (a screen, this PC's model up), the
+    # fourth newest is folded, with Show the solution
+    return [row(600 + i, ["algorithm", "mcq"][i % 2], f"문제 {i}", "답", "풀이 " * 30,
+                ago=min(4000 - i * 300, time.time() - (midnight + 1 + i))) for i in range(5)]
+
+
 def group_line(br, s):
     if not T.group("the head on one line"):
         return
-    # Algorithm and MCQ: the longest kind's word and a short one. The newest has Problem text (a screen, this PC's model up), the
-    # fourth newest is folded, with Show the solution
-    rows = [row(600 + i, ["algorithm", "mcq"][i % 2], f"문제 {i}", "답", "풀이 " * 30, ago=4000 - i * 300) for i in range(5)]
     for locale in (None, EN):
         bad = []
         for w, ht in ((375, 812), (390, 844), (430, 932), (1366, 768), (1920, 1080)):
             for theme in ("dark", "light"):
-                p = Page(br, s, rows, w=w, h=ht, theme=theme, locale=locale, settle=350)
+                p = Page(br, s, today_rows(), w=w, h=ht, theme=theme, locale=locale, settle=350)
                 now = p.js("() => Date.now() / 1000")
                 p.send({"type": "analysis_start", "id": 700, "ts": now, "thumb": thumb(1600, 900), "transcript": "", "pages": 0,
                         "trigger": "screen", "roi": None})
