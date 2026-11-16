@@ -2575,13 +2575,18 @@ The reading stays as it is.
 
 A release had the app for three systems, the capture program as Python and the Helm chart, under names that said neither
 which part a file was nor, for the app, which release (`Sidenote-windows-x64.zip`, `sidenote-capture-0.10.1.zip`,
-`sidenote-0.10.1.tgz`). Now each is named for its part, the release and the system:
+`sidenote-0.10.1.tgz`). Now each is named for its part, the release and the system, every letter lowercase:
 
 | Part | Files |
 |:---|:---|
-| The server (the app: the server, its panel and this PC's capture program) | `Sidenote-Server-<version>-Windows-x64.zip`, `-macOS-arm64.zip`, `-Linux-x64.zip`, and `Sidenote-Server-<version>-Helm-Chart.tgz` |
-| The capture program alone | `Sidenote-Capture-<version>-Windows-x64.zip`, `-macOS-arm64.zip`, `-Linux-x64.zip`, and `Sidenote-Capture-<version>-Python.zip` |
-| Both | `Sidenote-<version>-SHA256SUMS.txt` |
+| The server (the app: the server, its panel and this PC's capture program) | `sidenote-server-<version>-windows-x64.zip`, `-macos-arm64.zip`, `-linux-x64.zip`, and `sidenote-server-<version>-helm-chart.tgz` |
+| The capture program alone | `sidenote-capture-<version>-windows-x64.zip`, `-macos-arm64.zip`, `-linux-x64.zip`, and `sidenote-capture-<version>-python-any-os.zip` |
+| Both | `sidenote-<version>-sha256sums.txt` |
+
+0.11.0 wrote the names with capitals where a word has them (`Sidenote-Server-0.11.0-macOS-arm64.zip`); from 0.11.1 they
+are lowercase, since a name with both cases is one more thing to get right when it is typed, and on Linux a wrong case is
+another file. The capture program's Python source was `-Python.zip`, which read as a build for Python itself; it is
+`-python-any-os.zip`, the one file that runs on any system, where Python 3.10 or newer and its packages are installed.
 
 The capture program alone used to be Python only, the same file for every system, so it had no system in its name and
 needed Python 3.10 and its packages on the PC with the screen. It is now also built for each system as the app is, by

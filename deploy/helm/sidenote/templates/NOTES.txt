@@ -21,7 +21,7 @@ Connect the capture program
   or the release's capture program for that PC's system, which needs nothing installed and sends to
   that address by default (a double-click starts it):
 
-    Sidenote-Capture-{{ .Chart.AppVersion }}-Windows-x64.zip, -macOS-arm64.zip or -Linux-x64.zip
+    sidenote-capture-{{ .Chart.AppVersion }}-windows-x64.zip, -macos-arm64.zip or -linux-x64.zip
 
   A port-forward ends when the pod behind it is replaced (an upgrade, a restart). Run it again; the
   capture program and the panel reconnect by themselves. Capture connection, in the panel's gear menu,

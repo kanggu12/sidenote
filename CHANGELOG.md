@@ -6,6 +6,14 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The release's files are named in lowercase alone: `sidenote-server-0.11.1-windows-x64.zip`,
+  `sidenote-capture-0.11.1-macos-arm64.zip`, `sidenote-server-0.11.1-helm-chart.tgz`, `sidenote-0.11.1-sha256sums.txt`.
+- The capture program's Python source is `sidenote-capture-0.11.1-python-any-os.zip`: the one file that runs on any
+  system with Python 3.10 or newer and its packages, where each build runs on its own system with nothing installed.
+  The panel points a server of an earlier release at that release's page, which lists its files under their names.
+
 ## [0.11.0] - 2026-11-17
 
 ### Added

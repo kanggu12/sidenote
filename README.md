@@ -48,7 +48,7 @@ the problem's examples.
 **Windows 10 or 11** (PowerShell)
 
 ```powershell
-curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.11.0/Sidenote-Server-0.11.0-Windows-x64.zip
+curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.11.1/sidenote-server-0.11.1-windows-x64.zip
 mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenote.zip" -C "$env:LOCALAPPDATA\Programs"
 & "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
@@ -57,7 +57,7 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 setting, and once Sidenote is on there, the third starts it again.
 
 ```bash
-curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.11.0/Sidenote-Server-0.11.0-macOS-arm64.zip
+curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.11.1/sidenote-server-0.11.1-macos-arm64.zip
 ditto -x -k /tmp/Sidenote.zip /Applications
 open /Applications/Sidenote.app
 ```
@@ -73,8 +73,8 @@ osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 
 **Linux** with an X11 session (on Ubuntu, Xorg from the gear on the login screen) and glibc 2.35 or newer
 
 ```bash
-curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.11.0/Sidenote-Server-0.11.0-Linux-x64.zip
-unzip -oq Sidenote-Server-0.11.0-Linux-x64.zip
+curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.11.1/sidenote-server-0.11.1-linux-x64.zip
+unzip -oq sidenote-server-0.11.1-linux-x64.zip
 ./Sidenote/Sidenote
 ```
 
@@ -93,8 +93,8 @@ git clone https://github.com/kanggu12/sidenote.git && cd sidenote
 [running on Kubernetes](docs/README.md#16-running-on-kubernetes).
 
 Each of these is the server, with its panel and the capture program for its own PC. For another PC whose screen goes to
-it, the release has the capture program alone, `Sidenote-Capture-0.11.0-Windows-x64.zip`, `-macOS-arm64.zip` or
-`-Linux-x64.zip`, with nothing to install: [the capture program on its own](docs/capture-client.md).
+it, the release has the capture program alone, `sidenote-capture-0.11.1-windows-x64.zip`, `-macos-arm64.zip` or
+`-linux-x64.zip`, with nothing to install: [the capture program on its own](docs/capture-client.md).
 
 The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): the capture program's connection, what
 solves, the screen, the sound and a sample problem to try. Checking a download and the Mac's speaker sound are in the

@@ -14,9 +14,9 @@ it pointing at the server. It needs nothing installed.
 
 | System | The release's file | Start it, where it was unpacked |
 |:---|:---|:---|
-| Windows (x64) | `Sidenote-Capture-0.11.0-Windows-x64.zip` | `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:8777/ingest` |
-| macOS (Apple silicon) | `Sidenote-Capture-0.11.0-macOS-arm64.zip` | `open Sidenote-Capture.app --args --server ws://127.0.0.1:8777/ingest` |
-| Linux (x64, X11) | `Sidenote-Capture-0.11.0-Linux-x64.zip` | `./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:8777/ingest` |
+| Windows (x64) | `sidenote-capture-0.11.1-windows-x64.zip` | `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:8777/ingest` |
+| macOS (Apple silicon) | `sidenote-capture-0.11.1-macos-arm64.zip` | `open Sidenote-Capture.app --args --server ws://127.0.0.1:8777/ingest` |
+| Linux (x64, X11) | `sidenote-capture-0.11.1-linux-x64.zip` | `./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:8777/ingest` |
 
 `ws://127.0.0.1:8777/ingest` is also its default, so with the server's port forwarded to 8777 a double-click starts it
 too. On Windows it is not signed by a publisher yet: the first time, **More info**, then **Run anyway**. On macOS it asks
@@ -26,8 +26,9 @@ opened the first time from **System Settings**, **Privacy & Security**, **Open A
 (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's PulseAudio
 service.
 
-On another system (an Intel Mac, Windows or Linux on ARM), or to run it from its code, use
-`Sidenote-Capture-0.11.0-Python.zip` or the repository's `client` folder:
+On another system (an Intel Mac, Windows or Linux on ARM), use `sidenote-capture-0.11.1-python-any-os.zip`: the program's
+Python source, the same files for every system (the repository's `client` folder holds them too), which runs wherever
+Python 3.10 or newer and its packages are installed:
 
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).

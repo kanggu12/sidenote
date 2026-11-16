@@ -7815,16 +7815,16 @@ function capSystem(said) {
 const CAP_MACHINE = { Windows: "x64", macOS: "arm64", Linux: "x64" };
 // The release's capture program for a system, of the server's release: what another PC runs (the latest release's page for a
 // server that does not say its own), from this repository's releases (NOTES_PREFIX, the band's link to a release's notes).
-// From 0.11.0 a build of its own for each system (Sidenote-Capture-0.11.0-Windows-x64.zip); before, the Python one alone,
-// Sidenote-0.10.2-Capture.zip and earlier sidenote-capture-0.10.1.zip
+// From 0.11.1 a build of its own for each system, named in lowercase (sidenote-capture-0.11.1-windows-x64.zip); a release
+// before that is pointed at its page, which lists its files under the names it had
 function captureZip(said) {
   const v = /^\d+\.\d+\.\d+$/.test(status.version || "") ? status.version : "";
   if (!v) return { url: `${NOTES_PREFIX}latest`, name: t("the latest release") };
   const [major, minor, patch] = v.split(".").map(Number);
   const sys = capSystem(said);
-  const name = major > 0 || minor > 10 ? `Sidenote-Capture-${v}-${sys}-${CAP_MACHINE[sys]}.zip`
-    : minor === 10 && patch >= 2 ? `Sidenote-${v}-Capture.zip` : `sidenote-capture-${v}.zip`;
-  return { url: `${NOTES_PREFIX}download/v${v}/${name}`, name, built: name.startsWith("Sidenote-Capture-"), sys, v };
+  if (!(major > 0 || minor > 11 || (minor === 11 && patch >= 1))) return { url: `${NOTES_PREFIX}tag/v${v}`, name: `v${v}`, sys, v };
+  const name = `sidenote-capture-${v}-${sys.toLowerCase()}-${CAP_MACHINE[sys]}.zip`;
+  return { url: `${NOTES_PREFIX}download/v${v}/${name}`, name, built: true, sys, v };
 }
 // The program's release against the server's: the same, another (a warning), or not said by a program before 0.8.0
 function capVersion(w) {
@@ -7960,7 +7960,7 @@ function captureWays() {
   const link = (z) => `<a href="${escapeHtml(z.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(z.name)}</a>`;
   // A release with a build for each system: this browser's system's, started where it was unpacked, and the Python one for any
   // other system. Before 0.11.0, the Python one, its packages and its start
-  const python = zip.built ? { url: zip.url.replace(/[^/]+$/, `Sidenote-Capture-${zip.v}-Python.zip`), name: `Sidenote-Capture-${zip.v}-Python.zip` } : null;
+  const python = zip.built ? { url: zip.url.replace(/[^/]+$/, `sidenote-capture-${zip.v}-python-any-os.zip`), name: `sidenote-capture-${zip.v}-python-any-os.zip` } : null;
   const start = { Windows: `.\\Sidenote-Capture\\Sidenote-Capture.exe --server ${captureUrl()}`,
                   macOS: `open Sidenote-Capture.app --args --server ${captureUrl()}`,
                   Linux: `./Sidenote-Capture/Sidenote-Capture --server ${captureUrl()}` }[zip.sys];
