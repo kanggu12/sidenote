@@ -18,10 +18,10 @@ Connect the capture program
 
     ./sidenote capture
 
-  or from the release's Sidenote-{{ .Chart.AppVersion }}-Capture.zip, on Windows, a Mac or a Linux desktop with X11,
+  or the release's capture program for that PC's system, which needs nothing installed and sends to
+  that address by default (a double-click starts it):
 
-    py -3 capture.py --server ws://127.0.0.1:8777/ingest
-    python3 capture.py --server ws://127.0.0.1:8777/ingest
+    Sidenote-Capture-{{ .Chart.AppVersion }}-Windows-x64.zip, -macOS-arm64.zip or -Linux-x64.zip
 
   A port-forward ends when the pod behind it is replaced (an upgrade, a restart). Run it again; the
   capture program and the panel reconnect by themselves. Capture connection, in the panel's gear menu,

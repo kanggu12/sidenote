@@ -126,8 +126,10 @@ SIDENOTE_DATA_DIR=/tmp/sidenote-dev .venv/bin/python -m desktop --port 8800 --no
 Then open http://127.0.0.1:8800. Its own port and data folder keep it apart from an installed app, whose panel it
 would otherwise open. `SIDENOTE_ANALYZER=mock` and `--no-capture` run it with stand-in models and no capture program.
 `desktop/build.py` builds the app itself with PyInstaller, on the system it is for: `Sidenote.exe`, `Sidenote.app` (an
-app bundle, signed ad hoc) or the Linux folder, each started with `--check` before it is zipped. CI builds all three
-(`.github/workflows/desktop.yml`), and the Mac build also runs its capture program against its server.
+app bundle, signed ad hoc) or the Linux folder, and then the capture program alone the same way
+(`desktop/capture_main.py`: `Sidenote-Capture.exe`, `Sidenote-Capture.app`, `Sidenote-Capture`), each started with
+`--check` before it is zipped. CI builds all of them (`.github/workflows/desktop.yml`), and the Mac build also runs both
+capture programs against its server.
 
 To work with a real local model, run [Ollama](https://ollama.com), pull a model (`ollama pull gemma4:e4b`), and start the
 server with `SIDENOTE_ANALYZER=local SIDENOTE_LOCAL_URL=http://127.0.0.1:11434/v1` instead. Sidenote also speaks the
@@ -191,7 +193,8 @@ the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   setting, their `.env` or a call is a major; before 1.0.0 a minor may also break something, and its notes say what.
 - **One place.** The number is written in `server/version.py`. The chart (`version`, `appVersion`), the `V=` lines of
   [docs/air-gapped.md](docs/air-gapped.md), the README's release badge and the release's file names where the README and
-  the guides give them (`Sidenote-x.y.z-Windows-x64.zip` and the rest) follow it, and `tests/version_check.py` fails when
+  the guides give them (`Sidenote-Server-x.y.z-Windows-x64.zip`, `Sidenote-Capture-x.y.z-macOS-arm64.zip` and the
+  rest) follow it, and `tests/version_check.py` fails when
   one does not.
 - **The steps.**
   1. Move what is under `## [Unreleased]` into a new `## [x.y.z] - YYYY-MM-DD` section, under `### Added`, `### Changed`,

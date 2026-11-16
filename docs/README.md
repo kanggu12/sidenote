@@ -161,8 +161,10 @@ Install Sidenote, start it once, and add what solves: the local model, the cloud
    then asks once for the microphone, as Sidenote hears BlackHole as an input.
 
 To install from a browser instead, download the app for your system from the
-[release](https://github.com/kanggu12/sidenote/releases/latest), `Sidenote-0.10.2-Windows-x64.zip`,
-`Sidenote-0.10.2-macOS-arm64.zip` (Apple silicon) or `Sidenote-0.10.2-Linux-x64.zip`, then:
+[release](https://github.com/kanggu12/sidenote/releases/latest), `Sidenote-Server-0.11.0-Windows-x64.zip`,
+`Sidenote-Server-0.11.0-macOS-arm64.zip` (Apple silicon) or `Sidenote-Server-0.11.0-Linux-x64.zip`: the server, with its panel and
+this PC's capture program. The release's `Sidenote-Capture-0.11.0-…` files are the capture program alone, for another PC
+([the capture program on its own](capture-client.md)). Then:
 
 - **Windows**: right-click the zip, choose **Extract All**, then open the `Sidenote` folder inside and run
   `Sidenote.exe`: it does not start from inside the zip. The app is not signed by a publisher yet, so the first time
@@ -171,13 +173,13 @@ To install from a browser instead, download the app for your system from the
   stops an app from a browser's download that no publisher signed: in **System Settings**, **Privacy & Security**,
   choose **Open Anyway** at the bottom (on macOS 14, right-click the app, choose **Open**, then **Open** again). The
   quick start's `curl` leaves the zip unmarked, so macOS does not ask there.
-- **Linux**: `unzip Sidenote-0.10.2-Linux-x64.zip && ./Sidenote/Sidenote`.
+- **Linux**: `unzip Sidenote-Server-0.11.0-Linux-x64.zip && ./Sidenote/Sidenote`.
 
-To check a download: each release lists the SHA-256 of its files in `Sidenote-0.10.2-SHA256SUMS.txt` (`SHA256SUMS`
-before 0.10.2). Run `sha256sum -c --ignore-missing Sidenote-0.10.2-SHA256SUMS.txt` in the download folder; on macOS compare
-`shasum -a 256 Sidenote-0.10.2-macOS-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-0.10.2-Windows-x64.zip`, with its
-line there. GitHub also records where each file was built (from 0.1.1 on):
-`gh attestation verify Sidenote-0.10.2-Windows-x64.zip --repo kanggu12/sidenote`.
+To check a download: each release lists the SHA-256 of its files in `Sidenote-0.11.0-SHA256SUMS.txt` (`SHA256SUMS`
+before 0.10.2). Run `sha256sum -c --ignore-missing Sidenote-0.11.0-SHA256SUMS.txt` in the download folder; on macOS compare
+`shasum -a 256 Sidenote-Server-0.11.0-macOS-arm64.zip`, and in PowerShell `Get-FileHash Sidenote-Server-0.11.0-Windows-x64.zip`,
+with its line there. GitHub also records where each file was built (from 0.1.1 on):
+`gh attestation verify Sidenote-Server-0.11.0-Windows-x64.zip --repo kanggu12/sidenote`.
 
 When it starts, the app starts Ollama if it is installed but not running, and while it runs it starts again any part it
 started that stops. **Quit Sidenote** in its icon's menu, in the tray or the menu bar, stops everything. Starting the
@@ -441,7 +443,7 @@ of the same name. It is also the setup guide's first step.
   or **By hand**) and what its tray's **Quit** ends, the **Address** it was given and **Since** when it is connected. The
   program says these in its hello as it connects; one older than 0.8.0 says none of them. A program of another release
   turns the card amber, with what to do: one started from the server's checkout runs the server's code once restarted,
-  and one elsewhere is replaced from that release's `Sidenote-<version>-Capture.zip`.
+  and one elsewhere is replaced from that release's `Sidenote-Capture-<version>-<system>.zip`, which the card links to.
 - **Restart** and **Quit the program**, which asks twice, ask the program what its tray's **Restart capture** and
   **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
   **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.
@@ -1760,6 +1762,7 @@ Four parts, each built and updated its own way:
 | Code runner | A second image, `sidenote-runner:local`, with no network | `runner/Dockerfile` | the same |
 | Capture program | `client/capture.py`, run by Windows Python, or by `.venv-capture` on Linux and macOS | not built: run as it is | `./sidenote setup-capture` for its packages |
 | The app | `Sidenote.exe`, `Sidenote.app` or the Linux `Sidenote`, with its own Python | `desktop/build.py` (PyInstaller), in CI for each release | a newer release's zip |
+| The capture program alone | `Sidenote-Capture.exe`, `Sidenote-Capture.app` or `Sidenote-Capture`, with its own Python | the same, after the app | a newer release's zip |
 
 What is pinned, so that a rebuild gives the same thing:
 
@@ -1871,8 +1874,10 @@ then runs on its own on your PC (section 17).
 ## 17. Running the capture program on its own
 
 When the server is not on this PC (in a cluster, for example), the capture program runs alone on the PC whose screen and
-sound it reads, Windows, a Mac or a Linux desktop: install its packages and start it with the server's address. It sends
-to `ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on that
+sound it reads, Windows, a Mac or a Linux desktop: the release's build for that system
+(`Sidenote-Capture-0.11.0-Windows-x64.zip`, `-macOS-arm64.zip` or `-Linux-x64.zip`) needs nothing installed, and on
+another system `Sidenote-Capture-0.11.0-Python.zip` runs with Python 3.10 or newer. It sends to
+`ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on that
 PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the options, and
 the panel's **Capture connection** gives them with this server's names and port ([The capture
 connection](#the-capture-connection)).

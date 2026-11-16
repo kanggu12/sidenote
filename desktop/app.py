@@ -892,6 +892,16 @@ SERVER_PACKAGES = ("fastapi", "uvicorn", "websockets", "httpx2", "anthropic", "n
 CAPTURE_PACKAGES = ("mss", "soundcard", "pystray", "websocket")
 
 
+def sound_header() -> Path | None:
+    """The file of C declarations the speaker sound's library reads for this system as it is imported, where it should be
+    (beside the package); None where the library is not here at all."""
+    spec = importlib.util.find_spec("soundcard")
+    if spec is None or not spec.origin:
+        return None
+    name = {"win32": "mediafoundation.py.h", "darwin": "coreaudio.py.h"}.get(sys.platform, "pulseaudio.py.h")
+    return Path(spec.origin).parent / name
+
+
 def check() -> int:
     """Start the server with stand-in models on a free port, fetch its health and its panel, and stop it; then
     import what the capture program and the speech recognizer need. Exit 0 when all of it worked."""
@@ -911,6 +921,11 @@ def check() -> int:
                     problems.append(f"{name}: not in the app")
             except Exception as exc:
                 problems.append(f"import {name}: {exc}")
+        # Found is not enough for the speaker sound's library: it reads its C declarations from a file beside it as it
+        # is imported, and a Linux app built without them found the package and never heard the speakers
+        header = sound_header()
+        if header and not header.is_file():
+            problems.append(f"soundcard: {header.name} is not beside it")
     # the panel's libraries: part of the built app (desktop/build.py will not build without them); from a checkout they
     # are fetched separately, and a check without them only says so
     if not (ROOT / "panel" / "vendor").is_dir():

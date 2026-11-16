@@ -8,24 +8,34 @@ and does nothing else.
 The app starts it by itself. On a PC that runs the server with Docker (in WSL, on Linux or on a Mac),
 `./sidenote install` sets it up and `./sidenote capture` starts it. The panel's **Capture connection** (the gear menu)
 shows which program is connected and gives the way to start one for where the server runs, with this server's port in
-it. To run it on its own, for a server in Kubernetes or on another machine whose port is forwarded to this PC:
+it. To run it on its own, for a server in Kubernetes or on another machine whose port is forwarded to this PC, take the
+build for this PC's system from the [release](https://github.com/kanggu12/sidenote/releases/latest), unpack it and start
+it pointing at the server. It needs nothing installed.
+
+| System | The release's file | Start it, where it was unpacked |
+|:---|:---|:---|
+| Windows (x64) | `Sidenote-Capture-0.11.0-Windows-x64.zip` | `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:8777/ingest` |
+| macOS (Apple silicon) | `Sidenote-Capture-0.11.0-macOS-arm64.zip` | `open Sidenote-Capture.app --args --server ws://127.0.0.1:8777/ingest` |
+| Linux (x64, X11) | `Sidenote-Capture-0.11.0-Linux-x64.zip` | `./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:8777/ingest` |
+
+`ws://127.0.0.1:8777/ingest` is also its default, so with the server's port forwarded to 8777 a double-click starts it
+too. On Windows it is not signed by a publisher yet: the first time, **More info**, then **Run anyway**. On macOS it asks
+once for **Screen Recording** for Sidenote Capture, and the speaker sound comes through a loopback input such as
+BlackHole ([how](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#the-app)); a zip a browser downloaded is
+opened the first time from **System Settings**, **Privacy & Security**, **Open Anyway**. On Linux it reads the X11 screen
+(in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's PulseAudio
+service.
+
+On another system (an Intel Mac, Windows or Linux on ARM), or to run it from its code, use
+`Sidenote-Capture-0.11.0-Python.zip` or the repository's `client` folder:
 
 1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
    `py` command).
-2. Install its packages from the folder of the release's `Sidenote-0.10.2-Capture.zip`, or from the repository's
-   `client` folder: `py -3 -m pip install -r requirements.txt` on Windows, or on Linux and macOS
+2. Install its packages in that folder: `py -3 -m pip install -r requirements.txt` on Windows, or on Linux and macOS
    `python3 -m pip install -r requirements.txt` in a virtual environment.
-3. Start it there, pointing at the server:
-
-   ```powershell
-   py -3 capture.py --server ws://127.0.0.1:8777/ingest
-   ```
-
-   On Linux, run `python3 capture.py --server ws://127.0.0.1:8777/ingest` in the desktop session. It reads the X11
-   screen (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's
-   PulseAudio service. On macOS, run the same in Terminal: macOS asks once for **Screen Recording** for Terminal, and
-   the speaker sound comes through a loopback input such as BlackHole
-   ([how](https://github.com/kanggu12/sidenote/blob/main/docs/README.md#the-app)).
+3. Start it there, pointing at the server: `py -3 capture.py --server ws://127.0.0.1:8777/ingest` on Windows,
+   `python3 capture.py --server ws://127.0.0.1:8777/ingest` on Linux and macOS (in Terminal, which macOS then asks once
+   for **Screen Recording**).
 
 For a server in a cluster, forward its port to this PC first and keep the forward on 127.0.0.1:
 `kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777`. The server answers only requests addressed

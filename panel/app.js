@@ -7805,16 +7805,26 @@ const capAddress = (w) => String(w?.server || "").replace(/^wss?:\/\//, "").repl
 // server in a cluster)
 const panelPort = () => location.port || (location.protocol === "https:" ? "443" : "80");
 const captureUrl = () => `ws://127.0.0.1:${panelPort()}/ingest`;
-// The release's capture program, of the server's release: what another PC runs (the latest release's page for a server
-// that does not say its own), from this repository's releases (NOTES_PREFIX, the band's link to a release's notes)
-function captureZip() {
+// The system a capture program is for, as the release names its builds: from what a connected program says of itself
+// ("Windows 11", "macOS 15.1", "Linux (X11)"), or for one to be started, this browser's
+function capSystem(said) {
+  const s = said || navigator.userAgentData?.platform || navigator.platform || "";
+  return /Win/i.test(s) ? "Windows" : /Mac|iPhone|iPad/i.test(s) ? "macOS" : "Linux";
+}
+// The machine each system's build is made for (desktop.yml): Windows and Linux on x64, macOS on Apple silicon
+const CAP_MACHINE = { Windows: "x64", macOS: "arm64", Linux: "x64" };
+// The release's capture program for a system, of the server's release: what another PC runs (the latest release's page for a
+// server that does not say its own), from this repository's releases (NOTES_PREFIX, the band's link to a release's notes).
+// From 0.11.0 a build of its own for each system (Sidenote-Capture-0.11.0-Windows-x64.zip); before, the Python one alone,
+// Sidenote-0.10.2-Capture.zip and earlier sidenote-capture-0.10.1.zip
+function captureZip(said) {
   const v = /^\d+\.\d+\.\d+$/.test(status.version || "") ? status.version : "";
   if (!v) return { url: `${NOTES_PREFIX}latest`, name: t("the latest release") };
-  // the release's files are named for it from 0.10.2 (Sidenote-0.10.2-Capture.zip); one before kept sidenote-capture-0.10.1.zip
   const [major, minor, patch] = v.split(".").map(Number);
-  const named = major > 0 || minor > 10 || (minor === 10 && patch >= 2);
-  const name = named ? `Sidenote-${v}-Capture.zip` : `sidenote-capture-${v}.zip`;
-  return { url: `${NOTES_PREFIX}download/v${v}/${name}`, name };
+  const sys = capSystem(said);
+  const name = major > 0 || minor > 10 ? `Sidenote-Capture-${v}-${sys}-${CAP_MACHINE[sys]}.zip`
+    : minor === 10 && patch >= 2 ? `Sidenote-${v}-Capture.zip` : `sidenote-capture-${v}.zip`;
+  return { url: `${NOTES_PREFIX}download/v${v}/${name}`, name, built: name.startsWith("Sidenote-Capture-"), sys, v };
 }
 // The program's release against the server's: the same, another (a warning), or not said by a program before 0.8.0
 function capVersion(w) {
@@ -7843,7 +7853,7 @@ function progState(here = false) {
   const ends = w.started === "app" ? t("Quit ends the app") : w.ends_server ? t("its tray's Quit Sidenote ends the server too") : t("Quit leaves the server running");
   const since = capture.since ? `${fmtClock(capture.since * 1000)} · ${fmtAgo(Math.max(0, serverNow() - capture.since))}` : "";   // every time in the panel reads 03:15 PM
   // another release: one started from the server's checkout runs the server's code once restarted; one elsewhere is replaced
-  const zip = captureZip();
+  const zip = captureZip(w.system);   // the build for the system that program runs on
   const note = !v.differs ? ""
     : ["shortcut", "terminal"].includes(w.started) ? t("Restart it to run the server's code")
     : t("The server's release is in {zip}", { zip: `<a href="${escapeHtml(zip.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(zip.name)}</a>` });
@@ -7947,12 +7957,23 @@ function captureWays() {
       + `<p class="d">${t("The port-forward this panel came through: keep it running")}</p>`
     : `<span class="way-cmd"><code class="cmd">${cmdWords(`ssh -L ${port}:127.0.0.1:${port}`)} <var class="tok">${t("server PC")}</var></code></span>`
       + `<p class="d">${t("Any forward to the server's {port} on 127.0.0.1 of that PC", { port })}</p>`;
+  const link = (z) => `<a href="${escapeHtml(z.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(z.name)}</a>`;
+  // A release with a build for each system: this browser's system's, started where it was unpacked, and the Python one for any
+  // other system. Before 0.11.0, the Python one, its packages and its start
+  const python = zip.built ? { url: zip.url.replace(/[^/]+$/, `Sidenote-Capture-${zip.v}-Python.zip`), name: `Sidenote-Capture-${zip.v}-Python.zip` } : null;
+  const start = { Windows: `.\\Sidenote-Capture\\Sidenote-Capture.exe --server ${captureUrl()}`,
+                  macOS: `open Sidenote-Capture.app --args --server ${captureUrl()}`,
+                  Linux: `./Sidenote-Capture/Sidenote-Capture --server ${captureUrl()}` }[zip.sys];
   const elsewhere = step(1, t("Forward the server's port"), forward)
-    + step(2, t("The capture program and Python 3.10 or newer"), `<p class="d"><a href="${escapeHtml(zip.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(zip.name)}</a>`
-      + ` · <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer">python.org</a></p>`
-      + cmd(`${py} -m pip install -r requirements.txt`)
-      + (win ? "" : `<p class="d">${t("In a virtual environment")}</p>`))
-    + step(3, t("Start it in that folder"), cmd(`${py} capture.py --server ${captureUrl()}`));
+    + (zip.built
+      ? step(2, t("The capture program for {system}", { system: zip.sys }), `<p class="d">${link(zip)}</p>`
+          + `<p class="d">${t("Another system: {zip}, with Python 3.10 or newer", { zip: link(python) })}</p>`)
+        + step(3, t("Start it where it was unpacked"), cmd(start))
+      : step(2, t("The capture program and Python 3.10 or newer"), `<p class="d">${link(zip)}`
+          + ` · <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer">python.org</a></p>`
+          + cmd(`${py} -m pip install -r requirements.txt`)
+          + (win ? "" : `<p class="d">${t("In a virtual environment")}</p>`))
+        + step(3, t("Start it in that folder"), cmd(`${py} capture.py --server ${captureUrl()}`)));
   const more = (name) => `<details class="ways-more"><summary>${name}</summary><ol class="ways">${elsewhere}</ol></details>`;
   if (where === "cluster") return on ? more(t("From another PC")) : `<h3 class="ways-h">${t("From your PC")}</h3><ol class="ways">${elsewhere}</ol>`;
   // one way here: a step without a number, as a list of one read "1" with no 2 after it

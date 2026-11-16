@@ -166,8 +166,19 @@ def group_none(br, s) -> None:
     p.send({"type": "status", "version": "0.10.2", "where": "container", "desktop": False})
     p.wait(200)
     zips = sheet(p)["zips"]
-    check("...and a server of 0.10.2 or later points at its release's Sidenote-<version>-Capture.zip",
+    check("...and a server of 0.10.2 points at its release's Sidenote-0.10.2-Capture.zip",
           "https://github.com/kanggu12/sidenote/releases/download/v0.10.2/Sidenote-0.10.2-Capture.zip" in zips, str(zips))
+    # From 0.11.0 the release has the capture program built for each system: this browser's (Linux here) and its start,
+    # with the Python one for another system, and no Python steps
+    p.send({"type": "status", "version": "0.11.0", "where": "container", "desktop": False})
+    p.wait(200)
+    got = sheet(p)
+    dl = "https://github.com/kanggu12/sidenote/releases/download/v0.11.0/"
+    check("...and one of 0.11.0 or later: this system's own build of the capture program, the Python one for another, and its start",
+          got["zips"] == [dl + "Sidenote-Capture-0.11.0-Linux-x64.zip", dl + "Sidenote-Capture-0.11.0-Python.zip"]
+          and got["cmds"][1:] == [f"ssh -L {port}:127.0.0.1:{port} 서버 PC",
+                                  f"./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:{port}/ingest"],
+          str([got["zips"], got["cmds"]]))
     server(p)   # the release the rest of the group is about
     p.wait(200)
     program(p, clients=0)   # a message from the server: the fold stays as it was opened
@@ -264,6 +275,14 @@ def group_connected(br, s) -> None:
           got["state"] == "warn" and facts.get("버전") == "v0.7.0 · 서버는 v0.8.0" and facts.get("시작 방식") == "직접 실행 · 끝내도 서버는 그대로"
           and got["link"].endswith("/v0.8.0/sidenote-capture-0.8.0.zip"), str(got))
     check("...a program that took over is not one that came: no tick", not got["tick"], str(got["tick"]))
+    # the note's link is the build for the system that program runs on, where the release has one (0.11.0 on)
+    p.send({"type": "status", "version": "0.11.0", "where": "container", "desktop": False})
+    p.wait(200)
+    got = sheet(p)
+    check("...and from 0.11.0 it is the build for the system that program says it runs on (macOS here)",
+          got["link"].endswith("/v0.11.0/Sidenote-Capture-0.11.0-macOS-arm64.zip"), str(got["link"]))
+    server(p)
+    program(p, {**WHO, "host": "LAPTOP-9", "system": "macOS 15.1", "version": "0.7.0", "started": "own", "ends_server": False}, ago=5)
     program(p, {**WHO, "version": "0.7.0"})
     check("another release started from the server's checkout: restarting it runs the server's code", sheet(p)["note"] == "다시 시작하면 서버의 코드로 실행", sheet(p)["note"])
     program(p, None)

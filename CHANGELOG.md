@@ -6,6 +6,27 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- The capture program alone, built for Windows (x64), macOS (Apple silicon) and Linux (x64) with nothing to install:
+  `Sidenote-Capture-0.11.0-Windows-x64.zip`, `Sidenote-Capture-0.11.0-macOS-arm64.zip` and
+  `Sidenote-Capture-0.11.0-Linux-x64.zip`, for a PC whose screen goes to a server elsewhere. It sends to
+  `ws://127.0.0.1:8777/ingest` unless `--server` names another, so a double-click starts it where the server's port is
+  forwarded. The Python one stays for other systems, as `Sidenote-Capture-0.11.0-Python.zip`.
+- The panel's Capture connection gives the build for the browser's system and the line that starts it, and a program of
+  another release is pointed at the build for the system it runs on.
+
+### Changed
+
+- The release's files say which part they are: `Sidenote-Server-<version>-<system>.zip` is the app (the server with its
+  panel and this PC's capture program), `Sidenote-Server-<version>-Helm-Chart.tgz` its Helm chart, and
+  `Sidenote-Capture-<version>-<system>.zip` and `Sidenote-Capture-<version>-Python.zip` the capture program alone.
+
+### Fixed
+
+- The app for Linux hears the speaker sound. The sound library's files were left out of its build, so its capture
+  program could only send the screen.
+
 ## [0.10.2] - 2026-11-17
 
 ### Changed
