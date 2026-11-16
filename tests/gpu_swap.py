@@ -19,6 +19,10 @@ Checks, each a thing the server did differently before:
            a warm-up that fails leaves it cold
   stopped  a load stopped by Free GPU while the agent's question was being read out ends the analysis as stopped:
            not an agent failure, and not handed to this PC's model to load again
+  writing  a first pass still writing its answer onto the card at the first pass's limit, with nothing else to take
+           the screen, goes on to its end: the GPU not counted busy, no smaller model, also under the busy rate when over
+           half of it; one under half the busy rate, one that has written nothing onto the card, and one the agent could
+           take are cut there as before
 """
 import asyncio
 import dataclasses
@@ -282,12 +286,99 @@ async def stopped():
         SETTINGS.values.update(saved)
 
 
+class Writer(Server):
+    """A stand-in server whose answer is a head the gate lets through (an essay answered in the first pass, route
+    fast), then `words` words, one every `every` seconds: a first pass writing its answer onto the card."""
+
+    def __init__(self, words=120, every=0.02, head=("TYPE: essay\n", "ROUTE: fast\n", "ANSWER: 요지\n")):
+        super().__init__()
+        self.words, self.every, self.head = words, every, head
+
+    def stream(self, method, url, json=None, timeout=None):
+        self.bodies.append(json)
+        outer = self
+
+        class Resp:
+            status_code = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def aread(self):
+                return b""
+
+            async def aiter_lines(self):
+                dumps = __import__("json").dumps
+                for i, word in enumerate(list(outer.head) + [f"w{n} " for n in range(outer.words)]):
+                    if i >= len(outer.head):
+                        await asyncio.sleep(outer.every)
+                    yield "data: " + dumps({"choices": [{"delta": {"content": word}}]})
+                yield "data: [DONE]"
+        return Resp()
+
+
+async def writing():
+    print("\n[a first pass still writing its answer at its limit]")
+    EVENTS.clear()
+    shown = []
+
+    async def card(text):
+        shown.append(text)
+    # 120 words at 50 a second: 2.4 s, past a limit of 1.2 s (a rate is measured over a second at least)
+    local = local_on(Writer(), local_fast_timeout=1.2, local_timeout=10)
+    model = local.model
+    local._warm.add(model)
+    began = time.time()
+    res = await local.fast([], "x", card)
+    took = time.time() - began
+    check("a first pass writing its answer past the limit, nothing else to take the screen: it goes on to its end",
+          res.text is not None and res.text.rstrip().endswith("w119") and 2.2 < took < 4.0 and "w119 " in "".join(shown),
+          f"took={took:.2f} text={(res.text or '')[-40:]!r}")
+    check("...the GPU not counted busy and no smaller model put in", not busy_events() and not local.pace.busy()
+          and local.model == model, [busy_events(), local.pace.busy_until])
+    check("...and said as such for the report (local_writes_on, with its rate)",
+          any(n == "local_writes_on" and f.get("rate", 0) > 20 for n, f in EVENTS), EVENTS)
+
+    EVENTS.clear()
+    local = local_on(Writer(), local_fast_timeout=1.2, local_timeout=10)
+    local.pace.rates[local.model] = [150.0]       # usually 150 words a second: 50 is under the busy rate (75), over half
+    res = await local.fast([], "x", card)
+    check("...as does one writing under the busy rate for its model but over half of it (the 26b beside a full desktop)",
+          res.text is not None and res.text.rstrip().endswith("w119") and not busy_events(), [res.text and res.text[-20:],
+                                                                                              busy_events()])
+
+    EVENTS.clear()
+    local = local_on(Writer(), local_fast_timeout=1.2, local_timeout=10)
+    local.pace.rates[local.model] = [1000.0]      # usually 1,000 words a second: 50 is under half the busy rate (250)
+    res = await local.fast([], "x", card)
+    check("...one writing under half the busy rate for its model is cut at the limit and counted busy, as before",
+          res.text is None and len(busy_events()) == 1 and busy_events()[0].get("after") == "timeout",
+          [res.text and res.text[-20:], busy_events()])
+
+    EVENTS.clear()
+    local = local_on(Writer(head=()), local_fast_timeout=1.2, local_timeout=10)   # words, but no head yet
+    res = await local.fast([], "x", card)
+    check("...as is one that has written nothing onto the card (no head line yet, so the gate still holds it all)",
+          res.text is None and len(busy_events()) == 1 and busy_events()[0].get("after") == "timeout", busy_events())
+
+    EVENTS.clear()
+    local = local_on(Writer(), local_fast_timeout=1.2, local_timeout=10)
+    local._warm.add(local.model)
+    res = await local.fast([], "x", card, first_deadline=0.3)
+    check("...and one the agent could take (a first-token deadline given): cut at the limit as before",
+          res.text is None and len(busy_events()) == 1, busy_events())
+
+
 async def main():
     await cold()
     await let_go()
     hold()
     await warm()
     await stopped()
+    await writing()
     print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
     for name in FAIL:
         print("  FAIL", name)

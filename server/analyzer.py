@@ -1551,6 +1551,25 @@ class LocalLlmAnalyzer:
         tags = (["think"] if think else []) + ([f"web {len(searches)}"] if searches else []) + (["cut"] if cut else [])
         return model + (f" ({', '.join(tags)})" if tags else "")
 
+    def _writes_on(self, gate: _RouteGate, model: str, wrote: dict) -> tuple[bool, float]:
+        """At the first pass's limit (local_fast_timeout), with nothing else to take the screen: whether the pass goes on,
+        and the rate it writes at. The limit is for a pass that brings nothing: one that answers the question itself
+        writes for longer. On the test PC a spoken essay question was still being written at 45 s, by the 26b at about
+        46 tokens a second (the desktop held 3.5 GB of the card, and the 26b less than half its usual rate). Cut there,
+        the GPU was counted busy, the e4b loaded in its place to think the answer again from the start (145 s in all),
+        and the 26b loaded again for the next question. So it goes on while it writes its answer onto the card at no
+        less than half the rate GpuPace calls busy for this model (at any rate before one is known), to local_timeout:
+        finishing is sooner than starting again on the other model. Its rate is still measured when it ends, and an
+        answer under the busy rate puts the smaller model in for the next ones, as any slow answer does. Under half of
+        it, an answer of a usual length would not be done by local_timeout, and the pass is cut as before."""
+        if not gate.open or not wrote["n"]:   # nothing on the card yet: the pass that brings nothing the limit is for
+            return False, 0.0
+        took = time.time() - wrote["first"]   # since its first word: the prompt's reading says nothing of the rate
+        # each word after the first over that time, as GpuPace measures an answer; under a second it is a burst, not a rate
+        rate = (wrote["n"] - 1) / took if took >= GpuPace.MIN_SECONDS else 0.0
+        usual = self.pace.usual(model)       # None before this model has answered at a rate worth keeping
+        return usual is None or rate >= usual * self.pace.ratio / 2, rate
+
     async def fast(self, images, text: str, on_delta: OnDelta, *, want_region: bool = False,
                    escalate_all: bool = False, first_deadline: float | None = None) -> FastResult:
         """Answer at once without thinking, or stop after the first lines when the problem needs
@@ -1569,9 +1588,13 @@ class LocalLlmAnalyzer:
             # nothing. _ready waits for the load and is not part of the budget.
             await self._ready(model)
             alive = asyncio.Event()
+            wrote = {"first": 0.0, "n": 0}   # the pass's words as they come: when the first came, how many (_writes_on)
 
             async def feed(text: str) -> None:   # an answer's text is a first token too (and what a test sends)
                 alive.set()
+                if not wrote["n"]:
+                    wrote["first"] = time.time()
+                wrote["n"] += 1
                 await gate.feed(text)
             # What of this server's own was streaming as this pass is asked, and how many streams had begun and ended:
             # read before the request below is created, so this pass's own stream is not among them yet. The deadline
@@ -1641,7 +1664,24 @@ class LocalLlmAnalyzer:
                                             hold=round(self.pace.held))
                         return FastResult(text=None, head="", type="", route="", messages=messages, searches=trace,
                                           model=model, slow=True)
-                out, usage, model, _ = await asyncio.wait_for(run, timeout=self.cfg.local_fast_timeout)
+                try:
+                    # shielded, so the request is still there at the limit for the pass to go on with (below)
+                    out, usage, model, _ = await asyncio.wait_for(asyncio.shield(run),
+                                                                  timeout=self.cfg.local_fast_timeout)
+                except (asyncio.TimeoutError, TimeoutError):
+                    # a request that has just ended (on an error of its own), or a screen the agent can take: as before
+                    on, rate = (False, 0.0) if run.done() or first_deadline else self._writes_on(gate, model, wrote)
+                    if not on:
+                        run.cancel()             # given up at the limit, as before: handed on below
+                        await asyncio.gather(run, return_exceptions=True)
+                        raise
+                    log.info("local LLM: the first pass is still writing its answer after %.0f s, at %.1f tokens/s; "
+                             "it goes on", self.cfg.local_fast_timeout, rate)
+                    telemetry.event("local_writes_on", model=model, rate=round(rate, 1),
+                                    after=round(self.cfg.local_fast_timeout))
+                    # the rest of local_timeout, the longest any request waits; past it, handed on as a timeout below
+                    out, usage, model, _ = await asyncio.wait_for(
+                        run, timeout=max(1.0, self.cfg.local_timeout - self.cfg.local_fast_timeout))
             except asyncio.CancelledError:
                 run.cancel()                     # the analysis was cancelled while this waited: stop the request too
                 raise
