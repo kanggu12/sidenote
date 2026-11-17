@@ -154,9 +154,9 @@ check("no list item in the documents starts with a second marker", not doubled, 
 # The release's files are named for it and for what they are (release.yml, desktop/build.py), and the README and the guides that
 # name one name this release's: the quick start downloads by name, and a name left at the last release is a dead link
 files = release[release.find("          files: |"):].split("\n")[1:5]
-check("the release attaches the desktop job's zips, the chart, the capture program as Python source and the checksums, named for their part",
+check("the release attaches the desktop job's zips, the chart, the capture program as a wheel and the checksums, named for their part",
       [f.strip() for f in files] == ["dist/app/sidenote-*.zip", "dist/sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz",
-                                     "dist/sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip",
+                                     "dist/sidenote_capture-${{ steps.v.outputs.version }}-py3-none-any.whl",
                                      "dist/sidenote-${{ steps.v.outputs.version }}-sha256sums.txt"], files)
 check("...and the desktop job's zips are the server and the capture program alone, each for its system (sidenote-server-<version>-windows-x64.zip)",
       'DIST / f"sidenote-server-{version()}-{system}-{machine}.zip"' in doc("desktop", "build.py")
@@ -169,54 +169,54 @@ check("...every one of them named in lowercase", literal and all(f == f.lower() 
 named_docs = {name: doc(*name.split("/")) for name in ("README.md", "docs/README.md", "docs/air-gapped.md", "docs/capture-client.md",
                                                        "deploy/helm/sidenote/README.md")}
 stale = sorted({(name, v) for name, text in named_docs.items()
-                for v in re.findall(r"(?i)sidenote-(?:server-|capture-)?(\d+\.\d+\.\d+)-|/releases/download/v(\d+\.\d+\.\d+)/", text)
+                for v in re.findall(r"(?i)sidenote[-_](?:server-|capture-)?(\d+\.\d+\.\d+)-|/releases/download/v(\d+\.\d+\.\d+)/", text)
                 for v in v if v and v != VERSION})
 check(f"the README and the guides name this release's files ({VERSION}) wherever they name one", not stale, stale)
 capitals = sorted({(name, m) for name, text in named_docs.items()
-                   for m in re.findall(rf"[\w.-]*(?i:sidenote)-[\w.-]*{re.escape(VERSION)}[\w.-]*", text) if m != m.lower()})
+                   for m in re.findall(rf"[\w.-]*(?i:sidenote)[-_][\w.-]*{re.escape(VERSION)}[\w.-]*", text) if m != m.lower()})
 check("...in lowercase, as the release names them", not capitals, capitals)
 quick = doc("README.md").split("## Quick start")[1].split("### ")[0]
 check("...and the quick start downloads the server of this release for each system, by its name",
       all(f"/releases/download/v{VERSION}/sidenote-server-{VERSION}-{what}.zip" in quick for what in ("windows-x64", "macos-arm64", "linux-x64"))
       and "/releases/latest/download/" not in quick, quick[:200])
-capture_doc = doc("docs", "capture-client.md")
-pictures = re.findall(r'src="(assets/[^"]+)"', capture_doc)
-check("the capture zip carries the pictures of its README", pictures and all(f"cp docs/{p} dist/sidenote-capture/assets/" in release for p in pictures), pictures)
-# ...and what the capture program reads beside itself, its version found there: 0.6.0's zip left out client/logo.png and
-# the version, and unpacked from it the windows wrote their name in words where the logo stands and showed no version.
-# The zip's folder is made here by the release step itself (its shell lines up to the zip), in a folder of its own whose
-# client, docs and server are this checkout's
-step = release[release.find("- name: The capture program on its own, as Python"):]
-step = step[step.find("run: |") + len("run: |"):step.find("- name:", 10)]
-lines = [ln.strip() for ln in step.splitlines() if ln.strip() and not ln.strip().startswith("#") and "zip -r" not in ln]
-made = WORK / "capture-zip"
-made.mkdir()
-for part in ("client", "docs", "server"):
-    (made / part).symlink_to(ROOT / part)
-ran = subprocess.run(["bash", "-euc", "\n".join(lines)], cwd=made, capture_output=True, text=True, timeout=60)
-folder = made / "dist" / "sidenote-capture"
-beside = set()
-for prog in ("capture.py", "launch.pyw"):
-    # by the folder of __file__, or by `here`, which is that folder where a function names it so
-    beside |= set(re.findall(r'os\.path\.join\((?:os\.path\.dirname\(os\.path\.abspath\(__file__\)\)|here), "([^".]+\.[a-z]+)"\)',
-                             (ROOT / "client" / prog).read_text(encoding="utf-8")))
+# The capture program as a wheel (.github/capture_wheel.py, which the release step runs): its name as the wheel format
+# writes it, the package with what the program reads beside itself and its version, the packages it needs as the
+# program's own list says, its command, and installed by pip with nothing else (--no-deps, the needed packages being this
+# Python's) it starts and says its version. 0.6.0's zip left out client/logo.png and the version, and the windows wrote
+# their name in words where the logo stands and showed no version
+check("the release step builds the capture program's wheel with the script this checks",
+      "run: python3 .github/capture_wheel.py dist" in release)
+built = subprocess.run([sys.executable, str(ROOT / ".github" / "capture_wheel.py"), str(WORK / "wheel")], capture_output=True,
+                       text=True, timeout=60)
+wheels = sorted((WORK / "wheel").glob("*.whl"))
+check(f"...named as the format writes it, for any Python 3 on any system: sidenote_capture-{VERSION}-py3-none-any.whl",
+      built.returncode == 0 and [w.name for w in wheels] == [f"sidenote_capture-{VERSION}-py3-none-any.whl"], built.stderr[-300:] + str(wheels))
+import zipfile  # noqa: E402
+names = zipfile.ZipFile(wheels[0]).namelist() if wheels else []
+beside = set(re.findall(r'os\.path\.join\((?:os\.path\.dirname\(os\.path\.abspath\(__file__\)\)|here), "([^".]+\.[a-z]+)"\)',
+                        (ROOT / "client" / "capture.py").read_text(encoding="utf-8")))
 beside |= {"version.py"}   # read through a list of places (code_version), past the pattern above
-check("the release step makes the capture zip's folder", ran.returncode == 0 and folder.is_dir(), ran.stderr[-300:])
-check("...with what the capture program reads beside itself", beside and all((folder / b).is_file() for b in beside),
-      sorted(b for b in beside if not (folder / b).is_file()))
-# Each program's code_version(), taken from its file and run in the zip's folder with no package of the server to import
-# (-I, from that folder): the version is the one in server/version.py
-want = re.search(r'^VERSION = "([0-9.]+)"', (ROOT / "server" / "version.py").read_text(encoding="utf-8"), re.M).group(1)
-probe = ("import ast, os, re, sys\n"
-         "path = sys.argv[1]\n"
-         "tree = ast.parse(open(path, encoding='utf-8').read())\n"
-         "fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'code_version')\n"
-         "space = {'os': os, 're': re, '__file__': path}\n"
-         "exec(compile(ast.Module(body=[fn], type_ignores=[]), path, 'exec'), space)\n"
-         "print(space['code_version']())\n")
-for prog in ("capture.py", "launch.pyw"):
-    got = subprocess.run([sys.executable, "-I", "-c", probe, str(folder / prog)], cwd=folder, capture_output=True, text=True, timeout=30)
-    check(f"...and {prog} unpacked from it finds its version, {want}", got.stdout.strip() == want, (got.stdout.strip(), got.stderr[-200:]))
+check("...with the program and what it reads beside itself", beside and all(f"sidenote_capture/{b}" in names for b in beside)
+      and "sidenote_capture/capture.py" in names, sorted(b for b in beside if f"sidenote_capture/{b}" not in names))
+info = f"sidenote_capture-{VERSION}.dist-info"
+meta = zipfile.ZipFile(wheels[0]).read(f"{info}/METADATA").decode() if wheels else ""
+wanted = [ln.split("#")[0].strip() for ln in (ROOT / "client" / "requirements.txt").read_text(encoding="utf-8").splitlines()
+          if ln.split("#")[0].strip()]
+check("...the packages it needs, as client/requirements.txt names them, and Python 3.10 or newer",
+      re.findall(r"^Requires-Dist: (.+)$", meta, re.M) == wanted and "Requires-Python: >=3.10" in meta, meta[:400])
+entry = zipfile.ZipFile(wheels[0]).read(f"{info}/entry_points.txt").decode() if wheels else ""
+check("...and the sidenote-capture command", "sidenote-capture = sidenote_capture.capture:main" in entry, entry)
+target = WORK / "installed"
+put = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--no-deps", "--no-index", "--target", str(target),
+                      str(wheels[0]) if wheels else "-"], capture_output=True, text=True, timeout=120)
+env_wheel = {**os.environ, "PYTHONPATH": str(target)}
+helped = subprocess.run([sys.executable, "-m", "sidenote_capture", "--help"], cwd=str(WORK), capture_output=True, text=True,
+                        timeout=60, env=env_wheel)
+check("...pip installs it, and it starts: python -m sidenote_capture --help gives the program's options",
+      put.returncode == 0 and helped.returncode == 0 and "--server SERVER" in helped.stdout, put.stderr[-300:] + helped.stderr[-300:])
+said = subprocess.run([sys.executable, "-c", "import sidenote_capture.capture as c; print(c.VERSION)"], cwd=str(WORK),
+                      capture_output=True, text=True, timeout=60, env=env_wheel)
+check(f"...and installed, it says its version, {VERSION}", said.stdout.strip() == VERSION, (said.stdout.strip(), said.stderr[-200:]))
 
 print("\n[./sidenote version]")
 # A copy of the launcher beside a version.py of its own (the launcher works from its own folder), and the programs it

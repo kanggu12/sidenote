@@ -242,8 +242,9 @@ download, which needs the internet; the two `tar` lines put the bundle's models 
 
 The capture program runs on the PC with the screen, as [the capture program on its own](capture-client.md) says: the
 release's build for that PC's system (`sidenote-capture-0.11.1-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`),
-which needs nothing installed, or `sidenote-capture-0.11.1-python-any-os.zip` with its packages from the bundle's wheels, copied
-next to it: `py -m pip install --no-index --find-links wheels -r requirements.txt` on Windows.
+which needs nothing installed, or the wheel, `sidenote_capture-0.11.1-py3-none-any.whl`, with the packages it needs from the bundle's
+wheels, copied next to it: `py -m pip install --no-index --find-links wheels sidenote_capture-0.11.1-py3-none-any.whl` on Windows, then
+`sidenote-capture --server ws://127.0.0.1:8777/ingest`.
 
 ## With a model server you already run
 

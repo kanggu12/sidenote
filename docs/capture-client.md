@@ -26,17 +26,19 @@ opened the first time from **System Settings**, **Privacy & Security**, **Open A
 (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's PulseAudio
 service.
 
-On another system (an Intel Mac, Windows or Linux on ARM), use `sidenote-capture-0.11.1-python-any-os.zip`: the program's
-Python source, the same files for every system (the repository's `client` folder holds them too), which runs wherever
-Python 3.10 or newer and its packages are installed:
+On another system (an Intel Mac, Windows or Linux on ARM), install the wheel, `sidenote_capture-0.11.1-py3-none-any.whl`: the program as a
+Python package, the same for every system (`py3-none-any` is the wheel format's way of saying any Python 3 on any
+system). It needs Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds
+the `py` command), and pip installs the packages it needs with it and gives it a command:
 
-1. Install Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds the
-   `py` command).
-2. Install its packages in that folder: `py -3 -m pip install -r requirements.txt` on Windows, or on Linux and macOS
-   `python3 -m pip install -r requirements.txt` in a virtual environment.
-3. Start it there, pointing at the server: `py -3 capture.py --server ws://127.0.0.1:8777/ingest` on Windows,
-   `python3 capture.py --server ws://127.0.0.1:8777/ingest` on Linux and macOS (in Terminal, which macOS then asks once
-   for **Screen Recording**).
+```bash
+python3 -m pip install https://github.com/kanggu12/sidenote/releases/download/v0.11.1/sidenote_capture-0.11.1-py3-none-any.whl
+sidenote-capture --server ws://127.0.0.1:8777/ingest
+```
+
+On Windows, `py -3 -m pip install` the same address; on Linux and macOS, in a virtual environment. On macOS, run it in
+Terminal, which macOS then asks once for **Screen Recording**. From the repository's `client` folder it runs as
+`python3 capture.py`, after `python3 -m pip install -r requirements.txt` there.
 
 For a server in a cluster, forward its port to this PC first and keep the forward on 127.0.0.1:
 `kubectl --namespace sidenote port-forward svc/sidenote-server 8777:8777`. The server answers only requests addressed

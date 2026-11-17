@@ -6,6 +6,19 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Changed
+
+- The capture program for a system with no build of its own is a wheel, `sidenote_capture-0.11.2-py3-none-any.whl`,
+  in place of a zip of its files: `pip install` with its address installs the packages it needs with it and gives it a
+  `sidenote-capture` command. `py3-none-any` is the wheel format's name for any Python 3 on any system.
+
+### Fixed
+
+- Without the agent, a first pass on a model just loaded that brings nothing in its 45 s is handed to the thinking pass
+  on the same model, as it is with the agent, and no longer counts the GPU as busy. The first screen a new container
+  served took 42 of those 45 s on the test PC; on a slower card or a 4K screen, the smaller model was loaded in the
+  larger one's place.
+
 ## [0.11.1] - 2026-11-17
 
 ### Changed

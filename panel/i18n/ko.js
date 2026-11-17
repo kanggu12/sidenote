@@ -868,7 +868,7 @@ CATALOGS.ko = {
   "In a virtual environment": "가상 환경 안에서",
   "Start it in that folder": "그 폴더에서 시작",
   "The capture program for {system}": "{system}용 캡처 프로그램",
-  "Another system: {zip}, with Python 3.10 or newer": "다른 시스템: {zip}, Python 3.10 이상과 함께",
+  "Another system: {zip}, installed with pip on Python 3.10 or newer": "다른 시스템: {zip}, Python 3.10 이상에서 pip로 설치",
   "Start it where it was unpacked": "압축을 푼 곳에서 시작",
   "Restart": "다시 시작",
   "Starts the capture program again, as its tray's Restart capture": "캡처 프로그램을 다시 시작 · 트레이의 캡처 다시 시작과 같음",
