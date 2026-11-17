@@ -7958,16 +7958,18 @@ function captureWays() {
     : `<span class="way-cmd"><code class="cmd">${cmdWords(`ssh -L ${port}:127.0.0.1:${port}`)} <var class="tok">${t("server PC")}</var></code></span>`
       + `<p class="d">${t("Any forward to the server's {port} on 127.0.0.1 of that PC", { port })}</p>`;
   const link = (z) => `<a href="${escapeHtml(z.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(z.name)}</a>`;
-  // A release with a build for each system: this browser's system's, started where it was unpacked, and the Python one for any
-  // other system. Before 0.11.0, the Python one, its packages and its start
-  const python = zip.built ? { url: zip.url.replace(/[^/]+$/, `sidenote-capture-${zip.v}-python-any-os.zip`), name: `sidenote-capture-${zip.v}-python-any-os.zip` } : null;
+  // A release with a build for each system: this browser's system's, started where it was unpacked, and the wheel for any other
+  // system, which pip installs with what it needs (py3-none-any: any Python 3 on any system). Before, the Python zip, its
+  // packages and its start
+  const wheelName = zip.built ? `sidenote_capture-${zip.v}-py3-none-any.whl` : "";
+  const python = zip.built ? { url: zip.url.replace(/[^/]+$/, wheelName), name: wheelName } : null;
   const start = { Windows: `.\\Sidenote-Capture\\Sidenote-Capture.exe --server ${captureUrl()}`,
                   macOS: `open Sidenote-Capture.app --args --server ${captureUrl()}`,
                   Linux: `./Sidenote-Capture/Sidenote-Capture --server ${captureUrl()}` }[zip.sys];
   const elsewhere = step(1, t("Forward the server's port"), forward)
     + (zip.built
       ? step(2, t("The capture program for {system}", { system: zip.sys }), `<p class="d">${link(zip)}</p>`
-          + `<p class="d">${t("Another system: {zip}, with Python 3.10 or newer", { zip: link(python) })}</p>`)
+          + `<p class="d">${t("Another system: {zip}, installed with pip on Python 3.10 or newer", { zip: link(python) })}</p>`)
         + step(3, t("Start it where it was unpacked"), cmd(start))
       : step(2, t("The capture program and Python 3.10 or newer"), `<p class="d">${link(zip)}`
           + ` · <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer">python.org</a></p>`

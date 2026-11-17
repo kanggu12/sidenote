@@ -2540,6 +2540,13 @@ model in for the next problems. One under half the busy rate, one with nothing o
 take are cut at the limit as before. The event log says `local_writes_on`, with the rate. Sixteen spoken questions
 after that first one, on the same sitting, were all answered by the 26b with no model loaded in between.
 
+The same limit met by a model just loaded, with no agent and nothing at all from it, is its first silence, as
+[note 127](#note-127) has it with the agent: the screen goes to the thinking pass on the same model, the GPU is not
+counted busy (`local_cold` in the event log), and the model is warm from then on, so its next silence counts. Measured
+with no agent on the test PC, the first screen a newly created container served took 42 of these 45 s, the load outside
+them: its first request builds the runtime's kernels. On a slower card or a 4K screen it would have run out, and the
+smaller model would have been loaded in the larger one's place at the first screen of a sitting.
+
 ### <a id="note-136"></a>136. The speech model stays on the processor
 
 Measured on the test PC's card (24 GB, 23.0 of it shown under WSL) with the bench's 88 Korean sentences in call quality:
@@ -2580,13 +2587,17 @@ which part a file was nor, for the app, which release (`Sidenote-windows-x64.zip
 | Part | Files |
 |:---|:---|
 | The server (the app: the server, its panel and this PC's capture program) | `sidenote-server-<version>-windows-x64.zip`, `-macos-arm64.zip`, `-linux-x64.zip`, and `sidenote-server-<version>-helm-chart.tgz` |
-| The capture program alone | `sidenote-capture-<version>-windows-x64.zip`, `-macos-arm64.zip`, `-linux-x64.zip`, and `sidenote-capture-<version>-python-any-os.zip` |
+| The capture program alone | `sidenote-capture-<version>-windows-x64.zip`, `-macos-arm64.zip`, `-linux-x64.zip`, and `sidenote_capture-<version>-py3-none-any.whl` |
 | Both | `sidenote-<version>-sha256sums.txt` |
 
 0.11.0 wrote the names with capitals where a word has them (`Sidenote-Server-0.11.0-macOS-arm64.zip`); from 0.11.1 they
 are lowercase, since a name with both cases is one more thing to get right when it is typed, and on Linux a wrong case is
-another file. The capture program's Python source was `-Python.zip`, which read as a build for Python itself; it is
-`-python-any-os.zip`, the one file that runs on any system, where Python 3.10 or newer and its packages are installed.
+another file. The capture program's Python source was `-Python.zip` in 0.11.0, which read as a build for Python itself, and
+`-python-any-os.zip` in 0.11.1: a zip of its files, unpacked, its packages installed by hand and `capture.py` started.
+From 0.11.2 it is a wheel, the format pip installs: `pip install` with its address installs the packages it needs with
+it and gives it a `sidenote-capture` command, and its name is the format's own (an underscore, and `py3-none-any` for
+any Python 3 on any system). `.github/capture_wheel.py` writes it with the standard library alone, so it builds the
+same with no build tools and no network, and `tests/version_check.py` builds one, installs it with pip and starts it.
 
 The capture program alone used to be Python only, the same file for every system, so it had no system in its name and
 needed Python 3.10 and its packages on the PC with the screen. It is now also built for each system as the app is, by

@@ -2,8 +2,9 @@
 # artifact and a .tgz, and the files attached to the GitHub release, each named for its part, the release and the system,
 # every letter lowercase: the server (the desktop app, with its panel and this PC's capture program) for Windows, macOS and
 # Linux and its Helm chart, sidenote-server-1.2.3-windows-x64.zip and sidenote-server-1.2.3-helm-chart.tgz; the capture
-# program alone for the same three (desktop.yml builds both) and as Python source for any system with Python,
-# sidenote-capture-1.2.3-macos-arm64.zip and sidenote-capture-1.2.3-python-any-os.zip; and sidenote-1.2.3-sha256sums.txt.
+# program alone for the same three (desktop.yml builds both), sidenote-capture-1.2.3-macos-arm64.zip, and as a wheel for
+# any system with Python, sidenote_capture-1.2.3-py3-none-any.whl (the wheel format's own name: an underscore, and
+# py3-none-any for any Python 3 on any system); and sidenote-1.2.3-sha256sums.txt.
 # A tag with a pre-release part (v1.2.3-rc.1) publishes as a pre-release, with no `latest` images.
 #
 # The published server image carries the Codex CLI (Apache-2.0) and not Claude Code, which is Anthropic's to
@@ -124,18 +125,10 @@ jobs:
           helm push "dist/sidenote-${{ steps.v.outputs.version }}.tgz" "oci://ghcr.io/${{ steps.v.outputs.owner }}/charts"
           # the release's own copy is named as its other files are; Helm takes the chart from any file name
           cp "dist/sidenote-${{ steps.v.outputs.version }}.tgz" "dist/sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz"
-      - name: The capture program on its own, as Python
-        run: |
-          mkdir -p dist/sidenote-capture
-          # the programs with what they read beside themselves: their logo, the shortcut's icon, and their version (in a
-          # checkout they read it from ../server/version.py, which the zip has no room for); tests/version_check.py runs this step
-          cp client/capture.py client/launch.pyw client/logo.png client/sidenote.ico client/requirements.txt dist/sidenote-capture/
-          cp server/version.py dist/sidenote-capture/
-          cp docs/capture-client.md dist/sidenote-capture/README.md
-          # the one picture that page shows, at the path it names
-          mkdir -p dist/sidenote-capture/assets
-          cp docs/assets/tray-menu.png dist/sidenote-capture/assets/
-          (cd dist && zip -r "sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip" sidenote-capture)
+      - name: The capture program on its own, as a wheel for any system with Python
+        # pip installs what it needs with it and puts a sidenote-capture command on the PATH; tests/version_check.py builds
+        # one with the same script, installs it and starts it
+        run: python3 .github/capture_wheel.py dist
       - name: The desktop app's and the capture program's zips, built by the desktop job
         uses: actions/download-artifact@v7
         with:
@@ -147,7 +140,7 @@ jobs:
       - name: Checksums of the files the release carries
         run: |
           cd dist
-          { sha256sum "sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz" "sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip"
+          { sha256sum "sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz" "sidenote_capture-${{ steps.v.outputs.version }}-py3-none-any.whl"
             (cd app && sha256sum sidenote-*.zip); } > "sidenote-${{ steps.v.outputs.version }}-sha256sums.txt"
           cat "sidenote-${{ steps.v.outputs.version }}-sha256sums.txt"
       - name: Where each file was built, signed by GitHub
@@ -155,7 +148,7 @@ jobs:
         with:
           subject-path: |
             dist/sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz
-            dist/sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip
+            dist/sidenote_capture-${{ steps.v.outputs.version }}-py3-none-any.whl
             dist/app/sidenote-*.zip
       - name: The release notes the notes job took from CHANGELOG.md
         uses: actions/download-artifact@v7
@@ -173,5 +166,5 @@ jobs:
           files: |
             dist/app/sidenote-*.zip
             dist/sidenote-server-${{ steps.v.outputs.version }}-helm-chart.tgz
-            dist/sidenote-capture-${{ steps.v.outputs.version }}-python-any-os.zip
+            dist/sidenote_capture-${{ steps.v.outputs.version }}-py3-none-any.whl
             dist/sidenote-${{ steps.v.outputs.version }}-sha256sums.txt

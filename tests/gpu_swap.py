@@ -11,7 +11,8 @@ an answer was logged as the agent failing, and the model the person had just sto
 
 Checks, each a thing the server did differently before:
   cold     a first pass on a model just loaded that brings no first token: handed on, the GPU not counted busy, the
-           model warm from then on; the next silence counts it busy; the thinking pass the same
+           model warm from then on; the next silence counts it busy; with no agent, the first pass's whole limit the
+           same; the thinking pass the same
   let go   a silence while the GPU was given back is not counted busy, in the first pass and the thinking pass
   hold     the retry after a hold is what the next verdict is measured from: one that came long after the retry
            began still doubles the hold; a verdict with no retry long after the hold starts over
@@ -133,6 +134,21 @@ async def cold():
     res = await first_pass(local)
     check("the next silence, warm, counts the GPU busy as before", res.slow and len(busy_events()) == 1
           and busy_events()[0].get("after") == "first_token" and local.pace.busy(), [busy_events(), local.pace.held])
+
+    print("\n[...the same with no agent to take the screen: the whole first pass's limit]")
+    EVENTS.clear()
+    local = local_on(Server(first=None), local_fast_timeout=0.5)
+    model = local.model
+    res = await local.fast([], "x", nothing)          # no first-token deadline: nothing else can take the screen
+    check("a first pass on a model just loaded that brings nothing in the first pass's limit, with no agent: handed to the "
+          "thinking pass (no answer, not slow), the GPU not counted busy, said as local_cold",
+          res.text is None and not res.slow and not busy_events() and not local.pace.busy()
+          and any(n == "local_cold" for n, _ in EVENTS), EVENTS)
+    check("...and the model warm from then on", model in local._warm)
+    EVENTS.clear()
+    res = await local.fast([], "x", nothing)
+    check("...its next silence, warm, counts the GPU busy as before", res.text is None and len(busy_events()) == 1
+          and busy_events()[0].get("after") == "timeout", busy_events())
 
     print("\n[the thinking pass, the same]")
     EVENTS.clear()

@@ -454,9 +454,10 @@ of the same name. It is also the setup guide's first step.
 - **The ways to start one**, by where the server runs: on the server's own PC `./sidenote capture` in its terminal, or the
   desktop shortcut on Windows; under **From another PC**, or first for a server in a cluster, three steps: this server's
   port on that PC (for a cluster, the `kubectl port-forward` the panel came through, with its namespace and service), the
-  capture program from the release's zip with Python 3.10 or newer, and its start, `py -3 capture.py --server
-  ws://127.0.0.1:<this panel's port>/ingest` on Windows (`python3` elsewhere). Each command has its **Copy** key. Under the
-  app, the app starts the program itself.
+  release's capture program for that PC's system (the browser's; the wheel for another, with Python 3.10 or newer), and
+  its start, `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:<this panel's port>/ingest` on Windows
+  (`open Sidenote-Capture.app --args --server …` on macOS, `./Sidenote-Capture/Sidenote-Capture --server …` on Linux).
+  Each command has its **Copy** key. Under the app, the app starts the program itself.
 - **What it does**: **Monitor**, **Follow the changing screen**, **Join scrolled screens** and **Skip windows**, the
   settings the capture program carries out, as **Solver settings** has them.
 
@@ -1877,7 +1878,7 @@ then runs on its own on your PC (section 17).
 When the server is not on this PC (in a cluster, for example), the capture program runs alone on the PC whose screen and
 sound it reads, Windows, a Mac or a Linux desktop: the release's build for that system
 (`sidenote-capture-0.11.1-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`) needs nothing installed, and on
-another system `sidenote-capture-0.11.1-python-any-os.zip` runs with Python 3.10 or newer. It sends to
+another system the wheel, `sidenote_capture-0.11.1-py3-none-any.whl`, installs with pip on Python 3.10 or newer. It sends to
 `ws://127.0.0.1:8777/ingest` by default, which a port-forward on that PC reaches. With the repository in WSL on that
 PC, `./sidenote capture` starts it as usual. [capture-client.md](capture-client.md) has the steps and the options, and
 the panel's **Capture connection** gives them with this server's names and port ([The capture

@@ -165,12 +165,12 @@ def group_none(br, s) -> None:
     # From 0.11.1 the release has the capture program built for each system, named in lowercase: this browser's (Linux
     # here) and its start, with the Python source for any other system, and no Python steps. A release before that (above,
     # 0.8.0) is pointed at its page, which lists its files under the names they had
-    p.send({"type": "status", "version": "0.11.1", "where": "container", "desktop": False})
+    p.send({"type": "status", "version": "0.11.2", "where": "container", "desktop": False})
     p.wait(200)
     got = sheet(p)
-    dl = "https://github.com/kanggu12/sidenote/releases/download/v0.11.1/"
-    check("...and one of 0.11.1 or later: this system's own build of the capture program, the Python one for another, and its start",
-          got["zips"] == [dl + "sidenote-capture-0.11.1-linux-x64.zip", dl + "sidenote-capture-0.11.1-python-any-os.zip"]
+    dl = "https://github.com/kanggu12/sidenote/releases/download/v0.11.2/"
+    check("...and one of 0.11.1 or later: this system's own build of the capture program, the wheel for another, and its start",
+          got["zips"] == [dl + "sidenote-capture-0.11.2-linux-x64.zip", dl + "sidenote_capture-0.11.2-py3-none-any.whl"]
           and got["cmds"][1:] == [f"ssh -L {port}:127.0.0.1:{port} 서버 PC",
                                   f"./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:{port}/ingest"],
           str([got["zips"], got["cmds"]]))

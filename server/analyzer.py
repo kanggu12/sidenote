@@ -1589,11 +1589,15 @@ class LocalLlmAnalyzer:
             await self._ready(model)
             alive = asyncio.Event()
             wrote = {"first": 0.0, "n": 0}   # the pass's words as they come: when the first came, how many (_writes_on)
+            # A model that has not answered since it was loaded (its prompt cache empty, and in a new container its
+            # kernels still to be built): its first silence is no busy GPU, with the agent or without (below)
+            cold = model not in self._warm
 
             async def feed(text: str) -> None:   # an answer's text is a first token too (and what a test sends)
                 alive.set()
                 if not wrote["n"]:
                     wrote["first"] = time.time()
+                    self._warm.add(model)        # it has answered: from here on, silence means something
                 wrote["n"] += 1
                 await gate.feed(text)
             # What of this server's own was streaming as this pass is asked, and how many streams had begun and ended:
@@ -1613,7 +1617,6 @@ class LocalLlmAnalyzer:
                     # program on the GPU, and each try was stopped before it finished, so it never warmed up
                     # (the GPU was called busy while nothing else was using it; the runtime's log showed 3,137 of 3,980
                     # tokens read at the cut).
-                    cold = model not in self._warm
                     limit = max(first_deadline, self.cfg.local_cold_first_token_sec) if cold else first_deadline
                     try:
                         await asyncio.wait({run, waiting}, timeout=limit,
@@ -1674,6 +1677,19 @@ class LocalLlmAnalyzer:
                     if not on:
                         run.cancel()             # given up at the limit, as before: handed on below
                         await asyncio.gather(run, return_exceptions=True)
+                        if cold and not wrote["n"] and not first_deadline and not (trace or others > 0):
+                            # Nothing at all from a model just loaded, with no agent to take the screen: its first
+                            # silence, as the first-token deadline above has it, handed to the thinking pass on the same
+                            # model and not counted busy. On the test PC the first screen a new container served took 42
+                            # of these 45 s (the load outside them): a slower card, or a 4K screen, and the GPU was
+                            # counted busy and the smaller model loaded in the larger one's place
+                            self._warm.add(model)
+                            log.info("local LLM: the first pass brought nothing in %.0f s from %s, just loaded; the "
+                                     "thinking pass takes it, and the GPU is not counted busy",
+                                     self.cfg.local_fast_timeout, model)
+                            telemetry.event("local_cold", model=model, limit=round(self.cfg.local_fast_timeout))
+                            return FastResult(text=None, head=gate.buf, type=gate.type, route=gate.route,
+                                              messages=messages, searches=trace, model=model)
                         raise
                     log.info("local LLM: the first pass is still writing its answer after %.0f s, at %.1f tokens/s; "
                              "it goes on", self.cfg.local_fast_timeout, rate)
