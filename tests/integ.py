@@ -116,6 +116,46 @@ def test_settings():
                   f"{s4.get('agent_mode')} {s4.get('agent_payload')}")
         finally:
             CONFIG.analyzer = saved
+        # Code language: the language code answers are written in when the screen says none, Python unless chosen, one of
+        # the languages the example check runs, first in the Code section
+        s5 = Settings(None)
+        code = [it for it in s5.meta()["items"] if it["key"] == "code_lang"]
+        in_code = [it["key"] for it in s5.meta()["items"] if it["section"] == "code"]
+        check("Code language: Python unless chosen, eight languages the example check runs, first in the Code section",
+              s5.get("code_lang") == "python" and code and [o[0] for o in code[0]["options"]]
+              == ["python", "java", "cpp", "javascript", "typescript", "kotlin", "go", "c"] and in_code[:1] == ["code_lang"],
+              [s5.get("code_lang"), code[:1], in_code])
+        ok, _ = s5.set("code_lang", "kotlin")
+        bad, err = s5.set("code_lang", "rust")
+        check("...another of them is kept, one the check cannot run is refused", ok and s5.get("code_lang") == "kotlin"
+              and not bad and err, [ok, bad, err])
+        # the line that names the chosen language (analyzer.code_language_line): said as this answer's language where
+        # nothing names one, or leaving the screen and the words first where nothing here has read the screen; added by
+        # the pipeline alone (test_code_language), so no engine and no system prompt carries it by itself
+        import json
+        from server import analyzer as A
+        from server import agents as G
+        from server.settings import SETTINGS as LIVE
+        kept = dict(LIVE.values)
+        try:
+            for key, name in (("python", "Python"), ("cpp", "C++"), ("go", "Go")):
+                LIVE.values["code_lang"] = key
+                check(f"...{name}: the line names it, as this answer's language or after the screen and the words",
+                      A.code_language_line() == f"[코드 언어: {name}] 이 답의 코드는 이 언어로 쓴다."
+                      and A.code_language_line(False).startswith(f"[코드 언어: {name}] 화면의 코드 편집기나 코드"),
+                      [A.code_language_line(), A.code_language_line(False)])
+            local = A.LocalLlmAnalyzer(CONFIG)
+            # the request the local model is sent, and the CLI's, JSON with its Korean escaped: the text each carries
+            asked = [c["text"] for c in local._messages([], "x", True)[1]["content"] if c.get("type") == "text"][-1]
+            body = json.loads(G.claude_message([], "x", False))["message"]["content"][-1]["text"]
+            check("...no engine adds it by itself, and no system prompt holds it",
+                  "[코드 언어" not in asked + body + local._system() + A.in_answer_language(A.SYSTEM_PROMPT), asked[-80:])
+            LIVE.values["code_lang"] = "cobol"   # a value an old or hand-made file holds: the default, not a line naming it
+            check("...and a value no setting offers reads as Python", A.code_language_line().startswith("[코드 언어: Python]"),
+                  A.code_language_line())
+        finally:
+            LIVE.values.clear()
+            LIVE.values.update(kept)
 
 
 # ---------- 2. heads ----------
@@ -1093,6 +1133,112 @@ async def test_crop_placement():
     check(f"numbers shaped like personal data ({len(shaped)}) told from others ({len(plain)})", not wrong, str(wrong))
 
 
+async def test_code_language():
+    print("\n[Default code language: the line where nothing names the language, and nowhere else]")
+    # The model follows the line over an editor on the screen and over a language said aloud (analyzer.code_language_line),
+    # so the pipeline sends it only where nothing names one. What each path sends, Java chosen
+    from server import analyzer as A
+    from server.settings import SETTINGS
+    pipe, eng = make_pipeline()
+    kept = dict(SETTINGS.values)
+    strong = "[코드 언어: Java] 이 답의 코드는 이 언어로 쓴다."
+    soft = "[코드 언어: Java] 화면의 코드 편집기나 코드, 문제나 질문이 다른 언어를 보이지 않으면"
+    reads = lambda: sum(1 for c in eng.local.calls if c[0] == "editor")   # noqa: E731  how often the screen was read
+    try:
+        named = {"파이썬으로 풀어 주세요": "Python", "자바로 짜 줘": "Java", "자바스크립트로": "JavaScript", "C++로 구현하시오": "C++",
+                 "Go 언어로": "Go", "C 언어로 작성": "C", "write it in Java": "Java", "in TypeScript please": "TypeScript",
+                 "코틀린으로": "Kotlin", "러스트로": "Rust", "SQL 문을 쓰시오": "SQL", "golang으로": "Go",
+                 # as said aloud and written down by the speech model, and with a Korean particle on an English name
+                 "씨 플러스 플러스로 풀어줘": "C++", "시쁠쁠로": "C++", "C샵으로": "C#", "파이선으로": "Python", "js로": "JavaScript",
+                 "c언어로": "C", "go로": "Go", "C로 풀어 줘": "C", "Java로": "Java", "Swift로": "Swift", "SQL로": "SQL"}
+        got = {k: A.named_language(k) for k in named}
+        check("a language named in the words is found, by its Korean or English name", got == named, str(got))
+        none = ["두 수의 합을 구하는 함수", "파이썬과 자바의 차이", "JavaScript 와 TypeScript 비교", "let's go home", "a C grade",
+                "C++ 와 C# 중 무엇이", "세 점 A, B, C로 이루어진 삼각형", "B를 거쳐 C로 간다", "store the product in C", "고랭지 배추",
+                "일러스트 작품", "테일러 스위프트", "a swift answer", "trust the process"]
+        check("...and none in words that name none, or several", all(A.named_language(x) is None for x in none),
+              str({x: A.named_language(x) for x in none}))
+        SETTINGS.values.update(code_lang="java", agent_mode="hard", agent_hard_types=["algorithm", "coding", "math"],
+                               agent_payload="crop", agent_confirm=False)
+        # the agent given the problem part (no editor in it): the editor as this PC's model reads it decides
+        eng.local.editor = ""
+        before = reads()
+        await pipe.solve(71, FakeFrame(), "", False, _delta)
+        sent = eng.agent.calls[-1]["text"]
+        check("the problem part, no editor read on the screen: the agent's request ends with the line naming Java, leaving "
+              "the screen and the words first (the problem's own text may name one)", soft in sent, sent[-160:])
+        check("...the screen read once, for the editor note and the line alike", reads() == before + 1, reads() - before)
+        eng.local.editor = "C++"
+        await pipe.solve(72, FakeFrame(), "", False, _delta)
+        sent = eng.agent.calls[-1]["text"]
+        check("an editor read on the screen: its language goes as before, and no line", "C++" in sent and "[코드 언어" not in sent,
+              sent[-200:])
+        # the whole screen shows the agent any editor itself: the line leaves the screen first, and the screen is not read
+        SETTINGS.values["agent_payload"] = "screen"
+        before = reads()
+        await pipe.solve(73, FakeFrame(), "", False, _delta)
+        sent = eng.agent.calls[-1]["text"]
+        check("the whole screen: the line leaving the screen and the words first, and no reading",
+              soft in sent and reads() == before, sent[-200:])
+        SETTINGS.values.update(agent_payload="crop", agent_mode="all")
+        # a problem heard: the words decide
+        eng.local.editor = ""
+        await pipe.solve(74, None, "두 수의 합을 구하는 함수를 파이썬으로 짜 주세요", True, _delta)
+        heard = eng.agent.calls[-1]["text"]
+        await pipe.solve(75, None, "두 수의 합을 구하는 함수를 짜 주세요", True, _delta)
+        plain = eng.agent.calls[-1]["text"]
+        check("a problem heard naming Python: no line; naming none: the line", "[코드 언어" not in heard
+              and plain.endswith(strong), f"{heard[-80:]!r} / {plain[-80:]!r}")
+        eng.local.editor = "Kotlin"
+        before = reads()
+        await pipe.solve(79, FakeFrame(), "두 수의 합을 구하는 함수를 짜 주세요", True, _delta)
+        words = eng.agent.calls[-1]["text"]
+        check("...and with a screen there, sent as words alone: the words decide, and the screen is not read for it",
+              words.endswith(strong) and reads() == before, f"{words[-80:]!r}, read {reads() - before}")
+        eng.local.editor = ""
+        # this PC's model answering (the agent off): the same, on its thinking pass
+        SETTINGS.values["agent_mode"] = "off"
+        await pipe.solve(76, FakeFrame(), "", False, _delta)
+        deep = [c for c in eng.local.calls if c[0] == "deep"][-1][2]
+        eng.local.editor = "Kotlin"
+        await pipe.solve(77, FakeFrame(), "", False, _delta)
+        deep_editor = [c for c in eng.local.calls if c[0] == "deep"][-1][2]
+        check("this PC's thinking pass: the line leaving the screen first with no editor read, none with one",
+              soft in deep and "[코드 언어" not in deep_editor, f"{deep[-80:]!r} / {deep_editor[-80:]!r}")
+        # nor in a check of an answer, whose code is in its language already, nor for a problem of another kind
+        SETTINGS.values["agent_mode"] = "verify"
+        eng.local.editor = ""
+        out = await pipe.solve(78, FakeFrame(), "", False, _delta)
+        await pipe.verify(78, FakeFrame(), "", False, out)
+        check("a check of an answer (verify) goes without it", "[코드 언어" not in eng.agent.calls[-1]["text"],
+              eng.agent.calls[-1]["text"][-120:])
+        check("...and a problem of another kind gets none", await pipe._code_line(eng.local, ["x"], "essay") == ""
+              and await pipe._code_line(eng.local, ["x"], "math") == "")
+        before = reads()
+        unknown = await pipe._code_line(eng.local, ["w"], "")
+        check("a kind not known: the line leaving the screen and the words first, with no reading", soft in unknown
+              and reads() == before, unknown)
+
+        async def slow(images):
+            await asyncio.sleep(5)
+            return "Java"
+        eng.local.editor_language = slow
+        from server import pipeline as pl
+        saved, pl.EDITOR_WAIT = pl.EDITOR_WAIT, 0.2
+        try:
+            mine = await pipe._code_line(eng.local, ["y"], "coding")
+            theirs = await pipe._code_line(eng.local, ["z"], "coding", agent=True)
+        finally:
+            pl.EDITOR_WAIT = saved
+            del eng.local.editor_language
+        # this PC's model sees the screen and goes by it, as before the setting; the agent sent part of it cannot
+        check("a screen not read in time: no line for this PC's model, the line leaving the screen first for the agent",
+              mine == "" and soft in theirs, f"{mine!r} / {theirs!r}")
+    finally:
+        SETTINGS.values.clear()
+        SETTINGS.values.update(kept)
+
+
 async def test_editor_note():
     print("\n[the code editor's language goes along with a crop that leaves the editor out]")
     # The model keeps its problem box off the code editor, and Claude is given the crop and nothing else that
@@ -1515,8 +1661,12 @@ async def test_server_fixes():
         split = FakeFrame()
         split.windows = [(0.0, 0.0, 0.35, 1.0), (0.35, 0.0, 1.0, 1.0)]   # the mock's box runs over both
         await pipe.solve(95, split, "", False, _delta)
-        check("a problem refused before it goes does not ask the editor's language first",
-              not any(c[0] == "editor" for c in eng7.local.calls), str([c[0] for c in eng7.local.calls]))
+        # Refused for the agent, it is this PC's to answer: the screen is read once then, after the refusal, for its own
+        # code-language line (Pipeline._code_line), and nothing went to the agent
+        check("a problem refused before it goes does not ask the editor's language for the agent: it is read once, "
+              "for this PC's own answer, just before its thinking pass",
+              [c[0] for c in eng7.local.calls] == ["fast", "editor", "deep"] and not eng7.agent.calls,
+              str([c[0] for c in eng7.local.calls]))
         SETTINGS.values.update(agent_mode="verify", agent_payload="crop")
         answer = await pipe.solve(96, FakeFrame(), "", False, _delta)
         eng7.local.calls.clear()
@@ -3400,6 +3550,15 @@ async def test_check_more_langs():
     res = await check_code(pipe, FakeFrame(), type("O", (), {"text": "TYPE: coding\nANSWER: x\n```bash\nread a b\necho $((a + b))\n```", "crop_box": None})(),
                            _run, cases={"stdin": [{"input": "1 2\n", "output": "3"}]})
     check("Bash fed standard input", res and res.get("passed") == 1 and res.get("lang") == "bash", str(res))
+    # a design problem answered in C (Default code language C): C is run only as a program, and that is the reason given
+    from server.i18n import t as tr
+    c_stack = ("TYPE: coding\nANSWER: x\n```c\ntypedef struct {\n    int *v;\n    int n;\n} MinStack;\n\n"
+               "MinStack* minStackCreate() {\n    return calloc(1, sizeof(MinStack));\n}\n```\n")
+    res = await cc.run_design(c_stack, {"class": "MinStack", "calls": ["MinStack", "push", "getMin"], "args": [[], [5], []],
+                                        "expected": [None, None, 5]}, _run)
+    check("a design problem answered in C: run only as a program, said so, not 'no class'",
+          res and res.get("skipped") == tr("{lang} code is run only as a program that reads standard input", lang="C"),
+          str(res))
 
 
 async def test_check_and_runner():
@@ -3946,6 +4105,7 @@ async def main():
     test_window_clip()
     await test_crop_placement()
     await test_editor_note()
+    await test_code_language()
     await test_server_fixes()
     await test_local_zoom()
     await test_asked_again_halves()

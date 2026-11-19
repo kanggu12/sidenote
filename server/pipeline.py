@@ -34,8 +34,8 @@ from typing import Awaitable, Callable
 from PIL import Image, ImageDraw, ImageFilter, ImageStat
 
 from . import repeats, telemetry
-from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, LoadStopped, build_user_text, error_hint, error_words,
-                       speech_request, text_request, verify_request)
+from .analyzer import (CROP_REQUEST, DEEP_TYPES, LIMIT_RE, NO_QUESTION, LoadStopped, build_user_text, code_language_line,
+                       error_hint, error_words, named_language, speech_request, text_request, verify_request)
 from .codecheck import CHECKED, answer_code, other_language, run_cases
 from .config import CONFIG, agent_name
 from .heads import TALL_BOX, head_of, head_start, json_head, parse_region, region_box, within
@@ -1369,6 +1369,10 @@ class Pipeline:
             self.spend.load(pathlib.Path(telemetry.LOG_DIR) / ".spend.json")
         self.spend.agent = engines.agent   # Codex signed in with ChatGPT gives no prices
         self.recent = repeats.Recent()     # the problems answered lately, to tell one seen again (design 88)
+        # the screens whose code language was read lately: (the screen, what was read: "" none, None no answer in time,
+        # when). Read once per screen for the agent's editor note and the code-language line alike (_screen_language);
+        # a few, so two analyses at once do not read each other's screens again
+        self._seen_langs: list[tuple] = []
         self.speed = Speed(pathlib.Path(telemetry.LOG_DIR) / ".speed.json" if telemetry.LOG_DIR else None)
         self._brake_said = 0.0
         # SETTINGS.on("local_llm") counts the model as on while it stands in for the agent (settings.Settings.stand_in)
@@ -1492,8 +1496,11 @@ class Pipeline:
         if think == "never" and mode in ("off", "verify"):   # local only, no thinking at all: one direct pass
             # in verify the agent is there, and takes the problem when this PC's model cannot answer it (note 117)
             can_take = mode == "verify" and (by_user or not self.spend.blocked())
+            # Its kind is not known, so a screen gets no code-language line (reading its editor for every screen, the empty
+            # ones too, would cost each a second); a problem heard with no screen gets it where its words name none
+            direct = text + (await self._code_line(local, look, "", transcript) if not look else "")
             try:
-                res = await local.deep(look, text, on_delta, think=False,
+                res = await local.deep(look, direct, on_delta, think=False,
                                        first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
                                        stall=CONFIG.local_stuck_sec if can_take else None)
             except (asyncio.CancelledError, Repeat):
@@ -1738,8 +1745,12 @@ class Pipeline:
         # braked: then the pass waits as before, there being nothing else to answer with.
         can_take = (agent is not None and mode != "off" and not agent_wrote and declined is None
                     and not stages.get("not_sent") and not brake)
+        # the code's language last where nothing names it (_code_line): the screen's editor read once, as for the agent,
+        # and the words heard, a question or the room's (which the request carries), read for a language they name
+        asked = build_user_text(transcript, pages, voice, bool(images), zoom=zoom) \
+            + await self._code_line(local, look, f.type, transcript)
         try:
-            res = await local.deep(images, build_user_text(transcript, pages, voice, bool(images), zoom=zoom),
+            res = await local.deep(images, asked,
                                    self.speed.timed("think", on_delta) if on else on_delta,
                                    prior=f.messages, think=on, on_thought=thinking if on else None,
                                    first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
@@ -1814,6 +1825,58 @@ class Pipeline:
                        crop_box=self._box(text, scale, view, windows, aspect),
                        sent=_searches(getattr(res, "searches", None)), stages=stages)
 
+    async def _screen_language(self, local, look) -> str | None:
+        """The language of a code editor or code on the screen, as this PC's model names it (EXTRACT_EDITOR): "" for none,
+        None when it gave no answer in EDITOR_WAIT or failed. Asked once per screen: the agent's editor note and the
+        code-language line both need it, and each reading is a second or more of the GPU."""
+        now = time.monotonic()
+        for screen, said, at in self._seen_langs:
+            # the screen itself, held, so a new one is never taken for it; no answer is kept 20 s, long enough for the
+            # note and the line of one analysis, and a Reanalyze later reads again
+            if screen is look[0] and (said is not None or now - at < 20):
+                return said
+        try:
+            lang = await asyncio.wait_for(local.editor_language(look[:1]), EDITOR_WAIT)
+        except asyncio.TimeoutError:
+            log.info("editor language: no answer in %.0f s, so nothing is said of one", EDITOR_WAIT)
+            lang = None
+        except Exception as exc:   # a helper that fails must not stop the answer (cancelling still does)
+            log.info("editor language: %s", exc)
+            lang = None
+        self._seen_langs = [x for x in self._seen_langs if x[0] is not look[0]][-3:] + [(look[0], lang, now)]
+        return lang
+
+    async def _code_line(self, local, look, kind: str, said: str = "", sees_screen: bool = False,
+                         agent: bool = False) -> str:
+        """The end of a request for an answer: "\\n\\n" and the Default code language line (analyzer.code_language_line), or
+        "" when the language is named already. Said as this answer's language, the model follows that line over an editor
+        on the screen and over a language said aloud (measured, see there), so it goes in that form only where nothing
+        can name one, and elsewhere in the form that leaves the screen and the words first:
+        - none for a problem of another kind (`kind`, the first pass's TYPE): an SQL query or a command is not this
+          setting's; a kind not known ("" : no first pass, or one that gave none) gets the form that leaves the rest first;
+        - none when the words asked name a language (`said`: what was heard, or the problem written out; named_language);
+        - the words alone (a problem heard, sent with no screen): the line as this answer's language;
+        - the `agent` given the whole screen (`sees_screen`), or with nothing here to read it, judges any editor itself:
+          the form that leaves the screen first;
+        - else this PC's model reads the screen for an editor or code (_screen_language): one found, no line (this PC's
+          model sees it, the agent's editor note names it); none, the form that leaves the screen first, as the problem's
+          own text may name a language that reading does not look for. No reading in time: this PC's model goes by the
+          screen it sees, as before the setting; an agent sent part of it gets the form that leaves the screen first."""
+        if kind and kind not in ("coding", "algorithm"):
+            return ""
+        if named_language(said):
+            return ""
+        if not kind:
+            return "\n\n" + code_language_line(sure=False)
+        if not look:
+            return "\n\n" + code_language_line()
+        if agent and (sees_screen or local is None):
+            return "\n\n" + code_language_line(sure=False)
+        lang = await self._screen_language(local, look) if local is not None else None
+        if lang:
+            return ""
+        return "\n\n" + code_language_line(sure=False) if lang == "" or agent else ""
+
     async def _editor_note(self, local, look, kind: str) -> tuple[str, str]:
         """(a sentence for the agent's request, words for the card) naming the language of the code editor on the
         screen, for a coding answer the agent writes from part of the screen; ("", "") when there is nothing to say.
@@ -1825,14 +1888,7 @@ class Pipeline:
         It is bounded: a busy GPU can cost the answer a few seconds, never the answer itself."""
         if local is None or not look or kind not in ("coding", "algorithm"):
             return "", ""
-        try:
-            lang = await asyncio.wait_for(local.editor_language(look[:1]), EDITOR_WAIT)
-        except asyncio.TimeoutError:
-            log.info("editor language: no answer in %.0f s, so the agent is not told one", EDITOR_WAIT)
-            return "", ""
-        except Exception as exc:   # a helper that fails must not stop the answer (cancelling still does)
-            log.info("editor language: %s", exc)
-            return "", ""
+        lang = await self._screen_language(local, look)
         if not lang:
             return "", ""
         # "editor or code": on a screen with no editor the model names the language of the code shown instead (11
@@ -1996,6 +2052,12 @@ class Pipeline:
             text += facts_note(facts, time.strftime("%Y-%m-%d"), web)
             what += (t(" + search results: {n}", n=len(facts))
                      + (t(" (the agent may search the web)", agent=agent_name()) if web else ""))
+        # The code's language last (Default code language) where nothing names it, before the confirm, so what it shows is
+        # what goes. Not in the verify mode's request, whose answer is in its language already, nor in a follow-up, which
+        # goes on in the language of the answer it follows. The whole screen shows the agent any editor on it
+        # the screen counts only when something of it goes: a question heard, sent as words alone, is its words
+        text += await self._code_line(local, look if images else [], kind, words or (transcript if voice else ""),
+                                      sees_screen=bool(images) and bool(look) and images[0] is look[0], agent=True)
         self._still_on()                     # making the payload can take seconds: the agent may be off by now
         await self._confirmed(seq, images, text, what)
         self._still_on()                     # and a confirm can wait for minutes

@@ -6,6 +6,15 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Added
+
+- **Default code language** (Solver settings, Code; Python by default): the language a code answer is written in when
+  nothing says which, as for a problem with no code editor and no code beside it, or one asked aloud. Java, C++,
+  JavaScript, TypeScript, Kotlin, Go or C can be chosen instead, the languages the example check runs, Bash aside. A
+  language the problem or the question names comes first, then one a code editor or code on the screen shows, and in a
+  follow-up the language of the answer it follows. The local model and the agent are both told, only where nothing
+  names a language.
+
 ## [0.11.2] - 2026-11-17
 
 ### Changed

@@ -51,6 +51,11 @@ WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each a
 # is read with small beside the larger two, at small's cost (note 106)
 SPEECH_SENTENCE = {"small": "1.5", "medium": "4", "large-v3-turbo": "4"}
 SPEECH_MODELS = ("small", "medium", "large-v3-turbo")
+# The languages Default code language offers, by the names people write them in: the ones the example check runs
+# (codecheck.py; C as a program that reads its input), Bash left out, as no algorithm or coding answer is written in it
+# by choice
+CODE_LANGS = {"python": "Python", "java": "Java", "cpp": "C++", "javascript": "JavaScript", "typescript": "TypeScript",
+              "kotlin": "Kotlin", "go": "Go", "c": "C"}
 
 
 @dataclass
@@ -251,6 +256,15 @@ def _defs() -> list[Setting]:
                 t("The local model writes the problem out as text. Used to send text to the agent and to check the "
                   "examples", agent=name), needs=["local_llm"]),
         # code
+        # The language of the code in an answer where nothing says which: a language the problem or the question names, a
+        # code editor or code on the screen, come first (pipeline._code_line puts analyzer.code_language_line at the end of
+        # a coding request only where none does). With none, the models chose for themselves and wrote Python. The
+        # languages offered are the ones the example check runs (codecheck), C only as a program that reads its input, as
+        # it runs a C answer whatever the setting
+        Setting("code_lang", "choice", "python", "code", t("Default code language"),
+                t("Language of the code in answers. A language the problem or the question names, or one a code editor or "
+                  "code on the screen shows, is used instead"),
+                list(CODE_LANGS.items())),   # the setting keeps the key, the sheet and the prompt say the name
         Setting("run_button", "bool", True, "code", t("Run button"),
                 t("A run button on code answers (a separate container with no internet)")),
         Setting("autocheck", "bool", True, "code", t("Check the examples"),

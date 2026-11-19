@@ -10,9 +10,9 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
 | [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135) |
-| [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90) |
-| [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135), [139](#note-139) |
+| [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
+| [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
 | [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
@@ -2616,3 +2616,54 @@ Linux app of 0.10.2 had no `pulseaudio.py.h`, where the Windows and Mac ones had
 heard the speakers. The file is now collected by name on every system, and both checks look for it: the app's check only
 looks the capture program's packages up off Windows (importing them connects to the display and the sound server), and
 a package found is not a package that imports.
+
+### <a id="note-139"></a>139. The code's language when nothing says which
+
+The models chose the language of a code answer themselves. A code editor on the screen decided it: the local model
+answered a C++ template in C++ (6 of 6 times on two screens), and the agent, given the problem part alone, is told the
+editor's language ([note 50](#note-50)). With nothing to go by, both wrote Python: Claude Code on all ten problem parts
+sent without the language, and the 26b on all eight of the measurement below where it did not take the rule. Someone who
+practises in Java got Python for every problem asked aloud or cut out alone, and had no setting to ask for another.
+
+**Default code language**, first in the **Code** section, is the language for that case. It is Python unless changed,
+the language the models chose by themselves, or Java, C++, JavaScript, TypeScript, Kotlin, Go or C, the languages the
+example check runs; Bash is left out, as no algorithm is asked for in it. A saved value the list does not hold is read
+as Python.
+
+Where the line goes decided whether the model followed it. Measured with the 26b on the problem part of two coding
+screens (no editor, nothing naming a language), Java or C++ chosen, the answer's language being its first code fence's:
+as a rule among the system prompt's rules for code it was followed 0 times in 4, at the very end of the system prompt 0
+in 4, as the same rule at the end of the request 2 in 4, and as a line saying this answer's code is in that language, at
+the end of the request, 8 in 8 with Korean answers and 8 in 8 with English ones. Said that way, it also won over
+everything else: on screens whose editor held a C++, Java or Kotlin template, Python chosen, the answer was Python 3
+times in 3, and a problem asked aloud "in Python" or "in Java" got the chosen language 2 times in 2. A line that named
+the editor and the words as exceptions changed none of that. The same choice said as the language to use unless the
+screen or the words show another was followed 16 times in 16 with nothing naming one, and also won over a language the
+problem's own text set, 4 times in 4.
+
+So the line goes only where nothing names a language, and the pipeline looks first (`Pipeline._code_line`, the line
+itself `analyzer.code_language_line`). Only a coding or algorithm problem gets it; an SQL query or a command is not this
+setting's, and a problem whose kind is not known gets the form that leaves the screen and the words first. A language
+named in the words asked or heard (`analyzer.named_language`: "파이썬으로", "씨 플러스 플러스로", "in Java", "C++로 구현"; one name
+only, a comparison names none) leaves it out, and words asked alone get it as the answer's language. For a screen, this
+PC's model first reads the language of an editor, of code shown or of the problem's own text (`EXTRACT_EDITOR`, about
+1.1 s, at most `EDITOR_WAIT`), once per screen, the same reading the agent's editor note takes ([note 50](#note-50));
+one found leaves the line out. The sentence for the problem's text is new: without it two problems that set their
+language in their text read as none, and the line put the setting over the text 4 times in 4, where with no line they
+were answered in the text's language 4 times in 4; with it both are named, and the 53 known screens read as before. A
+screen read as none gets the form that leaves the screen and the words first, as an agent given the whole screen does,
+which sees any editor itself. When the reading gives no answer in time, an agent sent part of the screen gets that form
+too, and this PC's model gets none and goes by the screen it sees, as before the setting. The first pass, which does not
+know the kind yet and seldom writes code, gets no line, nor does a single pass with no thinking on a screen, the verify
+mode's check, whose answer is in its language already, or a follow-up, which goes on in the language of the answer it
+follows. **Confirm before sending** shows the line with the problem text. The system prompts do not change with the
+setting, so the API agent's cached prompt stays the same, and the language's name stands in brackets, `[코드 언어: Java]`,
+so no Korean particle has to agree with it.
+
+Measured with all of it and the 26b, the answer's language being its first code fence's: with nothing naming a language,
+the chosen one 20 times in 20 (Python, Java, C++ and Go, with Korean and English answers); with a C++, Java, Kotlin, Go
+or JavaScript template in the editor, its language 12 times in 12, Python or Java chosen; with the language set in the
+problem's text, that one 4 times in 4, Python or Go chosen; asked aloud, the language said 2 times in 2, and the chosen
+one 2 times in 2 when none was said. The agent was not measured again: when [note 50](#note-50) was measured, Claude
+Code wrote the language its request named on all ten screens (the problem part, the editor's language named in the
+request).

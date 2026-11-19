@@ -939,7 +939,9 @@ asks for more of it.
   without a choice, sends nothing.
 - With the problem area or the problem text, a coding problem also carries the name of the code language the local
   model reads off the screen (`C++`), because the code editor is not in what goes out. Sent the problem's part alone,
-  Claude Code answered tests in C++, Java, Kotlin, Go and JavaScript in Python every time.
+  Claude Code answered tests in C++, Java, Kotlin, Go and JavaScript in Python every time. A coding problem that names
+  no language and shows none instead ends with a line naming the one chosen in **Default code language** (**Code
+  checks** below).
 - While the local model is off, not downloaded or not answering, a signed-in agent solves every problem. With nothing
   to find the problem's part, it gets the whole screen (or the region you drew).
 - When the local model's first pass searched the web, its results go to the agent with the problem and today's date.
@@ -955,9 +957,24 @@ asks for more of it.
 For coding and algorithm answers, the local model reads the input and output examples off the problem, and the code
 runs on them in the code runner, in the language it was written in. A function in Python, Java, C++, JavaScript,
 TypeScript, Kotlin or Go is called with each example, and a program in any of those or in C or Bash is fed each
-example's input. Nothing asks for a language: with the C++ template of a coding site in the editor, the local model
-answered in C++ (6 of 6 times on two such screens). **Tests** on the card shows how many examples passed and in which
-language, and for a failure the input, the expected output and what came out (or the error that stopped it).
+example's input. **Tests** on the card shows how many examples passed and in which language, and for a failure the
+input, the expected output and what came out (or the error that stopped it).
+
+The code is written in the language the problem or the question names, else in the one the screen shows (a code
+editor's template, code in the problem) or, in a follow-up, the one the answer's code is in, else in **Default code
+language**, in the **Code** section of the settings (Python unless you change it). With the C++ template of a coding
+site in the editor, the local model answered in C++ (6 of 6 times on two such screens).
+
+- The chosen language goes to the model as the last line of a coding or algorithm request, and only where nothing else
+  names one: told it there as the answer's language, the model wrote it over an editor on the screen and over a
+  language said aloud. So this PC's model first reads the screen for an editor, code or a language the problem's text
+  sets (a second or so, the same reading the agent's request gets), and a language named in the question leaves the
+  line out. Where the screen shows none, the line says to follow the screen and the words first, as it does for an
+  agent given the whole screen, which sees any editor itself.
+- Measured with the 26b, the answer's language being its first code block's: with nothing naming a language, the
+  chosen one 20 of 20 times (Python, Java, C++ and Go, Korean and English answers); with a C++, Java, Kotlin, Go or
+  JavaScript template in the editor, its language 12 of 12 times, Python or Java chosen; with the language set in the
+  problem's text, that one 4 of 4; asked aloud, the language said 2 of 2, and the chosen one 2 of 2 when none was.
 
 - A function that returns nothing (an in-place problem) is judged by its first list argument, as LeetCode judges it.
   When it says it returns nothing (`void`, `Unit`, `-> None`, `@return {void}`, `: void`), that argument has to end as
@@ -1299,6 +1316,11 @@ default, and with `SIDENOTE_UPDATE_CHECK=0` it is off and grayed out, with the r
   at once.
 - The **Hourly cost limit** counts only an agent that reports a price. A Codex login reports none, so its answers do
   not count toward it; the brake on empty answers in a row holds for every agent.
+
+The **Code** section starts with **Default code language**, the language a code answer is written in when nothing
+says which: Python unless you choose Java, C++, JavaScript, TypeScript, Kotlin, Go or C. A language the problem or the
+question names comes first, then one a code editor or code on the screen shows, and in a follow-up the language of the
+answer it follows (section 7, **Code checks**).
 
 The **Speech** section holds what shapes what is written down:
 
@@ -2114,6 +2136,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 직접 그린 영역 | Drawn region | **Screen** |
 | 창 경계에서 자르기 | Cut at window edges | **Screen** |
 | 문제 글 옮겨 적기 | Write out the problem text | **Screen** |
+| 기본 코드 언어 | Default code language | **Code** |
 | 실행 버튼 | Run button | **Code** |
 | 예제 자동 검증 | Check the examples | **Code** |
 | 말로 한 문제 자동 풀이 | Solve spoken problems | **Speech** |

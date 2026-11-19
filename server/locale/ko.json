@@ -54,6 +54,8 @@
  "Capture programs {n}  screen {screen}  sound {sound}  device {device}": "캡처 프로그램 {n}개  화면 {screen}  소리 {sound}  장치 {device}",
  "Capture started anew: region cleared · sees the whole screen": "캡처를 새로 시작해 영역 해제 · 화면 전체를 봄",
  "Check answers": "답 검토",
+ "Default code language": "기본 코드 언어",
+ "Language of the code in answers. A language the problem or the question names, or one a code editor or code on the screen shows, is used instead": "풀이 코드의 언어. 문제나 질문이 정한 언어나 화면의 코드 편집기·코드의 언어가 있으면 그 언어로 씀",
  "Check the examples": "예제 자동 검증",
  "Classes written in {lang} are not run yet (runs {langs})": "{lang}{ro} 만든 클래스는 아직 실행 안 함 (실행 언어: {langs})",
  "Cleared, the saved history too": "저장된 기록까지 지움",
