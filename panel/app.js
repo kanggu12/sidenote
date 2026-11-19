@@ -5841,10 +5841,13 @@ function settingBlocker(item) {
   return "";
 }
 function boxText(b) { return t("x {x0}~{x1}%, y {y0}~{y1}%", { x0: Math.round(b[0] * 100), x1: Math.round(b[2] * 100), y0: Math.round(b[1] * 100), y1: Math.round(b[3] * 100) }); }
-function settingControl(item, v, off) {
+function settingControl(item, v, off, desc = "") {
   const dis = off || wsState !== "up" ? " disabled" : "";
   const k = escapeHtml(item.key);
-  if (item.kind === "bool") return `<button class="switch" role="switch" aria-checked="${!!v}" aria-label="${escapeHtml(item.label)}" data-set="${k}" data-bool="1"${dis}></button>`;
+  // the row's help, read out with the control by a screen reader: settingRow gives its id. Without it a dropdown said only
+  // its name and value ("Default code language, Python"), never what the setting does
+  const db = desc ? ` aria-describedby="${desc}"` : "";
+  if (item.kind === "bool") return `<button class="switch" role="switch" aria-checked="${!!v}" aria-label="${escapeHtml(item.label)}"${db} data-set="${k}" data-bool="1"${dis}></button>`;
   if ((item.kind === "choice" || item.kind === "int") && (item.options.length > 4 || ["local_model", "local_busy_model", "monitor", "agent_model_name"].includes(item.key))) {
     // A list too long for a row of buttons. Not a <select>: that one is drawn by the operating
     // system, so it ignores every surface this panel is made of and opens a list in the system's
@@ -5854,33 +5857,35 @@ function settingControl(item, v, off) {
     return `<div class="combo" data-combo="${k}">
       <button type="button" class="combo-btn" data-set="${k}" data-kind="${item.kind}" role="combobox"
         aria-expanded="false" aria-haspopup="listbox" aria-controls="combo-${k}"
-        aria-label="${escapeHtml(item.label)}"${dis}><span class="combo-val">${escapeHtml(now ? now[1] : String(v ?? ""))}</span>${COMBO_MARK}</button>
+        aria-label="${escapeHtml(item.label)}"${db}${dis}><span class="combo-val">${escapeHtml(now ? now[1] : String(v ?? ""))}</span>${COMBO_MARK}</button>
       <ul class="combo-list" id="combo-${k}" role="listbox" aria-label="${escapeHtml(item.label)}" hidden>${item.options.map(([ov, ol], i) =>
         `<li role="option" id="combo-${k}-${i}" data-val="${escapeHtml(JSON.stringify(ov))}"
           aria-selected="${ov === v}"><span class="combo-tick">${TICK_MARK}</span><span>${escapeHtml(ol)}</span></li>`).join("")}</ul></div>`;
   }
   if (item.kind === "choice" || item.kind === "int") {
-    return `<div class="seg" role="group" aria-label="${escapeHtml(item.label)}">${item.options.map(([ov, ol]) =>
+    return `<div class="seg" role="group" aria-label="${escapeHtml(item.label)}"${db}>${item.options.map(([ov, ol]) =>
       `<button type="button" data-set="${k}" data-val="${escapeHtml(JSON.stringify(ov))}" aria-pressed="${ov === v}"${dis}>${escapeHtml(ol)}</button>`).join("")}</div>`;
   }
   if (item.kind === "box") {
-    return `<button type="button" class="btn sm" data-act="draw"${wsState !== "up" ? " disabled" : ""}>${v ? t("Redraw") : t("Draw")}</button>`
+    return `<button type="button" class="btn sm" data-act="draw"${db}${wsState !== "up" ? " disabled" : ""}>${v ? t("Redraw") : t("Draw")}</button>`
       + (v ? `<button type="button" class="btn sm ghost" data-set="${k}" data-val="null">${t("Clear")}</button>` : "");
   }
   return "";
 }
 let settingsSection = "solve";
 let drawnSection = null;        // what the pane holds now, so a redraw is not mistaken for a move
-function settingRow(item) {
+// `scope`: where the row is drawn, the sheet ("set") or the setup guide ("setup"), so the id its help is known by is the page's one
+function settingRow(item, scope = "set") {
   const v = settingsValues[item.key], why = settingBlocker(item);
+  const hid = `${scope}-help-${escapeHtml(item.key)}`;   // the help line under the row, which its controls point at
   // Several of a list switched on and off: the buttons of a row of choices, each pressed in while it is
   // on. They were checkboxes, drawn by the operating system in its own boxes and accent colour: the
   // one control in the sheet still drawn that way after the dropdowns stopped being <select>s.
-  const multi = item.kind === "multi" ? `<div class="seg checks" role="group" aria-label="${escapeHtml(item.label)}">${item.options.map(([ov, ol]) =>
+  const multi = item.kind === "multi" ? `<div class="seg checks" role="group" aria-label="${escapeHtml(item.label)}" aria-describedby="${hid}">${item.options.map(([ov, ol]) =>
     `<button type="button" data-set="${escapeHtml(item.key)}" data-multi="${escapeHtml(ov)}" aria-pressed="${(v || []).includes(ov)}"${why || wsState !== "up" ? " disabled" : ""}>${escapeHtml(ol)}</button>`).join("")}</div>` : "";
   // Free words (Skip windows): a text box under the label across the row, as the ticks of a list are, the words set
   // apart by commas. Sent when Enter is pressed or the keyboard leaves it (wordsCommit)
-  const words = item.kind === "words" ? `<textarea class="words" rows="1" data-set="${escapeHtml(item.key)}" aria-label="${escapeHtml(item.label)}"
+  const words = item.kind === "words" ? `<textarea class="words" rows="1" data-set="${escapeHtml(item.key)}" aria-label="${escapeHtml(item.label)}" aria-describedby="${hid}"
     placeholder="${escapeHtml(t("Words, separated by commas"))}" spellcheck="false" autocomplete="off"${why || wsState !== "up" ? " disabled" : ""}>${escapeHtml((Array.isArray(v) ? v : []).join(", "))}</textarea>` : "";
   // the drawn box as it stands, set apart from the server's help after it: "none" alone, the help says what none means
   const extra = item.kind === "box" ? ` · ${t("Now: {box}", { box: v ? boxText(v) : t("none") })}` : "";
@@ -5893,9 +5898,9 @@ function settingRow(item) {
   // why it cannot be used now, set apart from what comes before it as the panel's facts are (" · "): after a space alone it
   // read as the help's own last words, the colour the one thing that told them apart
   const said = why ? `${help || extra ? " · " : ""}<span class="warn">${escapeHtml(why)}</span>` : "";
-  return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, shown, !!why)}</span>
+  return `<div class="set" aria-disabled="${!!why}"><span class="lbl">${escapeHtml(item.label)}</span><span class="ctl">${settingControl(item, shown, !!why, hid)}</span>
     ${multi}${words}${pick ? `<p class="help pick">${escapeHtml(pick)}</p>` : ""}
-    <p class="help">${escapeHtml(help)}${extra}${said}</p>${item.key === "speech_terms" ? termsHtml() : ""}</div>`;
+    <p class="help" id="${hid}">${escapeHtml(help)}${extra}${said}</p>${item.key === "speech_terms" ? termsHtml() : ""}</div>`;
 }
 // Two dozen settings in one column meant scrolling past the ones you were not looking for. The
 // sections become tabs down the side, so every setting is one click from any other.
@@ -5931,7 +5936,7 @@ function renderSettings() {
     `<button type="button" role="tab" class="set-tab" data-sec="${escapeHtml(sec)}" aria-selected="${sec === settingsSection}"
        tabindex="${sec === settingsSection ? 0 : -1}">${escapeHtml(sec === "agent" ? AGS() : title)}</button>`).join("");
   const sec = settingsSection;
-  const rows = settingsMeta.items.filter((i) => i.section === sec).map(settingRow).join("");
+  const rows = settingsMeta.items.filter((i) => i.section === sec).map((i) => settingRow(i)).join("");
   const gpu = sec === "resource" && eng()?.local?.present
     ? (eng().local.loaded
       ? `<div class="set"><span class="lbl">${t("Free GPU")}</span><span class="ctl"><button type="button" class="btn sm" data-act="gpu"${wsState !== "up" ? " disabled" : ""}>${t("Free")}</button></span>
@@ -6296,7 +6301,8 @@ $("settings-body").addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (!comboOpen?.btn.dataset.proxy) return;
   const n = comboOpen.list.querySelectorAll("li").length, at = comboAt();
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); comboMove((at + (e.key === "ArrowDown" ? 1 : n - 1)) % n); }
+  if (e.key === "ArrowUp" && e.altKey) { e.preventDefault(); comboPick(comboOpen.list.querySelectorAll("li")[Math.max(0, at)]); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); comboMove((at + (e.key === "ArrowDown" ? 1 : n - 1)) % n); }
   else if (e.key === "Enter") { e.preventDefault(); comboPick(comboOpen.list.querySelectorAll("li")[Math.max(0, at)]); }
   else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); comboClose(); }
   else if (e.key === "Tab") comboClose(false);   // focus moves on, and the list does not stay behind
@@ -6370,6 +6376,16 @@ function comboPlace() {
   const top = Math.max(8, p.top), bottom = Math.min(innerHeight - 8, p.bottom);
   list.style.minWidth = `${Math.round(b.width)}px`;
   list.style.maxHeight = `${Math.round(Math.max(120, Math.max(bottom - b.bottom, b.top - top) - 10))}px`;
+  // A list that has to scroll ends half way down a row, which reads as more below. Cut where the room happened to end, the
+  // last row showed three quarters of itself and read as a fault (on a phone, C, the eighth of the code languages, 8 px short)
+  const rows = list.querySelectorAll("li");
+  if (rows.length > 1 && list.scrollHeight > list.clientHeight + 1) {
+    const step = rows[1].offsetTop - rows[0].offsetTop;                 // a row and the gap after it
+    const pad = parseFloat(getComputedStyle(list).paddingTop) || 0;
+    const whole = Math.max(1, Math.floor((list.clientHeight - pad - step / 2) / step));   // the rows shown whole
+    // the same change on max-height as on the inside height, whatever box max-height measures
+    list.style.maxHeight = `${Math.round(parseFloat(list.style.maxHeight) - (list.clientHeight - (pad + whole * step + step / 2)))}px`;
+  }
   // Its laid-out size, not its drawn one: while it opens it is drawn a little smaller (its pop, index.html), and a width read then put
   // it 4 px off its key
   const h = list.offsetHeight;
@@ -6392,8 +6408,12 @@ function comboPlace() {
   comboOpen.where = comboWhere();
 }
 
-function comboMove(to) {
+// `scroll`: bring the row into view, as the keys want; the pointer's row is in view already, and scrolling under a still
+// pointer would move another row beneath it. `typed`: a move by the letters typed, which keeps them; any other move starts
+// the next letters as a new name
+function comboMove(to, scroll = true, typed = false) {
   const { list, btn } = comboOpen;
+  if (!typed) comboOpen.typed = "";
   const opts = [...list.querySelectorAll("li")];
   if (!opts.length) return;
   const at = Math.max(0, Math.min(opts.length - 1, to));
@@ -6401,7 +6421,7 @@ function comboMove(to) {
   opts[at].classList.add("on");
   btn.setAttribute("aria-activedescendant", opts[at].id);
   // keep the one being moved to in sight when the list is longer than its box
-  opts[at].scrollIntoView({ block: "nearest" });
+  if (scroll) opts[at].scrollIntoView({ block: "nearest" });
 }
 
 function comboAt() {
@@ -6477,7 +6497,8 @@ onSheets("keydown", (e) => {
   const btn = e.target.closest(".combo-btn");
   if (!btn || btn.disabled) return;
   const open = comboOpen && comboOpen.btn === btn;
-  if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ")) {
+  // Alt with the up arrow chooses in an open list (below); on a closed one it does nothing, as a list box does
+  if (!open && (e.key === "ArrowDown" || (e.key === "ArrowUp" && !e.altKey) || e.key === "Enter" || e.key === " ")) {
     e.preventDefault(); e.stopPropagation(); return comboToggle(btn);
   }
   if (!open) return;
@@ -6487,7 +6508,9 @@ onSheets("keydown", (e) => {
     e.stopPropagation();
   }
   const n = comboOpen.list.querySelectorAll("li").length;
-  if (e.key === "ArrowDown") { e.preventDefault(); comboMove(comboAt() + 1); }
+  // Alt with the up arrow chooses the row the keyboard is on and closes the list, as a list box does
+  if (e.key === "ArrowUp" && e.altKey) { e.preventDefault(); comboPick(comboOpen.list.querySelectorAll("li")[Math.max(0, comboAt())]); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); comboMove(comboAt() + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); comboMove(comboAt() - 1); }
   else if (e.key === "Home") { e.preventDefault(); comboMove(0); }
   else if (e.key === "End") { e.preventDefault(); comboMove(n - 1); }
@@ -6495,12 +6518,20 @@ onSheets("keydown", (e) => {
     e.preventDefault(); comboPick(comboOpen.list.querySelectorAll("li")[comboAt()]);
   } else if (e.key === "Tab") comboClose(false);
   else if (e.key.length === 1) {
-    // typing jumps to the next option that starts with that letter, the way a list is used
+    // Typing finds a row by its name, the way a list is used: letters typed within 700 ms of each other are one name
+    // ("kot" is Kotlin; a letter alone went to the next row starting with it, so "kotlin" ended on TypeScript), and one
+    // letter again and again steps through the rows that start with it (C++, then C)
+    const now = Date.now(), key = e.key.toLowerCase();
+    comboOpen.typed = now - (comboOpen.typedAt || 0) < 700 ? (comboOpen.typed || "") + key : key;
+    comboOpen.typedAt = now;
+    const typed = comboOpen.typed, again = [...typed].every((c) => c === typed[0]);
+    const want = again ? typed[0] : typed;
     const opts = [...comboOpen.list.querySelectorAll("li")];
-    const from = comboAt() + 1;
+    // a name being typed may be the row it is on already; a letter again goes on to the next
+    const from = again ? comboAt() + 1 : Math.max(0, comboAt());
     const hit = opts.slice(from).concat(opts.slice(0, from))
-      .find((o) => o.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase()));
-    if (hit) comboMove(opts.indexOf(hit));
+      .find((o) => o.textContent.trim().toLowerCase().startsWith(want));
+    if (hit) comboMove(opts.indexOf(hit), true, true);
   }
 });
 // the list is no longer inside .combo while it is open, so a press on it counts as inside
@@ -6508,6 +6539,17 @@ addEventListener("pointerdown", (e) => {
   if (comboOpen && !e.target.closest(".combo") && !e.target.closest(".combo-list")) comboClose(false);
 }, true);
 addEventListener("resize", () => comboClose(false));
+// The row under the pointer is the active one, as the arrow keys make it: one row is lit (index.html draws li.on alone). Lit by
+// :hover as well, the pointer's row and the keyboard's were two rows lit at once. Only a move counts: a row scrolled under a
+// still pointer is not one it went to
+let comboPointerAt = "";
+addEventListener("pointermove", (e) => {
+  if (!comboOpen) return;
+  const li = e.target.closest?.(".combo-list li"), at = `${e.clientX}:${e.clientY}`;
+  if (!li || at === comboPointerAt || li.classList.contains("on")) { comboPointerAt = at; return; }
+  comboPointerAt = at;
+  comboMove([...comboOpen.list.querySelectorAll("li")].indexOf(li), false);
+});
 // The list is fixed to the window, so it has to go when the control it points at moves. Which
 // scroll did it does not matter and asking is the wrong question: this panel scrolls itself all the
 // time without touching the sheet (it follows a streaming answer, keeps the heard words at their
@@ -8001,7 +8043,7 @@ function captureParts() {
     ["acts", captureActs()],
     ["ways", captureWays()],
     ["rows-h", settingsMeta ? `<h3 class="ways-h">${t("What it does")}</h3>` : ""],
-    ["rows", setupRows("monitor", "monitor_follow", "stitch", "skip_windows")],
+    ["rows", rowsIn("capture", "monitor", "monitor_follow", "stitch", "skip_windows")],
   ];
 }
 function renderCapture() {
@@ -8102,7 +8144,10 @@ function setupState(id) {
 const setupCard = (name, st) => `<div class="setup-state" data-state="${st.s}"><div class="setup-top"><b>${escapeHtml(name)}</b>`
   + `<span class="pill" data-state="${st.s}">${escapeHtml(st.pill)}</span></div>${cardHtml({ ...st, viz: "" })}</div>`;
 // The rows of the settings named, as Solver settings draws them: those the server has
-const setupRows = (...keys) => keys.map(settingItem).filter(Boolean).map(settingRow).join("");
+// Rows of settings drawn in another sheet, as Solver settings draws them; `scope` keeps their help lines' ids apart from the
+// same rows elsewhere on the page (the setup guide and the Capture connection both hold Monitor and Skip windows)
+const rowsIn = (scope, ...keys) => keys.map(settingItem).filter(Boolean).map((i) => settingRow(i, scope)).join("");
+const setupRows = (...keys) => rowsIn("setup", ...keys);
 const onMac = () => /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 // A step's pane, as parts each drawn again only when it changed: the screen step's ages change every second, and the whole
 // pane drawn again took the picture away and back and shut an open list, which came back with its animation each second

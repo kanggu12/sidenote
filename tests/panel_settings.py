@@ -38,6 +38,14 @@ def check(name, ok, detail=""):
         print(f"  FAIL {name}{(': ' + detail) if detail else ''}")
 
 
+# The settings sheet at rest: a section's pane slides in when it is shown (index.html, pane-in, 0.18 s), and a list placed
+# against a control still moving is closed as soon as anything scrolls (app.js, comboWhere). A fixed wait after a tab was
+# too short under load. Its animations are waited for, two seconds at most
+SETTLE = """async () => { await Promise.race([new Promise((r) => setTimeout(r, 2000)),
+    Promise.all(document.getAnimations().filter((a) => a.effect?.target?.closest?.('#settings'))
+      .map((a) => a.finished.catch(() => null)))]); }"""
+
+
 def main():
     from playwright.sync_api import sync_playwright
     msg = support.settings_message()           # written by the server's own code, in the server's interpreter (PY)
@@ -173,6 +181,137 @@ def main():
               redraw["live"] and redraw["same"], json.dumps(redraw))
         pg.evaluate("() => comboClose(false)")
 
+        print("\n[Default code language, first in the Code section]")
+        # the language a code answer is written in when the screen says none: Python until chosen, the languages the example
+        # check runs, in the panel's own dropdown; a row picked with the mouse is sent as that setting
+        pg.evaluate("() => document.querySelector(\"#settings [data-sec='code']\").click()")
+        pg.evaluate(SETTLE)
+        code = pg.evaluate("""() => { const row = document.querySelector('#settings .set');
+            const c = row?.querySelector('[data-combo]');
+            return {first: c?.dataset.combo || '', label: row?.querySelector('.lbl')?.textContent || '',
+                    value: c?.querySelector('.combo-val')?.textContent || '',
+                    rows: [...(c?.querySelectorAll('li') || [])].map((li) => li.textContent.trim())}; }""")
+        check("the Code section starts with it: Python, of Python, Java, C++, JavaScript, TypeScript, Kotlin, Go and C",
+              code["first"] == "code_lang" and code["label"] and code["value"] == "Python"
+              and code["rows"] == ["Python", "Java", "C++", "JavaScript", "TypeScript", "Kotlin", "Go", "C"],
+              json.dumps(code, ensure_ascii=False))
+        pg.evaluate("() => { window.__picked = null; window.__setSetting = setSetting; "
+                    "setSetting = (k, v) => { window.__picked = [k, v]; }; }")
+        pg.evaluate("() => document.querySelector(\"#settings [data-combo='code_lang'] .combo-btn\").click()")
+        pg.wait_for_timeout(150)
+        pg.evaluate("""() => [...document.querySelectorAll('#combo-code_lang li')].find((li) => li.textContent.trim() === 'C++').click()""")
+        pg.wait_for_timeout(150)
+        picked = pg.evaluate("() => window.__picked")
+        check("...and C++ picked with the mouse is sent as code_lang cpp", picked == ["code_lang", "cpp"],
+              json.dumps(picked, ensure_ascii=False))
+        pg.evaluate("() => { setSetting = window.__setSetting; comboClose(false); }")
+
+        print("\n[the longest list: its help, typed names, Alt+ArrowUp, one row lit, a ring with room, half a row on a phone]")
+        sel = "#settings [data-combo='code_lang'] .combo-btn"
+        # every control points at its own row's help line, which a screen reader then reads with it, and no id is used twice
+        helps = pg.evaluate("""() => { const out = [], ids = [];
+            for (const tab of document.querySelectorAll('#settings .set-tab')) {
+              tab.click();
+              for (const row of document.querySelectorAll('#settings .set')) {
+                const c = row.querySelector('.switch, .combo-btn, .seg, textarea.words, [data-act="draw"]');
+                if (!c) continue;
+                const id = c.getAttribute('aria-describedby'), h = id && document.getElementById(id);
+                ids.push(id);
+                if (!(h && h.closest('.set') === row && h.textContent.trim())) out.push(tab.dataset.sec + ': ' + (row.querySelector('.lbl')?.textContent || '?'));
+              }
+            }
+            const all = [...document.querySelectorAll('[id]')].map((e) => e.id);
+            return {missing: out, rows: ids.length, twice: all.filter((x, i) => all.indexOf(x) !== i)}; }""")
+        check("every row's control points at its own help line (aria-describedby), and no id is on the page twice",
+              not helps["missing"] and helps["rows"] > 20 and not helps["twice"], json.dumps(helps, ensure_ascii=False))
+        # the same rows in the setup guide and the Capture connection, each drawn once and left in the page: still no id twice
+        twice = pg.evaluate("""() => { openSetup(); closeSetup(); openCapture(); closeCapture();
+            const all = [...document.querySelectorAll('[id]')].map((e) => e.id);
+            return {rows: document.querySelectorAll('#setup-body .set, #capture-body .set').length,
+                    twice: all.filter((x, i) => all.indexOf(x) !== i)}; }""")
+        check("...nor with the setup guide's and the Capture connection's rows drawn too", twice["rows"] > 0 and not twice["twice"],
+              json.dumps(twice, ensure_ascii=False))
+        pg.evaluate("() => document.getElementById('open-settings').click()")
+        pg.evaluate(SETTLE)
+        pg.evaluate("() => document.querySelector(\"#settings [data-sec='code']\").click()")
+        pg.evaluate(SETTLE)
+        # the ring of a control on the pane's first row: 2 px out and 2 px off, inside the pane that scrolls and cuts
+        ring = pg.evaluate("""(s) => { const b = document.querySelector(s).getBoundingClientRect();
+            const p = document.querySelector('#settings .set-pane').getBoundingClientRect();
+            return {top: Math.round(b.top - 4 - p.top), right: Math.round(p.right - b.right - 4)}; }""", sel)
+        check("the first row's focus ring has room inside the pane, above and to the right", ring["top"] >= 0 and ring["right"] >= 0,
+              json.dumps(ring))
+        on = "() => document.querySelector('#combo-code_lang li.on')?.textContent.trim() || ''"
+        pg.evaluate("(s) => document.querySelector(s).focus()", sel)
+        pg.keyboard.press("ArrowDown")                 # opens it on Python
+        pg.wait_for_timeout(120)
+        pg.keyboard.type("kot", delay=60)
+        typed = [pg.evaluate(on)]
+        pg.wait_for_timeout(800)                       # a pause: what comes next is a new name
+        pg.keyboard.press("Home")
+        pg.keyboard.press("c")
+        typed.append(pg.evaluate(on))
+        pg.keyboard.press("c")
+        typed.append(pg.evaluate(on))
+        pg.wait_for_timeout(800)
+        pg.keyboard.type("javas", delay=60)
+        typed.append(pg.evaluate(on))
+        check("letters typed together find a name, and one letter again steps on: kot, c, c, javas",
+              typed == ["Kotlin", "C++", "C", "JavaScript"], str(typed))
+        pg.evaluate("() => { window.__picked = null; window.__setSetting = setSetting; "
+                    "setSetting = (k, v) => { window.__picked = [k, v]; }; }")
+        pg.keyboard.press("Alt+ArrowUp")
+        pg.wait_for_timeout(120)
+        alt = pg.evaluate("(s) => ({exp: document.querySelector(s).getAttribute('aria-expanded'), picked: window.__picked})", sel)
+        check("Alt with the up arrow chooses the row and closes the list", alt["exp"] == "false"
+              and alt["picked"] == ["code_lang", "javascript"], json.dumps(alt))
+        pg.keyboard.press("Alt+ArrowUp")              # on the closed list now: nothing, as a list box does
+        pg.wait_for_timeout(120)
+        check("...and on a closed list it opens nothing", pg.evaluate(
+            "(s) => document.querySelector(s).getAttribute('aria-expanded')", sel) == "false")
+        pg.evaluate("() => { setSetting = window.__setSetting; }")
+        # one row lit: the pointer's row, until the keys move on, then the keys' row alone
+        # read once the rows' colour changes (0.12 s each, index.html) have run: under load one was still running at 250 ms
+        lit = """async () => {
+            await Promise.all(document.getAnimations().filter((a) => a.effect?.target?.closest?.('#combo-code_lang'))
+              .map((a) => a.finished.catch(() => null)));
+            return [...document.querySelectorAll('#combo-code_lang li')]
+              .filter((li) => getComputedStyle(li).backgroundColor !== 'rgba(0, 0, 0, 0)').map((li) => li.textContent.trim()); }"""
+        pg.evaluate("(s) => document.querySelector(s).click()", sel)
+        pg.wait_for_timeout(200)
+        at = pg.evaluate("""() => { const r = document.querySelectorAll('#combo-code_lang li')[2].getBoundingClientRect();
+            return [r.left + r.width / 2, r.top + r.height / 2]; }""")
+        pg.mouse.move(at[0], at[1])
+        pg.wait_for_timeout(250)
+        under = pg.evaluate(lit)
+        pg.keyboard.press("ArrowDown")
+        pg.wait_for_timeout(250)
+        moved = pg.evaluate(lit)
+        check("the row under the pointer is the one lit, and after an arrow key only the keys' row is",
+              under == ["C++"] and moved == ["JavaScript"], f"{under} then {moved}")
+        pg.mouse.move(5, 5)
+        pg.evaluate("() => comboClose(false)")
+        # on a phone the pane is shorter than the list: it scrolls inside, and ends half way down a row (it showed three
+        # quarters of C, which read as a fault); a control at the pane's left edge has room for its ring there too
+        pg.set_viewport_size({"width": 390, "height": 844})
+        pg.wait_for_timeout(300)
+        pg.evaluate("() => document.querySelector(\"#settings [data-sec='code']\").click()")
+        pg.evaluate(SETTLE)
+        left = pg.evaluate("""(s) => Math.round(document.querySelector(s).getBoundingClientRect().left - 4
+            - document.querySelector('#settings .set-pane').getBoundingClientRect().left)""", sel)
+        pg.evaluate("(s) => document.querySelector(s).click()", sel)
+        pg.wait_for_timeout(300)
+        half = pg.evaluate("""() => { const l = document.getElementById('combo-code_lang');
+            const inner = l.getBoundingClientRect().top + l.clientTop + l.clientHeight;
+            const part = [...l.querySelectorAll('li')].map((li) => li.getBoundingClientRect()).find((b) => b.bottom > inner + 0.5);
+            return {scrolls: l.scrollHeight > l.clientHeight + 1, shown: part ? Math.round((inner - part.top) / part.height * 100) / 100 : 1}; }""")
+        check("on a phone the list that scrolls ends half way down a row, and the left edge has room for a ring",
+              left >= 0 and (half["shown"] == 1 and not half["scrolls"] or 0.3 <= half["shown"] <= 0.7),
+              f"ring room {left} px, {json.dumps(half)}")
+        pg.evaluate("() => comboClose(false)")
+        pg.set_viewport_size({"width": 1500, "height": 950})
+        pg.wait_for_timeout(300)
+
         print("\n[a list near the bottom of a scrolling pane is not cut off]")
         # the settings pane scrolls, and a scroller clips what sticks out of it: a dropdown low in
         # the pane is exactly where that would show
@@ -238,6 +377,19 @@ def main():
         # the whole sheet scrolls in its overlay instead and the pane does not (index.html, max-height: 560px)
         pg.set_viewport_size({"width": 1500, "height": 600})
         pg.wait_for_timeout(250)
+        # in the section with a dropdown whose pane has the most to scroll: the one with the longest list (Code language,
+        # in the Code section) has three rows and nothing to scroll at all
+        roomy = pg.evaluate("""() => { comboClose(false); let best = null;
+            for (const tab of document.querySelectorAll('#settings .set-tab')) {
+              tab.click();
+              const pane = document.querySelector('#settings .set-pane');
+              const room = pane ? pane.scrollHeight - pane.clientHeight : 0;
+              if (document.querySelector('#settings .combo-btn:not([disabled])') && (!best || room > best.room)) best = {sec: tab.dataset.sec, room};
+            }
+            if (best) document.querySelector(`#settings [data-sec="${best.sec}"]`).click();
+            return best; }""")
+        print(f"     the section with a dropdown and the most to scroll: {roomy}")
+        pg.evaluate(SETTLE)
         moved_shut = pg.evaluate("""() => {
             comboClose(false);
             const pane = document.querySelector('#settings .set-pane');
@@ -298,6 +450,10 @@ def main():
         pg.evaluate("() => comboClose(false)")
 
         print("\n[a list too tall for its room scrolls inside itself]")
+        # back to the section with the longest list, whose first dropdown is that list
+        pg.evaluate("(s) => { comboClose(false); document.querySelector(`#settings [data-sec=\"${s}\"]`).click(); }",
+                    longest["sec"] if longest else secs[0])
+        pg.evaluate(SETTLE)
         # the room is the pane's, so a short window makes even a six-row list scroll
         tall = pg.evaluate("""() => {
             const b = document.querySelector('#settings .combo-btn:not([disabled])');
@@ -319,6 +475,15 @@ def main():
         pg.evaluate("() => comboClose(false)")
 
         print("\n[the controls in the sheet are one family]")
+        # in a section that has both a row of choices and a dropdown, to hold them side by side
+        both = pg.evaluate("""() => { comboClose(false);
+            for (const tab of document.querySelectorAll('#settings .set-tab')) {
+              tab.click();
+              if (document.querySelector('#settings .seg:not(.checks) button') && document.querySelector('#settings .combo-btn')) return tab.dataset.sec;
+            }
+            return null; }""")
+        print(f"     the section with both: {both}")
+        pg.evaluate(SETTLE)
         fam = pg.evaluate("""() => {
             const out = [];
             for (const el of document.querySelectorAll('#settings .combo-btn, #settings .seg button, #settings .switch, #settings .btn')) {

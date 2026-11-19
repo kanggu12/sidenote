@@ -201,7 +201,8 @@ the form of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
      `### Fixed`, `### Removed` or `### Security`, and give it its link at the end of the file.
   2. Set the number in `server/version.py`, `deploy/helm/sidenote/Chart.yaml`, `docs/air-gapped.md`, and in the file
      names of README.md's quick start, the user guide's install, `docs/capture-client.md` and the chart's README, then run
-     `sh .github/badges.sh`.
+     `sh .github/badges.sh`, and take the **Capture connection** pictures again
+     (`docs/assets/capture-connection-*.png`), which show the release.
   3. Commit as `Sidenote x.y.z`, tag it `vx.y.z` and push both. `release.yml` checks the number, runs CI and publishes
      ([docs/QA.md](docs/QA.md)).
 

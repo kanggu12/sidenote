@@ -788,6 +788,10 @@ async def run_design(text: str, cases: dict, run) -> dict | None:
     found = _pick_class(text, cls)
     if found is None:
         other = other_language(text)
+        # C has no class: a design problem answered in C (a struct and its functions, Default code language C) is run only
+        # as a program, as a C function is (run_cases), which is the reason to give rather than "no class"
+        if other is None and any(lang == "c" for lang, _ in code_blocks(text)):
+            return {"skipped": t("{lang} code is run only as a program that reads standard input", lang=LANG_NAME["c"])}
         return {"skipped": t("{lang} code cannot be run (runs {langs})", lang=other, langs=CHECKED) if other
                 else t("No class {cls} in the answer's code", cls=cls)}
     lang, code = found

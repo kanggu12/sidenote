@@ -29,7 +29,7 @@ from typing import Awaitable, Callable
 from . import forksafe, i18n, models, telemetry
 from .heads import head_of, head_start
 from .search import TOOLS, WebTools
-from .settings import SETTINGS
+from .settings import CODE_LANGS, SETTINGS
 
 log = logging.getLogger("sidenote.analyzer")
 
@@ -285,6 +285,61 @@ ENGLISH_RULES = (
      "화면의 영어 문제면 그 자리를 영어로 쓴다.",
      "요지, 접근법, 구성을 영어로 쓴다(예: `Count with a hash map over a sliding window, time $O(N)$ / space $O(N)$`)."),
 )
+
+
+def code_language_line(sure: bool = True) -> str:
+    """The line that ends a request for a coding or algorithm answer when nothing names the language its code is to be in:
+    the one chosen in Default code language (settings). The pipeline decides when (Pipeline._code_line): only where
+    nothing on the screen or in the words asked names a language, because the model takes this line over both.
+
+    Measured with the 26b on the problem part of two coding screens (no editor, nothing naming a language), Java or C++
+    chosen: the choice put among the system prompt's rules for code was followed 0 times in 4, at the very end of the
+    system prompt 0 in 4, as a rule at the end of the request 2 in 4, and said as this answer's language at the end of the
+    request 8 in 8, with Korean and with English answers. Said so on screens whose editor held a C++, Java or Kotlin
+    template, Python chosen, it was followed over the editor 3 times in 3, and over "in Python" or "in Java" said aloud
+    2 times in 2: hence only where nothing else names a language.
+
+    `sure`: nothing can name a language: the words alone were asked, and they name none. Otherwise, as for a screen read
+    as naming none, the line leaves the screen and the words first; said that way it was followed 20 times in 20 on
+    screens with nothing naming a language (Korean and English answers), and it too won over a language the problem's
+    own text set (4 in 4), which is why the screen reading looks for one (EXTRACT_EDITOR)."""
+    name = CODE_LANGS.get(SETTINGS.get("code_lang"), "Python")   # an unknown value read back from a file: the default
+    # the name stands alone in the brackets, so no Korean particle has to fit it ("Python으로", "Java로")
+    if sure:
+        return f"[코드 언어: {name}] 이 답의 코드는 이 언어로 쓴다."
+    return f"[코드 언어: {name}] 화면의 코드 편집기나 코드, 문제나 질문이 다른 언어를 보이지 않으면 이 답의 코드는 이 언어로 쓴다."
+
+
+# A language named in the words asked: a question heard ("파이썬으로", "씨 플러스 플러스로", "in Java") or a problem written
+# out ("C++로 구현"), by the names people say, write and a speech model writes down. Go and C are found only where they
+# cannot be ordinary words ("Go 언어", "golang", "go로", "C 언어", "C로 풀어", "write it in C"): "세 점 A, B, C로" and
+# "고랭지" name nothing, nor do "일러스트" or "테일러 스위프트". Languages the setting does not offer count too: a question
+# in Rust is not answered in Python.
+# An English name is bounded by what is not a Latin letter or digit, not by \\b: Korean particles are word characters, and
+# "Java로" or "SQL로" had no word boundary after the name
+_A, _Z = r"(?<![A-Za-z0-9])", r"(?![A-Za-z0-9])"
+NAMED_LANGS = (
+    (re.compile(r"파이[썬선]|python", re.I), "Python"),
+    (re.compile(rf"자바(?!\s*스크립트)|{_A}java{_Z}(?!\s*script)", re.I), "Java"),
+    (re.compile(rf"c\s*\+\s*\+|[씨시]\s*[쁠플]\s*[쁠플]|(?:{_A}c|[씨시])\s*플러스\s*플러스|{_A}cpp{_Z}", re.I), "C++"),
+    (re.compile(rf"자바\s*스크립트|java\s*script|{_A}node\.?js{_Z}|{_A}js\s*(?:로|코드)", re.I), "JavaScript"),
+    (re.compile(rf"타입\s*스크립트|typescript|{_A}ts\s*(?:로|코드)", re.I), "TypeScript"),
+    (re.compile(r"코틀린|kotlin", re.I), "Kotlin"),
+    (re.compile(rf"golang|고랭(?!지)|{_A}go\s*(?:언어|로)", re.I), "Go"),
+    (re.compile(rf"\bin Go{_Z}"), "Go"),
+    (re.compile(rf"{_A}c\s*언어|{_A}c\s*로\s*(?:풀|짜|작성|구현|코딩|만들)|\b(?:write|solve|implement|code)\w*\b[^.?!\n]{{0,20}}"
+                rf"\b(?:in|using)\s+c(?![+#A-Za-z0-9])", re.I), "C"),
+    (re.compile(r"c\s*#|[씨시c]\s*샵|c\s*sharp", re.I), "C#"),
+    (re.compile(rf"(?<![가-힣])러스트|{_A}rust{_Z}", re.I), "Rust"),
+    (re.compile(rf"(?<!테일러 )(?<!테일러)스위프트|{_A}Swift{_Z}"), "Swift"),
+    (re.compile(rf"{_A}(?:my|postgre)?sql(?:ite)?{_Z}", re.I), "SQL"),
+)
+
+
+def named_language(*texts: str) -> str | None:
+    """The one language the words name, or None: none named, or several (a comparison names none to follow)."""
+    found = {name for rx, name in NAMED_LANGS for text in texts if text and rx.search(text)}
+    return found.pop() if len(found) == 1 else None
 
 
 def in_answer_language(prompt: str) -> str:
@@ -764,11 +819,15 @@ EXTRACT_CASES = """\
 # editor's language every time the editor was in the picture (scratch/local-llm-bench/editor_crop.py). Asked this,
 # the model named the editor's language on all 14 known screens with one, in under a second and a half each, and
 # left 28 of the 39 without one empty; the other 11 show code (a traceback, a Java question) and got its language
-# (scratch/local-llm-bench/editor_reader.py).
+# (scratch/local-llm-bench/editor_reader.py). It also decides whether a request gets the Default code language line
+# (pipeline._code_line), which the model follows over the screen, so it names a language the problem's own text sets
+# with no editor there too ("C++로 작성하시오"): without that sentence two such problems read as none, and the line put
+# Python or Go over the text's C++ and Java 4 times in 4, where with no line they were answered in it 4 times in 4. With it,
+# both are named, and every one of the 53 known screens reads as before, at the same 1.1 s.
 EXTRACT_EDITOR = """\
 화면에 답을 써 넣는 코드 편집기가 있으면 그 편집기의 프로그래밍 언어 이름만 한 단어로 쓴다(예: Python, C++, Java, Kotlin,
-Go, JavaScript). 편집기 탭의 파일 이름, 언어 선택 상자, 편집기 안의 코드 틀로 안다. 코드 편집기가 없거나 언어를 알 수
-없으면 `없음` 한 단어만 쓴다."""
+Go, JavaScript). 편집기 탭의 파일 이름, 언어 선택 상자, 편집기 안의 코드 틀로 안다. 코드 편집기가 없어도 문제 글이 답을 쓸
+언어를 정했으면(예: "C++로 작성하시오") 그 언어 이름을 쓴다. 둘 다 없거나 언어를 알 수 없으면 `없음` 한 단어만 쓴다."""
 # What extract gives when the model read what was heard and found no question in it (Pipeline._agent_payload)
 NO_QUESTION = "\0no question"
 # A problem with no examples on the screen (12 of 17 code checks in real use) had its code not run

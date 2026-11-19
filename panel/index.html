@@ -1269,7 +1269,9 @@
     transition: background-color .15s var(--ease), color .15s var(--ease); }
   .set-tab:hover { background: var(--sheet-2); color: var(--ink-2); }
   .set-tab[aria-selected="true"] { background: var(--pen-soft); color: var(--pen); box-shadow: var(--sunken); }
-  .set-pane { overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; margin-right: -8px; }
+  /* Room inside the scroller for a focus ring (2 px out, 2 px off): a control at its edge, as the first row's is at the top
+     and a narrow sheet's are at the left, lost that side of its ring. The margins put everything where it was */
+  .set-pane { overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 4px 4px; margin: -4px -8px -4px -4px; }
   .set-pane > .set:first-of-type { padding-top: 0; }
   @media (max-width: 720px) {
     #settings-body, #maint-body { grid-template-columns: minmax(0, 1fr); }
@@ -1342,7 +1344,7 @@
   html[data-motion="off"] .combo-list { animation: none; }
   .combo-list li { display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 8px; border-radius: 8px;
     font-size: 13px; line-height: 1.45; color: var(--ink); cursor: pointer; white-space: nowrap; }
-  .combo-list li:hover, .combo-list li.on { background: var(--pen-soft); color: var(--pen); }
+  .combo-list li.on { background: var(--pen-soft); color: var(--pen); }   /* the pointer's row is .on too (app.js), one row lit */
   .combo-list li[aria-selected="true"] { font-weight: 650; }
   .combo-tick { width: 14px; height: 14px; flex: none; color: var(--pen); opacity: 0; }
   .combo-list li[aria-selected="true"] .combo-tick { opacity: 1; }
@@ -1587,7 +1589,7 @@
   /* Every dropdown's list: a solid slip over the page, roomy rows, the row under the pointer lit in the pen, the chosen one ticked and bold */
   .combo-list { padding: 6px; border-radius: 12px; border-color: var(--rule-2); min-width: 150px; scrollbar-width: thin; }
   .combo-list li { min-height: 32px; padding: 6px 12px 6px 8px; border-radius: 9px; color: var(--ink-2); transition: background-color .12s var(--ease), color .12s var(--ease); }
-  .combo-list li:hover, .combo-list li.on { background: color-mix(in srgb, var(--pen) 18%, transparent); color: var(--ink); }
+  .combo-list li.on { background: color-mix(in srgb, var(--pen) 18%, transparent); color: var(--ink); }
   .combo-list li[aria-selected="true"] { color: var(--ink); font-weight: 650; }
   .combo-list li + li { margin-top: 1px; }
   /* Every lamp on the page is one lamp: the same size, the same glass bead lit from the upper left, the same soft halo; off is
