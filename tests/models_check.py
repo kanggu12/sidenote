@@ -83,8 +83,11 @@ check("...and is the GPU a model runs on", hardware.best(m16) == m16[0])
 
 print("[the GPU chart on a host, where no container writes the readings]")
 use = hardware.parse_nvidia_usage("1796, 23028, 1, 35, 70.12\n500, 8192, 3, 40, [N/A]\n")
-check("nvidia-smi's reading: the card with the most memory, power rounded",
-      use == {"used": 1796, "total": 23028, "util": 1, "temp": 35, "power": 70}, use)
+check("nvidia-smi's reading: the card with the most memory, power rounded, no recovery action asked of a driver without it",
+      use == {"used": 1796, "total": 23028, "util": 1, "temp": 35, "power": 70, "recovery": ""}, use)
+use = hardware.parse_nvidia_usage("2756, 23028, 11, 33, 76.4, Drain and Reset\n")
+check("...and with it, what the driver asks to be done with the GPU (after a memory error it could not correct)",
+      use["recovery"] == "Drain and Reset" and use["total"] == 23028, use)
 check("...and a card that reports no power gives None for it",
       hardware.parse_nvidia_usage("500, 8192, 3, 40, [N/A]\n")["power"] is None)
 with tempfile.TemporaryDirectory() as root:
@@ -106,6 +109,45 @@ try:
     check("with no readings file the server asks the GPU's own tools", app_module.read_gpu() == hardware.usage())
 finally:
     app_module.GPU_STAT, hardware.usage = saved_stat, saved_usage
+
+print("[the GPU failing under this PC's model: the server stops using the model]")
+# The llm container's readings with the driver's recovery action (docker/compose.nvidia.yaml): the GPU on 2026-11-20 after
+# one uncorrectable memory error, a GPU at rest, and a container started before the field was read
+saved_stat, saved_engines, saved_local = app_module.GPU_STAT, app_module.ENGINES, dict(app_module.STATE.local)
+try:
+    with tempfile.TemporaryDirectory() as root:
+        stat = Path(root, "now.csv")
+        app_module.GPU_STAT, app_module.ENGINES = str(stat), None
+        stat.write_text("2756, 23028, 11, 33, 76.40, Drain and Reset\n")
+        reading, fault = app_module.read_gpu(), app_module.local_fault()
+        check("a reading whose driver asks for a reset: the model is not usable, and why",
+              reading["recovery"] == "Drain and Reset" and fault == {"kind": "reset", "detail": "Drain and Reset"},
+              [reading, fault])
+        stat.write_text("2756, 23028, 11, 33, 76.40, None\n")
+        check("...a GPU whose driver asks nothing: usable", app_module.local_fault() is None, app_module.local_fault())
+        stat.write_text("2756, 23028, 11, 33, 76.40\n")
+        check("...a container that reads no recovery action: usable, and the chart's figures as before",
+              app_module.local_fault() is None and app_module.read_gpu()["used"] == 2756 and app_module.read_gpu()["recovery"] == "",
+              app_module.read_gpu())
+        # a failure the model's server reported (LocalLlmAnalyzer._noticed), held a while, then tried again
+        stat.write_text("2756, 23028, 11, 33, 76.40, None\n")
+        local = type("L", (), {"fault": {"kind": "ecc", "detail": "CUDA error: uncorrectable ECC error encountered",
+                                         "at": __import__("time").time()}})()
+        app_module.ENGINES = type("E", (), {"local": local})()
+        check("a fault the model's server reported keeps the model out", (app_module.local_fault() or {}).get("kind") == "ecc",
+              app_module.local_fault())
+        local.fault["at"] -= app_module.LOCAL_FAULT_HOLD + 1
+        check("...for LOCAL_FAULT_HOLD seconds, after which the model is tried again", app_module.local_fault() is None,
+              app_module.local_fault())
+    # told of a fault, the server stops using the model at once, the analysis under way included
+    app_module.STATE.local = {"ok": True, "model": "sidenote-gemma4:26b", "loaded": {"model": "sidenote-gemma4:26b"}}
+    app_module.local_fault_seen({"kind": "ecc", "detail": "CUDA error: uncorrectable ECC error encountered", "at": 0})
+    check("told of a fault, the model is not usable at once and the panels are given why",
+          app_module.STATE.local["ok"] is False and app_module.STATE.local["fault"]["kind"] == "ecc"
+          and app_module.STATE.local["loaded"] is None, app_module.STATE.local)
+finally:
+    app_module.GPU_STAT, app_module.ENGINES = saved_stat, saved_engines
+    app_module.STATE.local = saved_local
 
 print("[the profiles and the sizes]")
 check("a 24 GB card is suggested the 26b", models.fits(24.1).key == "gemma4:26b")

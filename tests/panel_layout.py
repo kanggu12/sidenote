@@ -1570,6 +1570,29 @@ def group_controls(br, s):
     check("the local model's card in trouble says what to do, not what is wrong a second time",
           notes[0].endswith("서버 터미널에서 모델 받기 ./sidenote llm pull, 그다음 ./sidenote up") and notes[1].endswith("서버 터미널에서 ./sidenote doctor")
           and "없음." not in notes[0] and "응답 없음." not in notes[1], notes)
+    # The GPU under the model failing (2026-11-20: a memory error it could not correct, the driver asking for a reset): the
+    # card and the band say it is the GPU, what fixes it and who answers meanwhile, with no command, none of the server's
+    # helping. They said "the local model does not respond" and gave ./sidenote doctor
+    fault = {"kind": "reset", "detail": "Drain and Reset"}
+    band_js = "() => [...document.querySelectorAll('#alerts .alert')].map((a) => a.textContent.replace(/\\s+/g, ' ').trim()).join(' | ')"
+    card_js = "() => document.getElementById('st-local').textContent.replace(/\\s+/g, ' ').trim()"
+    status(p, eng(local={"ok": False, "fault": fault, "loaded": None}))
+    p.wait(250)
+    gpu_card, gpu_band = p.js(card_js), p.js(band_js)
+    pill = p.js("() => { const e = document.getElementById('pill-local'); return [e.textContent.trim(), e.dataset.state]; }")
+    check("the GPU failing: the card's pill says GPU error in red, its note what fixes it and that the agent solves meanwhile",
+          pill == ["GPU 오류", "bad"] and "PC를 다시 시작하면 GPU가 리셋됨" in gpu_card and "그동안" in gpu_card
+          and "doctor" not in gpu_card, [pill, gpu_card])
+    check("...and the band says the same, with no command to run", "이 PC의 GPU 오류" in gpu_band and "PC를 다시 시작하면" in gpu_band
+          and "doctor" not in gpu_band and "응답 없음" not in gpu_band, gpu_band)
+    status(p, eng(local={"ok": False, "fault": fault, "loaded": None}, agent={"mode": "off", "effective": "off"}) | {"ready": False})
+    p.wait(250)
+    off_band = p.js(band_js)
+    check("...with the agent off, it says turning the agent on has it solve meanwhile", "켜면 그동안" in off_band, off_band)
+    status(p, eng(local={"ok": False, "fault": {"kind": "gpu", "detail": "CUDA error"}, "loaded": None}))
+    p.wait(250)
+    check("...a failure of the model's server on the GPU says it is tried again in a few minutes",
+          "몇 분 뒤 다시 시도함" in p.js(card_js), p.js(card_js))
     check("a limit band in the agent card's tone, red when nothing answers meanwhile, and no 'every engine is off' beside it",
           any("warn" in c and "사용 한도" in x for c, x in ready) and any("bad" in c and "사용 한도" in x for c, x in alone)
           and not any("모두 꺼짐" in x for _, x in alone), [ready, alone])

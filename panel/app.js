@@ -26,6 +26,8 @@ const HINT = {
     return t("The agent rests until {when}", { agent: AG(), when: restAt(until) }) + (L && L.ok && (L.on || L.stand_in) ? t(" · the local model solves meanwhile") : "");
   } },
   timeout: { title: t("Stopped: timed out"), get text() { return t("Try again with {redo}", { redo: REDO_KEY() }); } },
+  // the GPU under this PC's model failing, with no agent to answer instead (gpuFaultNote says what fixes it)
+  gpu: { title: t("GPU error"), get text() { return gpuFaultNote(eng()?.local?.fault || { kind: "ecc" }); } },
   // the desktop app's server is the app itself: it is up again when the app is
   interrupted: { title: t("Stopped: connection lost"), get text() { return status.desktop ? t("{redo} once Sidenote is running again", { redo: REDO_KEY() }) : t("{redo} once the server is up", { redo: REDO_KEY() }); } },
   nosolver: { title: t("No engine to solve"),
@@ -2488,6 +2490,15 @@ const localTrouble = (L) => (L.missing ? (L.pull ? t("No local model yet") : t("
 // Which command actually helps: pull a model that was never downloaded, look at a server that is
 // there but not answering. The rail and the alert band must not disagree about this.
 const localFix = (L) => (L && L.missing ? "./sidenote llm pull" : "./sidenote doctor");
+// The GPU under this PC's model failing (engines.local.fault, the server's app.local_fault): what it is and what fixes it,
+// then who answers meanwhile. A GPU whose driver asks for a reset ("reset"), or whose memory gave an error it could not
+// correct ("ecc"), works again only once reset, which restarting the PC does; another failure of the model's server on the
+// GPU ("gpu") is tried again by the server in a few minutes. No command: none of the server's helps here
+function gpuFaultNote(f) {
+  const fix = f && f.kind === "gpu" ? t("The model's server failed on the GPU · it is tried again in a few minutes")
+    : t("The GPU's memory gave an error it could not correct · restarting the PC resets the GPU");
+  return fix + (eng()?.ready ? t(" · the agent solves meanwhile", { agent: AG() }) : t(" · turn on the agent and it solves meanwhile", { agent: AG() }));
+}
 // Why this PC's model, switched off, answers for now (engines.local.stand_in)
 const STAND_IN_TEXT = { get limit() { return t("The agent reached its usage limit", { agent: AG() }); }, get signin() { return t("The agent is signed out", { agent: AG() }); },
   get brake() { return t("The agent reached its hourly cost limit", { agent: AG() }); } };
@@ -2551,6 +2562,7 @@ function localState() {
   if (!L.on && L.stand_in && L.ok) return card("warn", t("Stand-in"), [[t("Model"), model]],
     t("{why}, so this model solves for now though it is off · it leaves the GPU once sending works again", { why: STAND_IN_TEXT[L.stand_in] || t("The agent cannot be used", { agent: AG() }) }));
   if (!L.on) return card("off", t("Off"), [[t("Model"), model]], t("Turn it on to find problems on the GPU and answer the easy ones at once"));
+  if (!L.ok && L.fault) return card("bad", t("GPU error"), [[t("Model"), model]], gpuFaultNote(L.fault));
   if (!L.ok) {
     // A missing model is pulled; a server that does not answer is looked at. L.missing is what the
     // server sends; guessing it from the words of the message never matched.
@@ -3028,7 +3040,10 @@ function renderAlerts() {
     const E = eng(), L = E.local, C = E.agent, kind = E.ready ? "warn" : "bad";
     // An agent with no CLI on this PC is optional: its card and the setup say how to add it, and no band nags about it
     const localBad = L.present && L.on && !L.ok, agentBad = C.present && C.mode !== "off" && !C.ok && C.installed !== false;
-    if (localBad && (L.pull || status.desktop) && !(pullNow || L.pulling)) {
+    if (localBad && L.fault) {
+      // the GPU, not the model's server: no download and no command, what fixes it and who answers meanwhile
+      out.push(alertHtml(kind, `<b>${t("This PC's GPU failed")}</b> ${gpuFaultNote(L.fault)}`, ""));
+    } else if (localBad && (L.pull || status.desktop) && !(pullNow || L.pulling)) {
       // The desktop app: the download key itself, or where to get Ollama; no command to run
       out.push(alertHtml(kind, `<b>${localTrouble(L)}</b> ` + (L.missing && L.pull ? pullOffer(L)
         : t("Ollama does not answer · install it from {link}, or start it: Sidenote finds it within 20 seconds", { link: OLLAMA_LINK }))

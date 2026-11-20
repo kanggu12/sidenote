@@ -97,6 +97,18 @@ check("...on your PC for a cluster, and by starting the app again under the app"
 other = by_id(M.checks(facts(capture={"who": {"host": "PC", "version": "0.8.0"}})))
 check("a program of another release: a warning naming both, and to restart it", other["capture"]["state"] == "warn"
       and "0.8.0" in other["capture"]["said"] and "0.9.1" in other["capture"]["said"] and "Restart" in other["capture"]["fix"], other["capture"])
+# The GPU under the local model failing (2026-11-20): the local row says it is the GPU and that a restart resets it, with no
+# command (it said the model's server did not answer and gave ./sidenote up), and the GPU's row says its driver asks for it
+reset = by_id(M.checks(facts(local={"ok": False, "fault": {"kind": "reset", "detail": "Drain and Reset"}},
+                             gpu={"recovery": "Drain and Reset"})))
+check("the GPU failing: the local model's row says the GPU's memory failed and that a restart resets it, with no command",
+      reset["local"]["state"] == "bad" and "GPU" in reset["local"]["said"] and "Restart the PC" in reset["local"]["fix"]
+      and reset["local"]["cmd"] == "", reset["local"])
+check("...and the GPU's row that its driver asks for a reset", reset["gpu"]["state"] == "bad"
+      and "Drain and Reset" in reset["gpu"]["said"] and "Restart the PC" in reset["gpu"]["fix"], reset["gpu"])
+again = by_id(M.checks(facts(local={"ok": False, "fault": {"kind": "gpu", "detail": "CUDA error"}}, gpu={"recovery": "None"})))
+check("...a failure of the model's server on the GPU: tried again in a few minutes, and a GPU whose driver asks nothing is fine",
+      "tried again" in again["local"]["fix"] and again["gpu"]["state"] == "ok", [again["local"], again["gpu"]])
 # A program sends a screen when a change settles, and none while nothing changes: a still screen is no fault
 still = by_id(M.checks(facts(capture={"frame_age": 400.0, "connected_for": 3600.0})))["screen"]
 check("a still screen, its last one minutes ago: fine, said in minutes", still["state"] == "ok" and still["said"] == "Last screen 6 min ago", still)

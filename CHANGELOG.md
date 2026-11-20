@@ -6,6 +6,17 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- When the GPU under this PC's model fails (a memory error it cannot correct, or the model's server dying on a CUDA
+  error), the agent answers every problem: the one that found it, from what it would get with no local model, and the
+  ones after without the model being tried again. The model's card, a band, **Maintenance**'s checks and
+  `./sidenote status` say the GPU failed, that restarting the PC resets it, and who answers meanwhile. The server reads
+  the driver's recovery action with the GPU's other figures and uses the model again once the GPU works. Before, every problem tried the broken model first, then failed the agent
+  by asking the same model to read the question out, and ended in an error.
+- When the agent fails and this PC's model cannot be used either, the analysis says both, without trying the broken
+  model again.
+
 ## [0.12.0] - 2026-11-19
 
 ### Added

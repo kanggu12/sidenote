@@ -943,7 +943,9 @@ asks for more of it.
   no language and shows none instead ends with a line naming the one chosen in **Default code language** (**Code
   checks** below).
 - While the local model is off, not downloaded or not answering, a signed-in agent solves every problem. With nothing
-  to find the problem's part, it gets the whole screen (or the region you drew).
+  to find the problem's part, it gets the whole screen (or the region you drew). The same holds when the GPU under the
+  local model fails, the problem that found it included: the model's card says **GPU error**, and the model is used
+  again once the GPU works (restarting the PC resets it).
 - When the local model's first pass searched the web, its results go to the agent with the problem and today's date.
   For a question about the present (a current version, a release, a price or the news), Claude Code may also search
   the web itself, in a process of its own.
@@ -1588,6 +1590,7 @@ the app did, and `server-console.log` why the server stopped (section 11 lists t
 | A solution says "Stopped: connection lost" | It was cut off while the server restarted. Solve it again with **Reanalyze** |
 | The panel says "Model … missing" | `./sidenote llm pull` (the default model), or `./sidenote llm pull <model>` for the one the panel names. The server notices it within 20 seconds |
 | The panel says "The local model does not respond" | `./sidenote llm logs`. `./sidenote up` starts it again |
+| The **Local model** card says **GPU error** | The GPU's memory gave an error it could not correct, or the model's server failed on the GPU. The agent solves meanwhile. Restart the PC to reset the GPU. If the errors come back after that, the card's memory may be failing: `nvidia-smi -q -d ECC` counts them |
 | The panel says "Nothing to solve N times in a row: automatic sending to the agent stops for N min" | The brake on asking the agent about nothing. **Reanalyze**, a question or a drawn region still go, and it lifts itself after five minutes. Each time it happens is listed in `./sidenote events --errors` as `agent_brake` |
 | The panel says "The agent's cost in the last hour, $…, reached the limit ($…)" | The hour's ceiling (**Solver settings**, **Agent**, **Hourly cost limit**). **Reanalyze** and questions still go |
 | The panel says "Usage limit" | Continue with **Reanalyze** a little later |
@@ -2137,6 +2140,8 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 창 경계에서 자르기 | Cut at window edges | **Screen** |
 | 문제 글 옮겨 적기 | Write out the problem text | **Screen** |
 | 기본 코드 언어 | Default code language | **Code** |
+| GPU 오류 | GPU error | the local model's card |
+| 이 PC의 GPU 오류 | This PC's GPU failed | the alert band, when the GPU under the local model fails |
 | 실행 버튼 | Run button | **Code** |
 | 예제 자동 검증 | Check the examples | **Code** |
 | 말로 한 문제 자동 풀이 | Solve spoken problems | **Speech** |
