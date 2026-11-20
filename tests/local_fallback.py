@@ -666,12 +666,54 @@ async def gpu():
         SETTINGS.values.update(saved)
 
 
+async def reasons():
+    print("\n[why the other engine answered, kept with the answer for its card]")
+    saved = dict(SETTINGS.values)
+    try:
+        SETTINGS.values.update(local_llm=True, agent_mode="all", agent_payload="crop", agent_confirm=False, local_on_decline=True)
+        # the agent declines: its own first words are kept, and this PC's model answers
+        pipe, eng, said = make_pipeline()
+        eng.local.fast = mcq_needs_thinking
+
+        async def declines(images, text, on_delta, web=False):
+            from server.analyzer import AnalysisResult
+            return AnalysisResult(text="**죄송하지만** 이 화면의 문제에는 답하지 않겠습니다. 시험 중인 것으로 보입니다.", model="mock")
+        eng.agent.run = declines
+        out = await pipe.solve(301, FakeFrame(), "", False, _none)
+        check("the agent declining: kept as declined, none of its words, and this PC's model answers",
+              out.engine == "local" and out.stages.get("agent_declined") is True and "agent_said" not in out.stages
+              and not out.stages.get("agent_empty"), [out.engine, out.stages])
+        # the agent failing: what failed, not "error" alone
+        pipe, eng, said = make_pipeline()
+        eng.local.fast = mcq_needs_thinking
+
+        async def fails(images, text, on_delta, web=False):
+            raise RuntimeError("claude: exited 1: connect ECONNREFUSED")
+        eng.agent.run = fails
+        out = await pipe.solve(302, FakeFrame(), "", False, _none)
+        check("the agent failing: what failed is kept, said once, and this PC's model answers", out.engine == "local"
+              and out.stages.get("agent_failed") is True and out.stages.get("agent_error") == "claude: exited 1: connect ECONNREFUSED",
+              out.stages)
+        # this PC's model failing and the agent answering: what failed, the server's JSON reduced to its message
+        SETTINGS.values["agent_mode"] = "hard"
+        pipe, eng, said = make_pipeline()
+        eng.local.fast = mcq_needs_thinking
+        eng.local.deep = failing(LocalServerError("local LLM: HTTP 500: " + ECC_BODY), [])
+        out = await pipe.solve(303, FakeFrame(), "", False, _none)
+        check("this PC's model failing: its kind is kept (the GPU), and the agent answers", out.engine == "agent"
+              and out.stages.get("local_failed") is True and out.stages.get("local_error") == t("GPU error"), out.stages)
+    finally:
+        SETTINGS.values.clear()
+        SETTINGS.values.update(saved)
+
+
 async def main():
     await deadline()
     await handover()
     await limits()
     await followups()
     await gpu()
+    await reasons()
     print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
     if FAIL:
         print("FAILURES:", FAIL)

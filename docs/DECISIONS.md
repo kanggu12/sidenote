@@ -9,7 +9,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | Topic | Notes |
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
-| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127), [140](#note-140) |
+| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127), [140](#note-140), [141](#note-141) |
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135), [139](#note-139), [140](#note-140) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
@@ -2699,3 +2699,18 @@ direction was already so: the agent declining, failing, at its limit or signed o
 (`local_on_decline` and `local_fallback`, both on by default). Checked against the day's own answer from the model's
 server (tests/local_fallback.py): before, a spoken problem ended in that error, with the agent's failure reported as the
 model's and the broken model loaded 4 times and asked 3 times; now the agent answers it, and the model is loaded once.
+
+### <a id="note-141"></a>141. Why the other engine answered, on the answer's card
+
+When the agent declined, failed or was not sent a problem and this PC's model answered it, or the other way round, the
+panel said so once, in a notice that passed in a few seconds, and the reason it gave for a failure was "error" unless it
+was a limit, a sign-in or a timeout. The card itself named only the engine that answered, so an answer read later gave
+no sign the other had been asked, or why it did not answer. The server already kept what happened with the answer
+(`stages`), which the panel did not read.
+
+Now the reason is kept with the answer and drawn on its card, under the line of who answered: that the agent declined,
+or gave no answer at all; what failed when it failed, as its kind where it has one (a usage limit, a sign-in rejected,
+no answer in time, the GPU) and as the error's own first words where it has none (a server's JSON reduced to its
+message, `pipeline.failure_briefly`); why the problem was not sent; what failed of this PC's model; then which engine
+solved it. A refusal is said as a refusal and no more: the agent's own words on why ("it looks like an exam in
+progress") are not the card's to repeat. The line stays through a reload, as the history keeps `stages` with the answer.

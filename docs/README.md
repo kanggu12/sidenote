@@ -651,6 +651,9 @@ marks the current one, whose screen the right column shows.
 - Under a solution, as they apply: **Tests** (its code run on the problem's examples), **Review** (the agent's
   verdict, in the **Check answers** mode), **Retry** (after a failed example) and **Details** (the tokens, the cost,
   and the search words and pages read for this answer). Sections 7 and 14 explain them.
+- When the other engine answered, a muted line under who answered says why, and stays with the answer: **Agent
+  declined**, **Agent gave no answer**, **Agent failed** with what failed, **Not sent to Agent** with why, or **The
+  local model failed** with what failed, then which engine solved it.
 - **Problem text**, on the latest screen problem, writes the problem out as text to copy (section 7).
 - Under the newest answer is **More**: **Go deeper** always, and a few that suit the kind of answer it is:
   **Another approach**, **Why this complexity** and **Find a counterexample** for an algorithm, **How to confirm**
@@ -2140,6 +2143,8 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 창 경계에서 자르기 | Cut at window edges | **Screen** |
 | 문제 글 옮겨 적기 | Write out the problem text | **Screen** |
 | 기본 코드 언어 | Default code language | **Code** |
+| 에이전트가 거부함, 에이전트가 답하지 않음 | Agent declined, Agent gave no answer | the line under who answered, when the local model solved it instead |
+| 에이전트 실패, 에이전트에 보내지 않음, 이 PC의 모델 실패 | Agent failed, Not sent to Agent, The local model failed | the same line, with what failed or why |
 | GPU 오류 | GPU error | the local model's card |
 | 이 PC의 GPU 오류 | This PC's GPU failed | the alert band, when the GPU under the local model fails |
 | 실행 버튼 | Run button | **Code** |

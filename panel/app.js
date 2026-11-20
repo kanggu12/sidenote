@@ -3370,7 +3370,24 @@ function metaHtml(m) {
   // It opens and folds them, and stays open through a redraw (m.open).
   const more = rest.length ? `<button class="meta-more" data-meta type="button" aria-expanded="${m.open ? "true" : "false"}"`
     + ` title="${t("Input and output tokens, the cost, and the search words and pages sent out of this PC")}">${t("Details")}${OPEN_MARK}</button><span class="meta-rest">${rest.join("")}</span>` : "";
-  return `<div class="meta${m.open ? " open" : ""}">${parts.join("")}${more}</div>`;
+  return `<div class="meta${m.open ? " open" : ""}">${parts.join("")}${more}</div>${handoffHtml(m)}`;
+}
+// Why the other engine answered, kept on the card from the server's record of the answer (pipeline: stages): the agent
+// declined (its own first words), failed (what failed), was not sent the problem (why), or this PC's model failed. It was
+// said only in a notice that passed, so an answer read later gave no sign the agent had been asked, or why it did not answer
+function handoffHtml(m) {
+  const s = (m && m.stages) || {};
+  const why = [];
+  // declined, said as that: its own words on why are not the card's to repeat
+  if (s.agent_declined) why.push(s.agent_empty ? t("{agent} gave no answer", { agent: AG() }) : t("{agent} declined", { agent: AG() }));
+  if (s.agent_failed) why.push(t("{agent} failed: {why}", { agent: AG(), why: escapeHtml(s.agent_error || t("Error")) }));
+  if (s.not_sent && s.not_sent_why) why.push(t("Not sent to {agent}: {why}", { agent: AG(), why: escapeHtml(s.not_sent_why) }));
+  if (s.local_failed || s.local_error) why.push(t("The local model failed: {why}", { why: escapeHtml(s.local_error || t("Error")) }));
+  if (!why.length) return "";
+  // who answered instead; none when the card is the agent's own refusal (this PC's model failed after it declined)
+  const by = m.engine === "local" ? t("the local model solved it")
+    : m.engine === "agent" && !s.agent_declined ? t("{agent} solved it", { agent: AG() }) : "";
+  return `<p class="cap handoff">${why.join(" · ")}${by ? " · " + by : ""}</p>`;
 }
 // The automatic check of a code answer against the problem's examples (runner sandbox).
 const jsonText = (v) => { try { return JSON.stringify(v); } catch (_) { return String(v); } };

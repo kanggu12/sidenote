@@ -81,6 +81,20 @@ class Repeat(Exception):
         self.card, self.box, self.score = card, box, score
 
 
+def failure_briefly(exc) -> str:
+    """What an engine's failure was, for the card's note (why the other engine answered): its kind in the panel's language
+    where it has one (a usage limit, a sign-in rejected, no answer in time, the GPU), else the error's own first words, a
+    server's JSON reduced to its message ({"error":{"message": ...}}). The card said "error" alone, in a notice that passed."""
+    msg = str(exc)
+    if isinstance(exc, TimeoutError):
+        return t("no answer in time")
+    if error_hint(msg):
+        return error_words(msg)
+    inner = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)+)', msg)
+    detail = " ".join((inner.group(1) if inner else msg).replace("\\n", " ").split())
+    return (detail if len(detail) <= 120 else detail[:119].rstrip() + "…") or t("error")
+
+
 class BothFailed(RuntimeError):
     """The agent failed, and this PC's model cannot be used either (a GPU failing under its server): the analysis ends with
     both reasons rather than trying the broken model again."""
@@ -1639,6 +1653,8 @@ class Pipeline:
         # mode, the agent answers when it can, as it does every problem after this one. It is the one engine left
         down = agent is not None and not brake and not to_agent and not self.hooks.local_ok()
         to_agent = to_agent or down
+        if not self.hooks.local_ok():   # its first pass found the GPU failing: the card says that is why the agent answers
+            stages["local_error"] = t("GPU error")
         # Why this engine, in the log: a coding problem was answered by this PC's model in 169 s on a busy GPU
         # while the agent was on, and nothing recorded which of these held (fast pass type and route, the
         # brake, the agent there or not), so it could not be told afterwards.
@@ -1666,6 +1682,7 @@ class Pipeline:
                     out.sent = sent
                     out.stages = stages = {**out.stages, **stages}   # one record from here on, whichever answer stands
                     if not out.text.strip():
+                        stages["agent_empty"] = True   # it said nothing, rather than declining: the card tells them apart
                         out.text = t("The agent gave no answer", agent=agent_name())
                     if not SETTINGS.get("local_on_decline"):
                         log.info("analysis #%d: the agent declined to answer (%d chars); its reply is the card",
@@ -1696,6 +1713,7 @@ class Pipeline:
                     return Outcome(text="TYPE: none", model=local.model, usage=f.usage, cost_usd=None, engine="local",
                                    sent=sent, stages=stages)
                 stages["not_sent"] = True
+                stages["not_sent_why"] = str(why) or t("not confirmed")   # why, for the card
                 # Why nothing went, in the log as well as on the panel: the 169 s answer fell to this
                 # PC's model with no record of which it was (no place and no words, numbers like personal data, a
                 # confirm not given, the agent switched off meanwhile)
@@ -1708,12 +1726,14 @@ class Pipeline:
             except ToolCallWritten as exc:   # it tried to run something it cannot have here: no error of the agent's
                 log.info("analysis #%d: %s; the local model answers", seq, exc)
                 stages["agent_failed"] = True
+                stages["agent_error"] = failure_briefly(exc)
                 agent_wrote = True
                 sent = sent + getattr(exc, "sent", [])
                 await self._warn(t("{why} · the local model solves", why=exc))
             except Exception as exc:   # an error, not an answer: a refusal is handled above
                 sent = sent + getattr(exc, "sent", [])   # the problem went out all the same
                 stages["agent_failed"] = True
+                stages["agent_error"] = failure_briefly(exc)   # what failed, for the card
                 agent_wrote = True   # it may have written some of an answer before it stopped
                 if getattr(exc, "limit", False):
                     pass   # at its limit: _agent_solve has armed the rest and said so; this PC's model answers
@@ -2035,6 +2055,7 @@ class Pipeline:
         log.warning("analysis #%d: the local model could not answer (%s); the agent takes it", seq, exc)
         telemetry.event("local_failed", id=seq, reason=f"{type(exc).__name__}: {exc}"[:200], to_agent=True)
         stages["local_failed"] = True
+        stages["local_error"] = failure_briefly(exc)   # what failed, for the card
         stages["why"] = "local_failed"   # why the agent got this one (report: VIA_NAMES)
         await self._warn(t("The local model could not answer ({why}) · the agent solves", why=why, agent=agent_name()))
         await self.hooks.stage(seq, "agent", "", restart=True)

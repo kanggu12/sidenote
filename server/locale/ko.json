@@ -300,6 +300,7 @@
  "the local model cannot be used now": "지금 이 PC의 모델도 쓸 수 없음",
  "local model down (GPU error)": "이 PC의 모델 멈춤(GPU 오류)",
  "GPU error": "GPU 오류",
+ "not confirmed": "보내기 확인 안 함",
  "tolerance {tol}": "오차 {tol}",
  "type handed over": "맡긴 종류",
  "type not read": "종류 못 읽음",

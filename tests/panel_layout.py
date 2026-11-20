@@ -1593,6 +1593,36 @@ def group_controls(br, s):
     p.wait(250)
     check("...a failure of the model's server on the GPU says it is tried again in a few minutes",
           "몇 분 뒤 다시 시도함" in p.js(card_js), p.js(card_js))
+    # Why the other engine answered stays on the card, from the answer's own record (stages): that the agent declined (not
+    # its own words on why), what failed when it failed, what failed of this PC's model when the agent took over. A notice
+    # that passed said it once, and a card read later gave no sign of it
+    status(p, eng())
+    now = p.js("() => Date.now() / 1000")
+    handoff = {
+        9101: ("local", {"agent_declined": True}),
+        9102: ("local", {"agent_failed": True, "agent_error": "claude: exited 1: connect ECONNREFUSED"}),
+        9103: ("agent", {"local_failed": True, "local_error": "GPU 오류"}),
+        9104: ("local", {}),
+        9105: ("local", {"agent_declined": True, "agent_empty": True}),
+    }
+    for i, (engine, stages) in handoff.items():
+        text = "TYPE: mcq\nANSWER: ③\n\n풀이"
+        p.send({"type": "analysis_start", "id": i, "ts": now, "thumb": None, "transcript": "", "pages": 0, "trigger": "screen", "roi": None},
+               {"type": "delta", "id": i, "text": text},
+               {"type": "analysis_done", "id": i, "text": text, "usage": {}, "cost_usd": None, "model": "sidenote-gemma4:26b",
+                "engine": engine, "sent": [], "stages": stages, "elapsed": 3.0, "region": None})
+    p.wait(400)
+    notes = p.js("""() => Object.fromEntries([9101, 9102, 9103, 9104, 9105].map((i) => [i,
+        document.querySelector(`.entry[data-id="${i}"] .handoff`)?.textContent.replace(/\\s+/g, ' ').trim() || '']))""")
+    ag = p.js("() => AG()")   # the agent as the page names it (the stand-in server's: Claude Code)
+    check("the agent declining: the card says it declined, with none of its words, and that this PC's model solved it",
+          notes["9101"] == f"{ag}가 거부함 · 이 PC의 모델이 풂", notes)
+    check("...one that said nothing: that it gave no answer", notes["9105"] == f"{ag}가 답하지 않음 · 이 PC의 모델이 풂", notes)
+    check("...the agent failing: what failed, said once", notes["9102"] == f"{ag} 실패: claude: exited 1: connect ECONNREFUSED · 이 PC의 모델이 풂",
+          notes)
+    check("...this PC's model failing: its kind, and that the agent solved it", notes["9103"] == f"이 PC의 모델 실패: GPU 오류 · {ag}가 풂",
+          notes)
+    check("...and an answer nothing was handed over for has no such line", notes["9104"] == "", notes)
     check("a limit band in the agent card's tone, red when nothing answers meanwhile, and no 'every engine is off' beside it",
           any("warn" in c and "사용 한도" in x for c, x in ready) and any("bad" in c and "사용 한도" in x for c, x in alone)
           and not any("모두 꺼짐" in x for _, x in alone), [ready, alone])

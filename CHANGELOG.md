@@ -6,6 +6,13 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+### Fixed
+
+- An answer the other engine took over says why on its card, under the line of who answered: that the agent declined or
+  gave no answer, what failed when it failed, why the problem was not sent to it, or what failed of this PC's model.
+  It was said only in a notice that passed, so an answer read later gave no sign of it. A refusal is said as such,
+  without the agent's own words on why.
+
 ## [0.12.1] - 2026-11-20
 
 ### Fixed
