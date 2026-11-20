@@ -141,6 +141,15 @@ def checks(f: dict) -> list[dict]:
         out.append(_check("local", t("Local model"), BAD, t("{model} not downloaded", model=want),
                           t("Download it in Models") if loc.get("pull") else t("Run {cmd} in the server's terminal", cmd="./sidenote llm pull"),
                           "" if loc.get("pull") else "./sidenote llm pull", "models" if loc.get("pull") else ""))
+    elif not loc.get("ok") and loc.get("fault"):
+        # the GPU under it failing (app.local_fault): none of the server's commands helps, the reset does
+        fault = loc["fault"]
+        out.append(_check("local", t("Local model"), BAD,
+                          t("The model's server failed on the GPU ({why})", why=fault.get("detail", ""))
+                          if fault.get("kind") == "gpu" else
+                          t("The GPU's memory gave an error it could not correct ({why})", why=fault.get("detail", "")),
+                          t("It is tried again in a few minutes") if fault.get("kind") == "gpu"
+                          else t("Restart the PC to reset the GPU")))
     elif not loc.get("ok"):
         out.append(_check("local", t("Local model"), BAD, t("The local LLM server does not answer"),
                           t("Run {cmd} in the server's terminal", cmd="./sidenote up"), "./sidenote up"))
@@ -186,7 +195,12 @@ def checks(f: dict) -> list[dict]:
         out.append(_check("disk", t("Disk"), state, said, t("Free some space on the data folder's disk") if state != OK else ""))
     # The GPU: what is in use of it, when there is a reading. Its name is the same word in every language, so not t()
     gpu = f.get("gpu")
-    if gpu:
+    action = str((gpu or {}).get("recovery") or "").strip("[] ")
+    if gpu and action and action.lower() not in ("none", "n/a", "not supported", "unknown error"):
+        # its driver asks for it to be reset (after a memory error it could not correct): nothing else is right until then
+        out.append(_check("gpu", "GPU", BAD, t("The driver asks for the GPU to be reset ({action})", action=action),
+                          t("Restart the PC to reset the GPU")))
+    elif gpu:
         share = gpu["used"] / gpu["total"] if gpu.get("total") else 0
         out.append(_check("gpu", "GPU", WARN if share > 0.97 else OK,
                           t("{used} of {total} GB in use", used=f"{gpu['used'] / 1024:.1f}", total=f"{gpu['total'] / 1024:.1f}")

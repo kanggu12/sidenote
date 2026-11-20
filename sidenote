@@ -938,6 +938,15 @@ if L.get("present"):
     elif L.get("ok") and B: print(T("warn|Local model: GPU busy, a smaller model solves (now %s, %s again soon)",
                                     "warn|이 PC의 모델: GPU 바쁨, 작은 모델로 푸는 중 (지금 %s, 곧 다시 %s)") % (B.get("model", ""), model))
     elif L.get("ok"): print(T("ok|Local model: %s (%s)", "ok|이 PC의 모델: %s (%s)") % where)
+    # the GPU under it failing (the server's local_fault): what fixes it, and who answers meanwhile, as the panel says it
+    elif L.get("fault"):
+        meanwhile = T(", the agent solves meanwhile", ", 그동안 에이전트가 풂") if ready else ""
+        print((T("%s|Local model: GPU error (%s), restart the PC to reset the GPU%s",
+                 "%s|이 PC의 모델: GPU 오류 (%s), PC를 다시 시작하면 GPU가 리셋됨%s")
+               if L["fault"].get("kind") != "gpu" else
+               T("%s|Local model: its server failed on the GPU (%s), tried again in a few minutes%s",
+                 "%s|이 PC의 모델: 모델 서버가 GPU에서 멈춤 (%s), 몇 분 뒤 다시 시도함%s"))
+              % (down, (L["fault"].get("detail") or "")[:80], meanwhile))
     # no GPU has room for it: the launcher's no_fit says so, in the words llm pull, install and doctor use
     elif L.get("missing") and L.get("fits") is False: print("%s|NOFIT" % down)
     elif L.get("missing"): print(T("%s|Local model: %s not downloaded (./sidenote llm pull)",

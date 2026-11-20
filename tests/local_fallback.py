@@ -13,6 +13,10 @@ Checks, each a thing the server did differently before:
             agent, which answers it on the same card, cleared of what the local model wrote, with a note saying so
   limits    not when the agent is off, braked, held back from the problem (not sent) or has had it already; when the
             agent fails too, the card says both failed; the verify mode's direct pass does the same
+  gpu       the GPU under this PC's model failing (2026-11-20: every load ended in HTTP 500, "uncorrectable ECC error"):
+            the agent answers every problem, the one that found it included, from what it would get with no local
+            model; the model is not tried again meanwhile; a reading out that fails sends the problem as with no local
+            model; when the agent fails too the analysis says both, without trying the broken model again
 """
 import asyncio
 import base64
@@ -496,11 +500,178 @@ async def followups():
         SETTINGS.values.update(saved)
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# The GPU under this PC's model failing: the model's server answers, and every load of the model fails on the GPU
+
+# What the model's server answered on 2026-11-20 to every load and request, word for word (the server's log): the GPU's
+# memory had given an error it could not correct, and its driver asked for a reset
+ECC_BODY = ('{"error":{"message":"llama-server process has terminated: CUDA error\\nCUDA error: uncorrectable ECC error '
+            'encountered: CUDA error\\nCUDA error: uncorrectable ECC error encountered","type":"api_error","param":null,'
+            '"code":null}}')
+
+
+class Broken:
+    """The model's server on that GPU, under LocalLlmAnalyzer._client: nothing loaded (/api/ps), and every load
+    (/api/generate) and every request (/chat/completions) answered 500 with ECC_BODY. Counts the loads and requests."""
+
+    def __init__(self):
+        self.loads, self.requests = 0, 0
+
+    async def get(self, url, timeout=None):
+        class Ps:
+            status_code = 200
+
+            def json(self):
+                return {"models": []}
+        return Ps()
+
+    async def post(self, url, json=None, timeout=None):
+        self.loads += 1
+
+        class Failed:
+            status_code = 500
+            text = ECC_BODY
+        return Failed()
+
+    def stream(self, method, url, json=None, timeout=None):
+        outer = self
+
+        class Failed:
+            status_code = 500
+
+            async def __aenter__(self):
+                outer.requests += 1
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def aread(self):
+                return ECC_BODY.encode()
+
+            async def aiter_lines(self):
+                return
+                yield
+        return Failed()
+
+    async def aclose(self):
+        pass
+
+
+def broken_pipeline():
+    """make_pipeline with this PC's model the real analyzer on a Broken server, and the app's part played here: told of a
+    fault (on_fault), the model is not usable (local_ok), as app.local_fault_seen makes it."""
+    pipe, eng, said = make_pipeline()
+    srv, usable = Broken(), {"ok": True}
+    local = LocalLlmAnalyzer(CONFIG)
+    local._client = srv
+    local.on_fault = lambda fault: usable.update(ok=False, fault=fault)
+    eng.local = pipe.engines.local = local
+    pipe.hooks.local_ok = lambda: usable["ok"]
+    return pipe, eng, said, srv, usable
+
+
+async def gpu():
+    print("\n[the GPU under this PC's model failing: the agent answers]")
+    from server.analyzer import error_hint, gpu_fault, speech_request
+    from server.pipeline import BothFailed
+    check("that day's answer reads as the GPU's memory failing, a GPU short of memory as no fault",
+          gpu_fault(ECC_BODY) == "ecc" and error_hint("local LLM: HTTP 500: " + ECC_BODY) == "gpu"
+          and gpu_fault("CUDA error: out of memory") == "" and gpu_fault("HTTP 404: model not found") == "",
+          [gpu_fault(ECC_BODY), error_hint(ECC_BODY)])
+    saved = dict(SETTINGS.values)
+    try:
+        SETTINGS.values.update(local_llm=True, agent_mode="hard", agent_payload="crop", agent_confirm=False, extract=True,
+                               agent_hard_types=["algorithm", "coding", "math"])
+        # the analyzer itself: a load that fails on the GPU is said as such, at once, and kept as the model's fault
+        pipe, eng, said, srv, usable = broken_pipeline()
+        try:
+            await eng.local._ready(eng.local.model)
+            raised = None
+        except Exception as exc:
+            raised = exc
+        check("a load failing on the GPU raises the server's error at once, not a time limit, and keeps the fault",
+              type(raised).__name__ == "LocalServerError" and "ECC" in str(raised) and eng.local.fault
+              and eng.local.fault["kind"] == "ecc" and usable["ok"] is False and srv.loads == 1,
+              [type(raised).__name__, eng.local.fault, srv.loads])
+
+        # a spoken problem, the agent on: the first pass finds the fault, and the agent answers from what was heard
+        heard = "두 수의 합이 target 이 되는 인덱스를 구하는 함수를 짜 주세요"
+        pipe, eng, said, srv, usable = broken_pipeline()
+        EVENTS.clear()
+        out = await pipe.solve(201, None, heard, True, _none)
+        sent = eng.agent.calls[-1]["text"] if eng.agent.calls else ""
+        check("a spoken problem: the agent answers it, given what was heard as with no local model",
+              out.engine == "agent" and sent.startswith(speech_request(heard)) and not said["agent_failed"],
+              [out.engine, sent[:120], said["agent_failed"]])
+        check("...the broken model tried once, by its first pass, and not asked to read the question out after",
+              srv.loads == 1 and srv.requests == 0, [srv.loads, srv.requests])
+        check("...on record as the agent's because this PC's model is down", out.stages.get("why") in ("local_down", "unknown"),
+              out.stages.get("why"))
+        # the next problem: the model is not tried at all, the agent answers it alone
+        out = await pipe.solve(202, FakeFrame(), "", False, _none)
+        check("the next problem, a screen: the agent answers it alone and the broken model is not tried again",
+              out.engine == "agent" and srv.loads == 1 and srv.requests == 0, [out.engine, srv.loads, srv.requests])
+
+        # a screen in the verify mode, where the agent takes no problem by itself: it answers this one
+        SETTINGS.values["agent_mode"] = "verify"
+        pipe, eng, said, srv, usable = broken_pipeline()
+        out = await pipe.solve(203, FakeFrame(), "", False, _none)
+        check("the verify mode: the problem that found the fault goes to the agent, which answers it",
+              out.engine == "agent" and out.stages.get("why") == "local_down", [out.engine, out.stages.get("why")])
+        SETTINGS.values["agent_mode"] = "hard"
+
+        # the agent failing too: both said, and the broken model not tried again for an answer
+        pipe, eng, said, srv, usable = broken_pipeline()
+
+        async def down(images, text, on_delta, web=False):
+            raise RuntimeError("the agent's network is down")
+        eng.agent.run = down
+        try:
+            await pipe.solve(204, FakeFrame(), "", False, _none)
+            ended = None
+        except Exception as exc:
+            ended = exc
+        check("the agent failing too: the analysis ends saying both, the broken model not tried for an answer",
+              isinstance(ended, BothFailed) and "network is down" in str(ended)
+              and t("the local model cannot be used now") in str(ended) and srv.loads == 1,
+              [type(ended).__name__, str(ended)[:160], srv.loads])
+
+        # the agent off: nothing else can answer, and the card says it is the GPU
+        SETTINGS.values["agent_mode"] = "off"
+        pipe, eng, said, srv, usable = broken_pipeline()
+        try:
+            await pipe.solve(205, FakeFrame(), "", False, _none)
+            ended = None
+        except Exception as exc:
+            ended = exc
+        check("the agent off: the analysis fails, and its hint is the GPU's", ended is not None
+              and error_hint(str(ended)) == "gpu", [type(ended).__name__, str(ended)[:160]])
+        SETTINGS.values["agent_mode"] = "hard"
+
+        # the first pass fine and only the reading out failing (the GPU failing in between): the agent still answers
+        pipe, eng, said = make_pipeline()
+
+        async def no_extract(images=(), speech=""):
+            raise LocalServerError("local LLM: HTTP 500: " + ECC_BODY)
+        eng.local.extract = no_extract
+        SETTINGS.values["agent_mode"] = "all"
+        out = await pipe.solve(206, None, heard, True, _none)
+        sent = eng.agent.calls[-1]["text"] if eng.agent.calls else ""
+        check("a reading out that fails: what was heard goes as with no local model, and the agent answers",
+              out.engine == "agent" and sent.startswith(speech_request(heard)) and not said["agent_failed"],
+              [out.engine, sent[:120], said["agent_failed"]])
+    finally:
+        SETTINGS.values.clear()
+        SETTINGS.values.update(saved)
+
+
 async def main():
     await deadline()
     await handover()
     await limits()
     await followups()
+    await gpu()
     print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
     if FAIL:
         print("FAILURES:", FAIL)

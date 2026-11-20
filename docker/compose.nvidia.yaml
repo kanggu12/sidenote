@@ -3,15 +3,17 @@
 services:
   llm:
     # Ollama, and beside it one line of nvidia-smi every two seconds: used and total memory (MiB), load (%),
-    # temperature (C) and power (W). One file rewritten whole, so it never grows; a failed reading leaves the old
-    # file to go stale, and the server shows no stale reading. Ollama runs in the loop that starts it again when it
+    # temperature (C), power (W) and what the driver asks to be done with the GPU (its recovery action, "None", or
+    # "Drain and Reset" after a memory error it could not correct: the server then stops using the model, app.local_fault;
+    # a driver without that field gets the five). One file rewritten whole, so it never grows; a failed reading leaves
+    # the old file to go stale, and the server shows no stale reading. Ollama runs in the loop that starts it again when it
     # ends by itself (docker/keep-running.sh, which compose.yaml mounts), as compose.yaml's own entrypoint does.
     entrypoint:
       - /bin/sh
       - -c
       - |
         while :; do
-          nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits -i 0 > /gpu/now.tmp 2>/dev/null && mv -f /gpu/now.tmp /gpu/now.csv
+          { nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw,gpu_recovery_action --format=csv,noheader,nounits -i 0 2>/dev/null || nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw --format=csv,noheader,nounits -i 0 2>/dev/null; } > /gpu/now.tmp && mv -f /gpu/now.tmp /gpu/now.csv
           sleep 2
         done &
         exec /bin/sh /keep-running.sh /bin/ollama serve

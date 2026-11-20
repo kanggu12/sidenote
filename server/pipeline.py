@@ -81,6 +81,11 @@ class Repeat(Exception):
         self.card, self.box, self.score = card, box, score
 
 
+class BothFailed(RuntimeError):
+    """The agent failed, and this PC's model cannot be used either (a GPU failing under its server): the analysis ends with
+    both reasons rather than trying the broken model again."""
+
+
 class NotSent(Exception):
     """Nothing went to the agent: the user chose not to send it (confirm before sending), or what would go
     could hold more than the problem (it could not be placed, or what was written out from the whole
@@ -1630,6 +1635,10 @@ class Pipeline:
         # and a first pass that brought nothing in time hands its problem over whatever the second look made of it
         to_agent = agent is not None and not brake and (mode == "all" or (mode == "hard" and (handoff or (hard and (
             unknown or slow_here or f.type in SETTINGS.get("agent_hard_types"))))))
+        # This PC's model went down under this very pass (the GPU failing under its server, app.local_fault_seen): whatever the
+        # mode, the agent answers when it can, as it does every problem after this one. It is the one engine left
+        down = agent is not None and not brake and not to_agent and not self.hooks.local_ok()
+        to_agent = to_agent or down
         # Why this engine, in the log: a coding problem was answered by this PC's model in 169 s on a busy GPU
         # while the agent was on, and nothing recorded which of these held (fast pass type and route, the
         # brake, the agent there or not), so it could not be told afterwards.
@@ -1639,8 +1648,8 @@ class Pipeline:
         if to_agent:
             # why the agent got this one, for the record (report: what the agent was paid for on a screen it found
             # nothing on): the first pass slow, the kind unread, this PC's model slow, a kind set for the agent, or all
-            stages["why"] = ("all" if mode == "all" else "handoff" if handoff else "unknown" if unknown
-                             else "slow" if slow_here else "kind")
+            stages["why"] = ("local_down" if down else "all" if mode == "all" else "handoff" if handoff
+                             else "unknown" if unknown else "slow" if slow_here else "kind")
             try:
                 out = await self._agent_solve(seq, agent, local, frame, look, pages, transcript, voice, box,
                                                stages, on_delta, seen=seen, kind=f.type,
@@ -1710,6 +1719,9 @@ class Pipeline:
                     pass   # at its limit: _agent_solve has armed the rest and said so; this PC's model answers
                 else:
                     await self.hooks.agent_failed(exc)
+                    if not self.hooks.local_ok():   # this PC's model went down meanwhile: nothing left to answer
+                        log.warning("The agent failed (%s), and the local model cannot be used", exc)
+                        raise BothFailed(f"{exc} · {t('the local model cannot be used now')}") from exc
                     log.warning("The agent failed (%s); the local model answers", exc)
                     await self._warn(t("The agent could not answer ({why}) · the local model solves",
                                        why=error_words(str(exc)), agent=agent_name()))
@@ -1877,6 +1889,20 @@ class Pipeline:
             return ""
         return "\n\n" + code_language_line(sure=False) if lang == "" or agent else ""
 
+    async def _read_out(self, local, *images, **speech) -> str | None:
+        """What this PC's model reads out for the agent's request (local.extract: the problem off the screen, or the
+        question out of what was heard), or None when the model failed at it (its server down, the GPU under it failing):
+        the request is then made as with no local model, which the agent answers alone. Stopping on purpose and
+        cancelling still end the analysis."""
+        try:
+            return await local.extract(*images, **speech)
+        except (asyncio.CancelledError, LoadStopped, NotSent):
+            raise
+        except Exception as exc:
+            log.warning("this PC's model could not read the problem out for the agent (%s); it goes as with no local model",
+                        exc)
+            return None
+
     async def _editor_note(self, local, look, kind: str) -> tuple[str, str]:
         """(a sentence for the agent's request, words for the card) naming the language of the code editor on the
         screen, for a coding answer the agent writes from part of the screen; ("", "") when there is nothing to say.
@@ -1910,7 +1936,9 @@ class Pipeline:
             question = transcript
             if local is not None and SETTINGS.on("extract"):   # only the question part of what was heard
                 await self.hooks.stage(seq, "extract", "speech")
-                question = await local.extract(speech=transcript)
+                question = await self._read_out(local, speech=transcript)
+                if question is None:   # this PC's model failed at it: what was heard goes as with no local model
+                    return await self._agent_payload(seq, None, frame, look, pages, transcript, voice, box, kind, seen)
                 # Nothing in what was heard reads as the problem. The whole transcript is up to two minutes of the
                 # room, and the setting promises only the question part, so it stays here. And when the model said
                 # so, it ends here: a thinking pass only wrote a report on somebody's story, and of 60 real questions
@@ -1952,7 +1980,9 @@ class Pipeline:
                 reads = ([await read_images(frame, None, near)] if near else []) + [look[:1]]
             problem, read_from = "", None
             for src in reads:   # the next one is read only when this one gave nothing
-                problem = await local.extract(src)
+                problem = await self._read_out(local, src)
+                if problem is None:   # this PC's model failed at it: the screen goes as with no local model
+                    return await self._agent_payload(seq, None, frame, look, pages, transcript, voice, box, kind, seen)
                 if problem:
                     read_from = near if src is reads[0] else None   # the box, when it was the box that gave them
                     break
@@ -1970,7 +2000,8 @@ class Pipeline:
             return [crop], CROP_REQUEST + note, t("Problem area {w}x{h}", w=size[0], h=size[1]) + said, "", None
         if local is not None:   # the local model can take it: the whole screen never goes out unasked
             raise NotSent(t("Could not find where the problem is"))
-        why = t("the local model is off, so the problem was not placed")
+        why = (t("the local model is off, so the problem was not placed") if not SETTINGS.on("local_llm")
+               else t("the local model cannot be used now, so the problem was not placed"))
         await self.hooks.notice(t("The whole screen goes to the agent ({why}) · draw a region to send only what is in it",
                                   why=why, agent=agent_name()))
         return look, build_user_text("", 0, False, True), t("Whole screen ({why})", why=why), "", None
@@ -2036,6 +2067,11 @@ class Pipeline:
         problem, for the duplicate check (which watches the whole screen without one); `kind`: its TYPE;
         `facts`: what the first pass found on the web (searched_facts), which goes along with the problem; `web`:
         it asked about the present (present_question), and the agent gets the web search for it."""
+        # This PC's model went down while the analysis ran (its first pass found the GPU failing: app.local_fault_seen): the
+        # agent's request is made as with no local model, which it can answer alone. Asked to read the question out of
+        # what was heard, the broken model failed the agent with it (76 analyses on 2026-11-20)
+        if local is not None and not self.hooks.local_ok():
+            local = None
         images, text, what, words, read_from = await self._agent_payload(seq, local, frame, look, pages, transcript,
                                                                           voice, box, kind, seen=seen)
         # only Claude Code is given a web search for the turn: the API agent and Codex have none, and telling them they

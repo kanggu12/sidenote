@@ -9,8 +9,8 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | Topic | Notes |
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
-| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127) |
-| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135), [139](#note-139) |
+| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127), [140](#note-140) |
+| [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135), [139](#note-139), [140](#note-140) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
@@ -2667,3 +2667,35 @@ problem's text, that one 4 times in 4, Python or Go chosen; asked aloud, the lan
 one 2 times in 2 when none was said. The agent was not measured again: when [note 50](#note-50) was measured, Claude
 Code wrote the language its request named on all ten screens (the problem part, the editor's language named in the
 request).
+
+### <a id="note-140"></a>140. When the GPU under this PC's model fails, the agent answers
+
+On 2026-11-20 the GPU under the local model (an RTX 4090 with ECC on) gave an error in its memory it could not correct.
+Its driver marked the row for remapping and asked for the GPU to be reset (its recovery action, "Drain and Reset"), and
+until it was, every load of the model failed in about 2 s: the model's server answered HTTP 500, "llama-server process
+has terminated: CUDA error: uncorrectable ECC error encountered". The server still counted the model usable, as its
+server answered. So every problem of the sitting tried the model first; its first pass broke off and handed the problem
+to the agent, as it should; then the agent's request asked the same model to read the question out of what was heard,
+which failed, and that failure was taken as the agent's; then the model was tried for the answer and failed again. 76
+problems ended in an error that day with the agent signed in, each after four loads of the broken model.
+
+The rule now: while either engine can answer, the problem is answered. The model's server's error is read for the GPU
+failing (`analyzer.gpu_fault`: an uncorrectable memory error, a CUDA error, the runner gone; a GPU short of memory is
+busy, not broken), and the load says it at once instead of as a time limit. Found by a request, it keeps the model
+unused for three minutes (`LOCAL_FAULT_HOLD`), after which the next problem tries it again. The llm container also reads
+the driver's recovery action with the GPU's other figures (`gpu_recovery_action`, where the driver knows the field), and
+while it asks for anything, the model stays unused (`app.local_fault`), from the server's start on. Unused, it is not
+usable for the pipeline, so the agent answers every problem as it does with no local model; the problem that found the
+fault goes to the agent too, whatever the mode, its request made as with no local model (no reading out by the broken
+model), and a reading out that fails on its own sends the problem the same way. When the agent fails as well, the
+analysis ends saying both rather than trying the model again. The agent switched off is still off: then nothing answers,
+and the card's hint is the GPU's.
+
+Everything that shows the model's state says what it is: the model's card shows **GPU error**, with the fix (restarting
+the PC resets the GPU) and who answers meanwhile, and the band, **Maintenance**'s checks (the model's row and the GPU's,
+which says its driver asks for a reset) and `./sidenote status` say the same, with no command, none of the server's
+helping; before, they said the model's server did not respond and gave `./sidenote doctor` or `./sidenote up`. The other
+direction was already so: the agent declining, failing, at its limit or signed out leaves the problem to this PC's model
+(`local_on_decline` and `local_fallback`, both on by default). Checked against the day's own answer from the model's
+server (tests/local_fallback.py): before, a spoken problem ended in that error, with the agent's failure reported as the
+model's and the broken model loaded 4 times and asked 3 times; now the agent answers it, and the model is loaded once.

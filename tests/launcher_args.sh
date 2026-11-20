@@ -853,6 +853,16 @@ if grep -qF "Local model: idle (sidenote-gemma4:26b)" <<<"$idle" && grep -qF "Lo
 else bad "status names the local model, its idle and on-GPU states, Solver settings, and what the agent takes" \
          "$(grep -hE "model|Agent" <<<"$idle$loaded$off" | tr '\n' '|')"; fi
 
+# 38b. The GPU under the local model failing (2026-11-20): status says it is the GPU, that a restart resets it and that the
+#      agent solves meanwhile, in the panel's words, and no command (it said "not responding (./sidenote llm logs)")
+state; health_with '{"present": true, "on": true, "ok": false, "model": "sidenote-gemma4:26b", "fault": {"kind": "reset", "detail": "Drain and Reset"}}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; gpufault="$(cat "$work/out")"
+if grep -qF "Local model: GPU error (Drain and Reset), restart the PC to reset the GPU, the agent solves meanwhile" <<<"$gpufault" \
+   && ! grep -qF "not responding" <<<"$gpufault" && ! grep -qF "llm logs" <<<"$gpufault"; then
+  ok "status says the GPU failed under the local model, that a restart resets it, and that the agent solves meanwhile"
+else bad "status says the GPU failed under the local model, that a restart resets it, and that the agent solves meanwhile" \
+         "$(grep -hE "model" <<<"$gpufault" | tr '\n' '|')"; fi
+
 # 39. What Docker itself says is passed on: a user outside the docker group is told so, and an NVIDIA GPU Docker cannot
 #     reach names the Container Toolkit and the CPU compose file (they used to read "check that Docker is running" and
 #     "exit code 1").

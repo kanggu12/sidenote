@@ -59,9 +59,15 @@ def _run(cmd: list[str], timeout: float = 5.0) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
+# What the GPU's chart reads, and after it, where the driver knows the field, what it asks to be done with the GPU
+# (gpu_recovery_action: "None", or "Drain and Reset" after a memory error it could not correct)
+USAGE_FIELDS = "memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw"
+
+
 def parse_nvidia_usage(out: str) -> dict | None:
-    """`nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw
-    --format=csv,noheader,nounits`, one GPU a line: the reading of the one with the most memory."""
+    """`nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw[,gpu_recovery_action]
+    --format=csv,noheader,nounits`, one GPU a line: the reading of the one with the most memory, its recovery action
+    ("recovery") when the line has one."""
     best = None
     for line in out.strip().splitlines():
         parts = [p.strip() for p in line.split(",")]
@@ -74,7 +80,8 @@ def parse_nvidia_usage(out: str) -> dict | None:
         except (ValueError, IndexError):     # "[N/A]" on cards that do not report it
             power = None
         if total > 0 and (best is None or total > best["total"]):
-            best = {"used": used, "total": total, "util": util, "temp": temp, "power": power}
+            best = {"used": used, "total": total, "util": util, "temp": temp, "power": power,
+                    "recovery": parts[5] if len(parts) > 5 else ""}
     return best
 
 
@@ -112,8 +119,9 @@ def usage() -> dict | None:
     """What the GPU is doing now, for the panel's chart where no container writes it down (a host install):
     {"used", "total" (MiB), "util" (%), "temp" (C), "power" (W, or None)}. NVIDIA through nvidia-smi on Linux and
     Windows, AMD through sysfs on Linux; None when neither answers."""
-    out = _run(["nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu,power.draw",
-                "--format=csv,noheader,nounits"], timeout=3)
+    # with the driver's recovery action (USAGE_FIELDS), or without it where the driver does not know that field
+    out = (_run(["nvidia-smi", f"--query-gpu={USAGE_FIELDS},gpu_recovery_action", "--format=csv,noheader,nounits"], timeout=3)
+           or _run(["nvidia-smi", f"--query-gpu={USAGE_FIELDS}", "--format=csv,noheader,nounits"], timeout=3))
     reading = parse_nvidia_usage(out) if out else None
     if reading is None and sys.platform.startswith("linux"):
         reading = amd_usage()

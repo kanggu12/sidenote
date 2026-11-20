@@ -1534,22 +1534,58 @@ GPU_STAT = os.environ.get("SIDENOTE_GPU_STAT", "/gpu/now.csv")
 
 
 def read_gpu() -> dict | None:
-    """{"used", "total" (MiB), "util" (%), "temp" (C), "power" (W)}, or None when there is no fresh reading."""
+    """{"used", "total" (MiB), "util" (%), "temp" (C), "power" (W), "recovery" (the driver's recovery action, "" when not
+    read)}, or None when there is no fresh reading."""
     try:
         if time.time() - os.path.getmtime(GPU_STAT) > 10:    # the container stopped writing: no old figures shown as now
             return None
         with open(GPU_STAT, encoding="ascii") as f:
-            used, total, util, temp, power = [p.strip() for p in f.readline().split(",")][:5]
+            parts = [p.strip() for p in f.readline().split(",")]
+        used, total, util, temp, power = parts[:5]
         if float(total) <= 0:                                # half a line, or a card that reports nothing: no percentage to draw
             return None
         return {"used": int(float(used)), "total": int(float(total)), "util": int(float(util)), "temp": int(float(temp)),
-                "power": round(float(power)) if power.replace(".", "").isdigit() else None}
+                "power": round(float(power)) if power.replace(".", "").isdigit() else None,
+                "recovery": parts[5] if len(parts) > 5 else ""}   # a container started before it was read: none
     except FileNotFoundError:
         from . import hardware
         with forksafe.native_work():   # nvidia-smi is a child process: never started while speech is decoded (forksafe.py)
             return hardware.usage()
     except (OSError, ValueError):
         return None
+
+
+# A failure of the GPU under the model's server, found by a request (LocalLlmAnalyzer.fault), keeps the model unused this long;
+# then the next problem tries it again, and a failure again keeps it out as long once more. A GPU whose driver asks for a
+# reset keeps it out until the reset, read every check (read_gpu)
+LOCAL_FAULT_HOLD = 180.0
+
+
+def local_fault() -> dict | None:
+    """Why this PC's model cannot be used now though its server answers ({"kind", "detail"}), or None. "reset": the GPU's
+    driver asks for the GPU to be reset (its recovery action, after a memory error it could not correct); "ecc" or "gpu":
+    the model's server failed on the GPU lately (LocalLlmAnalyzer._noticed). Seen 2026-11-20: with the driver asking for a
+    reset, every problem of a sitting tried the model, failed in 2 s, and then failed the agent too, which was given the
+    problem through the same broken model (76 analyses failed)."""
+    reading = read_gpu() or {}
+    action = str(reading.get("recovery") or "").strip()
+    if action and action.strip("[]").lower() not in ("none", "n/a", "not supported", "unknown error"):
+        return {"kind": "reset", "detail": action}
+    fault = getattr(ENGINES.local, "fault", None) if ENGINES is not None and ENGINES.local is not None else None
+    if fault and time.time() - fault["at"] < LOCAL_FAULT_HOLD:
+        return {"kind": fault["kind"], "detail": fault["detail"]}
+    return None
+
+
+def local_fault_seen(fault: dict) -> None:
+    """The model's server failed on the GPU (LocalLlmAnalyzer._noticed): the model is not used from now on, the analysis
+    under way included (the agent's request is then made as with no local model), and the panels are told at once."""
+    STATE.local = {**STATE.local, "ok": False, "loaded": None,
+                   "fault": {"kind": fault["kind"], "detail": str(fault.get("detail", ""))[:300]}}
+    try:
+        asyncio.get_running_loop().create_task(broadcast_engines())
+    except RuntimeError:   # no loop running (a test calling it alone): the next check tells them
+        pass
 
 
 _HOST_GPU: list = []   # this machine's GPU memory as found once (server/hardware.py), for a host install
@@ -1652,6 +1688,11 @@ async def check_local() -> dict:
         SETTINGS.set_options("local_model", [("auto", "Auto (fits the GPU)")] + [(m, m) for m in ids])
         SETTINGS.set_options("local_busy_model", [("", "Don't switch"), ("auto", "Auto (a smaller model)")] + [(m, m) for m in ids])
     st = await local_status(CONFIG)
+    # The server answering is not the model working: a GPU whose driver asks for a reset, or one that just failed under the
+    # server, cannot run it, and every problem would try it again first. Not usable then; the agent takes every problem
+    fault = await asyncio.to_thread(local_fault)
+    if fault and st.get("ok"):
+        st = {**st, "ok": False, "fault": fault}
     st["loaded"] = await ENGINES.local.loaded() if st.get("ok") else None
     return st
 
@@ -4046,6 +4087,7 @@ def create_app() -> FastAPI:
         SETTINGS.load()
         ENGINES = make_engines(CONFIG)
         if ENGINES.local is not None:
+            ENGINES.local.on_fault = local_fault_seen   # a GPU failing under the model's server stops its use at once
             async def on_tool(name: str, arguments: str) -> None:
                 # Web search sends words from the screen to search engines: say so on the panel, every time.
                 try:

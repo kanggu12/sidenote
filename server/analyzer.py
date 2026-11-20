@@ -555,7 +555,8 @@ LIMIT_CODES = re.compile(r"(?<![\w.])(?:429|529)(?![\w.])")
 
 def error_hint(message: str) -> str:
     """What kind of failure an analysis error is, so the panel can say how to fix it:
-    'auth' (not signed in / token rejected), 'limit' (usage or rate limit), 'timeout', ''."""
+    'auth' (not signed in / token rejected), 'limit' (usage or rate limit), 'timeout', 'gpu' (the GPU under this PC's
+    model failing, gpu_fault: it needs the GPU reset), ''."""
     m = message.lower()
     if any(k in m for k in LIMIT_WORDS) or LIMIT_CODES.search(m) or LIMIT_RE.search(m):
         return "limit"
@@ -564,15 +565,15 @@ def error_hint(message: str) -> str:
         return "auth"
     if "timeout" in m or "timed out" in m:
         return "timeout"
-    return ""
+    return "gpu" if gpu_fault(message) else ""
 
 
 def error_words(message: str) -> str:
     """The kind of failure in words of the panel's language, for a message that names it: the codes of error_hint are
     for the panel's own choice of advice and read as English in a Korean sentence."""
     from .i18n import t
-    return {"limit": t("usage limit"), "auth": t("sign-in rejected"), "timeout": t("no answer in time")}.get(
-        error_hint(message), t("error"))
+    return {"limit": t("usage limit"), "auth": t("sign-in rejected"), "timeout": t("no answer in time"),
+            "gpu": t("GPU error")}.get(error_hint(message), t("error"))
 
 
 # Local models think before they answer only when it pays. Measured on gemma4:26b: without thinking
@@ -898,6 +899,22 @@ class LocalServerError(RuntimeError):
     """The model's server answered 500, or put an error in its stream: the first pass hands the screen on."""
 
 
+def gpu_fault(text: str) -> str:
+    """Whether a failure of the model's server is the GPU under it failing: "ecc" when the GPU's memory gave an error it
+    could not correct, "gpu" for another failure of the GPU (the server's runner gone on a CUDA error), "" for anything
+    else. A GPU short of memory ("out of memory") is busy, not broken, and passes. Seen 2026-11-20 on an RTX 4090: after
+    one uncorrectable memory error the driver asked for the GPU to be reset ("Drain and Reset"), and until it was, every
+    load of the model failed in about 2 s with "llama-server process has terminated: CUDA error: uncorrectable ECC error
+    encountered"."""
+    if not text:
+        return ""
+    if re.search(r"(?i)uncorrectable ECC|\bECC error", text):
+        return "ecc"
+    if re.search(r"(?i)out of memory", text):
+        return ""
+    return "gpu" if re.search(r"(?i)CUDA error|process has terminated|GPU has fallen off|device lost", text) else ""
+
+
 class ToolsRefused(RuntimeError):
     """The model's server turned a request down for its tools: vLLM does unless it was started with tool calling on."""
 
@@ -1088,6 +1105,10 @@ class LocalLlmAnalyzer:
         import httpx2  # lazy: only needed in local mode
 
         self.cfg = cfg
+        # A failure of the GPU under the model's server ({"kind", "detail", "at"}, _noticed), until the model loads again;
+        # and who to tell when one is found (the app: app.local_fault_seen)
+        self.fault: dict | None = None
+        self.on_fault = None
         # No read timeout per chunk beyond local_timeout; connecting must be quick.
         self._client = httpx2.AsyncClient(timeout=httpx2.Timeout(cfg.local_timeout, connect=5.0))
         self._timeout = httpx2.Timeout   # a request's own read timeout, where it waits less than local_timeout (_attempt)
@@ -1266,7 +1287,10 @@ class LocalLlmAnalyzer:
                     detail = (await r.aread()).decode("utf-8", "replace")[:400]
                     if r.status_code == 400 and body.get("tools") and re.search(r"(?i)\btool", detail):
                         raise ToolsRefused(detail)
-                    # a 404 (no such model) needs fixing by hand; the server failing is handed on (fast)
+                    # a 404 (no such model) needs fixing by hand; the server failing is handed on (fast), and when
+                    # the GPU under it failed, the model is not used again until it works (_noticed)
+                    if r.status_code >= 500:
+                        self._noticed(detail)
                     raise (LocalServerError if r.status_code >= 500 else RuntimeError)(
                         f"local LLM: HTTP {r.status_code}: {detail}")
                 async for line in r.aiter_lines():
@@ -1280,6 +1304,7 @@ class LocalLlmAnalyzer:
                     except Exception:
                         continue
                     if ev.get("error"):
+                        self._noticed(str(ev["error"]))
                         raise LocalServerError(f"local LLM: {ev['error']}")
                     shared = shared or self._streams > 1
                     for ch in ev.get("choices") or ():
@@ -1451,6 +1476,8 @@ class LocalLlmAnalyzer:
         if task.cancelled():   # by cancel_load: going on would load the model again in this request
             raise LoadStopped("local LLM: loading the model was stopped (paused, or the GPU was given back)")
         if task.exception() is not None:   # each waiter its own error: one raised by all would keep their frames
+            if isinstance(task.exception(), LocalServerError):   # the GPU failing: said as it is, not as a time limit
+                raise LocalServerError(str(task.exception())) from task.exception()
             raise TimeoutError(f"local LLM: the model did not load within {self.cfg.local_timeout:.0f} s") \
                 from task.exception()
 
@@ -1477,6 +1504,7 @@ class LocalLlmAnalyzer:
             log.warning("local LLM: loading %s failed: %s", model, exc)
             return
         if r.status_code == 200:
+            self.fault = None   # it loaded: whatever failed before is over
             log.info("local LLM: %s loaded in %.1fs", model, time.time() - t)
             # each load as an event, so the report counts them and the time they took: a GPU swapping its two models at
             # every question showed only in the server's log before
@@ -1484,6 +1512,22 @@ class LocalLlmAnalyzer:
             self._warm.discard(model)   # loaded afresh: its prompt cache is empty
         else:
             log.warning("local LLM: loading %s: HTTP %d", model, r.status_code)
+            detail = (r.text or "")[:400]
+            # the GPU failing under the server: said at once, rather than as the request after it failing the same way
+            if r.status_code >= 500 and self._noticed(detail):
+                raise LocalServerError(f"local LLM: loading {model}: HTTP {r.status_code}: {detail}")
+
+    def _noticed(self, text: str) -> str:
+        """Keep a failure of the GPU under the model's server (gpu_fault) as this model's `fault` and tell the server
+        (on_fault), which stops using the model until the GPU works again (app.local_fault). Returns its kind, or ""."""
+        kind = gpu_fault(text)
+        if kind:
+            self.fault = {"kind": kind, "detail": " ".join(text.split())[:300], "at": time.time()}
+            log.warning("local LLM: the GPU failed under the model's server (%s): %s", kind, self.fault["detail"][:160])
+            telemetry.event("local_fault", kind=kind, detail=self.fault["detail"][:160])
+            if self.on_fault is not None:
+                self.on_fault(self.fault)
+        return kind
 
     async def load(self) -> None:
         """Put the model chosen in the panel on the GPU now, as the next problem would (_ready): the panel's
