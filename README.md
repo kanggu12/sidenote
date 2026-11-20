@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.12.0" src="docs/assets/badges/release.svg"></a>
+  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.12.1" src="docs/assets/badges/release.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
   <img alt="Runs on Windows, Linux and macOS" src="docs/assets/badges/runs-on.svg">
   <img alt="GPU: NVIDIA, AMD, Apple silicon or none" src="docs/assets/badges/gpu.svg">
@@ -48,7 +48,7 @@ the problem's examples.
 **Windows 10 or 11** (PowerShell)
 
 ```powershell
-curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.12.0/sidenote-server-0.12.0-windows-x64.zip
+curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.12.1/sidenote-server-0.12.1-windows-x64.zip
 mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenote.zip" -C "$env:LOCALAPPDATA\Programs"
 & "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
@@ -57,7 +57,7 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 setting, and once Sidenote is on there, the third starts it again.
 
 ```bash
-curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.12.0/sidenote-server-0.12.0-macos-arm64.zip
+curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.12.1/sidenote-server-0.12.1-macos-arm64.zip
 ditto -x -k /tmp/Sidenote.zip /Applications
 open /Applications/Sidenote.app
 ```
@@ -73,8 +73,8 @@ osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 
 **Linux** with an X11 session (on Ubuntu, Xorg from the gear on the login screen) and glibc 2.35 or newer
 
 ```bash
-curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.12.0/sidenote-server-0.12.0-linux-x64.zip
-unzip -oq sidenote-server-0.12.0-linux-x64.zip
+curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.12.1/sidenote-server-0.12.1-linux-x64.zip
+unzip -oq sidenote-server-0.12.1-linux-x64.zip
 ./Sidenote/Sidenote
 ```
 
@@ -93,7 +93,7 @@ git clone https://github.com/kanggu12/sidenote.git && cd sidenote
 [running on Kubernetes](docs/README.md#16-running-on-kubernetes).
 
 Each of these is the server, with its panel and the capture program for its own PC. For another PC whose screen goes to
-it, the release has the capture program alone, `sidenote-capture-0.12.0-windows-x64.zip`, `-macos-arm64.zip` or
+it, the release has the capture program alone, `sidenote-capture-0.12.1-windows-x64.zip`, `-macos-arm64.zip` or
 `-linux-x64.zip`, with nothing to install: [the capture program on its own](docs/capture-client.md).
 
 The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): the capture program's connection, what

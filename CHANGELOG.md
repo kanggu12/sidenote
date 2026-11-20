@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-20
+
 ### Fixed
 
 - When the GPU under this PC's model fails (a memory error it cannot correct, or the model's server dying on a CUDA
@@ -960,7 +962,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/kanggu12/sidenote/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kanggu12/sidenote/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/kanggu12/sidenote/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/kanggu12/sidenote/compare/v0.11.0...v0.11.1
