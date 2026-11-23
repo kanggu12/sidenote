@@ -6,7 +6,12 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
-An answer the other engine took over says why on its card.
+An answer the other engine took over says why on its card, and the README's quick start is shorter.
+
+### Changed
+
+- The README's quick start is shorter: two or three lines for each system, the Mac's Screen Recording in a sentence,
+  and what each way needs, the everyday commands and the capture program on its own left to the user guide.
 
 ### Fixed
 

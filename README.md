@@ -41,9 +41,9 @@ panel beside your work. It runs on your own PC, and the cloud agent sees only th
 
 ## Quick start
 
-Install Sidenote, then add what solves, one or both: the [local model](#the-local-model-optional) on your GPU, or a
-[cloud agent](#the-cloud-agent-optional) you already use. Docker adds web search and a sandbox that runs code answers on
-the problem's examples.
+Install Sidenote, then add what solves: the [local model](#the-local-model-optional) on your GPU, a
+[cloud agent](#the-cloud-agent-optional) you already use, or both. The panel opens in the browser with a setup guide
+for the rest.
 
 **Windows 10 or 11** (PowerShell)
 
@@ -53,34 +53,23 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 & "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
 
-**macOS 14 or newer** on Apple silicon (Terminal). It asks once for **Screen Recording**: the second block opens that
-setting, and once Sidenote is on there, the third starts it again.
+**macOS 14 or newer** (Apple silicon). When macOS asks for **Screen Recording**, choose **Open System Settings**, turn
+Sidenote on, then quit it from its menu bar icon and open it again.
 
 ```bash
 curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.12.1/sidenote-server-0.12.1-macos-arm64.zip
-ditto -x -k /tmp/Sidenote.zip /Applications
-open /Applications/Sidenote.app
+ditto -x -k /tmp/Sidenote.zip /Applications && open /Applications/Sidenote.app
 ```
 
-```bash
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-```
-
-```bash
-osascript -e 'tell application id "io.github.kanggu12.sidenote" to quit'; sleep 3; open /Applications/Sidenote.app
-```
-
-**Linux** with an X11 session (on Ubuntu, Xorg from the gear on the login screen) and glibc 2.35 or newer
+**Linux** (x64, an X11 session)
 
 ```bash
 curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.12.1/sidenote-server-0.12.1-linux-x64.zip
-unzip -oq sidenote-server-0.12.1-linux-x64.zip
-./Sidenote/Sidenote
+unzip -oq sidenote-server-0.12.1-linux-x64.zip && ./Sidenote/Sidenote
 ```
 
-**Docker** on Linux, on WSL 2, or on a Mac with Docker Desktop (with `git` and `python3`; on a Debian or Ubuntu desktop
-also `python3-venv`). On Windows, run it inside WSL 2, with [Python for Windows](https://www.python.org/downloads/windows/)
-for the capture program.
+**Docker** on Linux, WSL 2 or a Mac, with `git` and `python3`. It adds web search and a sandbox that runs code answers
+on the problem's examples.
 
 ```bash
 git clone https://github.com/kanggu12/sidenote.git && cd sidenote
@@ -89,21 +78,15 @@ git clone https://github.com/kanggu12/sidenote.git && cd sidenote
 ./sidenote open
 ```
 
-**Kubernetes**: the Helm chart, with the model downloaded during the install:
-[running on Kubernetes](docs/README.md#16-running-on-kubernetes).
-
-Each of these is the server, with its panel and the capture program for its own PC. For another PC whose screen goes to
-it, the release has the capture program alone, `sidenote-capture-0.12.1-windows-x64.zip`, `-macos-arm64.zip` or
-`-linux-x64.zip`, with nothing to install: [the capture program on its own](docs/capture-client.md).
-
-The first time, the panel opens its [setup guide](docs/README.md#the-setup-guide): the capture program's connection, what
-solves, the screen, the sound and a sample problem to try. Checking a download and the Mac's speaker sound are in the
-user guide's [First time](docs/README.md#3-first-time).
+On Kubernetes, use the [Helm chart](docs/README.md#16-running-on-kubernetes). The user guide has [what each way
+needs](docs/README.md#2-requirements), [starting, stopping and updating](docs/README.md#4-everyday-use), and [the
+capture program on its own](docs/capture-client.md) for another PC.
 
 ### The local model (optional)
 
-It reads every screen first on your own GPU (NVIDIA, AMD or Apple silicon), with no account. Install Ollama, quit
-Sidenote and start it again, and the panel offers the model that fits: choose **Download**.
+It reads every screen first on your GPU (NVIDIA, AMD or Apple silicon), with no account. Install Ollama, start Sidenote
+again, and choose **Download** on the panel's **Local model** card. With Docker, `./sidenote llm pull` instead
+([on a Mac](docs/README.md#with-docker), Ollama for Mac).
 
 ```
 # Windows (PowerShell)
@@ -114,28 +97,11 @@ brew install ollama
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-With Docker, `./sidenote llm pull` and then `./sidenote up` download it into a container of its own; on a Mac, Docker
-has no GPU and the model runs in Ollama for Mac ([how](docs/README.md#with-docker)).
-
 ### The cloud agent (optional)
 
-It takes the problems that need reasoning, with an account you already use: [Claude
-Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex), signed in once in a
-terminal with `claude` or `codex login`, or the Anthropic API. The app looks for it when it starts; with Docker,
-`./sidenote login` checks the login ([more](docs/README.md#the-cloud-agent)).
-
-<details>
-<summary>Everyday use: starting, stopping, updating</summary>
-
-| To | The app | Docker |
-|:---|:---|:---|
-| Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
-| Open the panel | the tray icon (on macOS, **Open the panel** in its menu), or open the app again | `./sidenote open` |
-| See what runs | the panel's cards | `./sidenote status` |
-| Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
-| Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
-| Read the logs | `logs` in the data folder: `%LOCALAPPDATA%\Sidenote`, `~/Library/Application Support/Sidenote` or `~/.local/share/sidenote` | `./sidenote logs` |
-</details>
+It takes the problems that need reasoning: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
+[Codex](https://github.com/openai/codex) signed in once in a terminal (`claude`, or `codex login`), or the Anthropic API.
+Start Sidenote again after signing in; with Docker, `./sidenote login` checks the login.
 
 ## What it does
 
