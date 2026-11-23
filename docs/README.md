@@ -653,7 +653,8 @@ marks the current one, whose screen the right column shows.
   and the search words and pages read for this answer). Sections 7 and 14 explain them.
 - When the other engine answered, a muted line under who answered says why, and stays with the answer: **Agent
   declined**, **Agent gave no answer**, **Agent failed** with what failed, **Not sent to Agent** with why, or **The
-  local model failed** with what failed, then which engine solved it.
+  local model failed** with what failed, then which engine solved it. An answer kept by an older release has no reason
+  kept, and its line says only what happened.
 - **Problem text**, on the latest screen problem, writes the problem out as text to copy (section 7).
 - Under the newest answer is **More**: **Go deeper** always, and a few that suit the kind of answer it is:
   **Another approach**, **Why this complexity** and **Find a counterexample** for an algorithm, **How to confirm**

@@ -702,6 +702,16 @@ async def reasons():
         out = await pipe.solve(303, FakeFrame(), "", False, _none)
         check("this PC's model failing: its kind is kept (the GPU), and the agent answers", out.engine == "agent"
               and out.stages.get("local_failed") is True and out.stages.get("local_error") == t("GPU error"), out.stages)
+        # the agent declines, and this PC's model then fails too: the agent's reply stands, with what failed of the model
+        SETTINGS.values["agent_mode"] = "all"
+        pipe, eng, said = make_pipeline()
+        eng.local.fast = mcq_needs_thinking
+        eng.agent.run = declines
+        eng.local.deep = failing(TimeoutError("no first token"), [])
+        out = await pipe.solve(304, FakeFrame(), "", False, _none)
+        check("the agent declining and this PC's model failing after it: the agent's reply, with what failed of the model",
+              out.engine == "agent" and out.stages.get("agent_declined") is True and out.stages.get("local_failed") is True
+              and out.stages.get("local_error") == t("no answer in time"), [out.engine, out.stages])
     finally:
         SETTINGS.values.clear()
         SETTINGS.values.update(saved)

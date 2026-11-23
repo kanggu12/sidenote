@@ -6,6 +6,15 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+The line of why the other engine answered says no "Error" where an answer kept no reason.
+
+### Fixed
+
+- On an answer kept before 0.12.2, or one held back by the spending brake, the line of why the other engine answered
+  says what happened (the agent failed, the problem was not sent to it, this PC's model failed) and leaves out the
+  reason it does not have, where it said "Error" in its place. When the agent declined and this PC's model then failed,
+  the line says what failed of the model.
+
 ## [0.12.2] - 2026-11-24
 
 An answer the other engine took over says why on its card, and the README's quick start is shorter.

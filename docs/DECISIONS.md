@@ -2714,3 +2714,5 @@ no answer in time, the GPU) and as the error's own first words where it has none
 message, `pipeline.failure_briefly`); why the problem was not sent; what failed of this PC's model; then which engine
 solved it. A refusal is said as a refusal and no more: the agent's own words on why ("it looks like an exam in
 progress") are not the card's to repeat. The line stays through a reload, as the history keeps `stages` with the answer.
+An answer with no reason kept (one kept before 0.12.2, or held back by the spending brake, whose band said why at the
+time) says what happened and leaves the reason out: "failed: Error" told nothing the word failed did not.

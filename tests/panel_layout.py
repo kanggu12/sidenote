@@ -1604,6 +1604,10 @@ def group_controls(br, s):
         9103: ("agent", {"local_failed": True, "local_error": "GPU 오류"}),
         9104: ("local", {}),
         9105: ("local", {"agent_declined": True, "agent_empty": True}),
+        # an answer kept before 0.12.2, or held back by the spending brake: no reason kept, and none made up
+        9106: ("local", {"agent_failed": True}),
+        9107: ("local", {"not_sent": True}),
+        9108: ("agent", {"agent_declined": True, "local_failed": True}),
     }
     for i, (engine, stages) in handoff.items():
         text = "TYPE: mcq\nANSWER: ③\n\n풀이"
@@ -1612,7 +1616,7 @@ def group_controls(br, s):
                {"type": "analysis_done", "id": i, "text": text, "usage": {}, "cost_usd": None, "model": "sidenote-gemma4:26b",
                 "engine": engine, "sent": [], "stages": stages, "elapsed": 3.0, "region": None})
     p.wait(400)
-    notes = p.js("""() => Object.fromEntries([9101, 9102, 9103, 9104, 9105].map((i) => [i,
+    notes = p.js("""() => Object.fromEntries([9101, 9102, 9103, 9104, 9105, 9106, 9107, 9108].map((i) => [i,
         document.querySelector(`.entry[data-id="${i}"] .handoff`)?.textContent.replace(/\\s+/g, ' ').trim() || '']))""")
     ag = p.js("() => AG()")   # the agent as the page names it (the stand-in server's: Claude Code)
     check("the agent declining: the card says it declined, with none of its words, and that this PC's model solved it",
@@ -1623,6 +1627,9 @@ def group_controls(br, s):
     check("...this PC's model failing: its kind, and that the agent solved it", notes["9103"] == f"이 PC의 모델 실패: GPU 오류 · {ag}가 풂",
           notes)
     check("...and an answer nothing was handed over for has no such line", notes["9104"] == "", notes)
+    check("...with no reason kept (an answer from before 0.12.2), it says what happened and no 'Error' in place of why",
+          notes["9106"] == f"{ag} 실패 · 이 PC의 모델이 풂" and notes["9107"] == f"{ag}에 보내지 않음 · 이 PC의 모델이 풂"
+          and notes["9108"] == f"{ag}가 거부함 · 이 PC의 모델 실패", notes)
     check("a limit band in the agent card's tone, red when nothing answers meanwhile, and no 'every engine is off' beside it",
           any("warn" in c and "사용 한도" in x for c, x in ready) and any("bad" in c and "사용 한도" in x for c, x in alone)
           and not any("모두 꺼짐" in x for _, x in alone), [ready, alone])

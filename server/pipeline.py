@@ -1800,6 +1800,7 @@ class Pipeline:
             log.warning("analysis #%d: the local model failed after the agent declined (%s); the agent's reply stands",
                         seq, exc)
             stages["local_failed"] = True
+            stages["local_error"] = failure_briefly(exc)   # what failed, for the card
             await self._warn(t("The local model could not answer ({why}) · the agent's reply is shown",
                                why=error_words(str(exc)), agent=agent_name()))
             await self.hooks.stage(seq, "agent", "", restart=True)

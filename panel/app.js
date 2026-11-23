@@ -3380,9 +3380,14 @@ function handoffHtml(m) {
   const why = [];
   // declined, said as that: its own words on why are not the card's to repeat
   if (s.agent_declined) why.push(s.agent_empty ? t("{agent} gave no answer", { agent: AG() }) : t("{agent} declined", { agent: AG() }));
-  if (s.agent_failed) why.push(t("{agent} failed: {why}", { agent: AG(), why: escapeHtml(s.agent_error || t("Error")) }));
-  if (s.not_sent && s.not_sent_why) why.push(t("Not sent to {agent}: {why}", { agent: AG(), why: escapeHtml(s.not_sent_why) }));
-  if (s.local_failed || s.local_error) why.push(t("The local model failed: {why}", { why: escapeHtml(s.local_error || t("Error")) }));
+  // each with what failed or why when the answer kept it, and without when it did not (one kept before 0.12.2, or held
+  // back by the spending brake, whose band said why at the time): "failed: Error" told nothing the word failed did not
+  if (s.agent_failed) why.push(s.agent_error ? t("{agent} failed: {why}", { agent: AG(), why: escapeHtml(s.agent_error) })
+    : t("{agent} failed", { agent: AG() }));
+  if (s.not_sent) why.push(s.not_sent_why ? t("Not sent to {agent}: {why}", { agent: AG(), why: escapeHtml(s.not_sent_why) })
+    : t("Not sent to {agent}", { agent: AG() }));
+  if (s.local_failed || s.local_error) why.push(s.local_error ? t("The local model failed: {why}", { why: escapeHtml(s.local_error) })
+    : t("The local model failed"));
   if (!why.length) return "";
   // who answered instead; none when the card is the agent's own refusal (this PC's model failed after it declined)
   const by = m.engine === "local" ? t("the local model solved it")
