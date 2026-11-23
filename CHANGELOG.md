@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+An answer the other engine took over says why on its card.
+
 ### Fixed
 
 - An answer the other engine took over says why on its card, under the line of who answered: that the agent declined or
@@ -14,6 +16,9 @@ that only fixes raises the patch number. Each release's section here is its rele
   without the agent's own words on why.
 
 ## [0.12.1] - 2026-11-20
+
+When the GPU under this PC's model fails, the agent answers in its place, and the panel says what failed and what
+resets it.
 
 ### Fixed
 
@@ -27,6 +32,8 @@ that only fixes raises the patch number. Each release's section here is its rele
   model again.
 
 ## [0.12.0] - 2026-11-19
+
+Code answers come in a language you choose when nothing names one, Python by default.
 
 ### Added
 

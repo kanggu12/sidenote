@@ -47,6 +47,14 @@ for v, _ in versions:
         "https://github.com/kanggu12/sidenote/"), links.get(v))
 check("Unreleased has its compare link from the newest release", links.get("Unreleased", "").endswith(
     f"/compare/v{versions[0][0]}...HEAD"), links.get("Unreleased"))
+for v, _ in versions:
+    if tuple(map(int, v.split("."))) < (0, 12, 0):
+        continue   # the rule starts at 0.12.0: the sections before it open with their first heading
+    code, out, err = notes(v)
+    first = out.strip().split("\n", 1)[0]
+    # the release page's first line is what a reader decides by, so it says what the release is before Added or Fixed
+    check(f"{v}: its notes open with a line on what the release is, before the first heading",
+          code == 0 and first and not first.startswith("#"), first[:80])
 
 print("[the script release.yml runs]")
 code, out, err = notes("v" + versions[0][0])
