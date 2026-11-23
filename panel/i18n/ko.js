@@ -283,7 +283,7 @@ CATALOGS.ko = {
   "Get the model with {cmd} in the server's terminal, then {up}": "서버 터미널에서 모델 받기 {cmd}, 그다음 {up}",
   "{title} Run {cmd} in the server's terminal · resumes within 20 seconds": "{title} 서버 터미널에서 {cmd} · 20초 안에 이어짐",
   " · the agent solves meanwhile": " · 그동안 {agent}가 풂",
-  " · turn on the agent and it solves meanwhile": " · {agent}를 켜면 그동안 {agent}가 풂",
+  " · turn on the agent and it solves meanwhile": " · {agent}를 켜면 그동안 풂",
   "{agent} declined": "{agent}가 거부함",
   "{agent} gave no answer": "{agent}가 답하지 않음",
   "{agent} failed: {why}": "{agent} 실패: {why}",
