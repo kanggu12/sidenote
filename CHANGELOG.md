@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-24
+
 An answer the other engine took over says why on its card, and the README's quick start is shorter.
 
 ### Changed
@@ -981,7 +983,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/kanggu12/sidenote/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/kanggu12/sidenote/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kanggu12/sidenote/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/kanggu12/sidenote/compare/v0.11.1...v0.11.2
