@@ -9,7 +9,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | Topic | Notes |
 |:---|:---|
 | [Capture, change detection and when an analysis runs](#capture-change-detection-and-when-an-analysis-runs) | [1](#note-1), [3](#note-3), [6](#note-6), [11](#note-11), [14](#note-14), [16](#note-16), [21](#note-21), [22](#note-22), [26](#note-26), [30](#note-30), [34](#note-34), [35](#note-35), [40](#note-40), [44](#note-44), [51](#note-51), [55](#note-55), [56](#note-56), [57](#note-57), [64](#note-64), [69](#note-69), [71](#note-71), [88](#note-88), [91](#note-91), [93](#note-93), [97](#note-97), [103](#note-103), [126](#note-126), [128](#note-128), [130](#note-130) |
-| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127), [140](#note-140), [141](#note-141) |
+| [Choosing who answers (routing, handoff, spend) and what is sent](#choosing-who-answers-routing-handoff-spend-and-what-is-sent) | [2](#note-2), [10](#note-10), [10b](#note-10b), [48](#note-48), [49](#note-49), [50](#note-50), [53](#note-53), [54](#note-54), [71](#note-71), [77](#note-77), [78](#note-78), [81](#note-81), [88](#note-88), [89](#note-89), [117](#note-117), [127](#note-127), [140](#note-140), [141](#note-141), [142](#note-142) |
 | [The local model and the answer prompt](#the-local-model-and-the-answer-prompt) | [3](#note-3), [15](#note-15), [41](#note-41), [66](#note-66), [71](#note-71), [76](#note-76), [80](#note-80), [94](#note-94), [100](#note-100), [107](#note-107), [108](#note-108), [109](#note-109), [110](#note-110), [111](#note-111), [115](#note-115), [117](#note-117), [127](#note-127), [135](#note-135), [139](#note-139), [140](#note-140) |
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
@@ -2716,3 +2716,32 @@ solved it. A refusal is said as a refusal and no more: the agent's own words on 
 progress") are not the card's to repeat. The line stays through a reload, as the history keeps `stages` with the answer.
 An answer with no reason kept (one kept before 0.12.2, or held back by the spending brake, whose band said why at the
 time) says what happened and leaves the reason out: "failed: Error" told nothing the word failed did not.
+
+### <a id="note-142"></a>142. What the owner's own use asked of a spoken sitting
+
+A sitting of spoken questions, with the screen off and the agent at its weekly limit, showed where the time and the
+answers went, and each of these is fixed where it went.
+
+- **Continue loads the model.** The first question after Continue waited out the whole load (51 s for the 26b, 56 s for
+  the e4b), and a Pause pressed between two Continues had stopped a load already under way. Continue now loads this PC's
+  model as Load to GPU does, when it is not on the GPU and something can start an analysis; a pause still stops a load,
+  but not one a Continue after it started (`app.warm_on_resume`, the worker reading `STATE.paused`).
+- **A spoken problem being worked out is let finish.** A thinking pass writes no answer words for 20 to 80 s, and in that
+  time any later run of speech replaced it, as the longer version of the same problem would (note 106): a question went
+  unanswered after 31 s for a few words after it that had nothing to solve. Only the same run read on, whose words carry
+  the running one's, replaces it now; another run waits its turn, as one behind an answer being written does.
+- **A follow-up is answered while either engine can.** One about the agent's answer ended in an error, or showed the
+  agent's refusal, with this PC's model on and never asked; and one about a spoken question this PC's model answered
+  went with no question in it, nothing of a screen going either. Both are answered as a problem is (note 140).
+- **The meters end a rest on the plan's limit.** The rest came from the agent's own "resets Nov 26" and stood for days
+  beside meters that showed the week 10% used. Meters with room in every window end it; a limit that comes back after
+  that keeps its rest to its own time (`Spend.meters_doubted`), or every reading would send one more question to a
+  limit the meters cannot see.
+- **The large model stays for a hold nearly over.** After one busy verdict it was taken off the GPU with 10 s of a 30 s
+  hold left and loaded again for the next question (11.6 s); it is given back only with at least the wait itself left.
+- **Thinking answers are counted over their whole time.** Their reasoning comes before the first word shown, as the
+  agent's does, and over the time after that word the card read 236 tokens/s for answers written at 31 to 100.
+
+What it did not change: the thinking pass on spoken explanations (20 to 40 s of the answers' time, where the same model
+without it answered others in 6 s) is a question of how good the answers stay, which only the model can answer, and is
+measured before anything changes.

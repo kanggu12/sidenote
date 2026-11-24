@@ -32,11 +32,12 @@ system). It needs Python 3.10 or newer ([python.org](https://www.python.org/down
 the `py` command), and pip installs the packages it needs with it and gives it a command:
 
 ```bash
+python3 -m venv ~/.sidenote-capture && . ~/.sidenote-capture/bin/activate
 python3 -m pip install https://github.com/kanggu12/sidenote/releases/download/v0.12.3/sidenote_capture-0.12.3-py3-none-any.whl
 sidenote-capture --server ws://127.0.0.1:8777/ingest
 ```
 
-On Windows, `py -3 -m pip install` the same address; on Linux and macOS, in a virtual environment. On macOS, run it in
+On Windows, `py -3 -m pip install` the same address, with no virtual environment needed. On macOS, run it in
 Terminal, which macOS then asks once for **Screen Recording**. From the repository's `client` folder it runs as
 `python3 capture.py`, after `python3 -m pip install -r requirements.txt` there.
 

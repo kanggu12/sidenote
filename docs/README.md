@@ -151,7 +151,10 @@ Install Sidenote, start it once, and add what solves: the local model, the cloud
    notification area (on Windows 11 it may be hidden under the **^** by the clock), or in the menu bar on macOS.
 3. Optional, on your GPU: install Ollama with the line for your system in the quick start's
    [local model](../README.md#the-local-model-optional) part, then quit Sidenote and start it again: the app starts
-   Ollama when it starts. The **Local model** card then offers the model for this GPU with **Download**, shows how far
+   Ollama with Sidenote's settings when it starts. One that Ollama's installer started (on Windows and Linux) keeps its
+   own defaults, which read small code text less well: quit it first (on Windows, **Quit Ollama** in its tray icon and
+   off in **Startup apps**; on Linux, `sudo systemctl disable --now ollama`). The **Local model** card then offers the
+   model for this GPU with **Download**, shows how far
    the download has got, and says when the model is ready. Without Ollama, the agent solves everything; turn **Local
    model** off in **Solver settings** so the panel stops asking for it.
 4. On macOS, the first capture makes macOS ask for **Screen Recording** for Sidenote. Choose **Open System Settings**
@@ -239,8 +242,8 @@ hand). The steps of `install`, by hand:
 ./sidenote doctor          # check the setup
 ```
 
-On a Mac, the first capture asks for **Screen Recording** for your terminal: allow it, then run `./sidenote capture
---up` again. Docker on a Mac has no GPU, so the local model runs in Ollama on the Mac, which the server asks. In the
+On a Mac, the first capture asks for **Screen Recording** for your terminal: allow it, then run `./sidenote
+capture-stop` and `./sidenote capture --up`, as the program started without it goes on without it. Docker on a Mac has no GPU, so the local model runs in Ollama on the Mac, which the server asks. In the
 `sidenote` folder, with [Homebrew](https://brew.sh):
 
 ```bash
@@ -444,7 +447,7 @@ of the same name. It is also the setup guide's first step.
   or **By hand**) and what its tray's **Quit** ends, the **Address** it was given and **Since** when it is connected. The
   program says these in its hello as it connects; one older than 0.8.0 says none of them. A program of another release
   turns the card amber, with what to do: one started from the server's checkout runs the server's code once restarted,
-  and one elsewhere is replaced from that release's `sidenote-capture-<version>-<system>.zip`, which the card links to.
+  and one elsewhere is replaced from that release's `sidenote-capture-<version>-<os>-<arch>.zip`, which the card links to.
 - **Restart** and **Quit the program**, which asks twice, ask the program what its tray's **Restart capture** and
   **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
   **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.
@@ -758,7 +761,8 @@ the window and stays there, and going up it moves back until its head is under t
   says which window. It reads **Windows not skipped** or **Front window only**, in amber, where the capture program
   cannot read all the windows and screens still go out (section 12).
 - **Local model**: which model, whether it is on the GPU (**On GPU**, or **Idle** once the GPU was given back, with
-  **Free GPU** and **Load to GPU**), the GPU's load and memory, and what it has done today.
+  **Free GPU** and **Load to GPU**), the GPU's load and memory, and what it has done today. **Continue** loads it too,
+  when it is not on the GPU and the screen or **Solve spoken problems** can start an analysis.
 - **Agent**, with a switch of its own (off keeps the mode it had, so on brings it back): the account it is signed in
   as, with the product and its plan, in a box.
   - With Claude Code, two meters show the plan's usage of its five-hour session and of its week (**Session**,
@@ -1105,7 +1109,12 @@ When the agent cannot be asked:
 - When the agent says its plan's usage is used up ("weekly limit, resets ...", Codex's "try again at 12:26 PM" or "at
   Nov 4th, 2026 11:13 AM", the API's "credit balance is too low"), it is not asked again until the time it gives (an
   hour when it gives none). The local model answers meanwhile: the band at the top of the panel says until when, and
-  the agent's card counts the time down.
+  the agent's card counts the time down. With Claude Code, the rest ends sooner when the plan's meters, read again
+  every minute and a half while a panel is open, show room in every window; when the limit comes back after that, the
+  rest keeps its own time. An answer the agent would have taken meanwhile says on its card that it was not sent, for
+  the usage limit.
+- A follow-up about the agent's answer goes to the agent, and to this PC's model when the agent fails, times out,
+  reaches its limit or declines (with **This PC's model answers when the agent declines** on), as a problem does.
 - With the local model switched off, it answers for the agent while the agent cannot: at its plan's usage limit (the
   problem that met the limit included), with its sign-in gone, or at the hourly cost limit (**The local model stands
   in at a limit**, on by default). A two-minute rate limit, and the pause after answers in a row that found nothing,

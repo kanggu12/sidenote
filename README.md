@@ -101,7 +101,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 It takes the problems that need reasoning: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or
 [Codex](https://github.com/openai/codex) signed in once in a terminal (`claude`, or `codex login`), or the Anthropic API.
-Start Sidenote again after signing in; with Docker, `./sidenote login` checks the login.
+A CLI installed while Sidenote runs is found when it starts again; with Docker, `./sidenote login` checks the login.
 
 ## What it does
 

@@ -162,8 +162,8 @@ setx SIDENOTE_LOCAL_PULL 0
 setx HF_HUB_OFFLINE 1
 ```
 
-`setx` reaches only the programs started after it. Start Sidenote from the Start menu or a new Command Prompt; if it is
-already running, quit it from its tray icon first.
+`setx` reaches only the programs started after it. Start `Sidenote.exe` again from where it was unpacked, or from a new
+Command Prompt; if it is already running, quit it from its tray icon first.
 
 On Linux, with `ollama` from its archive on the `PATH`:
 

@@ -6,6 +6,47 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+Spoken questions are not dropped while an answer is being worked out, a follow-up is answered while either engine can,
+and Continue puts this PC's model on the GPU before the first question.
+
+### Changed
+
+- **Continue** puts this PC's model on the GPU when it is not there and the screen or Solve spoken problems can start an
+  analysis, as **Load to GPU** does, so the first question does not wait for the whole load. A **Pause** between two
+  Continues no longer stops the load the last one started.
+- The agent's rest on its plan's limit ends when the plan's meters, read fresh, show room in every window, rather than
+  at the time the agent named. When the limit comes back after that, the rest keeps its own time.
+- Answers this PC's model wrote while the agent rested on its limit say on their card that the problem was not sent to
+  the agent, for its usage limit.
+- The help under each setting is one or two short phrases, and the first screen has no row of tips.
+- `./sidenote gpu on` puts back what `gpu off` changed, and leaves **The local model stands in at a limit** as it was.
+- **Maintenance** writes the agent's limit as the panel does (`11.26(목) 10:00 AM까지 사용 한도`).
+
+### Fixed
+
+- A spoken question still being worked out (a thinking pass writes no answer words for 20 to 80 s) was stopped by a
+  later, different run of speech and never asked again. It is let finish, and the newer one is asked after it.
+- A follow-up about the agent's answer ended in an error, or showed the agent's refusal, when the agent failed, timed
+  out, reached its limit or declined, with this PC's model on and never asked. This PC's model answers it.
+- A follow-up about a spoken question this PC's model answered carries the question heard.
+- The agent's own timeout is said as no answer in time, on the card and in the notice, where it was "error" or its
+  English words; an overloaded API is said as overloaded servers, not a usage limit.
+- After the GPU was found busy, the large model was taken off the GPU with 10 s of a 30 s hold left, only to load again
+  for the next question. It stays on for a hold that is nearly over.
+- The local model card's tokens per second count a thinking answer over its whole time; they read 236 for answers
+  written at 31 to 100.
+- The **Paused** band says what **Reanalyze** takes with the screen off (what was heard); with the GPU failing while the
+  agent rests on its limit, the bands no longer say to turn on an agent that is on, nor that the model does not respond.
+- The contents' list of days stays inside its card, where it covered the answer beside it; a card a lost connection cut
+  says to try again once the connection is back; **Maintenance**'s chosen chips are filled, and its restore command
+  names the backup as it was saved; a follow-up's answer label lines up with its line.
+- `./sidenote capture --up` checks the capture packages before it starts the server, which a failed start left running.
+  The capture program started on its own, for a server on another PC or in a cluster, no longer names `./sidenote`
+  commands. On a Mac with Docker, the launcher points at Ollama for Mac rather than at a model for the CPU.
+- The user guide says how to have Sidenote's settings on an Ollama its installer started, how to start capture again
+  after allowing Screen Recording with Docker on a Mac, and installs the capture program's wheel in a virtual
+  environment.
+
 ## [0.12.3] - 2026-11-24
 
 The line of why the other engine answered says no "Error" where an answer kept no reason.
