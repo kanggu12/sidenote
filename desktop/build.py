@@ -382,7 +382,10 @@ def main() -> int:
     args += COLLECT + SOUND + EXCLUDE
     args += ["--add-data", f"{ROOT / 'client' / 'capture.py'}{SEP}client"]
     args += ["--add-data", f"{ROOT / 'client' / 'logo.png'}{SEP}client"]   # the capture's logo, which its tray menu shows beside the program
-    for name in CAPTURE_IMPORTS:
+    # What the capture program imports, as the capture program alone carries it (capture_imports): the server's own imports
+    # bring most of it, but not the tray menu's own (PIL.ImageEnhance, tkinter.font on Windows), which --check runs. With
+    # CAPTURE_IMPORTS alone the app's drawn menu never opened, and since --check ran its imports the build stopped there
+    for name in sorted(set(CAPTURE_IMPORTS) | set(capture_imports())):
         args += ["--hidden-import", name]
     if WINDOWS:
         # no console window: the tray icon and the panel are the program's face, and a problem shows in a message box
