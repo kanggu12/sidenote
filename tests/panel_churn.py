@@ -29,7 +29,7 @@ import support  # noqa: E402  (the settings message, the panel's libraries and t
 PANEL = Path(os.environ.get("PANEL_DIR") or ROOT / "panel")
 ONLY = [x.strip() for x in os.environ.get("ONLY", "").split(",") if x.strip()]
 PASS, FAIL = [], []
-CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "app.py").read_text(),
+CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "guards.py").read_text(),
                                                   re.S | re.M).group(1)))
 F = "```"
 

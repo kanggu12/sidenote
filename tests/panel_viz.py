@@ -42,9 +42,9 @@ ROOT = HERE.parent                         # the repository
 PANEL = Path(os.environ.get("PANEL_DIR") or ROOT / "panel")
 SHOTS = support.out("viz")
 # The policy the server sends with the panel, as written in server/app.py (CSP = ("..." "...")).
-CSP = " ".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "app.py").read_text(),
+CSP = " ".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "guards.py").read_text(),
                                                    re.S | re.M).group(1)))
-CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "app.py").read_text(),
+CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "guards.py").read_text(),
                                                   re.S | re.M).group(1)))
 check, PASS, FAIL = pr.check, pr.PASS, pr.FAIL
 

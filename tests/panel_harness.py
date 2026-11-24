@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "tests"))            # support.py beside it, where
 import support  # noqa: E402
 
 PANEL = Path(os.environ.get("PANEL_DIR") or ROOT / "panel")
-CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "app.py").read_text(encoding="utf-8"),
+CSP = "".join(re.findall(r'"([^"]*)"', re.search(r"^CSP = \((.*?)\)$", (ROOT / "server" / "guards.py").read_text(encoding="utf-8"),
                                                   re.S | re.M).group(1)))
 SHOTS = support.out("shots")
 
