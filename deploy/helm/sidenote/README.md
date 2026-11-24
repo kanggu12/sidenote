@@ -29,7 +29,7 @@ first and what differs from compose.
 The chart points the server at the other components: `SIDENOTE_RUNNER_URL=http://<release>-runner:8000/run`,
 `SIDENOTE_SPEECH_URL=http://<release>-speech:8779`, `SIDENOTE_LOCAL_URL=http://<release>-llm:11434/v1` and
 `SIDENOTE_SEARCH_URL=http://<release>-searxng:8080/search`. A component that is switched off gets an empty address (no
-run button, no web search; with `speech.enabled=false` the server's own pod runs the speech model, as before 0.14.0). With `llm.enabled=false`
+run button, no web search; with `speech.enabled=false` the server's own pod runs the speech model). With `llm.enabled=false`
 and no `SIDENOTE_LOCAL_URL` of your own, the chart sets `SIDENOTE_ANALYZER=agent` so the agent solves alone.
 
 ## Requirements
@@ -207,7 +207,7 @@ panel to your network.
 The capture program sends to `ws://127.0.0.1:8777/ingest` by default. Run the port-forward on the PC with the screen
 (on Windows, or in WSL on that PC: Windows reaches WSL's localhost), and start the program as usual: `./sidenote capture`
 from the repository (it only checks that `http://127.0.0.1:8777/health` answers), or the release's capture program for
-that PC's system, `sidenote-capture-0.14.0-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`, which needs nothing
+that PC's system, `sidenote-capture-0.14.1-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`, which needs nothing
 installed and sends to that address by default, so a double-click starts it
 ([the capture program on its own](../../../docs/capture-client.md) gives its commands and the Python one for other
 systems). A port-forward ends when the pod behind it is replaced, after an upgrade or a restart; start it again, and the

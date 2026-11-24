@@ -168,7 +168,7 @@ speech:
   # The speech model in a pod of its own (speech-deployment.yaml; compose service "speech", server/speech_service.py):
   # the server sends it the sound and gets the words back over a Service only the server's pods may reach. Its
   # decoder's threads, its two models and their loading have their own requests, limits and restarts. false: the
-  # server's own pod runs the speech model, as before 0.14.0 (its data claim then holds the models, as said above).
+  # server's own pod runs the speech model (its data claim then holds the models, as said above).
   # Its settings are the server's: SIDENOTE_WHISPER_* and SIDENOTE_AUDIO in server.env reach this pod too.
   enabled: true
   # The whisper models (about 2.1 GB for the two defaults), downloaded once. enabled: false uses an emptyDir, and the

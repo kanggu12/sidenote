@@ -6,6 +6,18 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-24
+
+0.14.0's changes, released with every file: the speech service starts on a machine with fewer than six cores.
+
+### Fixed
+
+- `docker compose up` run by hand, with no `./sidenote` to bring the speech service's 6 CPUs down to the machine's,
+  failed on a machine with fewer cores, as it did in the release's own checks, so 0.14.0 was never published; its
+  changes, below, come with this release. `./sidenote up` already brought it down.
+- With no internet, the speech service is told so as the server is (`HF_HUB_OFFLINE` in `.env`, as the guide writes
+  it), and reads the bundle's models without asking for them.
+
 ## [0.14.0] - 2026-11-24
 
 The speech model runs as a service of its own, beside the server, and the server's code is split into modules that each
@@ -1112,7 +1124,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/kanggu12/sidenote/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/kanggu12/sidenote/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/kanggu12/sidenote/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/kanggu12/sidenote/compare/v0.13.0...v0.13.1

@@ -59,7 +59,7 @@ services:
       # network. Empty turns the "run this solution" feature off.
       SIDENOTE_RUNNER_URL: ${SIDENOTE_RUNNER_URL-unix:///sock/runner.sock}
       # The speech service (below), which writes down what is heard. Empty: the speech model runs in this container,
-      # as before 0.14.0 and as the desktop app runs it.
+      # as the desktop app runs it in its own process.
       SIDENOTE_SPEECH_URL: ${SIDENOTE_SPEECH_URL-http://speech:8779}
     networks:
       - default      # the agent's CLI here reaches its vendor (claude.ai, chatgpt.com)
