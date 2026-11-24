@@ -3580,7 +3580,7 @@ async def test_check_and_runner():
     print("\n[code check and server: each language's forms, in-place answers, shell blocks, the gateway and the runner's token]")
     import time as _time
     from server import codecheck as cc
-    from server.app import PeerGuard, route_gateways
+    from server.guards import PeerGuard, route_gateways
     java = """/**
  * Definition for singly-linked list.
  * public class ListNode { int val; ListNode next; }

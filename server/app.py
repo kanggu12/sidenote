@@ -22,15 +22,11 @@ import asyncio
 import base64
 import collections
 import concurrent.futures
-import http.client
-import io
-import ipaddress
 import functools
 import hmac
 import pathlib
 import json
 import logging
-import math
 import os
 import re
 try:
@@ -39,8 +35,6 @@ except ImportError:
     resource = None
 import shutil
 import signal
-import socket
-import struct
 import time
 import unicodedata
 import urllib.error
@@ -50,7 +44,6 @@ from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -60,16 +53,23 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.websockets import WebSocketState
-from PIL import Image
 
-from . import faces, forksafe, history as answers_log, i18n, maintenance, models, report, repeats, telemetry, terms, watchdog
+from . import forksafe, history as answers_log, i18n, maintenance, models, report, repeats, telemetry, terms, watchdog
 from . import agents
 from .analyzer import (LOCAL_SEEN, LoadStopped, busy_model, error_hint, error_words, local_models, local_status,
                        main_model, make_engines)
 from .codecheck import CHECKED, RUNNER_MARK, args_lines
 from .config import CONFIG, agent_label, agent_name
 from .detector import make_detector
-from .gate import distance, signature
+# The screen as the analyses take it: covered faces, the model's image, the thumbnail, the change signature (frames.py)
+from .frames import Frame, prepare_frame, window_list
+# Who may talk to the server, and the headers every answer carries (guards.py)
+from .guards import LOCAL_HOSTS, PeerGuard, SecurityHeaders, origin_ok, same_origin
+# The code runner's client: over its Unix socket under compose, over HTTP with its token in a cluster (runner_client.py)
+from .runner_client import _get_ok, _post_json, run_wait_seconds
+# What the API's routes share: the refusals, the body read with its cap, the events stream, the replies (api_support.py)
+from .api_support import MAX_BODY, BackupResponse, EventStream, Replies, api_body, api_error, api_refused, sse
+from .gate import distance
 from .heads import head_of
 from .i18n import t
 from .ocr_gate import make_ocr
@@ -114,152 +114,6 @@ def _background_done(task) -> None:
     if exc is not None:
         log.error("background task %s failed: %s: %s", task.get_name(), type(exc).__name__, exc,
                   exc_info=exc)
-
-# Who may talk to the server. The panel shows your screen and what was heard, and has no login: any
-# web page open in the browser could otherwise open ws://127.0.0.1:8777/panel (browsers allow
-# cross-site WebSockets), or reach the server under its own domain pointed at 127.0.0.1 (DNS
-# rebinding). So the Host must be this machine, and a browser's WebSocket must come from the panel.
-LOCAL_HOSTS = ["127.0.0.1", "localhost"]
-
-
-def same_origin(ws: WebSocket) -> bool:
-    origin = ws.headers.get("origin")
-    if not origin:
-        return True   # not a browser (the capture program, curl): a web page cannot open these
-    return origin_ok(origin, ws.headers.get("host"))
-
-
-def route_gateways(route_file: str = "/proc/net/route") -> set[ipaddress.IPv4Address]:
-    """The gateway of this container's default route, from its routing table: the bridge Docker's proxy connects
-    from when something comes in through the published port (any other route's gateway is not trusted)."""
-    try:
-        with open(route_file, encoding="ascii") as f:
-            rows = [ln.split() for ln in f.readlines()[1:]]
-    except OSError:
-        return set()
-    found = set()
-    for row in rows:
-        try:
-            dest, gw, mask = (ipaddress.IPv4Address(struct.pack("<I", int(row[k], 16))) for k in (1, 2, 7))
-        except (IndexError, ValueError, struct.error):
-            continue
-        if int(gw) and not int(dest) and not int(mask):
-            found.add(gw)
-    return found
-
-
-class PeerGuard:
-    """Pure ASGI middleware: only the published port and this container itself reach the server. The browser and
-    the capture program come in through the published port, so from the gateway of the network the default route
-    goes through; any other peer is another container, above all the code runner: the example check runs code a
-    model wrote from what is on the screen, and that code could otherwise open /panel or /ingest the way the
-    capture program does (no Origin header, any Host it likes) and change settings or answer a confirmation.
-    Nothing is looked up by name (a lookup of the runner, the first way, made every request wait out a slow
-    resolver and let everything through until it answered). A peer that is not an address (an in-process test
-    client) passes."""
-
-    def __init__(self, app, route_file: str = "/proc/net/route", trust_gateway: bool | None = None):
-        self.app = app
-        self.route_file = route_file
-        # SIDENOTE_TRUST_GATEWAY off (the Helm chart): loopback alone, as kubectl port-forward arrives
-        self.trust_gateway = CONFIG.trust_gateway if trust_gateway is None else trust_gateway
-        self.gateways = route_gateways(route_file) if self.trust_gateway else set()
-
-    def allowed(self, peer) -> bool:
-        if peer.version == 6 and peer.ipv4_mapped:
-            peer = peer.ipv4_mapped
-        if peer.is_loopback or peer in self.gateways:
-            return True
-        if not self.trust_gateway:
-            return False
-        self.gateways = route_gateways(self.route_file)   # the networks may have changed since
-        return peer in self.gateways
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] not in ("http", "websocket"):
-            return await self.app(scope, receive, send)
-        try:
-            peer = ipaddress.ip_address((scope.get("client") or ("",))[0])
-        except ValueError:
-            return await self.app(scope, receive, send)
-        if self.allowed(peer):
-            return await self.app(scope, receive, send)
-        telemetry.event("refused", path=str(scope.get("path"))[:120], origin=f"peer {peer}")
-        if scope["type"] == "websocket":
-            await receive()   # the handshake's websocket.connect, then the refusal (an HTTP 403)
-            await send({"type": "websocket.close", "code": 1008})
-            return
-        await send({"type": "http.response.start", "status": 403,
-                    "headers": [(b"content-type", b"text/plain; charset=utf-8"), *SECURITY_HEADERS]})
-        await send({"type": "http.response.body", "body": b"forbidden"})
-
-
-# Every HTTP answer: scripts, styles, fonts and connections only from this server (the panel's
-# libraries are served from vendor/, fetched and checksum-verified when the image is built), no
-# framing, no sniffing, no referrer, no camera or microphone. Inline styles stay allowed: KaTeX
-# draws formulas with them (answer HTML cannot carry style attributes: DOMPurify drops them).
-CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-       "font-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; base-uri 'none'; "
-       "form-action 'none'; frame-ancestors 'none'")
-SECURITY_HEADERS = [
-    (b"content-security-policy", CSP.encode()),
-    (b"x-content-type-options", b"nosniff"),
-    (b"x-frame-options", b"DENY"),
-    (b"referrer-policy", b"no-referrer"),
-    (b"cross-origin-opener-policy", b"same-origin"),
-    (b"cross-origin-resource-policy", b"same-origin"),
-    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), display-capture=(), usb=(), payment=()"),
-    (b"cache-control", b"no-cache"),   # after an update the browser asks again instead of mixing old files
-]
-
-
-class SecurityHeaders:
-    """Pure ASGI middleware (BaseHTTPMiddleware would buffer and does not see WebSockets anyway)."""
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        async def send_with_headers(message):
-            if message["type"] == "http.response.start":
-                message["headers"] = [h for h in message.get("headers", []) if h[0].lower() != b"cache-control"] + SECURITY_HEADERS
-            await send(message)
-
-        await self.app(scope, receive, send_with_headers)
-
-
-@dataclass
-class Frame:
-    model_b64: str          # possibly downscaled PNG, base64 (sent to the model + OCR)
-    thumb_url: str          # small JPEG data URL (shown in the panel)
-    sig: bytes              # high-pass change-detection signature
-    ts: float
-    width: int
-    height: int
-    ocr_text: str = ""      # on-screen text (filled in the executor when OCR is on)
-    # Where the text detector found lines on this screen, in screen fractions, filled the first time
-    # a crop of this frame needs them (pipeline.text_lines). Kept here so several crops of one screen
-    # pay for the detector once.
-    ocr_lines: list | None = None
-    # Scroll-stitched page (client --stitch): the full unrolled problem, cut into tiles
-    # sent to the model after the screen itself; extra_sig fingerprints that content.
-    extra_b64: list[str] = field(default_factory=list)
-    extra_sig: bytes | None = None
-    # The screen as it arrived (up to the capture program's --max-width, the monitor's own size by
-    # default): problem crops are cut from this, not from the downscaled model image.
-    full_png: bytes = b""
-    # Visible top-level windows, front to back, in screen fractions (from the capture program): a
-    # crop is clipped to the window holding the problem.
-    windows: list | None = None
-    # The part of the screen the model image shows (the OCR crop, SIDENOTE_CROP); the whole screen
-    # by default. Boxes the model gives are fractions of this.
-    model_box: tuple = (0.0, 0.0, 1.0, 1.0)
-    # How many faces were painted over on this screen and its pages before anything was made from them (faces.py).
-    faces: int = 0
-
 
 @dataclass
 class AppState:
@@ -531,237 +385,15 @@ def save_switches() -> None:
         log.warning("switches not saved (%s)", exc)
 
 
-# Problem-region crop tuning: pad the text box by this fraction of the image, and
-# only crop when the padded text region is a worthwhile sub-rectangle: smaller
-# than CROP_MAX_AREA (otherwise there's nothing to trim) but not below CROP_MIN_AREA
-# (a tiny text island on a mostly-graphical screen is left whole, to be safe).
-CROP_PAD_FRAC = 0.04
-CROP_MAX_AREA = 0.92
-CROP_MIN_AREA = 0.40
-# Aggressive mode: a text block counts as "the problem" only if it holds at least
-# this fraction of all the on-screen text, so a clearly dominant block is isolated
-# but two comparable blocks (e.g. problem + an equally large editor) are left alone.
-CROP_DOMINANCE = 0.60
 
-
-def _pad_clamp(x0, y0, x1, y1, w, h):
-    x0, y0 = max(0, int(x0 - w * CROP_PAD_FRAC)), max(0, int(y0 - h * CROP_PAD_FRAC))
-    x1, y1 = min(w, int(x1 + w * CROP_PAD_FRAC)), min(h, int(y1 + h * CROP_PAD_FRAC))
-    if x1 <= x0 or y1 <= y0:
-        return None
-    return (x0, y0, x1, y1)
-
-
-def crop_region(boxes, w: int, h: int):
-    """Union of ALL OCR text boxes, padded and clamped (margin trim). None if not worth it."""
-    if not boxes:
-        return None
-    box = _pad_clamp(min(b[0] for b in boxes), min(b[1] for b in boxes),
-                     max(b[2] for b in boxes), max(b[3] for b in boxes), w, h)
-    if box is None:
-        return None
-    frac = ((box[2] - box[0]) * (box[3] - box[1])) / float(w * h)
-    if frac >= CROP_MAX_AREA or frac < CROP_MIN_AREA:
-        return None
-    return box
-
-
-def _cluster_boxes(boxes, gap_x: float, gap_y: float):
-    """Group boxes into spatial blocks: two boxes join when their gap is within
-    (gap_x, gap_y). Simple union-find over the (small) box list."""
-    n = len(boxes)
-    parent = list(range(n))
-
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def gap(a0, a1, b0, b1):
-        if a1 < b0:
-            return b0 - a1
-        if b1 < a0:
-            return a0 - b1
-        return 0.0
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            if (gap(boxes[i][0], boxes[i][2], boxes[j][0], boxes[j][2]) <= gap_x and
-                    gap(boxes[i][1], boxes[i][3], boxes[j][1], boxes[j][3]) <= gap_y):
-                parent[find(i)] = find(j)
-    groups: dict[int, list] = {}
-    for i in range(n):
-        groups.setdefault(find(i), []).append(boxes[i])
-    return list(groups.values())
-
-
-def dominant_region(boxes, w: int, h: int):
-    """Isolate the dominant text block: cluster the boxes, and if one block holds the
-    bulk of the text (CROP_DOMINANCE) while others are separate, return its padded
-    bbox. Returns None when no block clearly dominates (caller falls back to margin trim)."""
-    if len(boxes) < 4:
-        return None
-    heights = sorted(b[3] - b[1] for b in boxes)
-    hmed = heights[len(heights) // 2] or 1.0
-    clusters = _cluster_boxes(boxes, gap_x=2.5 * hmed, gap_y=1.5 * hmed)
-    if len(clusters) < 2:
-        return None  # one block -> nothing to exclude; let margin trim handle it
-
-    def text_area(cl):
-        return sum((b[2] - b[0]) * (b[3] - b[1]) for b in cl)
-
-    total = sum(text_area(c) for c in clusters)
-    dom = max(clusters, key=text_area)
-    if total <= 0 or text_area(dom) / total < CROP_DOMINANCE or len(dom) < 3:
-        return None
-    box = _pad_clamp(min(b[0] for b in dom), min(b[1] for b in dom),
-                     max(b[2] for b in dom), max(b[3] for b in dom), w, h)
-    if box is None:
-        return None
-    if ((box[2] - box[0]) * (box[3] - box[1])) / float(w * h) >= CROP_MAX_AREA:
-        return None  # already fills the screen -> nothing isolated
-    return box
-
-
-# A stitched page can be many screens tall; a model shrinks any image whose long edge is
-# over its limit (1568px on older models, 2576px on current ones), which would blur the
-# text. So tall pages go out as tiles under the smaller limit, overlapping a little so a
-# line cut at a boundary is whole in one of them.
-TILE_H = 1500
-TILE_OVERLAP = 40
-
-
-def tile_image(img: Image.Image, max_w: int) -> list[Image.Image]:
-    if img.width > max_w:
-        img = img.resize((max_w, int(img.height * max_w / img.width)), Image.LANCZOS)
-    tiles, y = [], 0
-    while True:
-        tiles.append(img.crop((0, y, img.width, min(img.height, y + TILE_H))))
-        if y + TILE_H >= img.height:
-            return tiles
-        y += TILE_H - TILE_OVERLAP
-
-
-def _png_b64(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
-
-def prepare_frame(png_bytes: bytes, max_w: int, ocr, crop_mode: str = "off",
-                  extra_pngs: list[bytes] | None = None) -> Frame:
-    """Decode, cap width, OCR + (optional) crop, thumbnail, hash. Runs in a thread.
-
-    crop_mode: "off" | "auto" (margin trim) | "aggressive" (isolate the dominant block,
-    falling back to margin trim when no block clearly dominates)."""
-    img = Image.open(io.BytesIO(png_bytes))
-    img.load()
-    img = img.convert("RGB")
-    w, h = img.size
-    # Faces are covered first, so the thumbnail, the change signature, the model's image and every crop are made
-    # from the covered screen (faces.py: for people's portrait rights). The screen as it arrived is kept for
-    # the crops; it is written again, quickly rather than small, only when something was covered on it.
-    covered = _cover_faces(img)
-    if covered:
-        png_bytes = _png_bytes(img)
-    fitted = img
-    if w > max_w:
-        fitted = img.resize((max_w, int(h * max_w / w)), Image.LANCZOS)
-    # Change detection sees the WHOLE screen (a crop must not blind it), at the model's width: its
-    # thresholds were set on screens of that size.
-    sig = signature(fitted)
-
-    model_img = fitted
-    model_box = (0.0, 0.0, 1.0, 1.0)
-
-    ocr_text = ""
-    if ocr is not None:
-        try:
-            ocr_text, boxes = ocr.run(model_img)
-            if crop_mode != "off":
-                box = None
-                if crop_mode == "aggressive":
-                    box = dominant_region(boxes, model_img.width, model_img.height)
-                if box is None:
-                    box = crop_region(boxes, model_img.width, model_img.height)
-                if box:
-                    model_img = model_img.crop(box)
-                    model_box = (box[0] / fitted.width, box[1] / fitted.height,
-                                 box[2] / fitted.width, box[3] / fitted.height)
-        except Exception as exc:  # pragma: no cover
-            log.warning("OCR/crop failed: %s", exc)
-
-    buf = io.BytesIO()
-    # Compression 1: the same pixels in half the time (75 to 36 ms at 4K), and most frames are never analysed
-    model_img.save(buf, format="PNG", compress_level=1)
-    model_b64 = base64.b64encode(buf.getvalue()).decode()
-
-    # The thumbnail is the whole screen, so the problem box and a box drawn on it are screen fractions.
-    tw = 360
-    if fitted.width > tw:
-        thumb_img = fitted.resize((tw, int(fitted.height * tw / fitted.width)), Image.LANCZOS)
-    else:
-        thumb_img = fitted
-    tbuf = io.BytesIO()
-    thumb_img.save(tbuf, format="JPEG", quality=70)
-    thumb_url = "data:image/jpeg;base64," + base64.b64encode(tbuf.getvalue()).decode()
-
-    extra_b64: list[str] = []
-    extra_sig = None
-    for raw in extra_pngs or ():
-        page = Image.open(io.BytesIO(raw))
-        page.load()
-        page = page.convert("RGB")
-        covered += _cover_faces(page)            # a scrolled page of the problem is a screen too
-        if extra_sig is None:
-            extra_sig = signature(page)
-        extra_b64 += [_png_b64(t) for t in tile_image(page, max_w)]
-
-    return Frame(model_b64=model_b64, thumb_url=thumb_url, sig=sig,
-                 ts=time.time(), width=w, height=h, ocr_text=ocr_text,
-                 extra_b64=extra_b64, extra_sig=extra_sig, full_png=png_bytes, model_box=model_box, faces=covered)
-
-
-def _cover_faces(img) -> int:
-    """Paint over the faces on `img` in place when Cover faces is on; how many there were. A finder that fails leaves
-    the screen as it is and says so in the log (faces.py), since a screen not read at all is worse."""
-    if not SETTINGS.on("face_mask"):
-        return 0
-    try:
-        found = faces.find(img)
-    except Exception as exc:   # pragma: no cover - a broken model file, an onnxruntime that fails at run time
-        log.warning("face finder failed on a screen (%s); it goes on uncovered", exc)
-        return 0
-    if found:
-        faces.cover(img, found)
-    return len(found)
-
-
-def _png_bytes(img) -> bytes:
-    """`img` as PNG at the fastest compression: it stays in this process for the crops, so its size matters less than
-    the 0.1 to 0.3 s a full compression of a 4K screen takes."""
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", compress_level=1)
-    return buf.getvalue()
-
-
-def window_list(raw) -> list | None:
-    """The capture program's window rectangles (fractions, front to back), checked."""
-    if not isinstance(raw, list):
-        return None
-    out = []
-    for r in raw[:40]:
-        if (isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in r)
-                and 0 <= r[0] < r[2] <= 1 and 0 <= r[1] < r[3] <= 1):
-            out.append(tuple(float(v) for v in r))
-    return out
 
 
 # The answers being written, as the panels were told of them, by id: a panel that opens meanwhile (a reload) is told each
 # again at once, with its words so far and where it stands. It used to see nothing of it until the answer was done.
 LIVE: dict = {}
 LIVE_MAX_SEC = 1800   # longer than any answer is let run: one that ended with no word of it is not told again for ever
+
+
 # The cards' ids remembered (STATE.cards): a panel holds 200 answers at most with their follow-ups, and the screens with
 # nothing to solve take ids too, some thousands in a day of watching; ten thousand ids are well under a megabyte
 CARDS_MAX = 10000
@@ -800,11 +432,6 @@ MAX_PANELS = 32
 # here: uvicorn's own cap on connections (--limit-concurrency, docker/entrypoint.sh) counts a WebSocket only after it
 # is accepted, and never refuses one.
 MAX_INGEST = 8
-# What one request's body or one panel's message may hold. The largest the server takes is a code run (MAX_RUN_CODE
-# characters of code and MAX_RUN_STDIN of input: some hundred KB as JSON). A body was read whole before any check, so a
-# program could send gigabytes into the server's memory; a panel's message of 64 MB (what a socket takes, for a 4K
-# screen) was parsed on the loop that serves everyone, for seconds, and the watchdog ends a server whose loop stops.
-MAX_BODY = 2 * 1024 * 1024
 
 
 class PanelOut:
@@ -1059,60 +686,6 @@ MAX_RUNS = 2    # runs waiting on the runner at once; the runner itself does one
 MAX_ASKS = 8
 ASK_BUSY = "{n} questions are being answered · ask again when one ends"   # through t() where it is said
 RUN_BUSY = "Another code run is going · run again when it ends"   # through t() where it is said
-
-
-def run_wait_seconds(runs: int = 1) -> float:
-    """How long the server waits for one request: the runner may first finish the run before it (up to 15 s),
-    then compile (at most 20 s, whatever the timeout, and twice when a C++ or Go compile is tried again) and run it on
-    each input (the timeout each, and up to 3 s to clean up after it), plus a margin."""
-    t = max(1.0, min(CONFIG.runner_timeout, 30.0))
-    return 15 + 2 * 20 + (t + 3) * runs + 10
-
-
-class _UnixConnection(http.client.HTTPConnection):
-    """HTTP over the runner's Unix socket (its URL `unix:///sock/runner.sock`): the runner has no network."""
-
-    def __init__(self, path: str, timeout: float):
-        super().__init__("runner", timeout=timeout)
-        self.unix_path = path
-
-    def connect(self) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(self.timeout)
-        self.sock.connect(self.unix_path)
-
-
-def _runner_call(url: str, path: str, payload: dict | None, timeout: float) -> dict:
-    """GET (no payload) or POST JSON to the runner's `path` and return its JSON answer: over its Unix socket, or
-    over HTTP for a runner reached by address (`http://host:port/run`). Runs in an executor."""
-    u = urlsplit(url)
-    conn = (_UnixConnection(u.path, timeout) if u.scheme == "unix"
-            else http.client.HTTPConnection(u.hostname or "", u.port or 80, timeout=timeout))
-    try:
-        body = json.dumps(payload).encode() if payload is not None else None
-        headers = {"Content-Type": "application/json"} if body is not None else {}
-        if CONFIG.runner_token:   # a runner over TCP takes only requests that carry its token
-            headers["Authorization"] = f"Bearer {CONFIG.runner_token}"
-        conn.request("POST" if payload is not None else "GET", path, body=body, headers=headers)
-        r = conn.getresponse()
-        text = r.read().decode()
-        if r.status != 200:
-            raise OSError(f"the code runner answered HTTP {r.status}")
-        return json.loads(text)
-    finally:
-        conn.close()
-
-
-def _post_json(url: str, payload: dict, timeout: float) -> dict:
-    """POST a run to the runner and return its JSON answer. Runs in an executor."""
-    return _runner_call(url, "/run" if url.startswith("unix:") else urlsplit(url).path or "/run", payload, timeout)
-
-
-def _get_ok(url: str) -> bool:
-    try:
-        return bool(_runner_call(url, "/health", None, 1.5).get("ok"))
-    except Exception:
-        return False
 
 
 def run_enabled() -> bool:
@@ -3976,164 +3549,7 @@ PANEL_COMMANDS = ("capture_set", "pause", "resume", "reanalyze", "ask", "problem
 API_VERSION = 1                # /api/v1: a change that breaks a caller goes to /api/v2, beside it
 
 
-class EventStream:
-    """One reader of /api/v1/events: the messages the panels are sent, in order. A reader that falls MAX behind loses the
-    oldest, and its next batch starts with how many (a `lagged` message), so it knows to read the state again."""
-
-    MAX = 2000
-
-    def __init__(self):
-        self.items: collections.deque = collections.deque()
-        self.lost = 0                  # dropped since the last batch was taken
-        self.ready = asyncio.Event()   # set when something is waiting to be taken
-
-    def put(self, message: dict) -> None:
-        if len(self.items) >= self.MAX:
-            self.items.popleft()
-            self.lost += 1
-        self.items.append(message)
-        self.ready.set()
-
-    async def take(self, timeout: float) -> list:
-        """What came since the last take, after waiting up to `timeout` s for something; [] when nothing came."""
-        if not self.items:
-            self.ready.clear()         # no await between the look and this: put() runs on the same loop
-            try:
-                await asyncio.wait_for(self.ready.wait(), timeout)
-            except asyncio.TimeoutError:
-                return []
-        out = list(self.items)
-        self.items.clear()
-        if self.lost:
-            out.insert(0, {"type": "lagged", "lost": self.lost})
-            self.lost = 0
-        return out
-
-
 API_STREAMS: set = set()       # the readers of /api/v1/events now (broadcast puts each message in each)
-
-
-def origin_ok(origin: str, host: str | None) -> bool:
-    """An Origin header that is this server's own page: the address the request was sent to (its Host)."""
-    try:
-        u = urlsplit(origin)
-    except ValueError:
-        return False
-    return u.scheme in ("http", "https") and u.netloc.lower() == (host or "").lower()
-
-
-def api_error(status: int, text: str, headers: dict | None = None, **more) -> JSONResponse:
-    return JSONResponse({"ok": False, "error": text, **more}, status_code=status, headers=headers)
-
-
-def api_refused(request: Request, write: bool) -> JSONResponse | None:
-    """None when the request may go on. A browser says where a request comes from (Origin), and one from another site's
-    page is refused, as the panel's socket refuses it; a program sends none. What changes something takes a JSON body
-    only: another site's page cannot send one without asking first (a preflight, which this server never answers),
-    and a plain form post sends none."""
-    origin = request.headers.get("origin")
-    if origin and not origin_ok(origin, request.headers.get("host")):   # none, or empty: not a browser, as same_origin
-        telemetry.event("refused", path=request.url.path[:120], origin=origin[:120])
-        # in the panel's language, as every error's words (docs/API.md): the Maintenance sheet shows the error it is given
-        return api_error(403, t("not allowed from another site's page"))
-    if write and request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
-        return api_error(415, t("send JSON (Content-Type: application/json), {} when there is nothing to send"))
-    return None
-
-
-def _not_json(token: str):
-    """json.loads takes NaN and Infinity, which are not JSON: refused (api_body)."""
-    raise ValueError(f"{token} is not JSON")
-
-
-def _finite(value) -> bool:
-    """Whether every number in `value` is finite: 1e999 reads as infinity, which no answer can carry back (allow_nan=False)."""
-    if isinstance(value, float):
-        return math.isfinite(value)
-    if isinstance(value, dict):
-        return all(_finite(v) for v in value.values())
-    if isinstance(value, list):
-        return all(_finite(v) for v in value)
-    return True
-
-
-def too_large() -> JSONResponse:
-    """The 413 of a body over MAX_BODY, with the connection closed after it: left open, uvicorn went on reading the rest
-    of the body and dropping it, for as long as the sender went on sending (an endless body in pieces, for ever)."""
-    return api_error(413, t("the body is over {mb} MB", mb=MAX_BODY // (1024 * 1024)), headers={"connection": "close"})
-
-
-async def api_body(request: Request) -> dict | JSONResponse:
-    """A write's JSON object ({} for an empty body), or the error that answers it. What JSON allows and nothing past it:
-    NaN, Infinity and a number too large for a float were taken, and answering them ended in a 500; a lone surrogate
-    ("\ud800") was taken too, and a setting holding one could not be saved or sent, so every answer showing it was a 500
-    and an event holding one ended every events stream. A body over MAX_BODY is a 413, refused as it comes in."""
-    declared = request.headers.get("content-length", "")
-    # ASCII digits only: "²" is a digit to isdigit() and no number to int(), which made a 500 of it
-    if declared.isascii() and declared.isdigit() and int(declared) > MAX_BODY:   # refused before any of it is read
-        return too_large()
-    pieces, size = [], 0
-    async for piece in request.stream():   # a piece at a time: a body that goes on past the cap is never held whole
-        size += len(piece)
-        if size > MAX_BODY:
-            return too_large()
-        pieces.append(piece)
-    raw = b"".join(pieces)
-    if not raw.strip():
-        return {}
-    try:
-        data = json.loads(raw, parse_constant=_not_json)
-    except (ValueError, RecursionError):   # nested past what Python reads (a thousand levels) is no body either
-        return api_error(400, t("the body is not JSON"))
-    if not isinstance(data, dict):
-        return api_error(400, t("the body is a JSON object"))
-    try:
-        if not _finite(data):
-            return api_error(400, t("a number in the body is too large"))
-        json.dumps(data, ensure_ascii=False).encode("utf-8")
-    except RecursionError:   # read, but nested deeper than the checks walk (some 450 levels): no route takes such a body
-        return api_error(400, t("the body is nested too deeply"))
-    except UnicodeEncodeError:
-        return api_error(400, t("the body holds text that is not valid Unicode"))
-    return data
-
-
-class BackupResponse(StreamingResponse):
-    """A backup's archive sent a block at a time (maintenance.stream_backup), and removed with its folder however the
-    response ends: sent whole, cut after a block, or cut before the first. The generator's own finally runs only once it
-    has started, and a connection gone before the first block (a tab closed while the backup was made, a program's
-    timeout) never starts it: the archive, the whole history in it, stayed in the data folder until the next start."""
-
-    def __init__(self, archive: Path, headers: dict):
-        super().__init__(maintenance.stream_backup(archive), media_type="application/gzip", headers=headers)
-        self.archive = archive
-
-    async def __call__(self, scope, receive, send) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:   # gone already after a whole send (the generator's finally), so a second removal finds nothing
-            maintenance.remove_backup(self.archive)
-
-
-class Replies:
-    """What a command sends back to the one who asked (panel_command's `reply`), kept for the API's answer."""
-
-    def __init__(self):
-        self.messages: list = []
-
-    async def __call__(self, message: dict) -> None:
-        self.messages.append(message)
-
-    def notices(self) -> list:
-        return [{"level": m.get("level"), "text": m.get("text")} for m in self.messages if m.get("type") == "notice"]
-
-    def refusal(self) -> str | None:
-        """The words of a notice that says it was not done (a warning or a failure), or None."""
-        return next((m.get("text") for m in self.messages if m.get("type") == "notice" and m.get("level") in ("warn", "bad")),
-                    None)
-
-    def first(self, kind: str) -> dict | None:
-        return next((m for m in self.messages if m.get("type") == kind), None)
 
 
 def waiting_confirms() -> list:
@@ -4145,17 +3561,6 @@ def waiting_confirms() -> list:
             left = max(0.0, round(msg["timeout"] - (time.time() - msg["ts"]), 1))
             out.append({**msg, "timeout": left, "ts": time.time()})
     return out
-
-
-def sse(n: int, message: dict) -> str:
-    """One message as a Server-Sent Event: its number, then the message as one line of JSON. Text that cannot be written as
-    UTF-8 (a lone surrogate) goes escaped, as JSON allows, and not as the end of the stream it broke."""
-    try:
-        line = json.dumps(message, ensure_ascii=False)
-        line.encode("utf-8")
-    except UnicodeEncodeError:
-        line = json.dumps(message)
-    return f"id: {n}\ndata: {line}\n\n"
 
 
 def create_app() -> FastAPI:
@@ -4297,6 +3702,9 @@ def create_app() -> FastAPI:
         return JSONResponse(
             {
                 "ok": True,
+                # Each of Sidenote's own services answers /health with ok and its name (the speech service and the code
+                # runner too), so one probe and one line of ./sidenote status read them all
+                "service": "server",
                 "version": VERSION,       # which release this server's code is (server/version.py)
                 "build": panel_build(),   # which panel this server serves (./sidenote version)
                 "analyzer": CONFIG.analyzer,
