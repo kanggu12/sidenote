@@ -998,8 +998,6 @@
   .steps li[data-done="true"] .s { color: var(--ok); }
   .steps li[data-done="false"] .s { color: var(--warn); }
   .steps li[data-bad] .s { color: var(--bad); }   /* the server not reached: red, as the alert and the bar say it */
-  .tips { margin: 0; padding-left: 1.15em; color: var(--ink-2); font-size: 14px; }
-  .tips li { margin: .25em 0; }
 
   /* ---- rail ---- */
   .card { position: relative; background: var(--glass-card); border: 1px solid var(--glass-line);
@@ -1934,10 +1932,11 @@
   :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { border-color: var(--pen-blue-line); }
   /* On and off told apart at a glance in a sheet's rows (of nine types, the ones on read only by a bolder word on a
      darker well): those not chosen are muted words, the chosen full ink in a rim, and a ticked type carries its tick */
-  :root[data-skin="classic"] .set .seg button:not([aria-pressed="true"]) { color: var(--graphite); font-weight: 500; }
-  :root[data-skin="classic"] .set .seg button[aria-pressed="true"] { color: var(--pen-blue); border-color: var(--pen-blue-line); background: var(--pen-blue-soft); }
+  /* every sheet's: Maintenance's chips (7 days, failures only) had the rim of the chosen one and none of its fill */
+  :root[data-skin="classic"] .settings .seg button:not([aria-pressed="true"]) { color: var(--graphite); font-weight: 500; }
+  :root[data-skin="classic"] .settings .seg button[aria-pressed="true"] { color: var(--pen-blue); border-color: var(--pen-blue-line); background: var(--pen-blue-soft); }
   /* a choice not taken answers the pointer with a breath of the same pen */
-  :root[data-skin="classic"] .set .seg button:not([aria-pressed="true"]):not(:disabled):hover { background: color-mix(in srgb, var(--pen-blue) 5%, var(--sheet-2)); }
+  :root[data-skin="classic"] .settings .seg button:not([aria-pressed="true"]):not(:disabled):hover { background: color-mix(in srgb, var(--pen-blue) 5%, var(--sheet-2)); }
   /* the open tab of a sheet and the open step of the setup guide: the tint, the words in the pen, and a short stroke of
      it down the tab's inner edge, kept with the pressed well */
   :root[data-skin="classic"] :is(.set-tab, .setup-step)[aria-selected="true"] { background: var(--pen-blue-soft); color: var(--pen-blue);
@@ -2388,8 +2387,9 @@
   :root[data-skin="classic"] .agent-who .mail:last-child { grid-row: 1 / span 2; }
   /* The answer's key line: its label centred on it, and the shortest answers not twice the size of their neighbours (a 10-letter answer stood at 38 px, an 11-letter one at 23) */
   :root[data-skin="classic"] .short .hl { font-size: 28px; line-height: 1.3; }
-  :root[data-skin="classic"] .entry > .row[data-answer]:not(:has(.ans-list)) { align-items: center; }
-  :root[data-skin="classic"] .entry > .row[data-answer]:not(:has(.ans-list)) > .mg { padding-top: 0; }
+  /* a follow-up's answer line too: its label stood 2.7 px above the line it names */
+  :root[data-skin="classic"] :is(.entry, .turn) > .row[data-answer]:not(:has(.ans-list)) { align-items: center; }
+  :root[data-skin="classic"] :is(.entry, .turn) > .row[data-answer]:not(:has(.ans-list)) > .mg { padding-top: 0; }
   /* A key's word keeps its weight under the pointer, or the key changes width and its neighbours move */
   :root[data-skin="classic"] .rail :is(#gpu-load, #gpu-release):hover { font-weight: 650; }
   /* The switches answer the pointer */

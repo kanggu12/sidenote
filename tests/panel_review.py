@@ -481,8 +481,9 @@ def main():
                 pn.close()
             pn = new(width=760)
             pn.up(clients=0)
-            tips = pn.ev("() => document.querySelector('.tips').innerText")
-            check("B8 in one column, the tips do not point to a card on the right", "오른쪽" not in tips, tips[-60:])
+            # the first screen says what to do and what is ready, and no tips on how to use it (the guide has those)
+            tips = pn.ev("() => document.querySelector('.tips')?.innerText ?? null")
+            check("B8 the first screen has no row of tips", tips is None, tips)
             pn.close()
 
         def b9():

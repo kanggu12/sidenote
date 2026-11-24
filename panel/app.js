@@ -29,7 +29,9 @@ const HINT = {
   // the GPU under this PC's model failing, with no agent to answer instead (gpuFaultNote says what fixes it)
   gpu: { title: t("GPU error"), get text() { return gpuFaultNote(eng()?.local?.fault || { kind: "ecc" }); } },
   // the desktop app's server is the app itself: it is up again when the app is
-  interrupted: { title: t("Stopped: connection lost"), get text() { return status.desktop ? t("{redo} once Sidenote is running again", { redo: REDO_KEY() }) : t("{redo} once the server is up", { redo: REDO_KEY() }); } },
+  // once the connection is back, said as now: "once the server is up" stood on the card with the server long up
+  interrupted: { title: t("Stopped: connection lost"), get text() { return wsState === "up" ? t("Try again with {redo}", { redo: REDO_KEY() })
+    : status.desktop ? t("{redo} once Sidenote is running again", { redo: REDO_KEY() }) : t("{redo} once the server is up", { redo: REDO_KEY() }); } },
   nosolver: { title: t("No engine to solve"),
     get text() { return status.desktop ? t("Neither the local model nor the agent can be used · turn one on in Solver settings", { agent: AG() })
       : t("Neither the local model nor the agent can be used · turn one on in Solver settings, or check the server's terminal", { agent: AG() }); },
@@ -2497,7 +2499,12 @@ const localFix = (L) => (L && L.missing ? "./sidenote llm pull" : "./sidenote do
 function gpuFaultNote(f) {
   const fix = f && f.kind === "gpu" ? t("The model's server failed on the GPU · it is tried again in a few minutes")
     : t("The GPU's memory gave an error it could not correct · restarting the PC resets the GPU");
-  return fix + (eng()?.ready ? t(" · the agent solves meanwhile", { agent: AG() }) : t(" · turn on the agent and it solves meanwhile", { agent: AG() }));
+  // the agent on but resting on its plan's limit: its own band says until when, and "turn it on" was said of an agent that was on
+  const C = eng()?.agent || {};
+  const resting = C.present && C.mode !== "off" && C.limit_until;
+  return fix + (eng()?.ready ? t(" · the agent solves meanwhile", { agent: AG() })
+    : resting ? t(" · the agent rests on its limit meanwhile", { agent: AG() })
+    : t(" · turn on the agent and it solves meanwhile", { agent: AG() }));
 }
 // Why this PC's model, switched off, answers for now (engines.local.stand_in)
 const STAND_IN_TEXT = { get limit() { return t("The agent reached its usage limit", { agent: AG() }); }, get signin() { return t("The agent is signed out", { agent: AG() }); },
@@ -3074,6 +3081,7 @@ function renderAlerts() {
       // Which of this PC's model's states it is: on and answering, off and standing in, on but not answering (its own band above says what
       // to do; "켜면" said to turn on a model that was on), or off
       const sub = L.ok && (L.on || L.stand_in) ? (L.on ? t(" · the local model solves meanwhile") : t(" · the local model, though off, stands in meanwhile"))
+        : L.on && L.fault ? t(" · no engine to solve meanwhile · GPU error")   // its server answers; the GPU under it failed
         : L.on ? t(" · no engine to solve meanwhile · the local model does not respond")
         : t(" · no engine to solve meanwhile · turn on the local model and it solves");
       // until when only: the band is drawn on the server's messages, not every second, and a time left here went
@@ -3107,7 +3115,12 @@ function renderAlerts() {
       `<button class="btn sm" data-act="reload">${t("Reload")}</button>`));
   }
   if (paused) {
-    out.push(alertHtml("warn", t("{title} No automatic analysis · {redo} takes the current screen only", { title: `<b>${t("Paused")}</b>`, redo: REDO_KEY() })));
+    // what Reanalyze takes while paused, as it is (reanalyze): with the screen off it solves what was heard, and with
+    // nothing captured there is nothing to take. It said "the current screen" with the screen switched off
+    const title = `<b>${t("Paused")}</b>`;
+    out.push(alertHtml("warn", capture.screen_on ? t("{title} No automatic analysis · {redo} takes the current screen only", { title, redo: REDO_KEY() })
+      : capture.audio_on ? t("{title} No automatic analysis · {redo} solves what was heard", { title, redo: REDO_KEY() })
+      : t("{title} No automatic analysis", { title })));
   }
   out.push(updateBand());   // a newer release, last: only worth knowing ("" when there is none to show)
   setHtml("alerts", out.join(""));   // redrawn every few seconds: a diff keeps the focus where it was
@@ -3323,14 +3336,8 @@ function renderWelcome() {
         : whereNow() === "cluster" ? t("Runs on your PC, through the port-forward")
         : t("{cmd} (runs with no window; quit it from its tray icon)", { cmd: "<code class=\"cmd\">./sidenote capture</code>" }))
         + (capOk === false ? ` <button type="button" class="btn sm" data-open-capture>${t("Capture connection")}</button>` : ""),
-        capOk === null ? t("Checking") : capOk ? t("On") : t("Not running"))}
-    </ul>`)}
-    ${row(t("Tips"), `<ul class="tips">
-      <li>${t("The same problem is not solved twice; move on to the next one and it is solved at once")}</li>
-      <li>${t("Not happy with an answer: {redo} above · more to ask: the box below", { redo: REDO_KEY() })}</li>
-      ${status.runEnabled ? `<li>${t("Run a code answer with {run} to see its output", { run: keyHint(RUN_MARK, t("Run")) })}</li>` : ""}
-      <li>${t("For a long problem, turn on {setting} in Solver settings and scroll", { setting: `<b>${escapeHtml(settingItem("stitch")?.label || t("Scroll stitching"))}</b>` })}</li>
-      <li>${t("{roi} on the screen card: only the place you draw is looked at and sent", { roi: keyHint(ROI_MARK, t("Draw a region")) })}</li>
+        // in the words of the capture card, the band and the Capture connection sheet, which say connected or not
+        capOk === null ? t("Checking") : capOk ? t("Connected") : t("Not connected"))}
     </ul>`)}
     ${pend || (lastNone ? row("", `<p class="cap">${noneText()}</p>`) : "")}
   </article>`;
@@ -6434,7 +6441,9 @@ function comboPlace() {
   // the controls stand at the right, and left edges on a narrow one, where each sits under its label at
   // the left. Lining up the right edges there hung the list out past the sheet's left edge (by 8 px at
   // 420 px, and 29 px to the left of its own control). Kept inside the sheet and the window either way.
-  const sheet = btn.closest(".settings")?.getBoundingClientRect() || { left: 0, right: innerWidth };
+  // Outside a sheet, inside the card it belongs to: the contents' list of days (300 px wide on a 150 px key) hung 120 to 175 px
+  // out past its card's left edge, over the answer beside it, and at 2400 px over the other column's card
+  const sheet = btn.closest(".settings, .card")?.getBoundingClientRect() || { left: 0, right: innerWidth };
   const atLeft = b.left - sheet.left < sheet.right - b.right;
   const lo = Math.max(8, sheet.left + 1), hi = Math.min(innerWidth - 8, sheet.right - 1) - w;
   const want = atLeft ? b.left : b.right - w;
@@ -7769,7 +7778,8 @@ function maintBackup() {
   const back = where === "desktop"
     ? `<p class="help">${t("Quit Sidenote, then put the backup's files in its data folder")}</p>`
     : where === "cluster" ? `<p class="help">${t("Put a backup back with ./sidenote restore on a PC that runs Sidenote with Docker")}</p>`
-    : `<p class="help">${t("In the server's terminal; the server stops for it and starts again")}</p>${maintCmd("./sidenote restore sidenote-backup.tar.gz")}`;
+    // the file as it was saved (sidenote-backup-<date>-<time>.tar.gz): the command named one no download is called
+    : `<p class="help">${t("In the server's terminal; the server stops for it and starts again")}</p>${maintCmd(`./sidenote restore ${b && !b.error && b.name ? b.name : "sidenote-backup-*.tar.gz"}`)}`;
   return `<div class="set"><span class="lbl">${t("Download a backup")}</span><span class="ctl">`
     + `<button type="button" class="btn sm" data-maint="backup"${maint.busy === "backup" || wsState !== "up" ? " disabled" : ""}>${maint.busy === "backup" ? t("Making the backup") : t("Download")}</button></span>`
     + `<p class="help">${t("The history and the settings in one file, Recently deleted left out")}</p>${made}</div>`
@@ -8545,6 +8555,8 @@ function connect() {
     // The panel's language first, before anything else is sent: the server writes its words in it (notices, cards, settings)
     sock.send(JSON.stringify({ type: "ui_lang", lang: LANG }));
     wsState = "up"; renderAll();
+    // a card the lost connection cut says what to do now that it is back (HINT.interrupted)
+    for (const it of items.values()) if (it.error && it.hint === "interrupted") renderEntry(it);
     // What was answered before this page opened, or while the connection was down; tried again at the next connection if it failed
     const first = !historyLoaded, before = latestId();
     loadHistory({ limit: 40 }).then((ok) => {

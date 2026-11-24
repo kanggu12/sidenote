@@ -333,9 +333,6 @@
   .steps li[data-done="false"] .box { background: none; box-shadow: inset 0 0 0 1.5px var(--warn); }
   .steps .t { font-weight: 550; }
   .steps .s { font-weight: 520; }
-  .tips { list-style: none; padding: 0; font-size: 14px; }
-  .tips li { margin: 0; padding: 11px 0; border-bottom: 1px solid var(--rule); }
-  .tips li:last-child { border-bottom: 0; padding-bottom: 2px; }
   code.cmd { border-radius: 7px; border-color: var(--rule); background: var(--bed); }
 
   /* ---- the rail: lit panels ---- */
