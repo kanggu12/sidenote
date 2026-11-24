@@ -2742,6 +2742,12 @@ answers went, and each of these is fixed where it went.
 - **Thinking answers are counted over their whole time.** Their reasoning comes before the first word shown, as the
   agent's does, and over the time after that word the card read 236 tokens/s for answers written at 31 to 100.
 
-What it did not change: the thinking pass on spoken explanations (20 to 40 s of the answers' time, where the same model
-without it answered others in 6 s) is a question of how good the answers stay, which only the model can answer, and is
-measured before anything changes.
+What it did not change: the thinking pass on spoken explanations. It is most of those answers' time (20 to 40 s, where
+the same model without it answered others in 6 s), so the sitting's 16 spoken questions were asked again on the 26b, as
+the pipeline asks them (the first pass, then the answering pass on its conversation), with the thinking pass and
+without it. The first pass answered 8 of them by itself in 4 to 8 s and found nothing in 3. Of the 5 it sent on,
+without thinking the first word came in 1 to 3.5 s and the answer ended in 10 to 12 s, against 10 to 19 s and 19 to 27 s
+with it, and the answers read alike where both came (the thinking one's answer line a little more exact). But one of
+the 5, a question on keeping an infrastructure design open to what comes later, ended as nothing to solve without
+thinking, and was answered with it. A question lost in a live interview costs more than 10 s of waiting, so the
+thinking pass stays (by the harm of each case, not the average: the first pass's own quick answers already take half).
