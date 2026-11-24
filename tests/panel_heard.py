@@ -28,8 +28,13 @@ LINES = [{"ts": NOW, "secs": 3.1, "lang": "en", "text": "So we drained the node 
          {"ts": NOW + 80, "secs": 1.1, "lang": "ko", "text": "GTID가 뭔가요?", "day": "2026-11-04"},
          {"ts": NOW - 86400, "secs": 1.5, "lang": "en", "text": "A line of the day before.", "day": "2026-11-03"}]
 KEPT = {"days": DAYS, "day": "2026-11-04", "lines": LINES}
+# Each sentence, and the note at its end after it (the note sits inside its sentence, on its last line)
 CARD = """() => { const b = document.getElementById('hear-text');
-  return { said: [...b.children].map((e) => [e.className, e.textContent]), why: [...b.querySelectorAll('.why')].map((e) => e.textContent),
+  const own = (e, w) => w ? e.textContent.slice(0, e.textContent.length - w.textContent.length) : e.textContent;
+  return { said: [...b.children].flatMap((e) => { const w = e.querySelector('.why');
+             return w ? [[e.className, own(e, w)], ["why", w.textContent]] : [[e.className, own(e, w)]]; }),
+           inline: [...b.querySelectorAll('.why')].every((w) => w.parentElement.matches('.said, .now') && getComputedStyle(w).display === 'inline'),
+           why: [...b.querySelectorAll('.why')].map((e) => e.textContent),
            ink: getComputedStyle(b.querySelector('.why') || b).color, state: getComputedStyle(document.getElementById('hear-state')).color,
            box: b.clientHeight, end: Math.abs(b.scrollHeight - b.clientHeight - b.scrollTop) < 2 }; }"""
 
@@ -52,7 +57,8 @@ def group_why(br, s):
     p.send({"type": "utterance", "text": "GTID가 뭐?", "lang": "ko", "why": "short"})
     p.wait(100)
     c = p.js(CARD)
-    check("too short: a line under the sentence says so", c["said"][-2:] == [["now", "GTID가 뭐?"], ["why", "너무 짧음 · 풀지 않음"]], c["said"])
+    check("too short: said at the end of its sentence, on its line", c["said"][-2:] == [["now", "GTID가 뭐?"], ["why", "너무 짧음 · 풀지 않음"]]
+          and c["inline"], c)
     check("...in the card's own muted words", c["ink"] == c["state"], [c["ink"], c["state"]])
     check("...and kept in view: it is the last thing there", c["end"], c)
     p.send({"type": "utterance", "text": "We moved the team last year.", "lang": "en", "why": "none"})

@@ -229,6 +229,42 @@ def group_steps(br, s) -> None:
                pill: document.getElementById('pill-audio')?.textContent }; }""")
     check("off on the server: the rail's sound switch drawn off and not pressable, the card grey (at rest), not red",
           rail["on"] == "false" and rail["disabled"] and rail["rest"] and rail["pill"] == "서버에서 꺼짐", rail)
+    # why there is no speech, as Maintenance tells it (server/app.py, speech_state): still loading after the server came up,
+    # a model that did not load, or the server started without it, with its own variable. All three said "SIDENOTE_AUDIO=1"
+    sound = """() => ({ pill: document.getElementById('pill-audio')?.textContent, state: document.getElementById('pill-audio')?.dataset.state,
+      note: document.getElementById('st-audio')?.textContent, key: !!document.querySelector('#st-audio [data-act="maint-log"]'),
+      sig: document.getElementById('sig-audio')?.dataset.state, agentSig: document.getElementById('sig-agent')?.dataset.state })"""
+    p.send({"type": "status", "audio": False, "speech": {"state": "loading"}})
+    p.wait(150)
+    loading = p.js(sound)
+    p.send({"type": "status", "audio": False, "speech": {"state": "failed"}})
+    p.wait(150)
+    failed = p.js(sound)
+    p.send({"type": "status", "audio": False, "speech": {"state": "off", "turn_on": "SIDENOTE_TRANSCRIBER=auto"}})
+    p.wait(150)
+    off = p.js(sound)
+    check("the speech model still loading: said so, grey, and no variable to set", loading["pill"] == "모델 불러오는 중"
+          and loading["state"] == "idle" and "SIDENOTE_" not in (loading["note"] or ""), loading)
+    check("...one that did not load: said so in red, with the key to the server's log", failed["pill"] == "불러오지 못함"
+          and failed["state"] == "bad" and failed["key"] and failed["sig"] == "bad", failed)
+    check("...and the server started without it: the variable that turns it on, grey in the header too",
+          "SIDENOTE_TRANSCRIBER=auto" in (off["note"] or "") and "SIDENOTE_AUDIO" not in (off["note"] or "") and off["sig"] == "idle", off)
+    p.send({"type": "status", "engines": {**h.ENGINES, "agent": {**h.ENGINES["agent"], "mode": "off"}}})
+    p.wait(150)
+    rested = p.js(sound)
+    check("the agent switched off is grey in the header, as on its card, not red", rested["agentSig"] == "idle", rested)
+    p.send({"type": "status", "audio": False, "speech": {"state": "failed"}})
+    p.wait(150)
+    p.page.click('#st-audio [data-act="maint-log"]')
+    p.wait(300)
+    opened = p.js("() => ({ open: !document.getElementById('maint-overlay').hidden, "
+                  "tab: document.querySelector('#maint-body [aria-selected=\"true\"][data-maint-sec]')?.dataset.maintSec })")
+    check("...and its key opens the server's log in Maintenance", opened["open"] and opened["tab"] == "log", opened)
+    p.page.keyboard.press("Escape")
+    p.wait(200)
+    p.send({"type": "status", "audio": False, "speech": {"state": "off", "turn_on": "SIDENOTE_AUDIO=1"},
+            "engines": h.ENGINES})
+    p.wait(150)
     p.page.click("#more")
     p.wait(150)
     p.page.click("#open-setup")

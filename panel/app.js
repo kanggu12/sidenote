@@ -408,6 +408,8 @@ const keyHint = (m, word) => `<span class="key-hint">${m}${word}</span>`;
 // read: drawn as the bar's key with its mark, it was pressed and did nothing
 const REDO_KEY = () => `<button type="button" class="key-hint act" data-act="reanalyze" title="${escapeHtml(t("Analyze the screen now (or the problem heard) again"))}">`
   + `${REDO_MARK}${t("Reanalyze")}</button>`;
+// The server's log, the key that opens it in Maintenance: lines of a page
+const LOG_MARK = mark('<path d="M5 5.5h14M5 10h14M5 14.5h14M5 19h8"/>');
 const RUN_MARK = mark('<path d="M7 4.5l12 7.5-12 7.5z" fill="currentColor" stroke-linejoin="round"/>', 1.4);
 const STDIN_MARK = mark('<path d="M4 4.5h9M4 9h6"/><path d="M12 13.5h8M17 10.5l3 3-3 3"/>'
   + '<path d="M4 19.5h8"/>');
@@ -2465,8 +2467,18 @@ function audioState() {
   const device = caps.audio_device ? escapeHtml(caps.audio_device) : "";
   const lang = LANG_FULL[status.lang] || "";
   if (wsState !== "up" || capture.clients == null) return card("idle", t("Checking"), []);
-  // The server itself has transcription off: no switch here can change that.
-  if (!status.audio) return card("off", t("Off on the server"), [], t("Start it with {cmd} to listen", { cmd: "<code class=\"cmd\">SIDENOTE_AUDIO=1</code>" }));
+  // No speech on the server, for one of three reasons Maintenance tells apart too (server/app.py, speech_state): its model
+  // still loading after the server came up (3 to 15 s at each start), a model that did not load, or the server started
+  // without it, whose variable no switch here can change. As one, all three said "off: SIDENOTE_AUDIO=1"
+  if (!status.audio) {
+    const sp = status.speech || {};
+    if (sp.state === "loading") return card("idle", t("Model loading"), []);
+    if (sp.state === "failed") {
+      return card("bad", t("Did not load"), [], `${t("The speech model did not load")} · <button type="button" class="key-hint act" data-act="maint-log">${LOG_MARK}${t("Server log")}</button>`);
+    }
+    const on = escapeHtml(sp.turn_on || "SIDENOTE_AUDIO=1");
+    return card("off", t("Off on the server"), [], t("Start it with {cmd} to listen", { cmd: `<code class="cmd">${on}</code>` }));
+  }
   // Said by the screen card too, and once is enough: no note here.
   if (capture.clients === 0) return card("idle", t("No program"), []);
   // Started with --no-audio: the program never opened a device, so the panel's switch is moot.
@@ -2769,14 +2781,23 @@ function renderSignals() {
   const server = { up: ["ok", t("Server connected")], down: ["bad", t("Server disconnected")], connecting: ["idle", t("Connecting to the server")] }[wsState];
   setSignal("sig-server", server[0], server[1]);
   const lo = localState(), c = agentState(), sc = screenState(), au = audioState();
-  setSignal("sig-local", lo.s, t("Local model: ") + plain(lo), t("Local model: ") + lo.pill);
-  setSignal("sig-agent", c.s, `${AG()}: ` + plain(c), `${AG()}: ` + c.pill);
+  // A model resting off the GPU, an agent switched off or not installed (it is optional), or speech the server was started
+  // without, is at rest and not at fault: grey, not green or red, on its card (index.html, [data-rest]) and in the header's
+  // signal alike, which said red for the agent switched off while its card said grey
+  const A = eng()?.agent, L0 = eng()?.local;
+  const rest = {
+    local: !!(L0?.ok && !L0.loaded && !L0.loading),
+    agent: !!A && (A.mode === "off" || (!A.ok && A.installed === false)),
+    audio: wsState === "up" && !status.audio && (status.speech?.state || "off") === "off",   // a model that failed is a fault
+  };
+  setSignal("sig-local", rest.local ? "idle" : lo.s, t("Local model: ") + plain(lo), t("Local model: ") + lo.pill);
+  setSignal("sig-agent", rest.agent ? "idle" : c.s, `${AG()}: ` + plain(c), `${AG()}: ` + c.pill);
   // the header's signal and the card are named after the agent the server uses
   const sig = document.querySelector("#sig-agent .name");
   if (sig && sig.textContent !== AGS()) sig.textContent = AGS();               // the header has room for the short name
   for (const el of document.querySelectorAll(".agent-name")) if (el.textContent !== AG()) el.textContent = AG();
   setSignal("sig-screen", sc.s, t("Screen capture: ") + plain(sc), t("Screen capture: ") + sc.pill);
-  setSignal("sig-audio", au.s, t("Sound capture: ") + plain(au), t("Sound capture: ") + au.pill);
+  setSignal("sig-audio", rest.audio ? "idle" : au.s, t("Sound capture: ") + plain(au), t("Sound capture: ") + au.pill);
   // Every card is drawn the same way: its rows, then the word and the colour of its state.
   for (const [id, st] of [["screen", sc], ["audio", au], ["local", lo], ["agent", c]]) {
     setHtml(`st-${id}`, cardHtml(st));   // setHtml, so an unchanged card is not rebuilt
@@ -2786,12 +2807,7 @@ function renderSignals() {
     pill.textContent = st.pill;          // text, not HTML: the pill is one word
     pill.dataset.state = st.s;           // the CSS picks the colour from this
     pill.closest(".src")?.setAttribute("data-state", st.s);   // and the source's mark lights in it (index.html)
-    // A model resting off the GPU, or an agent switched off or not installed (it is optional), is at rest and not at fault: grey, not
-    // green or red (index.html, [data-rest])
-    const A = eng()?.agent;
-    pill.closest(".src")?.toggleAttribute("data-rest", (id === "local" && eng()?.local?.ok && !eng()?.local?.loaded && !eng()?.local?.loading)
-      || (id === "agent" && !!A && (A.mode === "off" || (!A.ok && A.installed === false)))
-      || (id === "audio" && wsState === "up" && !status.audio));   // off on the server: how it was started, said grey
+    pill.closest(".src")?.toggleAttribute("data-rest", !!rest[id]);   // at rest, as above: grey
   }
   syncSrc();   // what can be folded goes with the state and the details just drawn
   const L = eng()?.local;
@@ -3098,7 +3114,7 @@ function renderAlerts() {
   }
   if (wsState === "up" && capture.clients === 0 && (capture.screen_on || capture.audio_on)) {
     out.push(alertHtml("warn", `<b>${t("Capture program not connected")}</b> ${startHint()}`,
-      `<button type="button" class="btn sm" data-open-capture>${PLUG_MARK}<span>${t("Connect")}</span></button>`));
+      `<button type="button" class="btn sm" data-open-capture>${PLUG_MARK}<span>${t("Capture connection")}</span></button>`));
   }
   // A drawn region is easy to forget and it decides everything that follows: with one set, the models
   // only ever see that patch. It once cost a sitting: a region drawn on an old screen left every answer
@@ -3119,7 +3135,8 @@ function renderAlerts() {
     // nothing captured there is nothing to take. It said "the current screen" with the screen switched off
     const title = `<b>${t("Paused")}</b>`;
     out.push(alertHtml("warn", capture.screen_on ? t("{title} No automatic analysis · {redo} takes the current screen only", { title, redo: REDO_KEY() })
-      : capture.audio_on ? t("{title} No automatic analysis · {redo} solves what was heard", { title, redo: REDO_KEY() })
+      // and what was heard only where something is: the sound switch on is nothing with speech off on the server
+      : capture.audio_on && status.audio ? t("{title} No automatic analysis · {redo} solves what was heard", { title, redo: REDO_KEY() })
       : t("{title} No automatic analysis", { title })));
   }
   out.push(updateBand());   // a newer release, last: only worth knowing ("" when there is none to show)
@@ -3321,8 +3338,9 @@ function renderWelcome() {
         ? t("Finds problems on the GPU and answers what it can at once · first install Ollama from {link}", { link: OLLAMA_LINK })
         : L.pull ? t("Finds problems on the GPU and answers what it can at once · with no model yet: the Download button on the Local model card")
         : t("Finds problems on the GPU and answers what it can at once · with no model yet: {cmd}", { cmd: "<code class=\"cmd\">./sidenote llm pull</code>" }),
-        // a download under way is the step being done, as the card's own pill says
-        !L.on ? t("Off") : L.ok ? t("Connected") : pullNow || L.pulling ? t("Downloading") : t("Needed")) : ""}
+        // a download under way is the step being done, as the card's own pill says; a model that answers, in the card's own
+        // word for it (On GPU, Idle, Loading): "Connected" stood beside a card that said On GPU
+        !L.on ? t("Off") : L.ok ? localState().pill : pullNow || L.pulling ? t("Downloading") : t("Needed")) : ""}
       ${C && C.present ? step(C.mode === "off" || C.installed === false ? null : C.ok, `${AG()}`, C.mode === "off"
         ? t("Off · turned on in Solver settings, the agent solves the hard problems of the chosen types", { agent: AG() })
         : C.installed === false ? agentOptional(C)
@@ -4314,6 +4332,9 @@ const ASK_TEXT = {
   down: [t("Questions once the server is connected"), t("Questions once connected"), t("Ask once connected")],
   stale: [t("Questions from the next answer · the last one is from before the server started"),
     t("Questions from the next answer"), t("Ask after the next answer")],
+  // the last answer deleted: questions were about it, and the one before it is no server's to ask about
+  deleted: [t("Questions from the next answer · the answer to ask about was deleted"),
+    t("Questions from the next answer"), t("Ask after the next answer")],
   empty: [t("Questions once an answer is in"), t("Questions once an answer is in"), t("Ask after an answer")],
 };
 let askRuler = null;   // one canvas, kept: a new one per call would churn on every resize frame
@@ -4338,7 +4359,10 @@ function syncAsk() {
   ask.setAttribute("aria-disabled", String(!on));   // said to a screen reader either way: nothing typed is sent now
   $("askbtn").disabled = !on;
   if (on && askHadFocus) { askHadFocus = false; if (document.activeElement === document.body) ask.focus({ preventScroll: true }); }
-  ask.placeholder = fitText(ask, ASK_TEXT[on ? "on" : wsState !== "up" ? "down" : thread.length ? "stale" : "empty"]);
+  const why = on ? "on" : wsState !== "up" ? "down" : status.askOff === "deleted" ? "deleted" : thread.length ? "stale" : "empty";
+  // the example is a multiple-choice one: under an essay answer to a question heard, or an algorithm, it asked about nothing there
+  const mcq = items.get(thread[thread.length - 1])?.head?.type === "mcq";
+  ask.placeholder = fitText(ask, why === "on" && !mcq ? ASK_TEXT.on.slice(1) : ASK_TEXT[why]);
 }
 
 let askHadFocus = false;
@@ -4921,6 +4945,13 @@ function sayable(s, block = false) { const w = plainAnswer(s, block); return /[\
 // The first sentence of a working that says something: a line of the body is read as a block, its heading's hashes and a
 // table row's bars are marks there
 function firstSayable(s) { return sayable(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => sayable(l, true)), true); }
+// The newest day kept that the page does not hold whole (the day list says how many each has), or "" when it holds them all
+function olderDay() {
+  const here = new Map();
+  for (const it of items.values()) { const d = dayOf(it.ts); here.set(d, (here.get(d) || 0) + 1); }
+  return [...historyDays].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+    .find((d) => (here.get(d.day) || 0) < (d.n || 0))?.day || "";
+}
 function renderIndex() {
   $("hist-none").hidden = thread.length > 0;
   $("hist-tools").hidden = thread.length === 0;
@@ -4933,7 +4964,14 @@ function renderIndex() {
   applyChoice();
   fillChoices();
   const narrowed = words.length || histDay || histKind || histStar;
-  $("hist-count").textContent = !thread.length ? "" : narrowed ? `${ids.length}/${thread.length}` : String(thread.length);
+  // The newest 40 come as the panel opens (and a day's when one is picked): counted against what is kept, the day list's own
+  // numbers, and the list ends with the key to the next day not on the page. It ended inside today's group under a count of
+  // 40, with nothing to say more were kept, and a day picked counted against what the page happened to hold
+  const kept = Math.max(historyDays.reduce((n, d) => n + (d.n || 0), 0), thread.length);
+  $("hist-count").textContent = !thread.length ? "" : narrowed ? `${ids.length}/${kept}` : kept > thread.length ? `${thread.length}/${kept}` : String(thread.length);
+  const more = $("hist-more"), older = narrowed ? "" : olderDay();
+  more.hidden = !older;
+  if (older) setHtml("hist-more", `${OPEN_MARK}<span>${t("Load older answers ({n} more)", { n: kept - thread.length })}</span>`);
   const miss = $("hist-nomatch");
   miss.hidden = !(narrowed && !ids.length && thread.length);
   if (!miss.hidden) {
@@ -5312,9 +5350,11 @@ function renderHear(text, lang, flags) {
   const why = (n) => (n ? `<span class="why">${escapeHtml(HEARD_WHY[n.why])}</span>` : "");
   // setHtml, not innerHTML: this runs once a second, and replacing the text while it was being read
   // threw away where it had been scrolled to and anything selected in it to copy.
-  setHtml("hear-text", said.map((t, i) => `<span class="said">${escapeHtml(t)}</span>${why(under.get(i))}`).join("")
-    + loose.map((n) => `<span class="said">${escapeHtml(n.text)}</span>${why(n)}`).join("")
-    + (now ? `<span class="now">${escapeHtml(now)}</span>${why(under.get(said.length))}`
+  // Each note at the end of its own sentence, on its line: on a line of its own under it, in a box two lines tall scrolled to
+  // its end, the note read as the heading of the question that came next (the sentence above it scrolled away)
+  setHtml("hear-text", said.map((t, i) => `<span class="said">${escapeHtml(t)}${why(under.get(i))}</span>`).join("")
+    + loose.map((n) => `<span class="said">${escapeHtml(n.text)}${why(n)}</span>`).join("")
+    + (now ? `<span class="now">${escapeHtml(now)}${why(under.get(said.length))}</span>`
            : loose.length ? ""
            : `<span class="quiet">${paused ? t("Not written down while paused")
               : fresh ? t("No speech") : t("Nothing heard")}</span>`));
@@ -5607,6 +5647,7 @@ function handle(m) {
       if (m.paused !== undefined) setPaused(m.paused);
       if (m.lang !== undefined) setLang(m.lang);
       if (m.audio !== undefined) status.audio = !!m.audio;
+      if (m.speech !== undefined) status.speech = m.speech && typeof m.speech === "object" ? m.speech : null;   // why not, when not
       if (m.voice !== undefined) status.voice = !!m.voice;   // Solve spoken problems automatically (the Heard speech card reads it)
       if (m.engines !== undefined) { status.engines = m.engines; gpuPending = false; clearTimeout(gpuPressed.timer); renderSettings(); }
       if (m.desktop !== undefined) status.desktop = !!m.desktop;   // the desktop app's server: no ./sidenote commands
@@ -5614,6 +5655,7 @@ function handle(m) {
       if (m.where !== undefined) status.where = ["desktop", "container", "cluster", "host"].includes(m.where) ? m.where : "";
       if (m.forward !== undefined) status.forward = m.forward && typeof m.forward === "object" ? m.forward : null;
       if (m.can_ask !== undefined) status.canAsk = !!m.can_ask;   // a restarted server has nothing to ask about
+      if (m.can_ask !== undefined) status.askOff = m.ask_off === "deleted" ? "deleted" : "";   // ...nor one whose last answer went
       if (m.run_enabled !== undefined) status.runEnabled = !!m.run_enabled;
       if (m.runner !== undefined) status.runner = !!m.runner;
       if (m.version !== undefined) { status.version = m.version; renderVersion(); }   // this server's release, in the gear menu
@@ -5820,7 +5862,8 @@ function onRunResult(m) {
 const noSearch = () => !eng()?.search?.present && t("No search server (SIDENOTE_SEARCH_URL)");
 const noAgent = () => !eng()?.agent?.present && t("The server was started without the agent (SIDENOTE_AGENT)", { agent: AG() });
 const noRunner = () => !status.runner && t("No code runner (SIDENOTE_RUNNER_URL)");
-const noAudio = () => !status.audio && t("Speech recognition off (SIDENOTE_AUDIO)");
+const noAudio = () => !status.audio && ({ loading: t("The speech model is loading"), failed: t("The speech model did not load") }[status.speech?.state]
+  || t("Speech recognition off ({env})", { env: (status.speech?.turn_on || "SIDENOTE_AUDIO=1").split("=")[0] }));
 const UNAVAILABLE = {
   local_llm: () => !eng()?.local?.present && t("The server was started without the local model (SIDENOTE_ANALYZER)"),
   web_search: noSearch, web_fetch: noSearch, agent_mode: noAgent, agent_payload: noAgent, agent_hard_types: noAgent,
@@ -6806,6 +6849,8 @@ function reanalyze() {
   if (!send({ type: "reanalyze" })) return;
   reanalyzedAt = Date.now();
   manualUntil = Date.now() + 10000;   // the analysis this starts was asked for by hand: said at once (onStart)
+  // with the screen off and nothing heard (speech off on the server), the server's own notice says why, and this none
+  if (!capture.screen_on && !status.audio) return;
   toast(!capture.screen_on ? t("Solving again from what was heard") : capture.clients === 0 ? t("Capture off: reanalyzing the last screen") : t("Reanalyzing the screen now"));
 }
 function togglePause() { send({ type: paused ? "resume" : "pause" }); }
@@ -6884,6 +6929,8 @@ $("sw-agent").onclick = () => {
 $("roi-draw").onclick = startDrawing;
 const clearRoi = () => { if (setSetting("roi_box", null)) toast(t("Region cleared · watching the whole screen"), null, "done"); };
 $("roi-clear").onclick = clearRoi;
+// the next day kept and not on the page, whole (a day holds at most what the page keeps, MAX_ITEMS)
+$("hist-more").onclick = () => { const d = olderDay(); if (d) loadHistory({ day: d, limit: MAX_ITEMS }); };
 $("pause").onclick = togglePause;
 $("sw-screen").onclick = () => switchCapture("screen");
 $("sw-audio").onclick = () => switchCapture("audio");
@@ -6948,6 +6995,7 @@ document.addEventListener("click", (e) => {
   if (act?.dataset.act === "gpu") send({ type: "gpu_release" });
   if (act?.dataset.act === "gpu-load") gpuLoad();
   if (act?.dataset.act === "reanalyze") reanalyze();   // the key named in a sentence (REDO_KEY), as the bar's own
+  if (act?.dataset.act === "maint-log") { maintSection = "log"; openMaint(); }   // why the speech model did not load
   const cf = e.target.closest("[data-confirm]");
   if (cf && send({ type: "agent_confirm_reply", cid: cf.dataset.confirm, send: cf.dataset.send === "1" })) {
     confirms.delete(cf.dataset.confirm); renderTail();
@@ -7315,6 +7363,7 @@ function onDeleted(m) {
   const id = idOf(m.id);
   if (typeof m.n === "number") deletedCount = m.n;
   if (typeof m.can_ask === "boolean") status.canAsk = m.can_ask;   // the last answer deleted: nothing to ask about now
+  if (m.can_ask === false) status.askOff = "deleted";              // and the question box says that, not a restart
   const mine = deleting.delete(id);
   const it = items.get(id);
   if (it) {
@@ -7969,9 +8018,10 @@ function renderCapProg() {
   box.dataset.state = on ? (v.differs ? "warn" : "ok") : "idle";
   setHtml("cap-who", who);
   $("cap-who").title = on ? [w.host, w.system, w.version ? `v${w.version}` : ""].filter(Boolean).join(" · ") : "";
-  const key = $("cap-open"), word = on ? t("Manage") : t("Connect");
+  // the sheet's own name, as the guide and the tray's menu call it: "Connect" promised what the sheet cannot do (note 126), and
+  // one key with two names besides
+  const key = $("cap-open"), word = t("Capture connection");
   if (key.textContent !== word) key.textContent = word;
-  key.title = t("Capture connection");
 }
 // How long the sheet or the guide has waited for a program, from when it was opened with none (or the one there went), and
 // when one came while they were open: said with a tick for a minute

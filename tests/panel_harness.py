@@ -104,6 +104,8 @@ class Stand:
                     rows = sorted(stand.rows, key=lambda r: r["ts"], reverse=True)
                     if q.get("starred"):   # the Starred choice: the starred answers only, as server/history.py gives them
                         rows = [r for r in rows if r.get("starred")]
+                    if q.get("day"):       # one day's, as the day list and the key to older answers ask
+                        rows = [r for r in rows if time.strftime("%Y-%m-%d", time.localtime(r["ts"])) == q["day"][0]]
                     limit = int(q.get("limit", ["40"])[0])
                     return self._json({"answers": rows[:limit]})
                 if url.path == "/history/days":

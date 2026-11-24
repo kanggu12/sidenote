@@ -972,7 +972,9 @@
   .composer .btn { height: 40px; }
   /* Grown to more lines, the send key stays at the foot of the question, by the last line written */
   .composer:has(> textarea) { align-items: flex-end; }
-  .jump { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); height: 30px; padding: 0 12px 0 14px; border-radius: 15px;
+  /* In the question's own bar, before the box, rather than floating over the answers above it: there it stood across a
+     card's edge and over its keys (on a phone, over Details), whatever was scrolled under it */
+  .jump { flex: none; order: -1; height: 30px; padding: 0 12px 0 14px; border-radius: 15px;
     display: inline-flex; align-items: center; gap: 4px;
     border: 1px solid var(--pen); background: var(--pen); color: var(--pen-ink); font-weight: 650; font-size: 13px; cursor: pointer; box-shadow: var(--lift); }
   .jump svg { width: 13px; height: 13px; flex: none; }   /* the arrow, the size of a small button's mark */
@@ -1176,8 +1178,8 @@
     margin-left: 3px; vertical-align: -2px; background: var(--pen); animation: caret 1s steps(1) infinite; }
   @keyframes caret { 50% { opacity: 0; } }
   .hear-body .quiet { color: var(--graphite); }
-  /* Why a sentence on the card was not taken, right under it: the card's muted words, smaller */
-  .hear-body .why { display: block; font-size: 12px; line-height: 1.4; color: var(--graphite); }
+  /* Why a sentence on the card was not taken, at its end: the card's muted words, smaller, in italic as the panel's other notes */
+  .hear-body .why { margin-left: .45em; font-size: 12px; font-weight: 400; font-style: italic; color: var(--graphite); white-space: nowrap; }
   .hear-foot { display: flex; align-items: center; gap: 8px; margin: 9px 0 0; padding-top: 8px; border-top: 1px dashed var(--rule); }
   .hear-state { flex: 1; min-width: 0; margin: 0;
     font-size: 12px; color: var(--graphite); word-break: keep-all; }
@@ -1206,6 +1208,9 @@
     background: var(--sheet-2); box-shadow: var(--sunken); color: var(--ink); font-size: 12.5px; }
   .hist-tools input::-webkit-search-cancel-button { cursor: pointer; }
   .history .none-found { font-size: 12.5px; color: var(--graphite); margin: 8px 0 2px; }
+  /* the key to the answers kept before those on the page, where the list ends */
+  .history .hist-more { margin: 10px 0 2px; }
+  .history .hist-more[hidden] { display: none; }
   .h mark { background: var(--hl-row); color: inherit; border-radius: 2px; }
 
   /* max-content: from left 50% the width shrinks to the half of the window to its right, 180 px of 360. Over the
@@ -2658,6 +2663,10 @@
   :root[data-skin="classic"] .rail .usage-sub { align-items: baseline; }
   /* The picture's box takes the card's width as every other block does, with the picture in the middle of it: a narrow box stood on no edge at all */
   :root[data-skin="classic"] .rail .shot { width: 100%; margin-inline: 0; }
+  /* One column (1000 px and narrower): the card is the page's width, and the 16:9 box at that width held the 360 px picture
+     in a fifth of it (710x399 at 768). As wide as the picture with the well's 6 px round it, on the card's left edge as its
+     title and its words stand */
+  @media (max-width: 1000px) { :root[data-skin="classic"] .rail .shot { max-width: 372px; } }
   /* Words with no place to break still stay inside */
   :root[data-skin="classic"] .toast { overflow-wrap: anywhere; }
   /* ---- The column, third pass ---- */
@@ -2683,7 +2692,10 @@
   :root[data-skin="classic"] :is(.when, time.stamped) { align-items: baseline; }
   :root[data-skin="classic"] :is(.when, time.stamped)::before { align-self: center; }
   :root[data-skin="classic"] .entry > .row.head.err { align-items: first baseline; }
-  @media (min-width: 1001px) { :root[data-skin="classic"] .entry > .row.head.err .mg time { margin-top: 1.4px; } }
+  /* A failure's date stands where every answer's does, measured from the card's top (17.6 px from 821 px up; 20 px under it,
+     where an answer's date line is centred on its 30 px keys and a failure's head has none): 1.4 px lower and 3 px higher
+     before (review 11-24, P13) */
+  @media (max-width: 820px) { :root[data-skin="classic"] .entry > .row.head.err > .mg { padding-top: 3px; } }
   @media (min-width: 821px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { justify-content: flex-end; } }
   /* Up to 1000 px the type and the date stand on one line: the type at one width, so the dates of the answers stand in one column
      ("실무", "선다형" and "알고리즘" put them at 81, 92 and 104 px). Not on a phone's width, where the room it takes pushed the
@@ -3536,6 +3548,7 @@
         <button type="button" class="btn sm" id="hist-export" title="Download the answers in view as Markdown or for Anki" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu" data-t-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 20h14"/></svg><span class="lab-word" data-t>Export</span></button>
       </div>
       <ol id="history"></ol>
+      <button type="button" class="btn sm hist-more" id="hist-more" hidden></button>
       <p class="none-found" id="hist-nomatch" hidden></p>
       <p class="none" id="hist-none"><svg class="empty-mark" viewBox="0 0 48 34" fill="none"
         stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path

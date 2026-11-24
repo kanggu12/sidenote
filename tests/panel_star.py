@@ -240,13 +240,43 @@ def group_choice(br, s):
     p.close()
 
 
+def group_older(br, s) -> None:
+    """More kept than the page opens with (the newest 40): the count says how many of how many are kept, and the list ends with
+    the key to the next day not on the page, which brings it. It ended inside today's group under a count of 40."""
+    print("\n[answers kept before those the page opened with]")
+    # at noon of three days, the latest yesterday's: run just after midnight, minutes back from now crossed into another day
+    import time
+    noon = time.mktime(time.localtime()[:3] + (12, 0, 0, 0, 0, -1)) - 86400
+    rows = [row(1000 + i, ts=noon - i * 60) for i in range(45)]                     # the latest day: 45
+    rows += [row(2000 + i, ts=noon - 86400 - i * 60) for i in range(20)]           # the day before: 20
+    rows += [row(3000 + i, ts=noon - 2 * 86400 - i * 60) for i in range(10)]       # and the one before that: 10
+    p = Page(br, s, rows, w=1400, h=900)
+    first = shown(p)
+    key = p.js("() => { const b = document.getElementById('hist-more'); return { shown: !b.hidden, text: b.textContent }; }")
+    check("the count is of what is kept, not of what the page opened with", first["count"] == "40/75", first["count"])
+    check("...and the list ends with the key to the older answers, saying how many", key["shown"] and "35" in key["text"], key)
+    p.page.click("#hist-more")
+    p.wait(400)
+    once = shown(p)
+    check("the key brings the rest of the latest day first, then the day before", once["count"] == "45/75" and 1044 in once["rows"], once["count"])
+    p.page.click("#hist-more")
+    p.wait(400)
+    p.page.click("#hist-more")
+    p.wait(400)
+    last = shown(p)
+    gone = p.js("() => document.getElementById('hist-more').hidden")
+    check("...and with every day on the page the count is plain and the key goes", last["count"] == "75" and gone, [last["count"], gone])
+    check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     s = Stand("star")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_key, group_history, group_choice):
+        for group in (group_key, group_history, group_choice, group_older):
             group(br, s)
         br.close()
     return T.end()
