@@ -15,7 +15,7 @@
 <text x="182" y="153.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="182,294">covers faces</text>
 <rect x="314" y="108" width="194" height="64" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>
 <text x="328" y="134.8" font-size="13.5" font-weight="620" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#e3e4e5" text-anchor="start" data-box="328,494">transcriber.py</text>
-<text x="328" y="153.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="328,494">speech to text</text>
+<text x="328" y="153.5" font-size="12.5" fill="#b0b1b4" text-anchor="start" data-box="328,494">the speech service's client</text>
 <rect x="550" y="96" width="350" height="112" rx="14" fill="none" stroke="#48494e" stroke-width="1.5" stroke-dasharray="5 5"/>
 <text x="564" y="196" font-size="11" font-weight="600" fill="#b0b1b4" text-anchor="start" data-box="564,886">ONE PROBLEM</text>
 <rect x="562" y="108" width="160" height="64" rx="10" fill="#1d1e21" stroke="#303236" stroke-width="1" filter="url(#relief)"/>

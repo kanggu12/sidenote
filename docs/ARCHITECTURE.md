@@ -21,8 +21,9 @@ reaches the server through `kubectl port-forward`. In all three, the panel and t
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-pieces-dark.svg">
   <img alt="The capture program sends frames, sound and the window list to the Sidenote server. The server sends every
-    screen to the local vision model on the GPU, the hard problems to the cloud agent, and code answers to the code
-    runner; the panel in the browser shows the answers as they are written"
+    screen to the local vision model on the GPU, the hard problems to the cloud agent, code answers to the code
+    runner and the sound to the speech service, which writes down what is said; the panel in the browser shows the
+    answers as they are written"
     src="assets/diagram-pieces-light.svg" width="100%">
 </picture>
 
@@ -123,7 +124,8 @@ measurements.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-modules-dark.svg">
   <img alt="The server's modules. app.py holds the panel's and the capture program's sockets and the one analysis
-    worker. It calls the screen and sound modules (detector.py, faces.py, transcriber.py) and pipeline.py, which solves
+    worker. It calls the screen and sound modules (detector.py, faces.py, and transcriber.py, the speech service's client)
+    and pipeline.py, which solves
     one problem with repeats.py. The pipeline uses the engines: analyzer.py for the local model, agents.py for the cloud
     agents, codecheck.py for code answers and search.py for web search. Settings and records: settings.py, config.py,
     models.py with hardware.py, history.py and telemetry.py" src="assets/diagram-modules-light.svg" width="100%">
@@ -132,13 +134,17 @@ measurements.
 | Part | Path | What it does | Start reading at |
 |:---|:---|:---|:---|
 | Server | `server/app.py` | FastAPI: `/ingest` for the capture program, `/panel` for the panel, the HTTP routes, and the panel's files on every other path. One worker settles, dedupes, transcribes and analyzes, one analysis at a time. Follow-up questions run as tasks a screen change does not stop; the code check, the verify check and the retry are tasks too, which stop when a newer answer replaces theirs. `engine_watch` looks at the local model every 20 s and frees the GPU after the idle time | `analysis_worker`, `ingest`, `prepare_frame` |
+| Screen intake | `server/frames.py` | Makes every screen the capture program sends into what the analyses take: the faces covered first, the model's image (pages for a tall one), the thumbnail, the change signature and the problem's crop. Nothing in it waits on the network or the server's state | `prepare_frame` |
+| Guards | `server/guards.py` | Who may talk to the server (this machine's Host, the panel's own Origin, the published port or this container as the peer) and the headers every answer carries: ASGI middleware in front of everything | `PeerGuard`, `origin_ok` |
+| API plumbing | `server/api_support.py` | What the API's routes share: the refusals, the body read with its cap, one reader's stream of the events, the replies a panel message sends back, the backup's download | `api_refused`, `EventStream` |
+| Service clients | `server/runner_client.py`, `RemoteTranscriber` in `server/transcriber.py` | The server's side of the code runner (its Unix socket under compose, HTTP with its token in a cluster) and of the speech service (HTTP, its model loaded there again when it started again) | `_runner_call`, `RemoteTranscriber` |
 | Pipeline | `server/pipeline.py` | One problem to an answer: the image the model looks at, the fast pass, the route, the crop and text payloads, the verify check, and the code check with its one retry. `Spend` is the spend brake, `Speed` the first-word times the route compares. `Outcome.sent` lists what left the PC | `Pipeline.solve` |
 | Local model client | `server/analyzer.py` | The local vision model over an OpenAI-compatible API (Ollama on the GPU): the fast and thinking passes, web search through tool calls, the prompts, the price table, error classification (`error_hint`) and the busy-GPU pace (`GpuPace`). `MockAnalyzer` streams fixed answers | `LocalLlmAnalyzer` |
 | Agents | `server/agents.py` | The agents behind one shape (`run`, `auth_status`, `label`): Claude Code (`claude -p` with stream-json and a warm session), Codex (`codex exec --json`, one process an answer) and the Anthropic API; their sign-in checks | `make_agent` |
 | Code check | `server/codecheck.py`, `server/checklangs/` | Runs a coding answer on the problem's own examples in the language it was written in: Python, JavaScript, TypeScript, Java, Kotlin, Go and C++ called as a function, those and C and Bash fed standard input. Each language's harness is in `checklangs/<language>.py` | `run_cases`, and `check_code` in `pipeline.py` |
 | Change detection | `server/gate.py`, `server/detector.py` | The high-pass signature (a 160x120 edge map) and its distance; whether a screen is new, measured inside the last answer's problem region once one is known, with the cells that keep moving left out | `ChangeDetector` |
 | Repeats | `server/repeats.py` | Knows a problem seen again by its picture (bands, then pieces) or by its words, before anything is spent on it | `Recent.match` |
-| Speech | `server/transcriber.py`, `server/terms.py` | Silero VAD, faster-whisper, and the utterance splitter; the technical terms of a pasted job posting, resume or notes for **Extra terms** (**Pick from text**), found by how they are written | `UtteranceTracker`, `find` |
+| Speech | `server/transcriber.py`, `server/speech_service.py`, `server/terms.py` | Silero VAD, faster-whisper, and the utterance splitter, in the speech service of their own or in the server's process (`RemoteTranscriber` asks the service, [note 143](DECISIONS.md#note-143)); the technical terms of a pasted job posting, resume or notes for **Extra terms** (**Pick from text**), found by how they are written | `UtteranceTracker`, `find` |
 | Faces | `server/faces.py` | Finds faces (YuNet on onnxruntime) and paints them over, as the panel's own window is, before anything reads the screen | `find`, `cover` |
 | Web search | `server/search.py` | `web_search` through SearXNG and `fetch_page` from public addresses only, for the local model; each shown on the panel and logged | `WebTools` |
 | History | `server/history.py` | The answers kept in SQLite with their follow-ups, code check, thumbnail, star and verdict | `History` |
@@ -157,17 +163,18 @@ measurements.
 | Code runner | `runner/` | Runs code with no network, one run at a time, each compile and each run as a user of its own: Python, C, C++, JavaScript, TypeScript, Java, Kotlin, Go and Bash | `LANGS`, `run` in `runner.py` |
 | Launcher | `sidenote` | The user commands (`install`, `up`, `down`, `status`, `capture`, `login`, `llm`, `gpu`, `doctor`, `report` and more); reads `.env` as compose does and adds the GPU's compose file | the `case` at its end |
 | Images and compose | `docker/`, `compose.yaml` | The server image, its entrypoint and pinned packages, the panel's pinned libraries, and the GPU files compose adds (`docker/compose.{nvidia,amd,cpu}.yaml`) | `docker/Dockerfile`, `services` in `compose.yaml` |
-| Helm chart | `deploy/helm/sidenote/` | The same four services as pods, with NetworkPolicies, the runner's token and the model download Job | its `README.md`, `values.yaml` |
+| Helm chart | `deploy/helm/sidenote/` | The same five services as pods, with NetworkPolicies, the runner's token and the model download Job | its `README.md`, `values.yaml` |
 
 ## How it runs
 
-Under Docker, compose runs four services and a one-off model download; the capture program and the panel stay on the PC.
-Every container drops all capabilities except the few it needs and runs with `no-new-privileges`, and the four services
+Under Docker, compose runs five services and a one-off model download; the capture program and the panel stay on the PC.
+Every container drops all capabilities except the few it needs and runs with `no-new-privileges`, and the five services
 write no core dumps ([note 39](DECISIONS.md#note-39)).
 
 | Part | Service, container | Port | Networks | May reach | Reached by |
 |:---|:---|:---|:---|:---|:---|
-| Server | `server`, `sidenote` | 8777, published on `127.0.0.1` only (`SIDENOTE_PORT` moves the host side) | `default`, `llmnet` | the agent's service (claude.ai, chatgpt.com or the Anthropic API), the local model, SearXNG, public web pages, the runner's socket, api.github.com for the latest release | the capture program and the panel through the published port; `PeerGuard` takes only that port's gateway and the container itself |
+| Server | `server`, `sidenote` | 8777, published on `127.0.0.1` only (`SIDENOTE_PORT` moves the host side) | `default`, `llmnet`, `speechnet` | the agent's service (claude.ai, chatgpt.com or the Anthropic API), the speech service, the local model, SearXNG, public web pages, the runner's socket, api.github.com for the latest release | the capture program and the panel through the published port; `PeerGuard` takes only that port's gateway and the container itself |
+| Speech | `speech`, `sidenote-speech` (the server's image, `server/speech_service.py`) | 8779, not published | `speechnet` (`internal: true`, with the server alone), `speech-out` (its own) | the model's site, for a model's first download, through `speech-out` | the server (`SIDENOTE_SPEECH_URL`) |
 | Local model | `llm`, `sidenote-llm` (Ollama) | 11434, not published | `llmnet` (`internal: true`) | nothing | the server |
 | Web search | `searxng`, `sidenote-searxng` | 8080, not published | `default` | the search engines | the server |
 | Code runner | `runner`, `sidenote-runner` | none: `/sock/runner.sock` in the `runner-sock` volume, which only the runner and the server's group may open | none (`network_mode: none`) | nothing | the server, through the socket |
@@ -179,7 +186,8 @@ write no core dumps ([note 39](DECISIONS.md#note-39)).
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-network-dark.svg">
   <img alt="Sidenote under Docker. On this PC, the capture program (screen, sound and the window list) and the panel in
     the browser reach the server at 127.0.0.1:8777. The server is the only container with a port, published on
-    127.0.0.1 only. The local model (Ollama on the GPU) is on llmnet, with no internet; SearXNG does the local model's
+    127.0.0.1 only. The speech service, below it, writes down what the server hears, and only the server reaches it.
+    The local model (Ollama on the GPU) is on llmnet, with no internet; SearXNG does the local model's
     web search; the code runner has no network at all and is reached through a socket in a volume. On the internet:
     the agent's service (Anthropic or OpenAI), which the server reaches, and the search engines SearXNG asks"
     src="assets/diagram-network-light.svg" width="100%">
@@ -191,6 +199,7 @@ out. A run's result goes only to the panel that sent the code. The app and the c
 | Part | The app | Kubernetes |
 |:---|:---|:---|
 | Server | a child process on `127.0.0.1:8777`, trusting loopback only (`SIDENOTE_TRUST_GATEWAY=0`) | a pod behind a ClusterIP Service on 8777; a NetworkPolicy lets no pod in, `kubectl port-forward` reaches it, and it trusts loopback alone |
+| Speech | in the server's own process (`SIDENOTE_SPEECH_URL` empty) | a pod on 8779 that only the server reaches, the models on a claim of its own |
 | Local model | the PC's Ollama on `127.0.0.1:11434`, started as a child when it is installed and not running | a pod on 11434 that only the server reaches and that reaches nothing |
 | Web search | off | a pod on 8080 that only the server reaches |
 | Code runner | off, so there is no code check and no **Run** | a pod on TCP 8000 with no egress, reached only by the server; every run carries the runner's token |
@@ -229,7 +238,7 @@ PersistentVolumeClaim on Kubernetes.
 | `before-restore-<when>/` | what `./sidenote restore` replaced: the history and the settings as they were | each, until `./sidenote uninstall --data` | the files it holds |
 | `none_*.png` | with `SIDENOTE_DEBUG_FRAMES` set, the screens read as nothing to solve | the last eight | a few MB each |
 | Docker's container logs | each container's output (json-file) | rotated | the server 3 x 5 MB, the local model 2 x 5 MB, the runner and SearXNG 2 x 2 MB, the model download 1 x 2 MB |
-| `hf-cache` volume | the speech models | until removed | about 2.1 GB for `large-v3-turbo` and `small`, the live words' model |
+| `hf-cache` volume | the speech models, mounted by the speech service (and by the server, for its own when `SIDENOTE_SPEECH_URL` is empty) | until removed | about 2.1 GB for `large-v3-turbo` and `small`, the live words' model |
 | `llm-models` volume | the local model's weights | until removed | tens of GB a model |
 
 The app also keeps what each child printed (`server-console.log`, `capture.log`, `ollama.log`) and its own `app.log`,
@@ -370,7 +379,26 @@ The server reaches it through `/sock/runner.sock` under compose, and over TCP wi
 |:---|:---|
 | `POST /run` with `lang`, `code`, `stdin`, `timeout` | `ok`, `stage`, `exit`, `stdout`, `stdout_truncated`, `stderr`, `stderr_truncated`, `timed_out`, `output_limited`, `elapsed`; or `{ok: false, busy: true}` when the previous run does not end within 15 s |
 | `POST /run` with `stdins` (1 to 8 inputs) in place of `stdin` | one compile and a run on each input: `runs` (one result as above per input) beside the last run's fields, or the compile's failure |
-| `GET /health` | `ok` (false once a run's leftovers could not be removed: the runner then ends with exit code 3 a second later, and what starts it starts a clean one), `busy` |
+| `GET /health` | `ok` (false once a run's leftovers could not be removed: the runner then ends with exit code 3 a second later, and what starts it starts a clean one), `service` (`runner`), `busy` |
+
+### Speech service
+
+`server/speech_service.py` ([note 143](DECISIONS.md#note-143)), which the server reaches at `SIDENOTE_SPEECH_URL`
+(`http://speech:8779` under compose, the chart's Service under Kubernetes) and nothing else does. The sound is 16-bit
+mono PCM in the body, a minute at most (413 past that). Nothing heard is written to its log.
+
+| Request | Answer |
+|:---|:---|
+| `GET /health` | `ok`, `service` (`speech`), `version`, `available`, `model`, `live_model`, `language`, `loading` (the model being loaded), `error` (the last load's failure) |
+| `POST /load` with `model` (`""`: `SIDENOTE_WHISPER_MODEL`) | the health's fields once it is loaded (the model in use already: at once); 500 with the reason when it cannot be had, the one in use staying; 409 when another was asked for while it loaded or waited |
+| `POST /segments?sr=16000` | `spans`: the speech in the sound, as `[start, end]` sample pairs; 409 with no model loaded |
+| `POST /transcribe?sr=16000&live=0` | `text`, `last_language` (what it was read as), `language`; `live=1` reads it with the live line's model; 409 with no model loaded |
+| `PUT /language` with `value` (`auto`, `ko`, `en`) | `language` |
+| `PUT /hints` with `hint` (the built-in term lists, or null) and `extra` (the person's **Extra terms**) | `ok` |
+
+A 409 for no model is a service that started again: the server's client loads its own model there again, gives it the
+language and the terms again, and asks once more. Every one of Sidenote's own services answers `GET /health` with `ok`
+and `service`: the server (`server`, with `version`), this one and the code runner.
 
 ## Security
 

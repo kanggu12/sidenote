@@ -1215,7 +1215,7 @@ How to see what Sidenote is doing and has done, and where its logs are.
 | `./sidenote stats` | Since the server started: answers, errors, tokens, cost, response times (median and 90th percentile), the last error, the log size. `--json` |
 | `./sidenote events` | Recent events, one per line, with why an analysis stopped (`reason`, `after`), which answer a problem seen again was (`of`, `score`), who answered and why the agent got it (`engine`, `via`), and what went to it (`sent`). `-n 100` for the count, `--errors` for the errors and what held work back (the spend brake, the agent's limit, a stuck model server) |
 | `./sidenote report` | A summary per day, then of the whole period: each engine's time to its first token (the median and the slowest tenth); what the agent was paid for answers, for screens with nothing to solve and for answers with no head line; the agent's answers that found nothing, by what it was given and why it got them; why analyses were stopped, and how long the ones a newer screen replaced had run; how many problems seen again were not solved again (and their lowest score); how often the GPU was busy and the local model timed out; what the example checks concluded, with the runs on made-up inputs; and the answers marked with **Right** and **Wrong** in the panel: how many were judged and how many were right, all of them and by engine, by screen or speech and by type, and a right/judged column for each day. An answer marked twice counts once, as its last mark, on the day that mark was given, and one whose mark was taken off counts as not judged. The default is 7 days including today (a day ends at midnight). `--days 30`, `--json` |
-| `./sidenote logs` | Follows the server log (Ctrl+C to leave) |
+| `./sidenote logs` | Follows the server log (Ctrl+C to leave); `./sidenote logs speech` follows the speech service's, which says what it loaded and why a model could not be, and never what it heard |
 | `./sidenote doctor` | Checks the setup, and ends as a failure if anything is marked ✗ |
 
 Results for screens with nothing to solve count toward the tokens and the cost, but not toward the answers and the
@@ -1506,6 +1506,7 @@ explained where they are read: the change thresholds and the like in `server/con
 | `SIDENOTE_CONTINUE_WINDOW_SEC` | `600` | A problem joined by scrolling within this many seconds of its answer fills that answer out under the same card instead of being solved again (0 turns it off) |
 | `SIDENOTE_CLI_TIMEOUT` | `120` | How long a CLI agent's answer may go quiet before the turn is ended (seconds) |
 | `SIDENOTE_RUNNER_URL` | (set automatically in the container) | Code runner address. Empty turns the **Run** feature off (the button disappears from the panel) |
+| `SIDENOTE_SPEECH_URL` | (set automatically in the container: `http://speech:8779`) | The speech service the server sends the sound to, the `speech` container that writes down what is said. Empty runs the speech model inside the server's container, as before 0.14.0 |
 | `SIDENOTE_RUNNER_TIMEOUT` | `10` | Time limit for one code run (seconds) |
 | `SIDENOTE_RUNNER_TOKEN` | (empty) | The token sent with every run, for a runner reached over TCP that takes runs only with it (`RUNNER_TOKEN`). The Helm chart makes one; compose's Unix socket needs none |
 | `SIDENOTE_TRUST_GATEWAY` | `1` | Whether connections from the container's default gateway are let in, as Docker's published port makes them. The Helm chart sets `0`: loopback only, where `kubectl port-forward` arrives |
@@ -1555,6 +1556,8 @@ explained where they are read: the change thresholds and the like in `server/con
 | `SIDENOTE_DELETED_DAYS` | `7` | Days a deleted answer waits in **Recently deleted**, where it can be put back, its age in the history aside; `0` keeps it there until it is emptied (the size cap still takes what was deleted first) |
 | `SIDENOTE_CPUS` | `8` | Cores the server may use (fewer on a machine with fewer: `./sidenote` brings this and `SIDENOTE_LLM_CPUS` down to what is there) |
 | `SIDENOTE_LLM_CPUS` | `8` | Cores the model server may use. Answers run on the GPU; this caps loading a model and any fallback to the CPU, and the model download (`./sidenote llm pull`) too |
+| `SIDENOTE_SPEECH_CPUS` | `6` | Cores the speech service may use (fewer on a machine with fewer, as above) |
+| `SIDENOTE_SPEECH_MEMORY` | `5g` | Memory the speech service may use: its two models, and a third while one chosen in the panel loads beside them |
 
 ## 13. Troubleshooting
 
@@ -1696,7 +1699,7 @@ What leaves this PC, what can reach what, and what is kept.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-network-dark.svg">
-  <img alt="What reaches what in the Docker setup. On this PC, the capture program and the browser reach only the server, the one container with a port, published on 127.0.0.1. The server reaches the local model, Ollama on the GPU, on the internal network llmnet with no internet; SearXNG, which sends the local model's searches to search engines; and the code runner, which has no network at all and is reached through a socket in a volume. Only the agent's service, Anthropic or OpenAI, and the search engines are on the internet" src="assets/diagram-network-light.svg" width="100%">
+  <img alt="What reaches what in the Docker setup. On this PC, the capture program and the browser reach only the server, the one container with a port, published on 127.0.0.1. The server reaches the speech service, which writes down what it hears and which nothing else reaches; the local model, Ollama on the GPU, on the internal network llmnet with no internet; SearXNG, which sends the local model's searches to search engines; and the code runner, which has no network at all and is reached through a socket in a volume. Only the agent's service, Anthropic or OpenAI, and the search engines are on the internet" src="assets/diagram-network-light.svg" width="100%">
 </picture>
 
 - The server listens only inside this PC (`127.0.0.1`). The panel has no login and shows screen thumbnails, so do not
@@ -1723,16 +1726,17 @@ What leaves this PC, what can reach what, and what is kept.
   stop the runner itself. A run's result goes only to the panel that sent the code.
 - Every container drops all Linux capabilities and cannot gain privileges. The server runs as the user who ran
   `./sidenote`, so the login files and the logs stay that user's; a short-lived `server-init` container hands the log
-  folder and the speech model's volume to that user first, as root with CHOWN and no network. The server adds back one
-  capability (CHOWN, of use only when that user is root) and the code runner four (SETUID, SETGID, CHOWN and KILL, to start
-  each run as a user of its own); the others keep none. The server, the code runner and the search engine run with a
+  folder and the speech model's volume to that user first, as root with CHOWN and no network. The server and the speech
+  service, which runs as that user too, add back one capability (CHOWN, of use only when that user is root) and the code
+  runner four (SETUID, SETGID, CHOWN and KILL, to start each run as a user of its own); the others keep none. The server,
+  the speech service, the code runner and the search engine run with a
   read-only root filesystem; the local model's is writable, with the models in a volume of their own.
-- The limits in `compose.yaml`: the server 512 processes, 8 GB of memory and 8 CPUs; the code runner 128 processes,
-  1 GB and 2 CPUs; the local model 256 processes, 24 GB and `SIDENOTE_LLM_CPUS` (8) CPUs; the search engine 128
+- The limits in `compose.yaml`: the server 512 processes, 8 GB of memory and 8 CPUs; the speech service 128 processes,
+  `SIDENOTE_SPEECH_MEMORY` (5 GB) and `SIDENOTE_SPEECH_CPUS` (6) CPUs; the code runner 128 processes, 1 GB and 2 CPUs; the local model 256 processes, 24 GB and `SIDENOTE_LLM_CPUS` (8) CPUs; the search engine 128
   processes and 512 MB, with no CPU limit. The model download that `./sidenote llm pull` starts has the local model's
   CPU limit and no other. They are there so that a part that goes wrong cannot take the PC over: a stuck server was
   once measured holding eight cores for 95 minutes, which is what the server's limits and the stall watchdog are for.
-- Core dumps are off in the server, the code runner, the local model and the search engine. WSL writes the dump of a
+- Core dumps are off in the server, the speech service, the code runner, the local model and the search engine. WSL writes the dump of a
   crashing program into the Windows temp folder, and one dump can be hundreds of MB.
 
 ### In the panel

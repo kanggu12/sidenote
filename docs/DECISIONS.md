@@ -14,9 +14,9 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137), [143](#note-143) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
-| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125), [138](#note-138) |
+| [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125), [138](#note-138), [143](#note-143) |
 
 A note that a later one replaces starts with "Superseded by note N". Its text is kept as it was: it says how that part
 worked before note N and why, which is often the reason for what replaced it. What holds now is in note N.
@@ -2751,3 +2751,40 @@ with it, and the answers read alike where both came (the thinking one's answer l
 the 5, a question on keeping an infrastructure design open to what comes later, ended as nothing to solve without
 thinking, and was answered with it. A question lost in a live interview costs more than 10 s of waiting, so the
 thinking pass stays (by the harm of each case, not the average: the first pass's own quick answers already take half).
+
+### <a id="note-143"></a>143. The speech model is a service of its own
+
+Three things the speech model did to the server it ran in:
+
+- **Its threads and a fork.** The decoder runs native threads in the process that holds it, and a fork from that process
+  while they ran wedged the server for 95 minutes (`server/forksafe.py`), so every decode and every start of an agent's
+  CLI took a lock around the other.
+- **Its memory and CPU.** Its two models take about 1.8 GB of the server's 8 GB, and loading another one (**Speech
+  model** in the panel) took the server's CPU while answers were being written.
+- **Its end.** Out of memory, or a model that would not load, took the server with it, and every panel and the answer
+  being written.
+
+So it runs as a program of its own: `server/speech_service.py`, in the server's image (`SIDENOTE_ROLE=speech`), with
+`GET /health`, `POST /load`, `POST /segments`, `POST /transcribe`, `PUT /language` and `PUT /hints`
+([ARCHITECTURE.md](ARCHITECTURE.md#speech-service)). The server asks it through `RemoteTranscriber`, the in-process
+model's own calls over HTTP, from the same threads of the speech loop. Under compose it is the `speech` service: no port
+on the PC, 6 CPUs and 5 GB of its own (`SIDENOTE_SPEECH_CPUS`, `SIDENOTE_SPEECH_MEMORY`), started again inside its
+container as the server is. In the chart it is a Deployment with a Service only the server's pods reach and a claim of
+its own for the models. What the server does with what was heard stays in the server: the utterances, the questions, the
+answers and what is kept. The service keeps nothing, and writes nothing heard to its log.
+
+What its ends do now, measured with the two containers on the test PC (whisper `tiny`, a question synthesized and sent as
+the capture program sends sound): the question came back written down on the panel through the service. The service
+started again, with no model, answered the next call with 409; the server's client loaded its model there again, gave it
+the language and the terms back, and the same question came through, with no restart of the server. A service that is
+gone hears nothing for that call, with one line in the log a minute, and the speech loop goes on. A first load waits up
+to 2 minutes for a service still starting beside the server. A model chosen while another loads is the one that stays:
+the earlier load is answered 409 and dropped.
+
+What it does not do, for one person's tool: no database server (the history stays SQLite in the server, one writer), no
+message queue (the speech loop asks and waits, one decode at a time, as before), no discovery beyond compose's and the
+cluster's own names, and one copy of each service. The desktop app keeps the model in its server's process
+(`SIDENOTE_SPEECH_URL` empty), where a second program would add only another start. Every service of Sidenote's own
+answers `GET /health` with `ok` and `service` (the server and the speech service with `version` too), so one probe reads
+them all. The agent's CLI is the next one this would fit (it forks for every question, the same reason as the first
+above); its login files, shared with the PC's own CLI under its lock, make it a larger move, and it waits.

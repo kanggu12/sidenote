@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 436" width="958" height="436" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="On the PC, the capture program and the browser reach the server on 127.0.0.1:8777 only. In Docker, the server reaches the local model over llmnet, an internal network with no internet; the code runner has no network and is reached through a socket in a shared volume; SearXNG searches the web for the local model. Only the server, to the agent's service, and SearXNG, to search engines, reach the internet">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 958 476" width="958" height="476" font-family="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-label="On the PC, the capture program and the browser reach the server on 127.0.0.1:8777 only. In Docker, the server reaches the local model over llmnet, an internal network with no internet; the code runner has no network and is reached through a socket in a shared volume; the speech service, with no port on the PC, writes down what the server hears; SearXNG searches the web for the local model. Only the server, to the agent's service, SearXNG, to search engines, and the speech service, for its models once, reach the internet">
 <defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="1" fill="#e6e6e6"/></pattern><filter id="relief" x="-10%" y="-20%" width="120%" height="150%"><feDropShadow dx="1.6" dy="2" stdDeviation="2.4" flood-color="#1d1c1d" flood-opacity="0.09"/></filter></defs>
-<rect x="0.5" y="0.5" width="957" height="435" rx="14" fill="#f8f8f8" stroke="#dddddd"/><rect x="0.5" y="0.5" width="957" height="435" rx="14" fill="url(#dots)"/><path d="M22,1 V435" stroke="#f3a5bd" stroke-width="1.5"/>
+<rect x="0.5" y="0.5" width="957" height="475" rx="14" fill="#f8f8f8" stroke="#dddddd"/><rect x="0.5" y="0.5" width="957" height="475" rx="14" fill="url(#dots)"/><path d="M22,1 V475" stroke="#f3a5bd" stroke-width="1.5"/>
 <g transform="translate(40,18)">
-<rect x="0" y="30" width="200" height="340" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="14" y="358" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="14,186">THIS PC</text>
+<rect x="0" y="30" width="200" height="380" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="14" y="398" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="14,186">THIS PC</text>
 <rect x="14" y="70" width="172" height="84" rx="10" fill="#ffffff" stroke="#dddddd" stroke-width="1" filter="url(#relief)"/>
 <text x="28" y="98.2" font-size="14" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="28,172">Capture program</text>
 <text x="28" y="117" font-size="12.5" fill="#616061" text-anchor="start" data-box="28,172">screen, sound and</text>
@@ -13,13 +13,17 @@
 <text x="28" y="278.2" font-size="14" font-weight="680" fill="#1d1c1d" text-anchor="start" data-box="28,172">Browser</text>
 <text x="28" y="297" font-size="12.5" fill="#1d1c1d" text-anchor="start" data-box="28,172">the panel, at</text>
 <text x="28" y="314.5" font-size="12.5" fill="#1d1c1d" text-anchor="start" data-box="28,172">127.0.0.1:8777</text>
-<rect x="225" y="30" width="470" height="340" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="239" y="358" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="239,681">DOCKER, ON THIS PC</text>
+<rect x="225" y="30" width="470" height="380" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="239" y="398" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="239,681">DOCKER, ON THIS PC</text>
 <rect x="243" y="150" width="168" height="110" rx="10" fill="#ffffff" stroke="#dddddd" stroke-width="1" filter="url(#relief)"/>
 <text x="257" y="182.45" font-size="14" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="257,397">Server</text>
 <text x="257" y="201.25" font-size="12.5" fill="#616061" text-anchor="start" data-box="257,397">the only container</text>
 <text x="257" y="218.75" font-size="12.5" fill="#616061" text-anchor="start" data-box="257,397">with a port, on</text>
 <text x="257" y="236.25" font-size="12.5" fill="#616061" text-anchor="start" data-box="257,397">127.0.0.1 only</text>
+<rect x="243" y="284" width="168" height="84" rx="10" fill="#ffffff" stroke="#dddddd" stroke-width="1" filter="url(#relief)"/>
+<text x="257" y="312.2" font-size="14" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="257,397">Speech</text>
+<text x="257" y="331" font-size="12.5" fill="#616061" text-anchor="start" data-box="257,397">whisper on the CPU;</text>
+<text x="257" y="348.5" font-size="12.5" fill="#616061" text-anchor="start" data-box="257,397">the server's alone</text>
 <rect x="467" y="60" width="212" height="84" rx="10" fill="#ffffff" stroke="#007a5a" stroke-width="1.5" filter="url(#relief)"/>
 <circle cx="485" cy="83.44" r="5.6" fill="#007a5a" fill-opacity="0.18"/><circle cx="485" cy="83.44" r="3.4" fill="#007a5a"/>
 <text x="495" y="88.2" font-size="14" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="495,665">Local model</text>
@@ -33,8 +37,8 @@
 <text x="481" y="294.2" font-size="14" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="481,665">Code runner</text>
 <text x="481" y="313" font-size="12.5" fill="#616061" text-anchor="start" data-box="481,665">no network at all;</text>
 <text x="481" y="330.5" font-size="12.5" fill="#616061" text-anchor="start" data-box="481,665">a socket in a volume</text>
-<rect x="720" y="30" width="180" height="340" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
-<text x="734" y="358" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="734,886">THE INTERNET</text>
+<rect x="720" y="30" width="180" height="380" rx="14" fill="none" stroke="#bbbabb" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="734" y="398" font-size="11" font-weight="600" fill="#616061" text-anchor="start" data-box="734,886">THE INTERNET</text>
 <rect x="732" y="70" width="156" height="84" rx="10" fill="#ffffff" stroke="#1264a3" stroke-width="1.5" filter="url(#relief)"/>
 <circle cx="750" cy="93.48" r="5.6" fill="#1264a3" fill-opacity="0.18"/><circle cx="750" cy="93.48" r="3.4" fill="#1264a3"/>
 <text x="760" y="97.9" font-size="13" font-weight="620" fill="#1d1c1d" text-anchor="start" data-box="760,874">Agent's service</text>
@@ -58,9 +62,11 @@
 <path d="M731,112 L722.5,116.2 L722.5,107.8 Z" fill="#1264a3" stroke="#1264a3" stroke-width="0.8" stroke-linejoin="round" data-tip="731,112"/>
 <path d="M679.5,205 L724.5,205" fill="none" stroke="#8f8e90" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M731.5,205 L723.0,209.2 L723.0,200.8 Z" fill="#8f8e90" stroke="#8f8e90" stroke-width="0.8" stroke-linejoin="round" data-tip="731.5,205"/>
-<circle cx="6" cy="388" r="5.6" fill="#007a5a" fill-opacity="0.18"/><circle cx="6" cy="388" r="3.4" fill="#007a5a"/>
-<text x="18" y="392" font-size="12" fill="#616061" text-anchor="start" data-box="18,900">on your GPU: no tokens</text>
-<circle cx="203.2" cy="388" r="5.6" fill="#1264a3" fill-opacity="0.18"/><circle cx="203.2" cy="388" r="3.4" fill="#1264a3"/>
-<text x="215.2" y="392" font-size="12" fill="#616061" text-anchor="start" data-box="215.2,900">your cloud agent: paid per use</text>
+<path d="M327,260.5 L327,276.5" fill="none" stroke="#8f8e90" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M327,283.5 L322.8,275.0 L331.2,275.0 Z" fill="#8f8e90" stroke="#8f8e90" stroke-width="0.8" stroke-linejoin="round" data-tip="327,283.5"/>
+<circle cx="6" cy="428" r="5.6" fill="#007a5a" fill-opacity="0.18"/><circle cx="6" cy="428" r="3.4" fill="#007a5a"/>
+<text x="18" y="432" font-size="12" fill="#616061" text-anchor="start" data-box="18,900">on your GPU: no tokens</text>
+<circle cx="203.2" cy="428" r="5.6" fill="#1264a3" fill-opacity="0.18"/><circle cx="203.2" cy="428" r="3.4" fill="#1264a3"/>
+<text x="215.2" y="432" font-size="12" fill="#616061" text-anchor="start" data-box="215.2,900">your cloud agent: paid per use</text>
 </g>
 </svg>

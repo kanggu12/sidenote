@@ -127,7 +127,7 @@ free.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagram-pieces-dark.svg">
-  <img alt="The capture program sends frames, sound and the window list to the Sidenote server. The server covers faces, finds the problem, sends every screen to the local vision model on your GPU, the hard problems to the cloud agent and code answers to the code runner, and keeps the answers. The panel in your browser shows the answers as they are written and sends your questions" src="docs/assets/diagram-pieces-light.svg" width="100%">
+  <img alt="The capture program sends frames, sound and the window list to the Sidenote server. The server covers faces, finds the problem, sends every screen to the local vision model on your GPU, the hard problems to the cloud agent, code answers to the code runner and the sound to the speech service, which writes down what is said, and keeps the answers. The panel in your browser shows the answers as they are written and sends your questions" src="docs/assets/diagram-pieces-light.svg" width="100%">
 </picture>
 
 Everything but the cloud agent runs on your PC, or on your own server with Docker or Kubernetes.
