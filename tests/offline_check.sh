@@ -40,8 +40,11 @@ cleanup() {
 trap cleanup EXIT
 
 cpus="$(nproc)"; [ "$cpus" -lt 8 ] || cpus=8
+# and the speech service's 6, on a machine with fewer (a CI runner has 4): Docker refuses a limit above the cores, as
+# ./sidenote brings it down
+speech_cpus="$(nproc)"; [ "$speech_cpus" -lt 6 ] || speech_cpus=6
 env -u COMPOSE_FILE -u COMPOSE_PROFILES -u SIDENOTE_LOG_PATH DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" HOME="$home" \
-    SIDENOTE_UID="$(id -u)" SIDENOTE_GID="$(id -g)" SIDENOTE_LOG_PATH="$logs" SIDENOTE_CPUS="$cpus" TZ=UTC \
+    SIDENOTE_UID="$(id -u)" SIDENOTE_GID="$(id -g)" SIDENOTE_LOG_PATH="$logs" SIDENOTE_CPUS="$cpus" SIDENOTE_SPEECH_CPUS="$speech_cpus" TZ=UTC \
     docker compose -p "$project" --project-directory "$tree" -f "$tree/compose.yaml" config --format json > "$work/config.json" \
   || { echo "compose.yaml did not read"; exit 1; }
 python3 - "$work/config.json" "$work/compose.json" "$server_image" "$runner_image" <<'PY'
@@ -56,6 +59,9 @@ for svc in cfg["services"].values():
 # the settings the guide puts in .env
 cfg["services"]["server"].setdefault("environment", {}).update(
     SIDENOTE_OFFLINE="1", SIDENOTE_AGENT="off", SIDENOTE_SEARCH_URL="", SIDENOTE_UPDATE_CHECK="0", HF_HUB_OFFLINE="1")
+# ...which the speech service reads too, from the same .env (compose.yaml names HF_HUB_OFFLINE for it)
+if "speech" in cfg["services"]:
+    cfg["services"]["speech"].setdefault("environment", {}).update(HF_HUB_OFFLINE="1")
 for net in cfg.get("networks", {}).values():
     net["internal"] = True            # no way out from any of them
 json.dump(cfg, open(sys.argv[2], "w", encoding="utf-8"), indent=1)
@@ -126,8 +132,10 @@ print(len(wanted), 'loaded', 'outside:', out, 'missing:', missing)")"
 if [[ $page == *"outside: [] missing: []"* ]] && [[ $page != 0\ * ]]; then ok "the page loads all of its own from this server ($(cut -d' ' -f1 <<<"$page") files)"
 else bad "the page loads all of its own from this server" "$page"; fi
 
-# The speech model is not on this PC here: the server says so and goes on, where a start that downloads would have sat there
-if grep -aq 'faster-whisper unavailable' "$logs/server.log" && compose ps --status running --services 2>/dev/null | grep -qx server; then
+# The speech model is not on this PC here: the server says so and goes on, where a start that downloads would have sat there.
+# In the server's own process it is "faster-whisper unavailable"; asked of the speech service (compose's speech), "did not load"
+if grep -aqE 'faster-whisper unavailable|the speech model did not load' "$logs/server.log" \
+   && compose ps --status running --services 2>/dev/null | grep -qx server; then
   ok "with no speech model the server says so and goes on"
 else bad "with no speech model the server says so and goes on" "$(tail -5 "$logs/server.log" 2>&1)"; fi
 

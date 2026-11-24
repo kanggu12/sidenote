@@ -187,6 +187,8 @@ services:
       SIDENOTE_WHISPER_LIVE_MODEL: ${SIDENOTE_WHISPER_LIVE_MODEL-}
       SIDENOTE_WHISPER_COMPUTE: ${SIDENOTE_WHISPER_COMPUTE-}
       SIDENOTE_WHISPER_THREADS: ${SIDENOTE_WHISPER_THREADS-}
+      # and the guide's for no internet (docs/air-gapped.md): the models are the bundle's, and none is asked for
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE-}
       # The decoder's own pool is capped in code (SIDENOTE_WHISPER_THREADS); these cap the libraries under it and stop
       # their idle threads from spinning (measured in the server before: eight cores held for 95 minutes)
       OMP_NUM_THREADS: ${SIDENOTE_WHISPER_THREADS:-4}

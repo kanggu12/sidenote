@@ -58,8 +58,11 @@ trap cleanup EXIT
 # compose.yaml as compose reads it, with this user passed in as the launcher passes it. HOME is the made-up one for this
 # one command alone, where ${HOME} is filled in; the docker command's own plugins are found through DOCKER_CONFIG.
 cpus="$(nproc)"; [ "$cpus" -lt 8 ] || cpus=8
+# and the speech service's 6, on a machine with fewer (a CI runner has 4): Docker refuses a limit above the cores, as
+# ./sidenote brings it down
+speech_cpus="$(nproc)"; [ "$speech_cpus" -lt 6 ] || speech_cpus=6
 env -u COMPOSE_FILE -u COMPOSE_PROFILES -u SIDENOTE_LOG_PATH DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" HOME="$home" \
-    SIDENOTE_UID="$uid" SIDENOTE_GID="$gid" SIDENOTE_LOG_PATH="$logs" SIDENOTE_CPUS="$cpus" TZ=UTC \
+    SIDENOTE_UID="$uid" SIDENOTE_GID="$gid" SIDENOTE_LOG_PATH="$logs" SIDENOTE_CPUS="$cpus" SIDENOTE_SPEECH_CPUS="$speech_cpus" TZ=UTC \
     docker compose -p "$project" --project-directory "$tree" -f "$tree/compose.yaml" config --format json > "$work/config.json" \
   || { echo "compose.yaml did not read"; exit 1; }
 python3 - "$work/config.json" "$work/compose.json" "$server_image" "$runner_image" "$port" <<'PY'
