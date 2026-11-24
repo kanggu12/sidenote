@@ -339,7 +339,7 @@ Start Sidenote, stop it, and lend the GPU to other work.
 | Start | `Sidenote.exe`; **Sidenote** in Applications on macOS; `./Sidenote/Sidenote` on Linux | `./sidenote capture --up` |
 | Open the panel | the tray icon (on macOS, **Open the panel** in its menu), or open the app again | `./sidenote open` |
 | See what runs | the panel's cards | `./sidenote status` |
-| Stop | **Quit Sidenote** in the icon's menu | `./sidenote down` |
+| Stop | **Quit Sidenote** in the icon's menu (on the panel's **Capture connection** where the icon has no menu) | `./sidenote down` |
 | Update | the newest release's zip, when the panel says one is out | `git pull && ./sidenote up` |
 | Read the logs | `logs` in the data folder: `%LOCALAPPDATA%\Sidenote`, `~/Library/Application Support/Sidenote` or `~/.local/share/sidenote` | `./sidenote logs` |
 
