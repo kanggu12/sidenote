@@ -183,6 +183,13 @@ no_fit() {
     "$1" "$(L "Local model: not used, no GPU fits it" "이 PC의 모델: 쓰지 않음, 맞는 GPU 없음")"; return 0
   fi
   NOFIT_SAID=1
+  # Docker on a Mac has no GPU at all: the model runs in Ollama for Mac, on Apple silicon's GPU, which the server asks.
+  # Said as a GPU that fits none, a CPU model was all a 48 GB Mac was pointed at
+  if [ "$ON_MAC" = 1 ]; then
+    "$1" "$(L "Local model: Docker on a Mac has no GPU; Ollama for Mac runs it on Apple silicon (docs/README.md, With Docker)" \
+              "이 PC의 모델: Mac의 Docker에는 GPU 없음, Ollama for Mac이 Apple silicon에서 실행 (docs/README.md, With Docker)")"
+    return 0
+  fi
   if [ "$AGENT" = off ]; then      # and no agent either: then nothing solves, which is not a choice to leave quiet
     "$1" "$(L "Local model: no GPU fits it, and the agent is off (SIDENOTE_AGENT=off), so nothing solves. ./sidenote llm pull gemma4:e2b runs it on the CPU, slowly" \
               "이 PC의 모델: 맞는 GPU 없음, 에이전트도 꺼 둠 (SIDENOTE_AGENT=off): 풀 엔진 없음. ./sidenote llm pull gemma4:e2b로 CPU에서 느리게 실행 가능")"
@@ -1455,6 +1462,10 @@ cmd_capture() {
       return 0 ;;
     esac
   done
+  # The capture packages before the server: a start that brought the server up and then stopped here left it running
+  # with no one to stop it, and the next start's tray said Quit where it says Quit Sidenote
+  local packages
+  packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   if [ "$up" = 1 ]; then   # bring the server up first (the desktop shortcut does this, through client/launch.pyw)
     # The desktop shortcut runs this with no terminal at all: client/launch.pyw reads what it prints, and its
     # failing status, and shows the reason in a message box. There the title and the wait below do nothing.
@@ -1463,7 +1474,11 @@ cmd_capture() {
     # waits for Enter first (only when there is a terminal to read from), and the terminal gets its own title
     # back however this ends.
     term_title "Sidenote Capture"
-    trap 'rc=$?; term_title ""; if [ "$rc" != 0 ] && [ -t 0 ]; then printf "\n  %s" "$(L "Press Enter to close this window " "Enter를 누르면 이 창을 닫습니다 ")"; read -r _ || true; fi' EXIT
+    # Only in a window of its own, which wsl.exe opened for it (its parent is WSL's init, not a shell): typed in a
+    # terminal, the wait closed nothing and only held the prompt back
+    OWN_WINDOW=0
+    [ "$(ps -o comm= -p "$PPID" 2>/dev/null | tr -d ' ')" = init ] && OWN_WINDOW=1
+    trap 'rc=$?; term_title ""; if [ "$rc" != 0 ] && [ "$OWN_WINDOW" = 1 ] && [ -t 0 ]; then printf "\n  %s" "$(L "Press Enter to close this window " "Enter를 누르면 이 창을 닫습니다 ")"; read -r _ || true; fi' EXIT
     # In the output, not sent to /dev/null: after a reboot nothing is running, and when the server cannot start
     # (Docker off, the port taken) its reason is what has to be seen, in the terminal or in the shortcut's
     # message box (the last lines of this output). The first start also builds the image for minutes; in a
@@ -1484,8 +1499,6 @@ cmd_capture() {
   # starter (client/launch.pyw, --from-windows) or from a terminal
   local how=(--started terminal)
   if [ "$from_win" = 1 ]; then how=(--started shortcut); fi
-  local packages
-  packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
   # Two capture programs would send every screen twice. Windows' process list says whether one is running;
   # when it cannot be read ("?"), the server says whether one is connected, which is the one that would send.
   local procs; procs="$(capture_running)"
@@ -1556,8 +1569,7 @@ cmd_capture() {
     echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
     return 0
   fi
-  echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it. The panel turns the screen and the sound on and off separately)${N}" \
-            "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C. 패널에서 화면과 소리를 따로 켜고 끌 수 있습니다)${N}")"
+  echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it)${N}" "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C)${N}")"
   echo "  $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
   term_title "Sidenote Capture"
   # The stop on the way out ends a program that Ctrl+C here left running on Windows. A program that ended because
@@ -1673,7 +1685,8 @@ cmd_llm() {   # the local LLM: pull, list, logs
     die "$(L "The local model is served by $LOCAL_URL (SIDENOTE_LOCAL_URL): its models are that server's, pulled and listed there" \
              "이 PC의 모델은 $LOCAL_URL 서버가 맡습니다(SIDENOTE_LOCAL_URL): 모델 받기와 목록은 그 서버에서 합니다")"
   fi
-  docker_up
+  # a word it does not know is its usage before anything of Docker is asked: with Docker off, ./sidenote llm said that instead
+  case "${1:-}" in pull|list|ls|rm|logs) docker_up ;; esac
   case "${1:-}" in
     pull)
       if offline; then die "$(L "With SIDENOTE_OFFLINE=1 a model comes with the bundle, not from the internet: docs/air-gapped.md" \
@@ -1836,8 +1849,9 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   if [ -n "$winp" ]; then   # its first clause: the whole of it, with what to do, is in the checks at the end
     bad "${winp%%:*} ${D}($(L "what to do: in the checks below" "할 일은 아래 점검에"))${N}"
   elif [ "$winpy" = 0 ]; then
-    bad "$(L "No Python for Windows (py). Install it from python.org, then ./sidenote setup-capture" \
-             "Windows용 Python(py) 없음: python.org에서 설치한 뒤 ./sidenote setup-capture")"
+    # install again, not setup-capture: that one installs the packages and leaves out the desktop shortcut (step 4)
+    bad "$(L "No Python for Windows (py). Install it from python.org, then ./sidenote install again" \
+             "Windows용 Python(py) 없음: python.org에서 설치한 뒤 ./sidenote install 다시 실행")"
   elif [ "$packages" = tray ]; then
     ok "$(L "Already installed" "이미 설치됨")"
   else
@@ -2498,11 +2512,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
         ok "$(L "Removed the shortcut under its old name: $f" "옛 이름의 바로가기를 지웠습니다: $f")"
       fi
     done
-    echo "  $(L "A double click starts the server and the capture with no window, and a tray icon appears in the notification area." \
-                "두 번 클릭하면 창 없이 서버와 캡처가 함께 시작되고, 알림 영역에 트레이 아이콘이 나타납니다.")"
-    echo "  ${D}$(L "(the first time and after an update, building the server image takes a few minutes. A start that fails says why in a message box)" \
-                    "(처음과 업데이트 뒤에는 서버 이미지 빌드에 몇 분 걸립니다. 시작하지 못하면 그 이유를 메시지 상자로 알려 줍니다)")${N}"
-    echo "  $(L "Quit from the tray icon. To remove the shortcut: ./sidenote shortcut --remove" "끝내기는 트레이 아이콘에서. 바로가기 삭제: ./sidenote shortcut --remove")"
+    # what it does and how it ends are in the guide (The desktop shortcut on Windows), not three lines of how-to here
   else
     die "$(L "Could not make the shortcut." "바로가기를 만들지 못했습니다.")"
   fi

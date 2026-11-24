@@ -172,10 +172,14 @@ try:
     rc, out, took = start()
     check("a second capture program ends with its own exit code before it connects or captures anything",
           rc == capture.CAPTURE_BUSY == 76, f"exit {rc}: {out!r}")
-    check("...saying that one runs already, and how to end that one",
+    check("...saying that one runs already, and how to end that one: started on its own, by its tray icon alone (no "
+          "./sidenote on a PC that runs only the capture program)",
           "Another capture program is already running for this server, so this one ends." in out
-          and "Quit in its tray icon, or ./sidenote capture-stop" in out, out)
-    rc_ko, out_ko, _ = start(env={"SIDENOTE_LANG": "ko"})
+          and "Quit in its tray icon." in out and "./sidenote" not in out, out)
+    rc, out, _ = start("--started", "terminal")
+    check("...started by ./sidenote, with its capture-stop too", rc == 76 and "Quit in its tray icon, or ./sidenote capture-stop" in out,
+          out)
+    rc_ko, out_ko, _ = start("--started", "terminal", env={"SIDENOTE_LANG": "ko"})
     check("...in Korean too", rc_ko == 76 and "캡처 프로그램이 이미 실행 중" in out_ko and "capture-stop" in out_ko, out_ko)
     rc, out, _ = start("--once")
     check("--once sends one screen beside whatever runs: never refused", rc == PAST, f"exit {rc}: {out!r}")

@@ -194,5 +194,9 @@ done > "$out/cases.md"
 # On a runner the table goes on the run's own page
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then { echo "### tests/run.sh ${group:-all}"; echo; cat "$results"; } >> "$GITHUB_STEP_SUMMARY"; fi
 echo "$total_ok checks passed, $total_bad failed (table: $results)"
+# No suite run at all (SUITES naming none of this group's, a name mistyped) is no pass: it said "all suites passed" with
+# nothing checked
+ran=$(find "$out/logs" -name '*.log' 2>/dev/null | wc -l)
+if [ "$ran" = 0 ]; then echo "no suite ran: SUITES names none of this group's (tests/run.sh --list shows them)"; exit 1; fi
 if [ "$fails" = 0 ]; then echo "all suites passed"; else echo "$fails suite(s) failed: the logs are in $out/logs"; fi
 exit $((fails > 0))

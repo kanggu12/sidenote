@@ -117,8 +117,11 @@ KO = {
     "To end it: ./sidenote capture-stop in the server's terminal.": "끝내려면 서버 터미널에서 ./sidenote capture-stop.",
     # under the desktop app: its Quit ends the app, and there is no console for Ctrl+C nor ./sidenote to run
     "To end it: Quit Sidenote in the tray icon.": "끝내려면 트레이 아이콘의 Sidenote 끝내기.",
+    # started on its own, for a server elsewhere (another PC, a cluster's port forwarded here): no ./sidenote to name
+    "To end it: Quit in the tray icon.": "끝내려면 트레이 아이콘의 끝내기.",
+    "To end the one that runs: Quit in its tray icon.": "실행 중인 프로그램을 끝내려면 그 트레이 아이콘의 끝내기.",
+    "The Sidenote server at {address} does not answer.": "{address}의 Sidenote 서버가 응답하지 않습니다.",
     "To end it: Quit Sidenote on the panel's Capture connection.": "끝내려면 패널의 캡처 연결에서 Sidenote 끝내기.",
-    "The tray icon opens the panel and switches the screen and the sound on and off.": "트레이 아이콘에서 패널을 열고 화면과 소리를 켜고 끌 수 있습니다.",
     "Could not start again: {error}": "다시 시작하지 못했습니다: {error}",
     # a second start for a server that has its capture program already (OneCapture)
     "Another capture program is already running for this server, so this one ends.":
@@ -3284,7 +3287,8 @@ def start_tray(sender, stop: threading.Event, args):
         if not server_up(url):
             # under the desktop app, which runs the server itself, there is no ./sidenote to run
             msg = (t("Sidenote is not running. Start the Sidenote app again.") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
-                   else t("The Sidenote server is off. Run ./sidenote up in the server's terminal."))
+                   else t("The Sidenote server is off. Run ./sidenote up in the server's terminal.") if BY_LAUNCHER["yes"]
+                   else t("The Sidenote server at {address} does not answer.", address=re.sub(r"^https?://", "", url).rstrip("/")))
             print(f"[tray] {msg}")
             try:
                 if icon is not None:
@@ -3336,7 +3340,8 @@ def start_tray(sender, stop: threading.Event, args):
     def state_text(_item=None):
         if not sender.connected:
             # started by the desktop app, which starts the server itself: there is no ./sidenote to run
-            return t("Not connected") if os.environ.get("SIDENOTE_SUPERVISED") == "1" else t("Not connected (./sidenote up)")
+            return (t("Not connected") if os.environ.get("SIDENOTE_SUPERVISED") == "1" or not BY_LAUNCHER["yes"]
+                    else t("Not connected (./sidenote up)"))
         if skipped():                   # said as the panel's capture card says it, without naming the window
             return t("Skipped window")
         on = taking()
@@ -3445,6 +3450,10 @@ def start_tray(sender, stop: threading.Event, args):
 
 # The exit code that asks the desktop app to start this program again (desktop/app.py, CAPTURE_RESTART).
 SUPERVISED_RESTART = 75
+# Started by ./sidenote (a terminal's ./sidenote capture, or the desktop shortcut's): only then are its commands there to
+# name. Started on its own, for a server on another PC or in a cluster, the program told people to run ./sidenote up and
+# ./sidenote capture-stop, which that PC does not have (main sets it from --started)
+BY_LAUNCHER = {"yes": True}
 
 # ---------- whoever starts the server stops it ----------
 # The desktop shortcut starts a session: the server when it is off (./sidenote capture --up), then this program. The
@@ -3722,6 +3731,7 @@ def main() -> None:
     ap.add_argument("--log", default="",
                     help="append what it prints to this file (it runs with no console window)")
     args = ap.parse_args()
+    BY_LAUNCHER["yes"] = getattr(args, "started", "") in ("terminal", "shortcut")
 
     # Each line out as it is printed. Under the desktop app this goes down a pipe into capture.log, which got it in
     # blocks of 8 KB; and a quit the system sends on macOS (at log out) ends this program inside AppKit, with what was
@@ -3750,7 +3760,8 @@ def main() -> None:
     if not args.once and not guard.take(RESUME_WAIT if args.resumed else START_WAIT) \
             and os.environ.get("SIDENOTE_SUPERVISED") != "1":
         print("[main] " + t("Another capture program is already running for this server, so this one ends."))
-        print("[main] " + t("To end the one that runs: Quit in its tray icon, or ./sidenote capture-stop in the server's terminal."))
+        print("[main] " + (t("To end the one that runs: Quit in its tray icon, or ./sidenote capture-stop in the server's terminal.")
+                           if BY_LAUNCHER["yes"] else t("To end the one that runs: Quit in its tray icon.")))
         sys.stdout.flush()
         sys.exit(CAPTURE_BUSY)   # nothing is started yet, so a plain exit: the starter reads the code (client/launch.pyw)
 
@@ -3797,10 +3808,11 @@ def main() -> None:
                else t("To end it: Quit Sidenote in the tray icon."))
     else:
         how = (t("Ctrl+C to stop.") if not args.log else
+               t("To end it: Quit in the tray icon.") if not BY_LAUNCHER["yes"] and tray is not None else
+               t("Ctrl+C to stop.") if not BY_LAUNCHER["yes"] else
                t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
                t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
-    print("[main] " + t("capturing.") + " " + how
-          + ("" if tray is None else " " + t("The tray icon opens the panel and switches the screen and the sound on and off.")))
+    print("[main] " + t("capturing.") + " " + how)
     updater = Updater(os.path.abspath(__file__), args.server) if sender.auto_update else None
 
     def wait_until_done() -> None:
