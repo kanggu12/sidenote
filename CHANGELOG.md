@@ -6,6 +6,16 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-24
+
+0.13.1's changes, released with every file: the Windows app builds again.
+
+### Fixed
+
+- The Windows app's build carries the modules of the tray menu it draws (`PIL.ImageEnhance`, `tkinter.font`), as the
+  capture program's build does since 0.13.1. The app's own check, new in 0.13.1, runs the menu's imports and stopped
+  that build, so 0.13.1 was never published; its changes, below, come with this release.
+
 ## [0.13.1] - 2026-11-24
 
 A follow-up never sends the room's speech to the agent, the Sound card says why there is no speech, and the desktop app
@@ -1079,7 +1089,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/kanggu12/sidenote/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/kanggu12/sidenote/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/kanggu12/sidenote/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/kanggu12/sidenote/compare/v0.12.2...v0.12.3

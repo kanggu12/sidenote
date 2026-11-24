@@ -49,7 +49,7 @@ program keeps the GPU busy; leave it out if you do not want that.
 | 8 GB | `sidenote-gemma4:e2b` | none | 4.6 GB |
 
 ```bash
-V=0.13.1                                     # the newest release, from the releases page
+V=0.13.2                                     # the newest release, from the releases page
 git clone --depth 1 --branch "v$V" https://github.com/kanggu12/sidenote
 cd sidenote
 ./sidenote up                               # builds the images, pulls Ollama's and downloads the speech model
@@ -142,8 +142,8 @@ A speech model that is not in the bundle cannot be chosen in the panel: the choi
 
 The apps for Windows, macOS and Linux hold the server and the capture program, so they need no images and no Python
 packages. Bring `models.tar` and `speech.tar` from step 1, the app's zip from the
-[release](https://github.com/kanggu12/sidenote/releases) (`sidenote-server-0.13.1-windows-x64.zip`,
-`sidenote-server-0.13.1-macos-arm64.zip` or `sidenote-server-0.13.1-linux-x64.zip`), and Ollama's own download: on Linux its archive,
+[release](https://github.com/kanggu12/sidenote/releases) (`sidenote-server-0.13.2-windows-x64.zip`,
+`sidenote-server-0.13.2-macos-arm64.zip` or `sidenote-server-0.13.2-linux-x64.zip`), and Ollama's own download: on Linux its archive,
 as its install script needs the internet.
 
 Install Ollama. Its installer starts it at every sign-in, and Sidenote then uses that Ollama as it is. A model from a
@@ -196,7 +196,7 @@ Push the bundle's images to a registry inside the network, under the names the c
 their tag:
 
 ```bash
-V=0.13.1                                     # the release the bundle was made from
+V=0.13.2                                     # the release the bundle was made from
 gunzip -c images.tar.gz | docker load
 for name in sidenote sidenote-runner; do
   docker tag "$name:local" "registry.internal/$name:$V" && docker push "registry.internal/$name:$V"
@@ -205,7 +205,7 @@ docker tag ollama/ollama:0.40.5 registry.internal/ollama/ollama:0.40.5 && docker
 ```
 
 For an AMD GPU, push `ollama/ollama:0.40.5-rocm` the same way and add `gpuVendor: amd` under `llm` below. Bring the chart,
-`sidenote-server-0.13.1-helm-chart.tgz`, from the release, and write a values file that names the registry and turns off what
+`sidenote-server-0.13.2-helm-chart.tgz`, from the release, and write a values file that names the registry and turns off what
 needs the internet:
 
 ```yaml
@@ -241,9 +241,9 @@ and that root cannot read files that kept the owner they had on the other PC. He
 download, which needs the internet; the two `tar` lines put the bundle's models in place instead.
 
 The capture program runs on the PC with the screen, as [the capture program on its own](capture-client.md) says: the
-release's build for that PC's system (`sidenote-capture-0.13.1-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`),
-which needs nothing installed, or the wheel, `sidenote_capture-0.13.1-py3-none-any.whl`, with the packages it needs from the bundle's
-wheels, copied next to it: `py -m pip install --no-index --find-links wheels sidenote_capture-0.13.1-py3-none-any.whl` on Windows, then
+release's build for that PC's system (`sidenote-capture-0.13.2-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`),
+which needs nothing installed, or the wheel, `sidenote_capture-0.13.2-py3-none-any.whl`, with the packages it needs from the bundle's
+wheels, copied next to it: `py -m pip install --no-index --find-links wheels sidenote_capture-0.13.2-py3-none-any.whl` on Windows, then
 `sidenote-capture --server ws://127.0.0.1:8777/ingest`.
 
 ## With a model server you already run

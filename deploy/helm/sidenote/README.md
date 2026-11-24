@@ -205,7 +205,7 @@ panel to your network.
 The capture program sends to `ws://127.0.0.1:8777/ingest` by default. Run the port-forward on the PC with the screen
 (on Windows, or in WSL on that PC: Windows reaches WSL's localhost), and start the program as usual: `./sidenote capture`
 from the repository (it only checks that `http://127.0.0.1:8777/health` answers), or the release's capture program for
-that PC's system, `sidenote-capture-0.13.1-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`, which needs nothing
+that PC's system, `sidenote-capture-0.13.2-windows-x64.zip`, `-macos-arm64.zip` or `-linux-x64.zip`, which needs nothing
 installed and sends to that address by default, so a double-click starts it
 ([the capture program on its own](../../../docs/capture-client.md) gives its commands and the Python one for other
 systems). A port-forward ends when the pod behind it is replaced, after an upgrade or a restart; start it again, and the
