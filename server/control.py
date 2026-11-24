@@ -52,6 +52,20 @@ async def _setting(key: str, value) -> dict:
         return state
 
 
+def _read_setting(key: str):
+    """One setting's value, as the API gives it."""
+    import urllib.request
+    port = os.environ.get("SIDENOTE_PORT", "8777")
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/settings/{key}", timeout=TIMEOUT) as r:
+        return json.load(r).get("value")
+
+
+def _lent_file():
+    """Where `gpu off` keeps what it changed, for `gpu on` to put back: beside the logs, which outlive a restart."""
+    from . import telemetry
+    return os.path.join(telemetry.LOG_DIR, ".gpu_lent.json") if telemetry.LOG_DIR else None
+
+
 def gpu(what: str) -> int:
     """`gpu off` gives the GPU back (the local model is switched off and unloaded; the agent keeps working),
     `gpu on` takes it again, `gpu status` says who holds it."""
@@ -59,12 +73,22 @@ def gpu(what: str) -> int:
     if what not in ("off", "on", "status"):
         print(t("Usage: ./sidenote gpu off | on | status"), file=sys.stderr)
         return 2
+    lent = _lent_file()
     try:
         if value is False:   # given back means given back: not loaded again at the agent's limit either (design 89)
+            # what the stand-in was before, for gpu on to put back: it switched it on whatever it had been, so one switched
+            # off by hand came back on with the GPU
+            if lent:
+                with open(lent, "w", encoding="utf-8") as f:
+                    json.dump({"local_fallback": _read_setting("local_fallback")}, f)
             asyncio.run(_setting("local_fallback", False))
         state = asyncio.run(_setting("local_llm", value))
-        if value is True:
-            asyncio.run(_setting("local_fallback", True))
+        if value is True and lent and os.path.exists(lent):
+            with open(lent, encoding="utf-8") as f:
+                before = json.load(f).get("local_fallback")
+            if isinstance(before, bool):
+                asyncio.run(_setting("local_fallback", before))
+            os.remove(lent)
     except Exception as exc:   # noqa: BLE001 (the server is down, or it did not answer)
         print(t("Cannot reach the server: {why}", why=f"{type(exc).__name__}: {exc}"), file=sys.stderr)
         return 1
@@ -81,10 +105,8 @@ def gpu(what: str) -> int:
     stand_in = t(" (standing in for the agent)") if not on and local.get("stand_in") else ""
     print(t("Local model: {state}{stand_in}{where}", state=t("on") if on else t("off"), stand_in=stand_in,
             where=where))
-    if what == "off":   # what it means while it is off, so the next problem is no surprise
-        print(t("While it is off, the agent solves every problem found, and sends the whole screen when it cannot cut "
-                "the problem out. The model is not loaded again when the agent reaches a limit either "
-                "(./sidenote gpu on brings it back)"))
+    if what == "off":   # who answers meanwhile, and how it comes back; what it sends is the guide's to say (Lending the GPU)
+        print(t("The agent solves meanwhile · ./sidenote gpu on takes the GPU again"))
     return 0
 
 

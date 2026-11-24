@@ -157,8 +157,8 @@ def _defs() -> list[Setting]:
         Setting("local_llm", "bool", local_default, "solve", t("Local model"),
                 t("The model that solves on this PC's GPU. Off: the agent solves everything", agent=name)),
         Setting("local_think", "choice", CONFIG.local_think, "solve", t("Think before answering"),
-                t("Auto: thinks first only on problems that need working out, such as multiple choice, calculations "
-                  "and code. Always: slower, works out every problem"),
+                t("Auto: thinks first where a problem needs working out (calculations, code, several steps) · Always: "
+                  "every problem, slower"),
                 [("auto", t("Auto")), ("always", t("Always")), ("never", t("Never"))], ["local_llm"]),
         Setting("local_model", "choice", CONFIG.local_model, "solve", t("Model"),
                 t("One of the pulled models. Auto: the largest that fits the GPU's memory"),
@@ -189,9 +189,8 @@ def _defs() -> list[Setting]:
                     "off": t("The agent is not used. Only the local model solves", agent=name),
                     "verify": t("The local model solves and the agent checks the answer. If they differ, the fixed "
                                 "solution is added", agent=name),
-                    "hard": t("Only the types ticked under 'Types the agent solves' in Solver settings go to the agent, the rest "
-                              "to the local model (to the agent when it would be over 1.5 times slower). If the agent fails, "
-                              "the local model", agent=name),
+                    "hard": t("The types ticked in 'Types the agent solves' go to the agent, the rest to the local model · the "
+                              "local model when the agent fails", agent=name),
                     "all": t("The agent solves every problem found", agent=name),
                 }),
         Setting("agent_payload", "choice", payload_default, "agent", t("What is sent to the agent", agent=name),
@@ -211,12 +210,11 @@ def _defs() -> list[Setting]:
         # The model and how hard it thinks: the environment sets where they start, the panel moves
         # them from there, and the next problem starts a CLI with the new ones.
         Setting("agent_model_name", "choice", CONFIG.agent_model, "agent", t("Agent model", agent=name),
-                t("Empty: as the agent is set up. Latest: the newest model of that family. To pin one, "
-                  "SIDENOTE_AGENT_MODEL", agent=name), models),
+                t("Empty: as the agent is set up · Latest: the newest model of its family", agent=name), models),
         Setting("agent_effort", "choice", CONFIG.agent_effort, "agent", t("Thinking effort"),
                 t("Higher is stronger on hard problems, slower and dearer"), efforts),
         Setting("agent_hourly_usd", "choice", CONFIG.agent_hourly_usd, "agent", t("Hourly cost limit"),
-                t("When the last hour's cost reaches this, automatic sending stops. Reanalyze and questions still go. Codex signed in with ChatGPT is not counted"),
+                t("Automatic sending stops when the last hour's cost reaches this · Reanalyze and questions still go"),
                 with_default([(0.0, t("No limit")), (1.0, "$1"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")],
                              CONFIG.agent_hourly_usd, f"${CONFIG.agent_hourly_usd:g}")),
         # The rule: with the agent at a limit, the answers come from this PC's model where they
@@ -241,7 +239,8 @@ def _defs() -> list[Setting]:
         # The capture program gets the words in its control message (server/app.py, control_message) and reads the
         # windows itself: their titles and their programs' names never leave that program (client/capture.py).
         Setting("skip_windows", "words", list(SKIP_WINDOWS), "screen", t("Skip windows"),
-                t("While a window whose title or program has one of these words is on screen, no screen is sent (sound still is). Comma-separated, any case. Not on Wayland")),
+                t("No screen is sent while a window whose title or program has one of these words shows (sound still is) · comma-separated · "
+                  "not on Wayland")),
         Setting("dedupe", "bool", True, "screen", t("Don't solve the same problem again"),
                 t("Solves again only when the answer's problem area changes. Off: on every screen change")),
         Setting("roi", "bool", True, "screen", t("Zoom in on the problem"),
@@ -283,24 +282,23 @@ def _defs() -> list[Setting]:
         # session's own evidence takes that down (server/transcriber.py), but pinning the language is
         # the only thing that removes it, so the help says so.
         Setting("speech_lang", "choice", CONFIG.speech_lang, "speech", t("Speech language"),
-                t("Auto picks Korean or English for each utterance and sometimes misreads short Korean. Pin it when "
-                  "only one is spoken"),
+                t("Auto: Korean or English for each utterance · pinned when only one is spoken"),
                 [("auto", t("Auto")), ("ko", "한국어"), ("en", "English")]),
         # What each costs is measured on the test PC (docs/DECISIONS.md, note 106). A model the environment names is
         # always offered as well, as the agent's models are.
         Setting("whisper_model", "choice", CONFIG.whisper_model, "speech", t("Speech model"),
-                t("The model that writes down each sentence heard, on the CPU; the live words are read with small. One not "
-                  "downloaded yet is fetched when first chosen"),
+                t("Writes down each sentence heard, on the CPU · one not downloaded yet is fetched when first chosen"),
                 [(m, m) for m in SPEECH_MODELS]
                 + ([(CONFIG.whisper_model, CONFIG.whisper_model)] if CONFIG.whisper_model not in SPEECH_MODELS else []),
-                opt_help={"small": t("A sentence of 5 s in about {s} s on the test PC. The lightest, and the worst at technical terms",
+                opt_help={"small": t("A sentence of 5 s in about {s} s · the lightest, the worst at technical terms",
                                      s=SPEECH_SENTENCE["small"]),
-                          "medium": t("A sentence of 5 s in about {s} s on the test PC", s=SPEECH_SENTENCE["medium"]),
-                          "large-v3-turbo": t("A sentence of 5 s in about {s} s on the test PC. Hears technical terms best, "
-                                              "for the cost of medium", s=SPEECH_SENTENCE["large-v3-turbo"])}),
+                          "medium": t("A sentence of 5 s in about {s} s", s=SPEECH_SENTENCE["medium"]),
+                          "large-v3-turbo": t("A sentence of 5 s in about {s} s · technical terms heard best, for the cost of "
+                                              "medium", s=SPEECH_SENTENCE["large-v3-turbo"])}),
         # Everything heard passes through this, other people and whatever is playing included, so it is off until asked for
         Setting("speech_keep", "bool", False, "speech", t("Keep what is heard"),
-                t("Saves each sentence heard, with its time, on this PC only, for {days} days (up to {mb} MB), other voices and playback included. Clear it with Clear history in the menu", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
+                t("Each sentence heard, other voices and playback too, with its time, on this PC only for {days} days (up to {mb} MB) · "
+                  "Clear history in the menu clears it", days=f"{CONFIG.history_days:g}", mb=f"{CONFIG.heard_mb:g}")),
         # capture
         Setting("stitch", "bool", False, "capture", t("Join scrolled screens"),
                 t("Joins a problem taller than the screen while it is scrolled, and sends it at once")),
@@ -310,8 +308,7 @@ def _defs() -> list[Setting]:
         # replaces it with the real ones. Without that, the panel's list held "1" alone with nothing connected,
         # so all monitors could not be chosen at all.
         Setting("monitor", "int", 1, "capture", t("Monitor"),
-                t("All monitors: every monitor in one picture, so a problem on any of them is seen. On Windows the "
-                  "panel's own window is covered before it is sent"),
+                t("The monitor whose screen is read · All monitors: every one in one picture"),
                 [(0, t("All monitors")), (1, t("Monitor {i}", i=1)), (2, t("Monitor {i}", i=2))]),
         # The capture program carries it out (client/capture.py, ScreenFollow), told in its control message: off, it
         # reads the monitor above and nothing else. It looks at the others now and then to know where a new screen

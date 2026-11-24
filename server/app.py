@@ -1283,6 +1283,26 @@ async def set_paused(p: bool) -> None:
     await broadcast({"type": "transcript", "text": "", "lang": ""})
     save_switches()
     await broadcast({"type": "status", "paused": STATE.paused})
+    if not p:
+        await warm_on_resume()
+
+
+async def warm_on_resume() -> None:
+    """Continue is the sign that a problem is coming: this PC's model goes onto the GPU now, as Load onto the GPU puts it,
+    when it is not there and something can start an analysis (the screen, or speech with Solve spoken problems on). In
+    real use the first question after Continue waited out the whole load: 51 s for the 26b, 56 s for the e4b, and once a
+    Pause pressed between two Continues had stopped a load the first one's question was waiting on. Not onto a GPU that
+    has failed, not for a model the server does not have, and not twice: a load under way is left to finish."""
+    local = ENGINES.local if ENGINES is not None else None
+    seen = STATE.local or {}
+    if (local is None or not SETTINGS.on("local_llm") or not seen.get("ok") or seen.get("missing") or seen.get("loaded")
+            or local_fault() is not None or (STATE.gpu_loading is not None and not STATE.gpu_loading.done())):
+        return
+    if not (STATE.screen_on or (STATE.audio_on and SETTINGS.get("voice_auto"))):
+        return   # nothing automatic will ask for it: a question or Reanalyze loads it as before
+    log.info("analysis resumed with the local model off the GPU; loading it now")
+    STATE.gpu_loading = asyncio.create_task(load_local(local, why="resume"))
+    await broadcast_engines()   # the model's card says it is loading, and offers to stop
 
 
 async def set_capture(screen: bool | None = None, audio: bool | None = None) -> None:
@@ -1447,8 +1467,18 @@ async def refresh_quota() -> None:
         return
     changed = {k: v for k, v in got.items() if k != "at"} != {k: v for k, v in (STATE.quota or {}).items() if k != "at"}
     STATE.quota = got
+    if PIPELINE is not None and plan_has_room(got) and PIPELINE.spend.room_again():
+        telemetry.event("agent_limit_over", why="meters")
+        changed = True   # the agent's card stops saying it rests
     if changed:
         await broadcast_engines()
+
+
+def plan_has_room(reading: dict) -> bool:
+    """Every window of a plan reading has room: the five-hour session, the week and each model's own week below 100 % (a
+    window not running is none of it used). A reading with no window at all says nothing."""
+    windows = [w for w in (reading.get("session"), reading.get("week"), *(reading.get("models") or [])) if isinstance(w, dict)]
+    return bool(windows) and all(float(w.get("used") or 0) < 100 for w in windows)
 
 
 def analysis_age(seq: int, since: float) -> float:
@@ -2415,7 +2445,7 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
         "id": seq, "q": (retry or cont)["label"] if (retry or cont) else question, "text": result.text,
         "retry": bool(retry or cont), "kind": "retry" if retry else "continue" if cont else "ask", "model": result.model,
         "engine": result.engine, "sent": result.sent, "usage": result.usage, "cost_usd": result.cost_usd,
-        "elapsed": round(time.time() - start, 2)})
+        "elapsed": round(time.time() - start, 2), "stages": result.stages})
     await broadcast(usage_message())
     await note_success(result.engine, result.model)
     STATE.last_followup_ts = time.time()
@@ -2427,7 +2457,8 @@ async def run_followup(app: FastAPI, question: str, retry: dict | None = None, c
     STATE.analyses_done += 1
     await broadcast({"type": "analysis_done", "id": seq, "text": result.text, "usage": result.usage,
                      "cost_usd": result.cost_usd, "model": result.model, "engine": result.engine,
-                     "sent": result.sent, "elapsed": round(time.time() - start, 2)})
+                     "sent": result.sent, "elapsed": round(time.time() - start, 2),
+                     "stages": result.stages})   # why the other engine answered it, for its line (the agent declining)
     task.solved = False   # the retry's code check below is stopped by a newer analysis again, as the first check is
     if getattr(task, "superseded", False):   # a newer analysis came while the end was being sent: nothing after it
         return
@@ -2682,9 +2713,9 @@ async def run_verify(seq: int, frame, transcript: str, voice: bool, outcome, by_
     await broadcast(usage_message())
 
 
-async def load_local(local) -> None:
-    """The panel's Load onto the GPU: load the model, then show where it is. Counted as a use, so the idle release does not
-    take it straight back off (engine_watch)."""
+async def load_local(local, why: str = "panel") -> None:
+    """The panel's Load onto the GPU, or Continue's (`why`: "panel" or "resume"): load the model, then show where it is.
+    Counted as a use, so the idle release does not take it straight back off (engine_watch)."""
     t = time.time()
     try:
         await local.load()
@@ -2692,13 +2723,13 @@ async def load_local(local) -> None:
         if await local.loaded() is None:
             raise RuntimeError("the model is not on the GPU after the load")
     except LoadStopped:        # stopped on purpose (paused, switched off, given back): no fault of the GPU's to report
-        log.info("GPU load from the panel stopped")
+        log.info("GPU load (%s) stopped", why)
         STATE.gpu_loading = None
         await broadcast_engines()
         await broadcast({"type": "notice", "level": "info", "text": i18n.t("Loading onto the GPU stopped")})
         return
     except Exception as exc:   # the load failed: said, not raised
-        log.warning("GPU load from the panel failed: %s", exc)
+        log.warning("GPU load (%s) failed: %s", why, exc)
         STATE.gpu_loading = None
         await broadcast_engines()
         await broadcast({"type": "notice", "level": "bad",
@@ -2707,7 +2738,7 @@ async def load_local(local) -> None:
         return
     if hasattr(local, "last_used"):
         local.last_used = time.time()   # the idle clock starts from now, not from the last answer
-    telemetry.event("gpu_load", seconds=round(time.time() - t, 1))
+    telemetry.event("gpu_load", seconds=round(time.time() - t, 1), why=why)
     STATE.gpu_loading = None
     STATE.local = await check_local()
     await broadcast_engines()
@@ -2952,15 +2983,18 @@ def remember_answer(last: dict) -> None:
         STATE.answers.pop(next(iter(STATE.answers)))
 
 
-def remembered(result, frame, seq: int, voice: bool = False) -> dict:
+def remembered(result, frame, seq: int, voice="") -> dict:
     """What is kept of the last answer for follow-ups, the code check and Problem text: its text, the screen it came
     from (None once that screen is off), its engine and box. `words` is the problem as it went to the agent in
     words, which a follow-up that sends no image carries again (pipeline.followup); read off a screen that is
-    gone it is not kept, as nothing else read off that screen is. `voice`: the answer was to a problem heard, which
-    a problem scrolled together never continues (the screen beside it was only context)."""
+    gone it is not kept, as nothing else read off that screen is. `voice`: what was heard, when the answer was to a
+    problem heard, which a problem scrolled together never continues (the screen beside it was only context). A
+    spoken problem this PC's model answered went to no agent: its words are what was heard, or its follow-up, with no
+    screen to send either, asked about an answer with the question it answered nowhere in the request."""
+    words = getattr(result, "words", "") or (voice if isinstance(voice, str) else "")
     return {"text": result.text, "frame": frame, "id": seq, "engine": result.engine, "crop_box": result.crop_box,
             "local_view": result.local_view, "ts": time.time(), "voice": bool(voice),
-            "words": getattr(result, "words", "") if frame is not None or voice else ""}
+            "words": words if frame is not None or voice else ""}
 
 
 def stop_followup(t) -> None:
@@ -3532,7 +3566,7 @@ async def analysis_worker(app: FastAPI) -> None:
             cancel_verify()
             cancel_retry()
             # what follow-ups refer to, and which engine answers them
-            STATE.last_result = remembered(result, frame if STATE.screen_epoch == epoch else None, seq, bool(voice))
+            STATE.last_result = remembered(result, frame if STATE.screen_epoch == epoch else None, seq, voice or "")
             # The sound switched off while this was finishing (note_success and note_capture above wait on the panels):
             # set_capture took the words from the answer kept before, and these ones go too, or the next question sent them
             if voice and STATE.sound_off_epoch != heard_epoch:
@@ -3643,7 +3677,8 @@ async def analysis_worker(app: FastAPI) -> None:
                 inflight_speech, inflight_retake = "", False
             # A model load the stopped analysis left running would take the GPU anyway. Stopped after the
             # analysis, which would otherwise go on and start a load of its own.
-            if "pause" in reasons and ENGINES is not None and ENGINES.local is not None:
+            # Not when Continue came before this turn of the loop: its own load (warm_on_resume) would be the one stopped
+            if "pause" in reasons and STATE.paused and ENGINES is not None and ENGINES.local is not None:
                 ENGINES.local.cancel_load()
 
         # The user asked to run it again on what is on screen now (bypasses the "same
@@ -3695,12 +3730,20 @@ async def analysis_worker(app: FastAPI) -> None:
         # written, 7 to 81 s after they started. With nothing written yet the problem is still being read, and the longer
         # version replaces it below.
         writing = bool(inflight and not inflight.done() and STATE.analysis_wrote)
+        # Nor one still being worked out when what waits is another run of speech, after a pause: a thinking pass writes no
+        # answer words for 20 to 80 s, and only the same run read on (its words carry the running one's) is the longer
+        # version that may replace it. Replaced by any later run, a question went unanswered after 31 s of thinking for a
+        # few words after it that had nothing to solve.
+        other_run = bool(STATE.voice_pending and not writing and inflight and not inflight.done() and inflight_voice
+                         and inflight_speech
+                         and inflight_speech not in after_the_answer(STATE.recent_group(), STATE.voice_answered_to))
         # Held back for any of these, its words stop aging until its turn (recent_group); no flag, nothing is held for it
         if not STATE.voice_pending:
             STATE.voice_held_at = 0.0
-        elif STATE.paused or screen_busy or writing or time.monotonic() < STATE.retry_after:
+        elif STATE.paused or screen_busy or writing or other_run or time.monotonic() < STATE.retry_after:
             STATE.voice_held_at = STATE.voice_held_at or time.time()
-        if STATE.voice_pending and not STATE.paused and not screen_busy and not writing and time.monotonic() >= STATE.retry_after:
+        if (STATE.voice_pending and not STATE.paused and not screen_busy and not writing and not other_run
+                and time.monotonic() >= STATE.retry_after):
             STATE.voice_pending = False
             # Read first, with the age still held: nothing to ask leaves whatever runs alone, and starts nothing. An empty
             # voice would start a screen analysis from here, past the checks a screen goes through below.

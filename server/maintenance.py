@@ -21,6 +21,21 @@ from pathlib import Path
 
 from .i18n import t
 
+def panel_when(ts: float) -> str:
+    """A time as the panel writes one (fmtDay and fmtClock): "11.26(목) 10:00 AM" in Korean, "Wed, Nov 26 10:00 AM" in
+    English, the clock alone for today. The sheet wrote "11-26 10:00" where the agent's card beside it wrote the same
+    limit the panel's way."""
+    from . import i18n
+    at = time.localtime(ts)
+    clock = f"{at.tm_hour % 12 or 12:02d}:{at.tm_min:02d} {'AM' if at.tm_hour < 12 else 'PM'}"
+    if at[:3] == time.localtime()[:3]:
+        return clock
+    if i18n.LANG == "ko":
+        return f"{at.tm_mon:02d}.{at.tm_mday:02d}({'월화수목금토일'[at.tm_wday]}) {clock}"
+    return f"{('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')[at.tm_wday]}, " \
+           f"{('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')[at.tm_mon - 1]} {at.tm_mday} {clock}"
+
+
 # What a check's state is: as the cards colour theirs (panel/index.html, data-state)
 OK, WARN, BAD, OFF, IDLE = "ok", "warn", "bad", "off", "idle"
 FREE_WARN_GB = 5.0    # free space on the data folder under this: a warning (a speech model is 1.6 GB, the history up to 0.2)
@@ -170,11 +185,9 @@ def checks(f: dict) -> list[dict]:
         login = ag.get("login") or ""
         out.append(_check("agent", name, WARN, t("Not signed in"), t("Sign in from the server's terminal") if login else "", login))
     elif ag.get("limit_until"):
-        at = time.localtime(ag["limit_until"])
-        # the clock alone for a limit that ends today; the date with it otherwise, as the pipeline writes the same limit
-        # (pipeline.limit_left): a weekly limit ends days later, and "until 03:00" read as tonight's
-        until = time.strftime("%H:%M" if at[:3] == time.localtime()[:3] else "%m-%d %H:%M", at)
-        out.append(_check("agent", name, WARN, t("At its plan's limit until {when}", when=until)))
+        # the clock alone for a limit that ends today; the date with it otherwise: a weekly limit ends days later, and
+        # "until 03:00" read as tonight's. Written as the panel writes the same time on the agent's card
+        out.append(_check("agent", name, WARN, t("Usage limit until {when}", when=panel_when(ag["limit_until"]))))
     else:
         out.append(_check("agent", name, OK, ag.get("model") or t("Signed in")))
     # Web search and the code runner: there or not; what each is for is in their settings

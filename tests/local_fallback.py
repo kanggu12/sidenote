@@ -41,7 +41,7 @@ from PIL import Image  # noqa: E402
 import server.telemetry as telemetry  # noqa: E402
 import httpx2  # noqa: E402
 
-from server.analyzer import FastResult, LocalLlmAnalyzer, LocalServerError, NoFirstToken, make_engines  # noqa: E402
+from server.analyzer import AnalysisResult, FastResult, LocalLlmAnalyzer, LocalServerError, NoFirstToken, make_engines  # noqa: E402
 from server.config import CONFIG  # noqa: E402
 from server.i18n import t  # noqa: E402
 from server.pipeline import Hooks, NotSent, Pipeline, Speed  # noqa: E402
@@ -481,6 +481,62 @@ async def followups():
             "Neither could answer: the local model ({local}), the agent ({agent_why})", local=t("error"),
             agent_why=t("error")), raised)
 
+        print("\n[a follow-up about the agent's answer the agent cannot answer]")
+        # The follow-up goes to the engine that wrote the answer; when that is the agent and it fails or declines, this PC's
+        # model answers it, as it answers a problem (either engine alive answers)
+        # a spoken problem: no screen goes with it, its words do
+        about = {**last, "engine": "agent", "frame": None, "crop_box": None, "words": "데이터베이스 이중화는 어떻게 하나요?"}
+        for name, how in (("a usage limit", RuntimeError("claude CLI: You've hit your weekly limit · resets Nov 26, 10am")),
+                          ("no answer in time", asyncio.TimeoutError()),
+                          ("its CLI ending", RuntimeError("claude: exited 1: connect ECONNREFUSED"))):
+            pipe, eng, said = make_pipeline()
+            pipe.spend.signed_in()   # the limit of the case before rests in .spend.json: each case starts with the agent up
+            asked = []
+
+            async def answers(image_b64, transcript, on_delta, extra=(), voice=False, followup=None, first_deadline=None,
+                              stall=None):
+                asked.append(followup)
+                return AnalysisResult(text="TYPE: followup\nANSWER: 이 PC의 답\n", model="mock")
+            eng.local.analyze = answers
+
+            async def fails(images, text, on_delta, web=False, _exc=how):
+                raise _exc
+            eng.agent.run = fails
+            try:
+                out = await followup(pipe, about, "왜요?", "ctx", _none, seq=306)
+                raised = None
+            except Exception as exc:
+                out, raised = None, exc
+            check(f"the agent failing on it ({name}): this PC's model answers, once",
+                  raised is None and out is not None and out.engine == "local" and len(asked) == 1, [raised, out and out.engine, len(asked)])
+            check("...with the problem's words where no screen goes", bool(asked) and asked[0].get("problem") == about["words"]
+                  if name == "no answer in time" else True, asked[:1])
+        pipe, eng, said = make_pipeline()
+        pipe.spend.signed_in()
+        asked = []
+        eng.local.analyze = answers
+
+        async def declines(images, text, on_delta, web=False):
+            return AnalysisResult(text="죄송하지만 이 질문에는 답하지 않겠습니다.", model="mock")
+        eng.agent.run = declines
+        SETTINGS.values["local_on_decline"] = True
+        out = await followup(pipe, about, "왜요?", "ctx", _none, seq=307)
+        check("the agent declining it: this PC's model answers, and the card says the agent declined",
+              out.engine == "local" and out.stages.get("agent_declined") is True and len(asked) == 1, [out.engine, out.stages])
+        SETTINGS.values["local_on_decline"] = False
+        asked.clear()
+        out = await followup(pipe, about, "왜요?", "ctx", _none, seq=308)
+        check("...and with 'answers when the agent declines' off, the agent's reply stands", out.engine == "agent" and not asked,
+              [out.engine, len(asked)])
+        SETTINGS.values["local_on_decline"] = True
+        # a spoken problem this PC's model answered: its follow-up goes to this PC's model with the question heard, as
+        # nothing of a screen goes with it
+        asked.clear()
+        out = await followup(pipe, {**about, "engine": "local"}, "왜요?", "ctx", _none, seq=309)
+        check("a follow-up about a spoken problem this PC's model answered carries the question heard",
+              out.engine == "local" and asked and asked[0].get("problem") == about["words"], asked[:1])
+        pipe.spend.signed_in()
+
         print("\n[the local model's own end to end question, with the agent able to take it]")
         local = local_on(Server(first=None), local_first_token_sec=0.3)
         local._warm.add(local.model)
@@ -694,6 +750,68 @@ async def reasons():
         check("the agent failing: what failed is kept, said once, and this PC's model answers", out.engine == "local"
               and out.stages.get("agent_failed") is True and out.stages.get("agent_error") == "claude: exited 1: connect ECONNREFUSED",
               out.stages)
+        # the agent's own wait running out (asyncio's TimeoutError, a class of its own on Python 3.10): no answer in time,
+        # on the card and in the notice, not "error" or its English words
+        for exc in (asyncio.TimeoutError(), asyncio.TimeoutError("the answer did not end within 300 s")):
+            pipe, eng, said = make_pipeline()
+            pipe.spend.signed_in()
+            eng.local.fast = mcq_needs_thinking
+
+            async def waits(images, text, on_delta, web=False, _exc=exc):
+                raise _exc
+            eng.agent.run = waits
+            out = await pipe.solve(305, FakeFrame(), "", False, _none)
+            check(f"the agent's wait running out ({str(exc) or 'no words'}): said as no answer in time, on the card and in the notice",
+                  out.engine == "local" and out.stages.get("agent_error") == t("no answer in time")
+                  and any(t("no answer in time") in w for w in said["warn"]), [out.stages, said["warn"]])
+        # the agent resting on its plan's limit: what it would have taken says so on the card, what it would not says nothing
+        SETTINGS.values["agent_mode"] = "hard"
+        pipe, eng, said = make_pipeline()
+        pipe.spend.limit_until = time.time() + 3600
+        eng.local.fast = mcq_needs_thinking
+        SETTINGS.values["agent_hard_types"] = ["mcq"]
+        out = await pipe.solve(306, FakeFrame(), "", False, _none)
+        check("the agent resting on its limit: an answer it would have taken says it was not sent, for the limit",
+              out.engine == "local" and out.stages.get("not_sent") is True and out.stages.get("not_sent_why") == t("usage limit"),
+              out.stages)
+        SETTINGS.values["agent_hard_types"] = ["algorithm"]
+        pipe, eng, said = make_pipeline()
+        pipe.spend.limit_until = time.time() + 3600
+        eng.local.fast = mcq_needs_thinking
+        pipe.speed.local_slower = lambda ratio: False
+        out = await pipe.solve(307, FakeFrame(), "", False, _none)
+        check("...and one it would not have taken (a kind left to this PC's model) says nothing of it",
+              out.engine == "local" and not out.stages.get("not_sent"), out.stages)
+        pipe.spend.signed_in()
+        SETTINGS.values["agent_mode"] = "all"
+        # the plan's meters, read fresh, show room while the agent rests on its plan's limit: the rest ends there and then;
+        # when the limit comes back after that, the meters do not end the new rest, until another sign-in
+        from server.app import plan_has_room
+        pipe, eng, said = make_pipeline()
+        pipe.spend.signed_in()
+        pipe.spend.limited("claude CLI: You've hit your weekly limit")   # no time named: an hour's rest
+        resting = bool(pipe.spend.limit_left())
+        room = plan_has_room({"session": None, "week": {"used": 10.0, "resets": 0}, "models": []})
+        full = plan_has_room({"session": {"used": 3.0}, "week": {"used": 100.0}, "models": []})
+        blank = plan_has_room({"session": None, "week": None, "models": []})
+        model_full = plan_has_room({"session": None, "week": {"used": 10.0}, "models": [{"name": "Opus", "used": 100.0}]})
+        ended = pipe.spend.room_again() and not pipe.spend.limit_left()
+        pipe.spend.limited("claude CLI: You've hit your weekly limit")
+        held = not pipe.spend.room_again() and bool(pipe.spend.limit_left())
+        pipe.spend.signed_in()
+        pipe.spend.limited("claude CLI: You've hit your weekly limit")
+        believed = pipe.spend.room_again()
+        check("meters with room end a rest on the plan's limit; one with a window full or none read does not",
+              resting and room and not full and not blank and not model_full and ended, [resting, room, full, blank, model_full, ended])
+        check("...and the limit coming back after that is left to its own time, until another sign-in", held and believed,
+              [held, believed])
+        pipe.spend.signed_in()
+        # servers too busy for now are said as that, not as the plan used up; the hint stays a limit, retried later
+        from server.analyzer import error_hint, error_words
+        check("an overloaded API (529) is said as overloaded servers, not a usage limit",
+              error_words("API Error: 529 {\"type\":\"overloaded_error\"}") == t("servers overloaded")
+              and error_hint("API Error: 529 overloaded") == "limit" and error_words("You've hit your weekly limit") == t("usage limit"),
+              error_words("API Error: 529 overloaded"))
         # this PC's model failing and the agent answering: what failed, the server's JSON reduced to its message
         SETTINGS.values["agent_mode"] = "hard"
         pipe, eng, said = make_pipeline()

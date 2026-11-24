@@ -209,9 +209,10 @@ help_of = lambda: {i["key"]: i["help"] for i in SETTINGS.meta()["items"]}["monit
 i18n.set_lang("ko")
 ko_help = help_of()
 i18n.set_lang("en")
-check("Monitor's help in English names All monitors as its option, and the Korean is as it was",
-      help_of().startswith("All monitors: every monitor in one picture, so a problem on any of them is seen.")
-      and ko_help == "모든 모니터는 한 장으로 받아 어느 모니터의 문제든 봄. Windows에서는 패널 창을 가린 뒤 보냄", [help_of(), ko_help])
+# and says what the setting is before its one option, as one phrase each: it described "All monitors" with Monitor 1 chosen
+check("Monitor's help says what it picks, then names All monitors as its option, in both languages",
+      help_of() == "The monitor whose screen is read · All monitors: every one in one picture"
+      and ko_help == "화면을 읽을 모니터 · 모든 모니터: 모두 한 장으로", [help_of(), ko_help])
 
 print("\n[the models' answers]")
 from server import agents, analyzer  # noqa: E402

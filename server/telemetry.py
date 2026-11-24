@@ -165,7 +165,8 @@ def event(kind: str, **fields) -> None:
 # so a restart does not empty the cards. Answers of other days fall out as they are asked for.
 _today: list[dict] = []
 _TODAY_KEEP = 3000
-_TODAY_FIELDS = ("ts", "event", "engine", "elapsed", "first_token", "tokens_in", "tokens_out", "cost_usd", "type", "id")
+_TODAY_FIELDS = ("ts", "event", "engine", "elapsed", "first_token", "tokens_in", "tokens_out", "cost_usd", "type", "id",
+                 "model")
 _TODAY_NUMBERS = ("ts", "elapsed", "first_token", "tokens_in", "tokens_out", "cost_usd")   # what the figures add up
 
 
@@ -237,7 +238,10 @@ def _rate(r: dict) -> float | None:
     tokens, elapsed, first = r.get("tokens_out"), r.get("elapsed"), r.get("first_token")
     if not (isinstance(tokens, (int, float)) and tokens > 0 and isinstance(elapsed, (int, float)) and isinstance(first, (int, float))):
         return None
-    spent = elapsed if r.get("engine") == "agent" else elapsed - first
+    # This PC's thinking pass does the same (its model's label ends "(think)"): over the time after its first word, 2,500
+    # tokens of reasoning read as 213 tokens/s for an answer the GPU wrote at 31.5, and the card's average as 236
+    thinks = r.get("engine") == "agent" or "(think" in str(r.get("model") or "")
+    spent = elapsed if thinks else elapsed - first
     return tokens / spent if spent >= 0.2 else None     # less says more about the clock than about the model
 
 

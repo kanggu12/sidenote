@@ -568,10 +568,17 @@ def error_hint(message: str) -> str:
     return "gpu" if gpu_fault(message) else ""
 
 
+# Servers too busy for now (Anthropic's 529, "overloaded"): a limit to error_hint, as the agent is retried later, but no
+# plan used up, which is what "usage limit" says to the person reading it
+OVERLOAD_RE = re.compile(r"overloaded|(?<![\w.])529(?![\w.])", re.I)
+
+
 def error_words(message: str) -> str:
     """The kind of failure in words of the panel's language, for a message that names it: the codes of error_hint are
     for the panel's own choice of advice and read as English in a Korean sentence."""
     from .i18n import t
+    if OVERLOAD_RE.search(message):
+        return t("servers overloaded")
     return {"limit": t("usage limit"), "auth": t("sign-in rejected"), "timeout": t("no answer in time"),
             "gpu": t("GPU error")}.get(error_hint(message), t("error"))
 
@@ -1595,7 +1602,9 @@ class LocalLlmAnalyzer:
                 break
         else:
             return   # it never went quiet; the next model to load takes this one's place anyway
-        if self.pace.busy() and self.model != model:
+        # Not with the hold nearly over: the chosen model is tried again when it ends. Taken off with 10 s of a 30 s hold
+        # left, it only had to be loaded again for the next question (11.6 s), the smaller one never asked meanwhile.
+        if self.pace.busy() and self.model != model and self.pace.busy_until - time.time() >= self.YIELD_AFTER:
             await self.unload(model)
 
     async def _run(self, messages: list[dict], think: bool, on_delta, shown,

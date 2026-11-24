@@ -604,6 +604,30 @@ async def case_a_newer_problem_takes_the_place_of_the_one_waiting():
     A.broadcast = lambda msg: asyncio.sleep(0)
 
 
+async def case_a_problem_still_worked_out_is_let_finish_for_another_run():
+    """A spoken problem still being worked out (a thinking pass: no answer words yet) is not stopped by another run of speech
+    after a pause: it ends, and the newer one is asked after it, with its own words. Only the same run read on replaces it."""
+    pipe, det = Pipe(), Detector()
+    pipe.answer = "TYPE: essay\nANSWER: 답"
+    msgs = said_to_panel()
+    task = await start_worker(pipe, det)
+    sentence("데이터베이스 이중화는 어떻게 하나요?", 0); A.STATE.voice_pending = True
+    await asyncio.sleep(0.3)
+    check("the first starts, and writes nothing yet", pipe.started == [(1, True)], f"{pipe.started}")
+    sentence("네 그럼 다음은 뭘까요", 20); A.STATE.voice_pending = True
+    await asyncio.sleep(0.5)
+    check("another run of speech after a pause does not stop it", pipe.cancelled == [] and len(pipe.started) == 1,
+          f"cancelled {pipe.cancelled} started {pipe.started}")
+    check("...and waits", A.STATE.voice_pending is True)
+    await next_answer(pipe, msgs, 1)
+    await until(lambda: len(pipe.started) == 2)
+    check("the first answer reaches the panel", [m["id"] for m in msgs if m["type"] == "analysis_done"][:1] == [1], f"{msgs}")
+    check("...and the newer run is asked after it, with its own words", pipe.words[1] == "네 그럼 다음은 뭘까요", f"{pipe.words}")
+    await next_answer(pipe, msgs, 2)
+    await stop(task)
+    A.broadcast = lambda msg: asyncio.sleep(0)
+
+
 async def case_what_waits_does_not_age_out():
     """What waits behind an answer being written is still asked, however long that answer takes; and with nothing to ask nothing starts."""
     was = knobs(speech_context_sec=0.5)
@@ -992,7 +1016,8 @@ async def main():
                  case_quiet_after_a_run_of_empty_answers, case_an_answer_does_not_wait_for_its_picture,
                  case_a_problem_seen_again_is_the_one_asked_about, case_nothing_written_yet_the_longer_version_replaces_it,
                  case_an_answer_being_written_is_let_finish, case_a_quizs_options_go_with_their_question, case_a_place_in_the_sound_not_its_words,
-                 case_a_newer_problem_takes_the_place_of_the_one_waiting, case_what_waits_does_not_age_out,
+                 case_a_newer_problem_takes_the_place_of_the_one_waiting,
+                 case_a_problem_still_worked_out_is_let_finish_for_another_run, case_what_waits_does_not_age_out,
                  case_nothing_to_ask_stops_nothing, case_first_words_end_the_asking,
                  case_after_nothing_to_solve_it_is_all_still_to_read, case_an_answer_done_is_let_end_not_cut,
                  case_a_pause_during_a_done_answers_end_starts_nothing_after_it, case_a_decline_keeps_no_words,

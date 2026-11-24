@@ -788,6 +788,62 @@ def gpu():
             quiet = p.wait(lambda m: m.get("type") == "notice" and "올리기 멈춤" in m.get("text", ""), after=n, timeout=10)
         check("a load stopped on purpose blames no hardware", bool(quiet) and "메모리" not in quiet.get("text", ""), str(quiet))
 
+        # Continue puts the model on the GPU when it is not there: the first question after it waited out the whole load
+        # (51 s in real use), once after a Pause between two Continues had stopped a load already under way
+        A.STATE.local = {"ok": True, "loaded": None}
+        A.STATE.screen_on = True
+        loads.clear()
+
+        async def slow_load():
+            loads.append(time.time())
+            await asyncio.sleep(0.6)      # long enough for a Pause and a Continue to come in while it runs
+            local._loaded = True
+        with patched(local, "load", slow_load):
+            pws.send_text(json.dumps({"type": "pause"}))
+            p.wait(lambda m: m.get("type") == "status" and m.get("paused") is True, timeout=10)
+            n = len(p.msgs)
+            pws.send_text(json.dumps({"type": "resume"}))
+            warm = p.wait(lambda m: m.get("type") == "notice" and "GPU에 올림" in m.get("text", ""), after=n, timeout=10)
+            check("Continue with the model off the GPU loads it, and says when it is ready", len(loads) == 1 and bool(warm),
+                  f"loads={len(loads)} note={warm}")
+            # a Pause and a Continue pressed one after the other: the Continue's load is not stopped by the Pause before it
+            local._loaded, A.STATE.local = False, {"ok": True, "loaded": None}
+            loads.clear()
+            n = len(p.msgs)
+            pws.send_text(json.dumps({"type": "resume"}))
+            pws.send_text(json.dumps({"type": "pause"}))
+            pws.send_text(json.dumps({"type": "resume"}))
+            done = p.wait(lambda m: m.get("type") == "notice" and ("GPU에 올림" in m.get("text", "")
+                                                                   or "올리기 멈춤" in m.get("text", "")), after=n, timeout=10)
+            time.sleep(0.8)
+            stops = [m for m in p.msgs[n:] if m.get("type") == "notice" and "올리기 멈춤" in m.get("text", "")]
+            check("...and a Pause pressed between two Continues leaves the last Continue's load to finish",
+                  bool(done) and "GPU에 올림" in done.get("text", "") and not stops and len(loads) >= 1,
+                  f"first={done} stops={len(stops)} loads={len(loads)}")
+            # already on the GPU, the local model switched off, or nothing that would start an analysis: no load
+            loads.clear()
+            A.STATE.local = {"ok": True, "loaded": {"model": "m"}}
+            pws.send_text(json.dumps({"type": "pause"}))
+            pws.send_text(json.dumps({"type": "resume"}))
+            time.sleep(0.4)
+            on_gpu = len(loads)
+            A.STATE.local = {"ok": True, "loaded": None}
+            SETTINGS.values["local_llm"] = False
+            pws.send_text(json.dumps({"type": "pause"}))
+            pws.send_text(json.dumps({"type": "resume"}))
+            time.sleep(0.4)
+            off = len(loads)
+            SETTINGS.values["local_llm"] = True
+            A.STATE.screen_on, A.STATE.audio_on = False, False
+            pws.send_text(json.dumps({"type": "pause"}))
+            pws.send_text(json.dumps({"type": "resume"}))
+            time.sleep(0.4)
+            idle = len(loads)
+            A.STATE.screen_on, A.STATE.audio_on = True, True
+            A.save_switches()   # kept as they were: the next run's server reads the switches back from the log folder
+        check("...and none when the model is on the GPU already, is switched off, or nothing would start an analysis",
+              (on_gpu, off, idle) == (0, 0, 0), f"on the GPU {on_gpu}, off {off}, nothing on {idle}")
+
         check("the account is not in what /health and /stats are built from", "account" not in A.engines_status()["agent"])
         check("it is in what the panel gets", "account" in A.panel_engines()["agent"])
 

@@ -81,12 +81,24 @@ class Repeat(Exception):
         self.card, self.box, self.score = card, box, score
 
 
+def timed_out(exc) -> bool:
+    """A deadline that ran out: the builtin TimeoutError, or asyncio's, which is a class of its own before Python 3.11 (the
+    server runs on 3.10) and is what the agents' waits raise. Read as the one, an agent's timeout was said as "error", or
+    as its English message, on the card and in the notice."""
+    return isinstance(exc, (TimeoutError, asyncio.TimeoutError))
+
+
+def kind_of(exc) -> str:
+    """An engine's failure as the notices name it: no answer in time, or its kind (error_words)."""
+    return t("no answer in time") if timed_out(exc) else error_words(str(exc))
+
+
 def failure_briefly(exc) -> str:
     """What an engine's failure was, for the card's note (why the other engine answered): its kind in the panel's language
     where it has one (a usage limit, a sign-in rejected, no answer in time, the GPU), else the error's own first words, a
     server's JSON reduced to its message ({"error":{"message": ...}}). The card said "error" alone, in a notice that passed."""
     msg = str(exc)
-    if isinstance(exc, TimeoutError):
+    if timed_out(exc):
         return t("no answer in time")
     if error_hint(msg):
         return error_words(msg)
@@ -1151,6 +1163,8 @@ class Spend:
         # this PC's model stand in and the panel count it down: loading a model of several GB for a two-minute rate
         # limit, under a notice about a usage limit, was the wrong answer to it
         self.limit_kind = ""
+        self.meters_ended = 0.0      # when the plan's meters last ended a rest (room_again)
+        self.meters_doubted = False  # the limit came back after that: the meters do not end this rest
         self.path = None              # where the limit and the hour's spend are kept over a restart (load)
         # Whether the agent says what a turn costs. One that never does (Codex signed in with ChatGPT: its answers
         # come with no price) had no answer counted and each cancel or error counted at CUT_SHORT_USD, so 50 cut
@@ -1194,6 +1208,22 @@ class Spend:
         if kind == "rate" and self.plan_left():   # a request in flight met a 429: the plan's rest holds, days or not
             return True
         self.limit_until, self.limit_said, self.limit_kind = until, text[:200], kind
+        # the plan's limit again after the meters had ended a rest (room_again): they do not end this one, or every reading
+        # of theirs would send one more question to a limit they cannot see
+        self.meters_doubted = kind == "plan" and self.meters_ended > 0
+        self._save()
+        return True
+
+    def room_again(self) -> bool:
+        """The plan's meters, read fresh (app.refresh_quota), show room in every window while the agent rests on its plan's
+        limit: the rest ends now, not at the time the CLI named. A rest armed from "resets Nov 26" stood for days beside
+        meters that showed the week 10% used. A limit still there says so again on the first try, as after a sign-in; one
+        the meters cannot see (meters_doubted) is left to its own time."""
+        if self.limit_kind != "plan" or not self.limit_left() or self.meters_doubted:
+            return False
+        log.info("agent: the plan's meters show room again; the rest on its limit until %s ends", self.limit_left())
+        self.limit_until, self.limit_said, self.limit_kind = 0.0, "", ""
+        self.meters_ended = time.time()
         self._save()
         return True
 
@@ -1218,6 +1248,7 @@ class Spend:
         """The login file changed (app.engine_watch): another sign-in, perhaps another plan. The rest ends; a limit still
         there says so again on the first try. Kept in .spend.json, the rest outlived restarts with no way to end it but
         the time it named, once a day and a half away."""
+        self.meters_ended, self.meters_doubted = 0.0, False   # another account's meters are to be believed again
         if self.limit_until:
             log.info("agent: a new sign-in; the rest on its limit until %s ends", self.limit_left() or "now")
             self.limit_until, self.limit_said, self.limit_kind = 0.0, "", ""
@@ -1503,7 +1534,8 @@ class Pipeline:
                 await self.hooks.stage(seq, "local", "", restart=True)
                 out = await self.solve(seq, frame, transcript, voice, on_delta, by_user=by_user)
                 out.sent = getattr(exc, "sent", []) + out.sent   # the problem went out all the same: the card says so
-                out.stages = {**out.stages, "agent_failed": True}
+                # with what failed, as when the model is switched on: the card said the agent failed, and not why
+                out.stages = {**out.stages, "agent_failed": True, "agent_error": failure_briefly(exc)}
                 return out
 
         think = SETTINGS.get("local_think")
@@ -1653,6 +1685,15 @@ class Pipeline:
         # mode, the agent answers when it can, as it does every problem after this one. It is the one engine left
         down = agent is not None and not brake and not to_agent and not self.hooks.local_ok()
         to_agent = to_agent or down
+        # Resting on its plan's limit the agent is not there (_agent), and this PC's model answers what it would have
+        # taken: the card says so, as for a problem held back from it, or a whole sitting of answers gave no sign of why
+        # the agent was never asked
+        chosen = SETTINGS.get("agent_mode")   # `mode` reads "off" with no agent there
+        if (agent is None and self.engines.agent is not None and chosen != "off" and self.spend.limit_left()
+                and (chosen == "all" or (chosen == "hard" and (handoff or (hard and (
+                    unknown or slow_here or f.type in SETTINGS.get("agent_hard_types"))))))):
+            stages["not_sent"] = True
+            stages["not_sent_why"] = t("usage limit")
         if not self.hooks.local_ok():   # its first pass found the GPU failing: the card says that is why the agent answers
             stages["local_error"] = t("GPU error")
         # Why this engine, in the log: a coding problem was answered by this PC's model in 169 s on a busy GPU
@@ -1744,7 +1785,7 @@ class Pipeline:
                         raise BothFailed(f"{exc} · {t('the local model cannot be used now')}") from exc
                     log.warning("The agent failed (%s); the local model answers", exc)
                     await self._warn(t("The agent could not answer ({why}) · the local model solves",
-                                       why=error_words(str(exc)), agent=agent_name()))
+                                       why=kind_of(exc), agent=agent_name()))
 
         # the local thinking pass, with the problem cropped at full resolution beside the screen. What it
         # gets stays on this PC: a box that places nothing is cut as it is, over any windows, unless it covers
@@ -1802,7 +1843,7 @@ class Pipeline:
             stages["local_failed"] = True
             stages["local_error"] = failure_briefly(exc)   # what failed, for the card
             await self._warn(t("The local model could not answer ({why}) · the agent's reply is shown",
-                               why=error_words(str(exc)), agent=agent_name()))
+                               why=kind_of(exc), agent=agent_name()))
             await self.hooks.stage(seq, "agent", "", restart=True)
             declined.stages = stages
             return declined
@@ -2052,7 +2093,7 @@ class Pipeline:
         those it is given at once. What the local model wrote before it stopped is cleared from the card. When the
         problem may not go (not sent), or the agent fails too, the card says why: there is nothing else to answer."""
         # a deadline of its own (NoFirstToken, a silent stream) is a timeout whatever its message says
-        why = t("no answer in time") if isinstance(exc, TimeoutError) else error_words(str(exc))
+        why = kind_of(exc)
         log.warning("analysis #%d: the local model could not answer (%s); the agent takes it", seq, exc)
         telemetry.event("local_failed", id=seq, reason=f"{type(exc).__name__}: {exc}"[:200], to_agent=True)
         stages["local_failed"] = True
@@ -2075,7 +2116,7 @@ class Pipeline:
                 await self.hooks.agent_failed(failed)
             log.warning("analysis #%d: the agent failed too (%s)", seq, failed)
             both = RuntimeError(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
-                                  local=why, agent_why=error_words(str(failed)), agent=agent_name()))
+                                  local=why, agent_why=kind_of(failed), agent=agent_name()))
             both.sent = sent + getattr(failed, "sent", [])   # the problem went out all the same: the card says so
             raise both from failed
         out.sent = sent + out.sent
@@ -2307,6 +2348,9 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     local_failed = None
     if engine is local:
         shown = pages if tiles else frame   # the scrolled-together problem, when there is one, beside its screen
+        if shown is None and last.get("words"):
+            # no screen goes (a problem heard): its words do, or the question about its answer comes with no problem
+            fu["problem"] = last["words"]
         can_take = (agent is not None and SETTINGS.get("agent_mode") != "off"
                     and (by_user or not pipeline.spend.blocked()))
         try:
@@ -2322,7 +2366,7 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
             if not can_take:
                 raise
             local_failed = exc
-            why = t("no answer in time") if isinstance(exc, TimeoutError) else error_words(str(exc))
+            why = kind_of(exc)
             log.warning("follow-up #%d: the local model could not answer (%s); the agent takes it", seq, exc)
             telemetry.event("local_failed", id=seq, reason=f"{type(exc).__name__}: {exc}"[:200], to_agent=True,
                             followup=True)
@@ -2355,6 +2399,18 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     pipeline._still_on()
     await pipeline._confirmed(seq, images, text, what)
     pipeline._still_on()
+
+    async def on_this_pc(why: str) -> Outcome:
+        """This PC's model answers what the agent could not: a follow-up about the agent's own answer is answered while
+        either engine can (note 140), as a problem is. The words of the problem go with it where no screen does."""
+        await pipeline.hooks.stage(seq, "local", "", restart=True)   # what the agent wrote before it stopped goes
+        log.warning("follow-up #%d: %s; the local model answers", seq, why)
+        shown = pages if tiles else frame
+        got = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
+                                  extra=shown.extra_b64 if shown else (), followup=fu)
+        return Outcome(text=json_head(got.text), model=got.model, usage=got.usage, cost_usd=None, engine="local",
+                       sent=[{"to": "agent", "what": what}] + _searches(getattr(got, "searches", None)))
+
     try:
         res = await agent.run(images, text, guarded(on_delta))
     except asyncio.CancelledError:
@@ -2364,19 +2420,30 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
         exc.engine = "agent"
         pipeline.spend.failed(exc)   # paid for all the same
         pipeline.spend.limited(str(exc))   # its plan used up: the agent rests until it comes back
+        if local_failed is None and local is not None and pipeline.hooks.local_ok():
+            await pipeline._warn(t("The agent could not answer ({why}) · the local model solves",
+                                   why=failure_briefly(exc), agent=agent_name()))
+            return await on_this_pc(f"the agent failed ({exc})")
         if local_failed is None:
             raise
         log.warning("follow-up #%d: the agent failed too (%s)", seq, exc)
-        why_local = (t("no answer in time") if isinstance(local_failed, TimeoutError)
-                     else error_words(str(local_failed)))
+        why_local = kind_of(local_failed)
         both = RuntimeError(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
-                              local=why_local, agent_why=error_words(str(exc)), agent=agent_name()))
+                              local=why_local, agent_why=kind_of(exc), agent=agent_name()))
         both.engine = "agent"
         raise both from exc
     # This one was asked for by hand, so it never counts as an empty row, but what it cost is part
     # of the hour the ceiling watches.
     pipeline.spend.note(res.cost_usd, False)
-    return Outcome(text=lift_head(strip_tool_markup(res.text)), model=res.model, usage=res.usage,
+    reply = lift_head(strip_tool_markup(res.text))
+    # A reply with no head is the agent declining, as for a problem: with "This PC's model answers when the agent
+    # declines" on, this PC's model answers the follow-up, and the card says the agent declined
+    if (not head_of(reply)[0] and SETTINGS.get("local_on_decline") and local_failed is None and local is not None
+            and pipeline.hooks.local_ok()):
+        out = await on_this_pc("the agent declined it")
+        out.stages = {"agent_declined": True, **({"agent_empty": True} if not reply.strip() else {})}
+        return out
+    return Outcome(text=reply, model=res.model, usage=res.usage,
                    cost_usd=res.cost_usd, engine="agent", sent=[{"to": "agent", "what": what}])
 
 

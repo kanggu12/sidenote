@@ -2237,6 +2237,14 @@ async def test_gpu_pace():
         await local._yield
         local._streams = 0
         check("a model still streaming is left on the card", gone == [], str(gone))
+        gone.clear()
+        # quiet, but with less of the hold left than the wait itself: tried again in a moment, it stays loaded
+        local.pace.busy_until, local.pace.rates["big"] = 0.0, [150.0, 160.0, 170.0]
+        local.YIELD_AFTER = 0.05
+        local._pace("big", 400, 10.0)
+        local.pace.busy_until = time.time() + 0.08
+        await local._yield
+        check("a hold nearly over leaves the model on the card for its next try", gone == [], str(gone))
         local.YIELD_AFTER = real_after
         gone.clear()
         SETTINGS.values["local_busy_model"] = ""
@@ -3491,10 +3499,17 @@ async def test_pause_stops_load():
         st.stop_reasons.add("screen_off")
         await asyncio.sleep(0.25)
         check("screen off leaves a load in progress to the next analysis", calls == [], str(calls))
+        st.paused = True                    # set_paused sets it before it asks the worker to stop
         st.stop_reasons.add("pause")
         await asyncio.sleep(0.25)
         check("pause stops a model load in progress", calls == [None], str(calls))
+        calls.clear()
+        st.paused = False                   # Continue came before the worker's turn: its own load is the one running
+        st.stop_reasons.add("pause")
+        await asyncio.sleep(0.25)
+        check("...not once Continue has come: the load it started is left to finish", calls == [], str(calls))
     finally:
+        st.paused = False
         worker.cancel()
         try:
             await worker

@@ -149,11 +149,16 @@ check("...at its plan's limit: a warning saying until when", limit["agent"]["sta
 # A weekly limit ends days later: the clock alone read as tonight's
 later = time.time() + 3 * 86400
 week = by_id(M.checks(facts(agent={"limit_until": later})))["agent"]
-check("...a limit that ends on another day: its date with the clock", week["said"]
-      == f"At its plan's limit until {time.strftime('%m-%d %H:%M', time.localtime(later))}", week["said"])
+check("...a limit that ends on another day: its date with the clock, as the panel writes it on the agent's card",
+      week["said"] == f"Usage limit until {M.panel_when(later)}" and "," in M.panel_when(later), week["said"])
 tonight = time.mktime(time.localtime()[:3] + (23, 59, 0, 0, 0, -1))
 check("...one that ends today: the clock alone", by_id(M.checks(facts(agent={"limit_until": tonight})))["agent"]["said"]
-      == "At its plan's limit until 23:59")
+      == "Usage limit until 11:59 PM")
+import server.i18n as I18N  # noqa: E402
+was_lang, I18N.LANG = I18N.LANG, "ko"
+nov = time.mktime((2026, 11, 26, 10, 0, 0, 0, 0, -1))
+check("...in Korean as the panel writes it: 11.26(목) 10:00 AM", M.panel_when(nov) == "11.26(목) 10:00 AM", M.panel_when(nov))
+I18N.LANG = was_lang
 check("...not installed, or switched off: no fault", by_id(M.checks(facts(agent={"ok": False, "installed": False})))["agent"]["state"] == "off"
       and by_id(M.checks(facts(agent={"mode": "off"})))["agent"]["state"] == "off")
 full = by_id(M.checks(facts(disk={"free": 0.5 * 1024 ** 3})))

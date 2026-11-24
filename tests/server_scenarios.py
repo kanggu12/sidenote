@@ -269,6 +269,11 @@ telemetry._recent.clear()
 telemetry.event("analysis_done", id=2, type="short", engine="agent", elapsed=37.0, first_token=18.0, tokens_out=2980)
 check("the agent, which thinks before it shows a word: over the whole answer (it came to 155 tokens/s)", abs(telemetry.totals()["tps_avg"] - 80.5) < .1, telemetry.totals()["tps_avg"])
 telemetry._recent.clear()
+telemetry.event("analysis_done", id=4, type="essay", engine="local", elapsed=30.0, first_token=23.5, tokens_out=2773,
+                model="sidenote-gemma4:26b (think)")
+check("this PC's model thinking first, as the agent does: over the whole answer too (after its first word it came to 427)",
+      abs(telemetry.totals()["tps_avg"] - 92.4) < .1, telemetry.totals()["tps_avg"])
+telemetry._recent.clear()
 telemetry.event("analysis_done", id=3, type="short", engine="local", elapsed=2.0, first_token=2.0, tokens_out=5)
 check("no time after the first token gives no figure rather than a wild one", telemetry.totals()["tps_avg"] is None, telemetry.totals()["tps_avg"])
 telemetry._recent.clear()
@@ -528,6 +533,37 @@ if cap is not None:
             del ctypes.windll
         else:
             ctypes.windll = had_windll
+
+# ---------------------------------------------------------------- ./sidenote gpu off and on
+print("[gpu off and on put back what they changed]")
+import tempfile  # noqa: E402
+import server.control as control  # noqa: E402
+was_setting, was_read, was_dir = control._setting, control._read_setting, telemetry.LOG_DIR
+values = {"local_llm": True, "local_fallback": False}   # the stand-in switched off by hand
+
+
+async def fake_setting(key, value):
+    if value is not None:
+        values[key] = value
+    return {"engines": {"local": {"on": values["local_llm"]}}}
+control._setting, control._read_setting = fake_setting, lambda key: values[key]
+with tempfile.TemporaryDirectory() as d:
+    telemetry.LOG_DIR = d
+    try:
+        control.gpu("off")
+        off = dict(values)
+        control.gpu("on")
+        check("gpu off switches the model and its stand-in off; gpu on puts the stand-in back as it was (off by hand)",
+              off == {"local_llm": False, "local_fallback": False} and values == {"local_llm": True, "local_fallback": False},
+              [off, values])
+        values["local_fallback"] = True
+        control.gpu("off")
+        control.gpu("on")
+        check("...and on, where it was on", values == {"local_llm": True, "local_fallback": True}, values)
+        control.gpu("on")
+        check("...gpu on with no gpu off before it leaves the stand-in alone", values["local_fallback"] is True, values)
+    finally:
+        control._setting, control._read_setting, telemetry.LOG_DIR = was_setting, was_read, was_dir
 
 print(f"\n==== {len(OK)} passed, {len(BAD)} failed ====")
 for b in BAD:
