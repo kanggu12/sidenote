@@ -423,6 +423,7 @@ class AppState:
     last_seen_ts: float = 0.0     # the last frame the capture program sent, whatever it changed
     last_audio_ts: float = 0.0
     capture_note_ts: float = 0.0  # throttles the capture-status broadcasts
+    capture_note_later: "asyncio.Task | None" = None   # the one told at the end of those 5 s (note_capture)
     # Bumped whenever heard speech is thrown away (sound switched off, pause, resume): a speech
     # pass still transcribing in the executor drops what it finds instead of bringing it back.
     speech_epoch: int = 0
@@ -1287,6 +1288,11 @@ async def set_paused(p: bool) -> None:
         await warm_on_resume()
 
 
+# How long a spoken problem being worked out holds another run of speech behind it with nothing written: its thinking pass
+# writes nothing for 20 to 80 s, and one past this has stalled rather than thought
+OTHER_RUN_HOLD_SEC = 120.0
+
+
 async def warm_on_resume() -> None:
     """Continue is the sign that a problem is coming: this PC's model goes onto the GPU now, as Load onto the GPU puts it,
     when it is not there and something can start an analysis (the screen, or speech with Solve spoken problems on). In
@@ -1295,8 +1301,13 @@ async def warm_on_resume() -> None:
     has failed, not for a model the server does not have, and not twice: a load under way is left to finish."""
     local = ENGINES.local if ENGINES is not None else None
     seen = STATE.local or {}
-    if (local is None or not SETTINGS.on("local_llm") or not seen.get("ok") or seen.get("missing") or seen.get("loaded")
+    if (local is None or not SETTINGS.on("local_llm") or not seen.get("ok") or seen.get("missing")
             or local_fault() is not None or (STATE.gpu_loading is not None and not STATE.gpu_loading.done())):
+        return
+    # The model the next question uses, not any model: through a busy spell that is the smaller one, which loads at the
+    # question as it always has (the larger one put on the busy GPU would only be taken off again), and the larger one
+    # left on the GPU is no reason to skip it when the smaller one is what sits there after a busy spell
+    if local_busy() or (seen.get("loaded") or {}).get("model") == local.model:
         return
     if not (STATE.screen_on or (STATE.audio_on and SETTINGS.get("voice_auto"))):
         return   # nothing automatic will ask for it: a question or Reanalyze loads it as before
@@ -1348,11 +1359,22 @@ def usage_message() -> dict:
 
 
 async def note_capture(force: bool = False) -> None:
-    """Tell panels about the capture client; on frames/audio at most every 5 s."""
+    """Tell panels about the capture client; on frames/audio at most every 5 s, and what came within those 5 s at their
+    end: the first screen comes right after the program's hello, which was told, and a still screen sends no more, so the
+    panel's Last screen waited for the next change (with the sound on, its chunks told it within 5 s)."""
     now = time.time()
     if force or now - STATE.capture_note_ts > 5:
         STATE.capture_note_ts = now
         await broadcast(capture_status())
+    elif STATE.capture_note_later is None or STATE.capture_note_later.done():
+        STATE.capture_note_later = spawn(_note_capture_later(5 - (now - STATE.capture_note_ts)), "note_capture_later")
+
+
+async def _note_capture_later(wait: float) -> None:
+    """The capture's state at the end of the 5 s it was held back for (note_capture)."""
+    await asyncio.sleep(max(0.0, wait))
+    STATE.capture_note_ts = time.time()
+    await broadcast(capture_status())
 
 
 def usage_fields(result) -> dict:
@@ -2986,15 +3008,16 @@ def remember_answer(last: dict) -> None:
 def remembered(result, frame, seq: int, voice="") -> dict:
     """What is kept of the last answer for follow-ups, the code check and Problem text: its text, the screen it came
     from (None once that screen is off), its engine and box. `words` is the problem as it went to the agent in
-    words, which a follow-up that sends no image carries again (pipeline.followup); read off a screen that is
-    gone it is not kept, as nothing else read off that screen is. `voice`: what was heard, when the answer was to a
-    problem heard, which a problem scrolled together never continues (the screen beside it was only context). A
-    spoken problem this PC's model answered went to no agent: its words are what was heard, or its follow-up, with no
-    screen to send either, asked about an answer with the question it answered nowhere in the request."""
-    words = getattr(result, "words", "") or (voice if isinstance(voice, str) else "")
+    words (the question cut out of what was heard, or the problem read off the screen), which a follow-up that sends
+    no image carries again (pipeline.followup); read off a screen that is gone it is not kept, as nothing else read off
+    that screen is. `voice`: what was heard, when the answer was to a problem heard, which a problem scrolled together
+    never continues (the screen beside it was only context). `heard` keeps that run of speech for this PC's model alone:
+    its follow-up asked about an answer with the question it answered nowhere in the request. It is the room's speech,
+    other voices too, and never goes to the agent, which is given only the question cut out of it (`words`)."""
     return {"text": result.text, "frame": frame, "id": seq, "engine": result.engine, "crop_box": result.crop_box,
             "local_view": result.local_view, "ts": time.time(), "voice": bool(voice),
-            "words": words if frame is not None or voice else ""}
+            "words": getattr(result, "words", "") if frame is not None or voice else "",
+            "heard": voice if isinstance(voice, str) else ""}
 
 
 def stop_followup(t) -> None:
@@ -3283,8 +3306,21 @@ async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
     if getattr(app.state, "transcribe_worker", None) is None or app.state.transcribe_worker.done():
         app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
     log.info("speech model ready (%s)", model)
-    await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None), "voice": SETTINGS.on("voice_auto")})
+    await broadcast({"type": "status", "audio": True, "speech": speech_state(app), "lang": getattr(tr, "language", None),
+                     "voice": SETTINGS.on("voice_auto")})
     await notice(t("The speech model {model} is ready", model=model), "done")
+
+
+def speech_state(app: FastAPI) -> dict:
+    """Speech as the panel's Sound card, its guide and its settings say it, as Maintenance does (maintenance.py): on, still
+    loading (the model loads after the server is up, 3 to 15 s), failed to load, or off on the server with the variable
+    that turns it on. With `audio` alone, all three that were not on were "off on the server: SIDENOTE_AUDIO=1"."""
+    tr = getattr(app.state, "transcriber", None)
+    if getattr(tr, "available", False):
+        return {"state": "on"}
+    if not (CONFIG.audio_enabled and CONFIG.transcriber != "null"):
+        return {"state": "off", "turn_on": "SIDENOTE_TRANSCRIBER=auto" if CONFIG.transcriber == "null" else "SIDENOTE_AUDIO=1"}
+    return {"state": "failed" if getattr(app.state, "speech_failed", False) else "loading"}
 
 
 async def load_speech(app: FastAPI) -> None:
@@ -3312,6 +3348,15 @@ async def load_speech(app: FastAPI) -> None:
         log.error("the speech model did not load (%s); the server goes on without speech", exc)
         await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
                      "bad")
+        await broadcast({"type": "status", "speech": speech_state(app)})   # the Sound card: did not load, not still loading
+        return
+    if (CONFIG.audio_enabled and CONFIG.transcriber != "null" and not getattr(tr, "available", False)
+            and not getattr(app.state.transcriber, "available", False)):
+        # auto with no faster-whisper that would load (transcriber.py gives the stand-in then), and no choice made in the
+        # panel meanwhile that hears: not loading, and never will
+        app.state.speech_failed = True
+        log.error("the speech model did not load; the server goes on without speech")
+        await broadcast({"type": "status", "speech": speech_state(app)})
         return
     # Another model chosen in the panel while this one loaded, and already taken over: that one stays. Not yet: this one hears
     # until it does, and is what is left when that one cannot be had
@@ -3325,7 +3370,7 @@ async def load_speech(app: FastAPI) -> None:
         app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
     if getattr(tr, "available", False):
         log.info("speech model ready (%s)", model)
-        await broadcast({"type": "status", "audio": True, "lang": getattr(tr, "language", None),
+        await broadcast({"type": "status", "audio": True, "speech": speech_state(app), "lang": getattr(tr, "language", None),
                          "voice": SETTINGS.on("voice_auto")})
 
 
@@ -3734,8 +3779,11 @@ async def analysis_worker(app: FastAPI) -> None:
         # answer words for 20 to 80 s, and only the same run read on (its words carry the running one's) is the longer
         # version that may replace it. Replaced by any later run, a question went unanswered after 31 s of thinking for a
         # few words after it that had nothing to solve.
+        # Not while it only waits (on Send in Confirm before sending, its pass not begun), nor past OTHER_RUN_HOLD_SEC with
+        # nothing written (a pass that stalled), when the newer run takes its place as before
         other_run = bool(STATE.voice_pending and not writing and inflight and not inflight.done() and inflight_voice
-                         and inflight_speech
+                         and inflight_speech and not STATE.confirm_open
+                         and time.monotonic() - STATE.last_analyze_ts < OTHER_RUN_HOLD_SEC
                          and inflight_speech not in after_the_answer(STATE.recent_group(), STATE.voice_answered_to))
         # Held back for any of these, its words stop aging until its turn (recent_group); no flag, nothing is held for it
         if not STATE.voice_pending:
@@ -4263,6 +4311,7 @@ def create_app() -> FastAPI:
                 "gate": app.state.detector.mode,
                 "crop": CONFIG.crop if (CONFIG.crop != "off" and app.state.ocr is not None) else False,
                 "audio": getattr(app.state.transcriber, "available", False),
+                "speech": speech_state(app),
                 "transcribe": "continuous" if (getattr(app.state.transcriber, "available", False) and CONFIG.transcribe_interval > 0) else "on-demand",
                 "speech_lang": getattr(app.state.transcriber, "language", None),
                 "paused": STATE.paused,
@@ -4630,9 +4679,12 @@ def create_app() -> FastAPI:
             "paused": STATE.paused,
             "lang": getattr(app.state.transcriber, "language", None),
             "audio": getattr(app.state.transcriber, "available", False),
+            "speech": speech_state(app),   # and why not, when it is not: loading, failed, or off on the server
             "voice": SETTINGS.on("voice_auto") and getattr(app.state.transcriber, "available", False),
             "crop": CONFIG.crop if (CONFIG.crop != "off" and app.state.ocr is not None) else False,
             "can_ask": STATE.last_result is not None,   # a reloaded panel can still ask follow-ups
+            # and why it cannot: the last answer deleted (held for Undo), not a server started after it
+            "ask_off": "deleted" if STATE.last_result is None and STATE.deleted_last is not None else "",
             "run_enabled": run_enabled(),                # show the "run this solution" button
             "runner": bool(CONFIG.runner_url),           # the run button and the check can be switched on
             "engines": panel_engines(),
@@ -4681,9 +4733,11 @@ def create_app() -> FastAPI:
             return True
         elif kind == "reanalyze":
             # The id its analysis takes, given now: a program is told it (the API's 202) and finds its answer by it. Asked
-            # again before it starts, the one analysis takes the later id
-            STATE.analysis_seq += 1
-            STATE.force_seq = STATE.analysis_seq
+            # again before it starts, it is the same analysis, and every press is told the one id: a new id each time left
+            # the earlier ones with no event ever, and a program waiting on one waited for good
+            if not (STATE.force_analyze and STATE.force_seq):
+                STATE.analysis_seq += 1
+                STATE.force_seq = STATE.analysis_seq
             STATE.force_analyze = True
             user_asked()                 # Reanalyze is pressed by hand: no brake
             if isinstance(reply, Replies):

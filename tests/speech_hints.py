@@ -466,6 +466,17 @@ async def model_choice():
     await A.load_speech(APP)
     check("...and one that has ended is started again", len(started) == 1 and APP.state.transcribe_worker is not running, started)
     await asyncio.gather(APP.state.transcribe_worker, return_exceptions=True)
+    # auto with no faster-whisper that loads: the stand-in comes back, which is a model that did not load, not one still
+    # loading (the panel's Sound card and Maintenance said "loading" for good)
+    APP.state.transcriber, APP.state.speech_failed = tr.NullTranscriber(), False
+    SETTINGS.values["whisper_model"] = A.CONFIG.whisper_model
+    A.make_transcriber = lambda cfg, model="": tr.NullTranscriber()
+    BROADCAST.clear()
+    await A.load_speech(APP)
+    said = [m["speech"] for m in BROADCAST if m.get("type") == "status" and "speech" in m]
+    check("auto with no model that loads: said as failed, not as loading for good",
+          APP.state.speech_failed is True and said == [{"state": "failed"}], said)
+    APP.state.speech_failed = False
     A.make_transcriber = real_make
     A.transcription_worker = worker
     A.CONFIG.transcriber, A.CONFIG.audio_enabled = was_tr, was_audio

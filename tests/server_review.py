@@ -822,7 +822,7 @@ def gpu():
                   f"first={done} stops={len(stops)} loads={len(loads)}")
             # already on the GPU, the local model switched off, or nothing that would start an analysis: no load
             loads.clear()
-            A.STATE.local = {"ok": True, "loaded": {"model": "m"}}
+            A.STATE.local = {"ok": True, "loaded": {"model": local.model}}   # the model the next question uses
             pws.send_text(json.dumps({"type": "pause"}))
             pws.send_text(json.dumps({"type": "resume"}))
             time.sleep(0.4)
@@ -843,6 +843,25 @@ def gpu():
             A.save_switches()   # kept as they were: the next run's server reads the switches back from the log folder
         check("...and none when the model is on the GPU already, is switched off, or nothing would start an analysis",
               (on_gpu, off, idle) == (0, 0, 0), f"on the GPU {on_gpu}, off {off}, nothing on {idle}")
+        async def smaller_on_gpu(*a, **k):
+            return {"model": "the smaller one"}
+        with patched(local, "load", slow_load), patched(local, "loaded", smaller_on_gpu):
+            loads.clear()
+            A.STATE.local = {"ok": True, "loaded": {"model": "the smaller one"}}
+            with patched(A, "local_busy", lambda: {"model": "the smaller one"}):
+                pws.send_text(json.dumps({"type": "pause"}))
+                pws.send_text(json.dumps({"type": "resume"}))
+                time.sleep(0.4)
+            busy = len(loads)
+            n = len(p.msgs)
+            pws.send_text(json.dumps({"type": "pause"}))
+            pws.send_text(json.dumps({"type": "resume"}))
+            # its end said, whatever it says (the stand-in GPU holds the smaller one still), before the next check counts notes
+            p.wait(lambda m: m.get("type") == "notice" and "GPU" in m.get("text", ""), after=n, timeout=10)
+            other = len(loads)
+            A.STATE.local = {"ok": True}
+        check("...none through a busy spell (the smaller model answers then), and the model the next question uses when "
+              "another one sits on the GPU", (busy, other) == (0, 1), f"busy {busy}, another on the GPU {other}")
 
         check("the account is not in what /health and /stats are built from", "account" not in A.engines_status()["agent"])
         check("it is in what the panel gets", "account" in A.panel_engines()["agent"])
@@ -865,6 +884,22 @@ def gpu():
             err = p.wait(lambda m: m.get("type") == "error", after=n, timeout=20)
         check("Reanalyze on a GPU too busy to read still gets its card, since the person at the PC is waiting on it", bool(err),
               f"error={err}")
+
+
+# ---------- 12b: Reanalyze pressed again before it starts ----------
+
+def presses():
+    print("\n[12b Reanalyze pressed again and again: every id it was given hears of its analysis]")
+    with server() as (A, c, p, ws, pws):
+        ws.send_text(frame_msg(png_b64(seed=31)))
+        p.wait(lambda m: m.get("type") == "analysis_done", timeout=30)
+        n = len(p.msgs)
+        # the API's presses, each answered with the id its answer takes (202), one right after the other
+        ids = [c.post("/api/v1/reanalyze", json={}, headers=ORIGIN).json().get("id") for _ in range(4)]
+        time.sleep(4)
+        heard = {m.get("id") for m in p.msgs[n:] if m.get("type") in ("analysis_start", "analysis_cancelled", "error")}
+        check("each press is told an id, and each id told has its analysis start (or end) on the panel",
+              len(ids) == 4 and all(i in heard for i in ids), f"ids {ids} heard {sorted(x for x in heard if x)}")
 
 
 # ---------- 13: the example check reads between analyses ----------
@@ -977,7 +1012,7 @@ async def main():
     only = set(sys.argv[1:])
     runs = [("handoff", handoff), ("misfile", misfile), ("voice", voice), ("brake", brake), ("slots", slots),
             ("remark", remark), ("region", region), ("pages", pages), ("shared", shared), ("release", release), ("starting", starting),
-            ("gpu", gpu), ("gap", gap)]
+            ("gpu", gpu), ("presses", presses), ("gap", gap)]
     for name, fn in runs:
         if only and name not in only:
             continue

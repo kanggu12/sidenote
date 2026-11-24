@@ -161,6 +161,10 @@ with TestClient(A.app, base_url="http://127.0.0.1:8777") as c:
           and st["settings"]["values"] == SETTINGS.snapshot() and st["capture"]["type"] == "capture"
           and st["usage"]["type"] == "usage" and st["confirms"] == [] and st["live"] == [] and "busy" in st["activity"],
           sorted(st))
+    # and why there is no speech, as Maintenance says it: started with no transcriber, so the variable is that one, not
+    # SIDENOTE_AUDIO (which is on)
+    check("...with why speech is off, and the variable that turns it on", st["status"].get("speech") ==
+          {"state": "off", "turn_on": "SIDENOTE_TRANSCRIBER=auto"}, st["status"].get("speech"))
     s1 = c.get("/api/v1/settings").json()
     check("settings: every value, and the sheet's words for each", s1["values"] == SETTINGS.snapshot()
           and {i["key"] for i in s1["meta"]["items"]} == set(SETTINGS.defs), sorted(s1))

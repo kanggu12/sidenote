@@ -1093,6 +1093,9 @@ MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", 
                                       "dec"), 1)}
 
 
+METERS_DOUBT_SEC = 86400   # a plan's limit back within this long after the meters ended its rest is one they cannot see
+
+
 def limit_until(text: str, now: float) -> float | None:
     """When an agent that said its usage is used up (or that it is rate limited) may be asked again, as a time, or
     None when the error is something else. The time it gives is read in the server's own time zone (the container
@@ -1184,6 +1187,9 @@ class Spend:
             same_agent = saved.get("agent", CONFIG.agent) == CONFIG.agent
             if same_agent and float(saved.get("limit_until", 0)) > time.time():
                 self.limit_until, self.limit_said, self.limit_kind = float(saved["limit_until"]), str(saved.get("limit_said", "")), str(saved.get("limit_kind", ""))
+                # and whether the meters may end it: after a restart their first reading ended a rest they could not see
+                self.meters_ended = float(saved.get("meters_ended") or 0.0)
+                self.meters_doubted = bool(saved.get("meters_doubted"))
             self.spent = deque((float(t), float(c)) for t, c in saved.get("spent", ()) if time.time() - float(t) <= 3600)
         except Exception:   # no file yet, or a broken one: nothing to take up
             pass
@@ -1194,6 +1200,7 @@ class Spend:
         try:
             tmp = self.path.with_suffix(".tmp")      # whole or not at all
             tmp.write_text(json.dumps({"limit_until": self.limit_until, "limit_said": self.limit_said, "limit_kind": self.limit_kind,
+                                       "meters_ended": self.meters_ended, "meters_doubted": self.meters_doubted,
                                        "agent": CONFIG.agent, "spent": list(self.spent)}), encoding="utf-8")
             tmp.replace(self.path)
         except OSError as exc:    # a convenience: it costs a repeat after a restart at worst
@@ -1210,7 +1217,8 @@ class Spend:
         self.limit_until, self.limit_said, self.limit_kind = until, text[:200], kind
         # the plan's limit again after the meters had ended a rest (room_again): they do not end this one, or every reading
         # of theirs would send one more question to a limit they cannot see
-        self.meters_doubted = kind == "plan" and self.meters_ended > 0
+        # (the limit back within a day of their ending a rest: one weeks later is another limit, and they are believed)
+        self.meters_doubted = kind == "plan" and 0 < time.time() - self.meters_ended < METERS_DOUBT_SEC
         self._save()
         return True
 
@@ -1257,6 +1265,9 @@ class Spend:
     def limit_left(self) -> str:
         """While the agent rests on its limit, until when, as the panel says it; empty otherwise."""
         if time.time() >= self.limit_until:
+            if self.meters_doubted and self.limit_until:
+                # the rest the meters could not see is over: a limit after it is another one, and they are believed again
+                self.meters_ended, self.meters_doubted = 0.0, False
             return ""
         return time.strftime("%m-%d %H:%M", time.localtime(self.limit_until))
 
@@ -1689,7 +1700,7 @@ class Pipeline:
         # taken: the card says so, as for a problem held back from it, or a whole sitting of answers gave no sign of why
         # the agent was never asked
         chosen = SETTINGS.get("agent_mode")   # `mode` reads "off" with no agent there
-        if (agent is None and self.engines.agent is not None and chosen != "off" and self.spend.limit_left()
+        if (agent is None and self.engines.agent is not None and chosen != "off" and self.spend.plan_left()
                 and (chosen == "all" or (chosen == "hard" and (handoff or (hard and (
                     unknown or slow_here or f.type in SETTINGS.get("agent_hard_types"))))))):
             stages["not_sent"] = True
@@ -2346,16 +2357,16 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     fu = {"question": question, "context": context}
     tiles = list(getattr(pages, "extra_b64", None) or ())
     local_failed = None
+    shown = pages if tiles else frame   # the scrolled-together problem, when there is one, beside its screen
+    # This PC's model is given what was heard with a spoken problem, the question it answered; it stays on this PC. The
+    # agent is not: its own request below carries only the question cut out of it (`words`), as the problem went
+    fu_here = {**fu, "problem": last["heard"]} if last.get("heard") else fu
     if engine is local:
-        shown = pages if tiles else frame   # the scrolled-together problem, when there is one, beside its screen
-        if shown is None and last.get("words"):
-            # no screen goes (a problem heard): its words do, or the question about its answer comes with no problem
-            fu["problem"] = last["words"]
         can_take = (agent is not None and SETTINGS.get("agent_mode") != "off"
                     and (by_user or not pipeline.spend.blocked()))
         try:
             res = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
-                                      extra=shown.extra_b64 if shown else (), followup=fu,
+                                      extra=shown.extra_b64 if shown else (), followup=fu_here,
                                       first_deadline=CONFIG.local_think_first_token_sec if can_take else None,
                                       stall=CONFIG.local_stuck_sec if can_take else None)
             return Outcome(text=json_head(res.text), model=res.model, usage=res.usage, cost_usd=None, engine="local",
@@ -2400,14 +2411,29 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     await pipeline._confirmed(seq, images, text, what)
     pipeline._still_on()
 
-    async def on_this_pc(why: str) -> Outcome:
+    async def on_this_pc(why: str, failed=None, declined: "Outcome | None" = None) -> Outcome:
         """This PC's model answers what the agent could not: a follow-up about the agent's own answer is answered while
-        either engine can (note 140), as a problem is. The words of the problem go with it where no screen does."""
+        either engine can (note 140), as a problem is, with what was heard where the problem was spoken. `failed`: the
+        agent's error, said with this PC's own if it fails too. `declined`: the agent's reply, which stands if this PC's
+        model cannot answer after all, as a declined problem's does."""
         await pipeline.hooks.stage(seq, "local", "", restart=True)   # what the agent wrote before it stopped goes
         log.warning("follow-up #%d: %s; the local model answers", seq, why)
-        shown = pages if tiles else frame
-        got = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
-                                  extra=shown.extra_b64 if shown else (), followup=fu)
+        try:
+            got = await local.analyze(shown.model_b64 if shown else None, "", on_delta,
+                                      extra=shown.extra_b64 if shown else (), followup=fu_here)
+        except asyncio.CancelledError:
+            raise
+        except Exception as lexc:
+            if declined is not None:   # the agent's reply is the card, not an error
+                log.warning("follow-up #%d: the local model failed after the agent declined (%s); the agent's reply stands",
+                            seq, lexc)
+                await pipeline.hooks.stage(seq, "agent", "", restart=True)
+                declined.stages = {"agent_declined": True, "local_failed": True, "local_error": failure_briefly(lexc)}
+                return declined
+            both = RuntimeError(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
+                                  local=kind_of(lexc), agent_why=kind_of(failed), agent=agent_name()))
+            both.engine = "agent"
+            raise both from lexc
         return Outcome(text=json_head(got.text), model=got.model, usage=got.usage, cost_usd=None, engine="local",
                        sent=[{"to": "agent", "what": what}] + _searches(getattr(got, "searches", None)))
 
@@ -2419,11 +2445,16 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     except Exception as exc:
         exc.engine = "agent"
         pipeline.spend.failed(exc)   # paid for all the same
-        pipeline.spend.limited(str(exc))   # its plan used up: the agent rests until it comes back
+        limit = pipeline.spend.limited(str(exc))   # its plan used up: the agent rests until it comes back
         if local_failed is None and local is not None and pipeline.hooks.local_ok():
+            # as for a problem: a sign-in rejected marks the agent out, a limit has armed its rest, and the card says why
+            if not limit:
+                await pipeline.hooks.agent_failed(exc)
             await pipeline._warn(t("The agent could not answer ({why}) · the local model solves",
-                                   why=failure_briefly(exc), agent=agent_name()))
-            return await on_this_pc(f"the agent failed ({exc})")
+                                   why=kind_of(exc), agent=agent_name()))
+            out = await on_this_pc(f"the agent failed ({exc})", failed=exc)
+            out.stages = {"agent_failed": True, "agent_error": failure_briefly(exc)}
+            return out
         if local_failed is None:
             raise
         log.warning("follow-up #%d: the agent failed too (%s)", seq, exc)
@@ -2438,13 +2469,15 @@ async def followup(pipeline: "Pipeline", last: dict, question: str, context: str
     reply = lift_head(strip_tool_markup(res.text))
     # A reply with no head is the agent declining, as for a problem: with "This PC's model answers when the agent
     # declines" on, this PC's model answers the follow-up, and the card says the agent declined
+    stood = Outcome(text=reply, model=res.model, usage=res.usage,
+                    cost_usd=res.cost_usd, engine="agent", sent=[{"to": "agent", "what": what}])
     if (not head_of(reply)[0] and SETTINGS.get("local_on_decline") and local_failed is None and local is not None
             and pipeline.hooks.local_ok()):
-        out = await on_this_pc("the agent declined it")
-        out.stages = {"agent_declined": True, **({"agent_empty": True} if not reply.strip() else {})}
+        out = await on_this_pc("the agent declined it", declined=stood)
+        if out is not stood:   # this PC's model answered: the card says the agent declined
+            out.stages = {"agent_declined": True, **({"agent_empty": True} if not reply.strip() else {})}
         return out
-    return Outcome(text=reply, model=res.model, usage=res.usage,
-                   cost_usd=res.cost_usd, engine="agent", sent=[{"to": "agent", "what": what}])
+    return stood
 
 
 # ---------- checking code answers against the problem's examples ----------

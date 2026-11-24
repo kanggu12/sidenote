@@ -628,6 +628,40 @@ async def case_a_problem_still_worked_out_is_let_finish_for_another_run():
     A.broadcast = lambda msg: asyncio.sleep(0)
 
 
+async def case_what_was_heard_is_kept_apart_from_what_went_out():
+    """What a follow-up may send: the question as it went to the agent (`words`), and what was heard (`heard`), the room's
+    speech, which this PC's model alone is given. Kept as `words`, it went to the agent with a follow-up this PC's model
+    could not answer."""
+    from types import SimpleNamespace
+    room = "네 반갑습니다 데이터베이스 이중화는 어떻게 하나요 옆자리 말소리"
+    local = A.remembered(SimpleNamespace(text="T", engine="local", crop_box=None, local_view=None, words=""), None, 1, room)
+    agent = A.remembered(SimpleNamespace(text="T", engine="agent", crop_box=None, local_view=None,
+                                         words="데이터베이스 이중화는 어떻게 하나요"), None, 2, room)
+    check("an answer this PC's model gave to what was heard keeps no words to send, and what was heard for itself alone",
+          local["words"] == "" and local["heard"] == room, local)
+    check("...one the agent gave keeps the question it was sent, and what was heard apart",
+          agent["words"] == "데이터베이스 이중화는 어떻게 하나요" and agent["heard"] == room, agent)
+
+
+async def case_a_screen_held_back_is_told_at_the_end_of_its_5_s():
+    """The capture's state goes to the panels at most every 5 s. What came within them is told at their end: the first
+    screen comes right after the hello (told), and a still screen sends no more, so Last screen waited for a change."""
+    told = []
+    real = A.broadcast
+    A.broadcast = lambda msg: (told.append(msg), asyncio.sleep(0))[1]
+    try:
+        A.STATE.capture_note_ts, A.STATE.capture_note_later = 0.0, None
+        await A.note_capture()                       # told at once
+        A.STATE.capture_note_ts = time.time() - 4.7  # the next one within the 5 s, 0.3 s before they end
+        await A.note_capture()
+        await A.note_capture()                       # and one more: still one told at the end
+        at_once = len(told)
+        await asyncio.sleep(0.6)
+        check("a screen within the 5 s is told at their end, once", (at_once, len(told)) == (1, 2), (at_once, len(told)))
+    finally:
+        A.broadcast = real
+
+
 async def case_what_waits_does_not_age_out():
     """What waits behind an answer being written is still asked, however long that answer takes; and with nothing to ask nothing starts."""
     was = knobs(speech_context_sec=0.5)
@@ -1017,7 +1051,9 @@ async def main():
                  case_a_problem_seen_again_is_the_one_asked_about, case_nothing_written_yet_the_longer_version_replaces_it,
                  case_an_answer_being_written_is_let_finish, case_a_quizs_options_go_with_their_question, case_a_place_in_the_sound_not_its_words,
                  case_a_newer_problem_takes_the_place_of_the_one_waiting,
-                 case_a_problem_still_worked_out_is_let_finish_for_another_run, case_what_waits_does_not_age_out,
+                 case_a_problem_still_worked_out_is_let_finish_for_another_run, case_what_was_heard_is_kept_apart_from_what_went_out,
+                 case_a_screen_held_back_is_told_at_the_end_of_its_5_s,
+                 case_what_waits_does_not_age_out,
                  case_nothing_to_ask_stops_nothing, case_first_words_end_the_asking,
                  case_after_nothing_to_solve_it_is_all_still_to_read, case_an_answer_done_is_let_end_not_cut,
                  case_a_pause_during_a_done_answers_end_starts_nothing_after_it, case_a_decline_keeps_no_words,

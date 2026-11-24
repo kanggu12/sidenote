@@ -484,8 +484,11 @@ async def followups():
         print("\n[a follow-up about the agent's answer the agent cannot answer]")
         # The follow-up goes to the engine that wrote the answer; when that is the agent and it fails or declines, this PC's
         # model answers it, as it answers a problem (either engine alive answers)
-        # a spoken problem: no screen goes with it, its words do
-        about = {**last, "engine": "agent", "frame": None, "crop_box": None, "words": "데이터베이스 이중화는 어떻게 하나요?"}
+        # a spoken problem: no screen goes with it. `words` is the question cut out of what was heard, as it went to the
+        # agent; `heard` the whole run of speech, the room's, which stays on this PC
+        HEARD = "네 반갑습니다 그럼 시작할게요 데이터베이스 이중화는 어떻게 하나요? 옆자리 사람 말소리"
+        about = {**last, "engine": "agent", "frame": None, "crop_box": None, "words": "데이터베이스 이중화는 어떻게 하나요?",
+                 "heard": HEARD, "voice": True}
         for name, how in (("a usage limit", RuntimeError("claude CLI: You've hit your weekly limit · resets Nov 26, 10am")),
                           ("no answer in time", asyncio.TimeoutError()),
                           ("its CLI ending", RuntimeError("claude: exited 1: connect ECONNREFUSED"))):
@@ -509,8 +512,40 @@ async def followups():
                 out, raised = None, exc
             check(f"the agent failing on it ({name}): this PC's model answers, once",
                   raised is None and out is not None and out.engine == "local" and len(asked) == 1, [raised, out and out.engine, len(asked)])
-            check("...with the problem's words where no screen goes", bool(asked) and asked[0].get("problem") == about["words"]
-                  if name == "no answer in time" else True, asked[:1])
+            if name != "no answer in time":
+                continue
+            check("...with what was heard, which stays on this PC", bool(asked) and asked[0].get("problem") == HEARD, asked[:1])
+            check("...and the card says the agent failed and why, as a problem's does",
+                  out is not None and out.stages.get("agent_failed") is True and out.stages.get("agent_error") == t("no answer in time"),
+                  out and out.stages)
+        # a sign-in rejected on a follow-up marks the agent signed out, as on a problem
+        pipe, eng, said = make_pipeline()
+        pipe.spend.signed_in()
+        eng.local.analyze = answers
+
+        async def rejected(images, text, on_delta, web=False):
+            raise RuntimeError("claude: Invalid API key · Please run /login")
+        eng.agent.run = rejected
+        await followup(pipe, about, "왜요?", "ctx", _none, seq=310)
+        check("...a sign-in rejected on it is told to the server, as on a problem", len(said["agent_failed"]) == 1, said["agent_failed"])
+        # The room's speech never goes to the agent: this PC's model failing on a follow-up about a spoken problem it
+        # answered, the agent gets the question cut out of what was heard, as the problem went, and no more
+        pipe, eng, said = make_pipeline()
+        pipe.spend.signed_in()
+        sent_text = []
+
+        async def local_fails(image_b64, transcript, on_delta, extra=(), voice=False, followup=None, first_deadline=None, stall=None):
+            raise NoFirstToken("local LLM: the first pass brought nothing in 6 s")
+        eng.local.analyze = local_fails
+
+        async def agent_reads(images, text, on_delta, web=False):
+            sent_text.append(text)
+            return AnalysisResult(text="TYPE: followup\nANSWER: 에이전트 답\n", model="mock")
+        eng.agent.run = agent_reads
+        out = await followup(pipe, {**about, "engine": "local"}, "왜요?", "ctx", _none, seq=311)
+        check("a follow-up the agent takes over carries the question cut out of what was heard, never the room's speech",
+              out.engine == "agent" and sent_text and "옆자리 사람 말소리" not in sent_text[0] and about["words"] in sent_text[0],
+              sent_text[:1])
         pipe, eng, said = make_pipeline()
         pipe.spend.signed_in()
         asked = []
@@ -529,12 +564,32 @@ async def followups():
         check("...and with 'answers when the agent declines' off, the agent's reply stands", out.engine == "agent" and not asked,
               [out.engine, len(asked)])
         SETTINGS.values["local_on_decline"] = True
+        # this PC's model failing after the agent declined: the agent's reply is the card, not an error
+        eng.local.analyze = local_fails
+        out = await followup(pipe, about, "왜요?", "ctx", _none, seq=312)
+        check("...and when this PC's model then fails, the agent's reply stands, with both told on the card",
+              out.engine == "agent" and "답하지 않겠습니다" in out.text and out.stages.get("agent_declined") is True
+              and out.stages.get("local_failed") is True, [out.engine, out.stages])
+        # the agent failing and this PC's model failing too: both said, as for a problem
+        eng.agent.run = fails
+        try:
+            await followup(pipe, about, "왜요?", "ctx", _none, seq=313)
+            raised = None
+        except Exception as exc:
+            raised = exc
+        check("...and the agent failing with this PC's model failing too says both", isinstance(raised, RuntimeError)
+              and str(raised).startswith(t("Neither could answer: the local model ({local}), the agent ({agent_why})",
+                                             local="", agent_why="", agent="")[:12]), raised)
+        eng.local.analyze = answers
         # a spoken problem this PC's model answered: its follow-up goes to this PC's model with the question heard, as
         # nothing of a screen goes with it
         asked.clear()
         out = await followup(pipe, {**about, "engine": "local"}, "왜요?", "ctx", _none, seq=309)
-        check("a follow-up about a spoken problem this PC's model answered carries the question heard",
-              out.engine == "local" and asked and asked[0].get("problem") == about["words"], asked[:1])
+        check("a follow-up about a spoken problem this PC's model answered carries what was heard",
+              out.engine == "local" and asked and asked[0].get("problem") == HEARD, asked[:1])
+        asked.clear()
+        out = await followup(pipe, {**about, "engine": "local", "frame": FakeFrame()}, "왜요?", "ctx", _none, seq=314)
+        check("...with the screen on as well", out.engine == "local" and asked and asked[0].get("problem") == HEARD, asked[:1])
         pipe.spend.signed_in()
 
         print("\n[the local model's own end to end question, with the agent able to take it]")
@@ -767,13 +822,21 @@ async def reasons():
         # the agent resting on its plan's limit: what it would have taken says so on the card, what it would not says nothing
         SETTINGS.values["agent_mode"] = "hard"
         pipe, eng, said = make_pipeline()
-        pipe.spend.limit_until = time.time() + 3600
+        pipe.spend.limit_until, pipe.spend.limit_kind = time.time() + 3600, "plan"
         eng.local.fast = mcq_needs_thinking
         SETTINGS.values["agent_hard_types"] = ["mcq"]
         out = await pipe.solve(306, FakeFrame(), "", False, _none)
         check("the agent resting on its limit: an answer it would have taken says it was not sent, for the limit",
               out.engine == "local" and out.stages.get("not_sent") is True and out.stages.get("not_sent_why") == t("usage limit"),
               out.stages)
+        # a rest of two minutes for too many requests is no usage limit, and is not said as one
+        pipe, eng, said = make_pipeline()
+        pipe.spend.limit_until, pipe.spend.limit_kind = time.time() + 120, "rate"
+        eng.local.fast = mcq_needs_thinking
+        out = await pipe.solve(315, FakeFrame(), "", False, _none)
+        check("...a short rest for too many requests is not said as a usage limit", out.engine == "local"
+              and out.stages.get("not_sent_why") != t("usage limit"), out.stages)
+        pipe.spend.limit_until, pipe.spend.limit_kind = 0.0, ""
         SETTINGS.values["agent_hard_types"] = ["algorithm"]
         pipe, eng, said = make_pipeline()
         pipe.spend.limit_until = time.time() + 3600
@@ -805,6 +868,20 @@ async def reasons():
               resting and room and not full and not blank and not model_full and ended, [resting, room, full, blank, model_full, ended])
         check("...and the limit coming back after that is left to its own time, until another sign-in", held and believed,
               [held, believed])
+        # the doubt is kept over a restart (.spend.json), and is over with the rest it was about
+        with tempfile.TemporaryDirectory() as d:
+            spot = Path(d) / ".spend.json"
+            pipe, eng, said = make_pipeline()
+            pipe.spend.load(spot)
+            pipe.spend.limited("claude CLI: You've hit your weekly limit")
+            pipe.spend.room_again()
+            pipe.spend.limited("claude CLI: You've hit your weekly limit")
+            again, eng2, _ = make_pipeline()
+            again.spend.load(spot)
+            kept = again.spend.meters_doubted and not again.spend.room_again() and bool(again.spend.limit_left())
+            again.spend.limit_until = time.time() - 1      # that rest over
+            over = again.spend.limit_left() == "" and not again.spend.meters_doubted
+        check("...the doubt outlives a restart, and is over with the rest it was about", kept and over, [kept, over])
         pipe.spend.signed_in()
         # servers too busy for now are said as that, not as the plan used up; the hint stays a limit, retried later
         from server.analyzer import error_hint, error_words

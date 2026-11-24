@@ -562,6 +562,14 @@ with tempfile.TemporaryDirectory() as d:
         check("...and on, where it was on", values == {"local_llm": True, "local_fallback": True}, values)
         control.gpu("on")
         check("...gpu on with no gpu off before it leaves the stand-in alone", values["local_fallback"] is True, values)
+        control.gpu("off")
+        control.gpu("off")
+        control.gpu("on")
+        check("...gpu off twice keeps what the first one found", values == {"local_llm": True, "local_fallback": True}, values)
+        lent = control._lent_file()
+        Path(lent).write_text("", encoding="utf-8")    # left by a gpu off whose read failed in an older release
+        rc = control.gpu("on")
+        check("...an unreadable record does not stop gpu on, and goes", rc == 0 and not Path(lent).exists(), [rc, Path(lent).exists()])
     finally:
         control._setting, control._read_setting, telemetry.LOG_DIR = was_setting, was_read, was_dir
 

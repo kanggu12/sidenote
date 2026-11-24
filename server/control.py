@@ -77,15 +77,21 @@ def gpu(what: str) -> int:
     try:
         if value is False:   # given back means given back: not loaded again at the agent's limit either (design 89)
             # what the stand-in was before, for gpu on to put back: it switched it on whatever it had been, so one switched
-            # off by hand came back on with the GPU
-            if lent:
-                with open(lent, "w", encoding="utf-8") as f:
-                    json.dump({"local_fallback": _read_setting("local_fallback")}, f)
+            # off by hand came back on with the GPU. Only the first gpu off of a stretch keeps it (a second one would keep
+            # the off the first one set), read before anything is written, and written whole or not at all
+            if lent and not os.path.exists(lent):
+                before = _read_setting("local_fallback")
+                with open(lent + ".tmp", "w", encoding="utf-8") as f:
+                    json.dump({"local_fallback": before}, f)
+                os.replace(lent + ".tmp", lent)
             asyncio.run(_setting("local_fallback", False))
         state = asyncio.run(_setting("local_llm", value))
         if value is True and lent and os.path.exists(lent):
-            with open(lent, encoding="utf-8") as f:
-                before = json.load(f).get("local_fallback")
+            try:
+                with open(lent, encoding="utf-8") as f:
+                    before = json.load(f).get("local_fallback")
+            except (OSError, ValueError, AttributeError):   # unreadable: as if there were none, and it goes
+                before = None
             if isinstance(before, bool):
                 asyncio.run(_setting("local_fallback", before))
             os.remove(lent)
