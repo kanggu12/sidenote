@@ -6,6 +6,8 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-24
+
 Spoken questions are not dropped while an answer is being worked out, a follow-up is answered while either engine can,
 and Continue puts this PC's model on the GPU before the first question.
 
@@ -1035,7 +1037,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.12.3...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/kanggu12/sidenote/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/kanggu12/sidenote/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/kanggu12/sidenote/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/kanggu12/sidenote/compare/v0.12.0...v0.12.1

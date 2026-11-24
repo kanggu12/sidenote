@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kanggu12/sidenote/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.12.3" src="docs/assets/badges/release.svg"></a>
+  <a href="https://github.com/kanggu12/sidenote/releases"><img alt="Release v0.13.0" src="docs/assets/badges/release.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="docs/assets/badges/license.svg"></a>
   <img alt="Runs on Windows, Linux and macOS" src="docs/assets/badges/runs-on.svg">
   <img alt="GPU: NVIDIA, AMD, Apple silicon or none" src="docs/assets/badges/gpu.svg">
@@ -48,7 +48,7 @@ for the rest.
 **Windows 10 or 11** (PowerShell)
 
 ```powershell
-curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.12.3/sidenote-server-0.12.3-windows-x64.zip
+curl.exe -fL -o "$env:TEMP\Sidenote.zip" https://github.com/kanggu12/sidenote/releases/download/v0.13.0/sidenote-server-0.13.0-windows-x64.zip
 mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenote.zip" -C "$env:LOCALAPPDATA\Programs"
 & "$env:LOCALAPPDATA\Programs\Sidenote\Sidenote.exe"
 ```
@@ -57,15 +57,15 @@ mkdir -Force "$env:LOCALAPPDATA\Programs" | Out-Null; tar -xf "$env:TEMP\Sidenot
 Sidenote on, then quit it from its menu bar icon and open it again.
 
 ```bash
-curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.12.3/sidenote-server-0.12.3-macos-arm64.zip
+curl -fL -o /tmp/Sidenote.zip https://github.com/kanggu12/sidenote/releases/download/v0.13.0/sidenote-server-0.13.0-macos-arm64.zip
 ditto -x -k /tmp/Sidenote.zip /Applications && open /Applications/Sidenote.app
 ```
 
 **Linux** (x64, an X11 session)
 
 ```bash
-curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.12.3/sidenote-server-0.12.3-linux-x64.zip
-unzip -oq sidenote-server-0.12.3-linux-x64.zip && ./Sidenote/Sidenote
+curl -fLO https://github.com/kanggu12/sidenote/releases/download/v0.13.0/sidenote-server-0.13.0-linux-x64.zip
+unzip -oq sidenote-server-0.13.0-linux-x64.zip && ./Sidenote/Sidenote
 ```
 
 **Docker** on Linux, WSL 2 or a Mac, with `git` and `python3`. It adds web search and a sandbox that runs code answers

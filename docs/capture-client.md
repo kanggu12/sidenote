@@ -14,9 +14,9 @@ it pointing at the server. It needs nothing installed.
 
 | System | The release's file | Start it, where it was unpacked |
 |:---|:---|:---|
-| Windows (x64) | `sidenote-capture-0.12.3-windows-x64.zip` | `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:8777/ingest` |
-| macOS (Apple silicon) | `sidenote-capture-0.12.3-macos-arm64.zip` | `open Sidenote-Capture.app --args --server ws://127.0.0.1:8777/ingest` |
-| Linux (x64, X11) | `sidenote-capture-0.12.3-linux-x64.zip` | `./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:8777/ingest` |
+| Windows (x64) | `sidenote-capture-0.13.0-windows-x64.zip` | `.\Sidenote-Capture\Sidenote-Capture.exe --server ws://127.0.0.1:8777/ingest` |
+| macOS (Apple silicon) | `sidenote-capture-0.13.0-macos-arm64.zip` | `open Sidenote-Capture.app --args --server ws://127.0.0.1:8777/ingest` |
+| Linux (x64, X11) | `sidenote-capture-0.13.0-linux-x64.zip` | `./Sidenote-Capture/Sidenote-Capture --server ws://127.0.0.1:8777/ingest` |
 
 `ws://127.0.0.1:8777/ingest` is also its default, so with the server's port forwarded to 8777 a double-click starts it
 too. On Windows it is not signed by a publisher yet: the first time, **More info**, then **Run anyway**. On macOS it asks
@@ -26,14 +26,14 @@ opened the first time from **System Settings**, **Privacy & Security**, **Open A
 (in a Wayland session, only what XWayland shows) and the speaker sound through PulseAudio, or PipeWire's PulseAudio
 service.
 
-On another system (an Intel Mac, Windows or Linux on ARM), install the wheel, `sidenote_capture-0.12.3-py3-none-any.whl`: the program as a
+On another system (an Intel Mac, Windows or Linux on ARM), install the wheel, `sidenote_capture-0.13.0-py3-none-any.whl`: the program as a
 Python package, the same for every system (`py3-none-any` is the wheel format's way of saying any Python 3 on any
 system). It needs Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows its installer adds
 the `py` command), and pip installs the packages it needs with it and gives it a command:
 
 ```bash
 python3 -m venv ~/.sidenote-capture && . ~/.sidenote-capture/bin/activate
-python3 -m pip install https://github.com/kanggu12/sidenote/releases/download/v0.12.3/sidenote_capture-0.12.3-py3-none-any.whl
+python3 -m pip install https://github.com/kanggu12/sidenote/releases/download/v0.13.0/sidenote_capture-0.13.0-py3-none-any.whl
 sidenote-capture --server ws://127.0.0.1:8777/ingest
 ```
 
