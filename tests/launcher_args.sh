@@ -809,6 +809,18 @@ if [ "$first_rc" != 0 ] && [ "$first_said" = y ] && [ "$second_rc" = 0 ] && [ "$
 else bad "a .venv-capture left without pip is made again by the next setup-capture" \
          "first: rc $first_rc, names python3-venv: ${first_said:-n}; second: rc $second_rc, venv --clear $cleared, pip install $installed, $(tail -1 "$work/out")"; fi
 
+# 36b. install on a Linux with no screen (a server, a session over SSH): no virtual environment for a capture program that has
+#      no screen to read here (it failed without python3-venv), and Next names the capture program on the PC with the screen,
+#      not capture --up, which stops on "No X11 display"
+rm -rf "$work/repo/.venv-capture"
+state; EXTRA_ENV="$linux SIDENOTE_LANG=en" run install; headless="$(cat "$work/out")"; last_call venv --clear; hl_venv=${#CALL[@]}
+last_call pip install; hl_pip=${#CALL[@]}
+if grep -qF "Skipped: no screen here" <<<"$headless" && [ "$hl_venv" = 0 ] && [ "$hl_pip" = 0 ] && [ ! -d "$work/repo/.venv-capture" ] \
+   && grep -qF "docs/capture-client.md" <<<"$headless" && ! grep -qF "capture --up" <<<"$(sed -n '/^.*Next/,$p' <<<"$headless")"; then
+  ok "install on a Linux with no screen sets up no capture here, and points at the capture program for the PC with the screen"
+else bad "install on a Linux with no screen sets up no capture here, and points at the capture program for the PC with the screen" \
+         "venv $hl_venv, pip $hl_pip: $(grep -aE '2/4|Skipped|Next|capture' <<<"$headless" | tr '\n' '|' | cut -c1-400)"; fi
+
 # 37. No GPU that fits a model: llm pull, install, doctor and status say one and the same line, once each, with no model
 #     "for this GPU" without a name and no other line about the CPU; the agent then gets the whole screen.
 # (taken out by fixed text, not a regex: some C.UTF-8 locales do not count every Hangul syllable as a character, and a
@@ -1364,6 +1376,15 @@ if [ "$nopkg_rc" != 0 ] && grep -qF "mss" <<<"$nopkg" && grep -qF -- "--setup --
    && ! grep -q '^\[dry-run\] start: ' "$work/out"; then
   ok "...without the capture packages in that Python it starts nothing and its box gives the setup command"
 else bad "...without the capture packages in that Python it starts nothing and its box gives the setup command" "rc $nopkg_rc: $(tr '\n' '|' <<<"$nopkg")"; fi
+# ...and with the server off, the launcher stops before it brings the server up for a program that could not start: it
+# was left running, with no one to stop it (launch.pyw says what its Python lacks, --starter-lacks)
+state server-down up-starts-server; EXTRA_ENV="$offwin PYTHONPATH=$work/nopymods" run_launch; lack_box="$(box_text)"; lack_rc="$(cat "$work/rc")"
+last_call docker up
+if [ "$lack_rc" != 0 ] && [ ${#CALL[@]} = 0 ] && grep -qF "mss" <<<"$lack_box" \
+   && grep -qF -- "--setup --distro $distro --repo \"$work/repo\" --port 8777" <<<"$lack_box" && ! grep -q '^\[dry-run\] start: ' "$work/out"; then
+  ok "...and with the server off it is not brought up for a program that could not start, and the box says why"
+else bad "...and with the server off it is not brought up for a program that could not start, and the box says why" \
+         "rc $lack_rc, compose up ${#CALL[@]}: $(tr '\n' '|' <<<"$lack_box")"; fi
 state; EXTRA_ENV="$offwin" run_launch --setup; setup_out="$(cat "$work/out")"; setup_rc="$(cat "$work/rc")"
 if [ "$setup_rc" = 0 ] && grep -qF -- "-m pip install --user -r $(dirname "$launch_pyw")/requirements.txt" <<<"$setup_out" \
    && grep -qF -- "\"$launch_pyw\" --distro $distro --repo \"$work/repo\" --port 8777" <<<"$setup_out" \

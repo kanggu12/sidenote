@@ -43,6 +43,15 @@ def load(lang):
 
 en, ko = load("en"), load("ko")
 
+# Where a start failed, for its note: the window's step, unless the launcher stopped before any of its steps (Windows' Python
+# and its packages come before the server): the server step had not begun, and was painted red under a reason about Python
+early = b"Starting\nSIDENOTE-STEP\tcapture\nThe capture packages are not in Windows Python. ./sidenote setup-capture\n"
+late = b"SIDENOTE-STEP\tcapture\nSIDENOTE-STEP\tserver\nDocker is not running\n"
+check("a start that stopped at Windows' Python, before the server: its note paints no step",
+      en.failed_where(0, [1.2, None, None], early) is None, en.failed_where(0, [1.2, None, None], early))
+check("...one that got past it fails at the window's own step, as before", en.failed_where(0, [4.0, None, None], late) == (0, [4.0, None, None])
+      and en.failed_where(1, [3.0, 2.0, None], b"no marks at all\n") == (1, [3.0, 2.0, None]))
+
 # The menu's colours, read out of TRAY_MENU: the windows wear the same ones, so the two cannot drift apart again
 menu = open(CAPTURE, encoding="utf-8").read()
 names = re.search(r'^BG, EDGE, TOP, INK, INK2, MUTED, DIM, HOVER, MARK = \(([^)]*)\)', menu, re.M)

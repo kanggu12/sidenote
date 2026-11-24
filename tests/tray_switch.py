@@ -38,7 +38,7 @@ def check(name, cond, got=""):
 # ---------------------------------------------------------------- the client, with a stand-in pystray
 class Item:
     def __init__(self, text, action=None, checked=None, enabled=True, default=False):
-        self.text, self.action, self.checked, self.enabled = text, action, checked, enabled
+        self.text, self.action, self.checked, self.enabled, self.default = text, action, checked, enabled, default
 
     def is_enabled(self):
         return self.enabled(self) if callable(self.enabled) else bool(self.enabled)
@@ -83,6 +83,7 @@ class Sender:
         self.caps = {"screen": True, "audio": True}
         self.sent = []
         self.connected = True
+        self.told = threading.Event()   # the server's switches came (on every connect)
 
     def send(self, msg):
         self.sent.append(msg)
@@ -423,6 +424,50 @@ waited = []
 cap.hold_main_thread(failing, lambda: (time.sleep(0.3), waited.append(1)), threading.Event())
 check("...and an icon that cannot run leaves the capture going until it is done", waited == [1])
 del sys.modules["PyObjCTools"], sys.modules["PyObjCTools.AppHelper"]
+
+# Linux's plain X tray (pystray with no PyGObject): no menu and no notifications. A click runs the default item alone, which
+# is Capture connection there (Restart and Quit are on its sheet); with the server off the desktop's own notification says
+# why where notify-send is, and nothing opens on a server that is not there
+Icon.HAS_MENU, Icon.HAS_NOTIFICATION = False, False
+plain = cap.start_tray(Sender(), threading.Event(), args)
+defaults = [i.text for i in plain.menu.items if getattr(i, "default", False)]
+check("on a tray with no menu a click opens Capture connection, the sheet with Restart and Quit", defaults == ["캡처 연결"], defaults)
+ran, opened_urls = [], []
+real_which = __import__("shutil").which
+real_run = __import__("subprocess").run
+sys.modules["webbrowser"] = types.SimpleNamespace(open=lambda url: opened_urls.append(url))
+try:
+    __import__("shutil").which = lambda name: "/usr/bin/" + name
+    __import__("subprocess").run = lambda cmd, **k: ran.append(cmd)
+    cap.server_up = lambda url, timeout=1.5: False
+    [i for i in plain.menu.items if i.text == "캡처 연결"][0].action(plain, None)
+    said_by_desktop = list(ran)
+    __import__("shutil").which = lambda name: None   # no notify-send either: the browser's page is all that can say it
+    [i for i in plain.menu.items if i.text == "캡처 연결"][0].action(plain, None)
+finally:
+    __import__("shutil").which, __import__("subprocess").run, cap.server_up = real_which, real_run, real_up
+    if real_browser is not None:
+        sys.modules["webbrowser"] = real_browser
+    Icon.HAS_MENU, Icon.HAS_NOTIFICATION = True, True
+check("...with the server off the desktop's notification says why, and nothing opens on it",
+      len(said_by_desktop) == 1 and said_by_desktop[0][0] == "notify-send" and opened_urls[:1] == ["http://127.0.0.1:8777/"]
+      and len(opened_urls) == 1, (said_by_desktop, opened_urls))
+
+# Under the desktop app, which starts its server and this program together: before the server first answered the state says
+# it is starting, in grey, not that it is not connected, in red (the server's 10 to 15 s are no fault)
+os.environ["SIDENOTE_SUPERVISED"] = "1"
+try:
+    app_sender = Sender()
+    app_sender.connected = False
+    app_icon = cap.start_tray(app_sender, threading.Event(), args)
+    state = lambda: [r for r in cap.tray_rows(app_icon.menu) if not r["sep"] and not r["enabled"] and r["checked"] is None][0]   # noqa: E731
+    before = (state()["text"], state()["tone"])
+    app_sender.told.set()                  # it has answered once: gone again now is a server down
+    after = (state()["text"], state()["tone"])
+finally:
+    del os.environ["SIDENOTE_SUPERVISED"]
+check("under the app, before its server first answered: starting, in grey", before == ("시작하는 중", "idle"), before)
+check("...and once it has answered, a server gone is said as before, in red", after == ("서버에 연결되지 않음", "down"), after)
 
 print(f"\n==== {len(OK)} passed, {len(BAD)} failed ====")
 sys.exit(1 if BAD else 0)

@@ -116,6 +116,7 @@ out="$(cd "$out" && pwd)"              # absolute, for the suites and for the pa
 export SIDENOTE_TEST_OUT="$out"        # one folder for the whole run: the panel suites share one settings message
 echo "output and logs in $out"
 fails=0
+ran=0    # the suites this run started (one): a run that starts none is no pass
 results="$out/results.md"
 printf '| Suite | Result | Checks | Skipped | Seconds |\n|---|---|---:|---|---:|\n' > "$results"
 total_ok=0 total_bad=0
@@ -132,6 +133,7 @@ tally_clean() {
 
 one() {   # one <name> <interpreter>: run a suite with its output in a log of its own, and print one line for it
   local name="$1" log="$out/logs/$1.log" rc tally skipped began=$SECONDS good=0 bad=0
+  ran=$((ran + 1))   # named and taken up, run or skipped here for want of WSL
   printf '  %-15s ' "$name"
   # The control script is made for WSL: it turns paths into Windows ones with wslpath and starts Windows programs
   # from /mnt/c, so its suite means nothing on a machine without them (a CI runner) and is skipped there, said so.
@@ -195,8 +197,7 @@ done > "$out/cases.md"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then { echo "### tests/run.sh ${group:-all}"; echo; cat "$results"; } >> "$GITHUB_STEP_SUMMARY"; fi
 echo "$total_ok checks passed, $total_bad failed (table: $results)"
 # No suite run at all (SUITES naming none of this group's, a name mistyped) is no pass: it said "all suites passed" with
-# nothing checked
-ran=$(find "$out/logs" -name '*.log' 2>/dev/null | wc -l)
+# nothing checked. Counted as they run (one), not from the logs on disk: a folder used again held an older run's
 if [ "$ran" = 0 ]; then echo "no suite ran: SUITES names none of this group's (tests/run.sh --list shows them)"; exit 1; fi
 if [ "$fails" = 0 ]; then echo "all suites passed"; else echo "$fails suite(s) failed: the logs are in $out/logs"; fi
 exit $((fails > 0))

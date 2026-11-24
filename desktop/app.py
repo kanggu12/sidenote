@@ -28,6 +28,8 @@ What differs from the Docker setup (compose.yaml), as server_env() sets it; a SI
 from __future__ import annotations
 
 import argparse
+import html
+import http.client
 import importlib
 import importlib.util
 import json
@@ -234,14 +236,19 @@ def ui_lang() -> str:
 KO = {
     "Another program is using the port Sidenote needs ({port}). Close that program, then start Sidenote again.":
         "다른 프로그램이 Sidenote가 쓰는 포트({port})를 쓰고 있습니다. 그 프로그램을 끈 뒤 Sidenote를 다시 켜세요.",
-    "The Sidenote server did not start. The end of its log:": "Sidenote 서버를 시작하지 못했습니다. 로그 마지막 부분:",
-    "Sidenote's server keeps stopping. The end of its log:": "Sidenote 서버가 계속 꺼집니다. 로그 마지막 부분:",
-    "Ollama keeps stopping. The end of its log:": "Ollama가 계속 꺼집니다. 로그 마지막 부분:",
-    "The capture program keeps stopping. The end of its log:": "캡처 프로그램이 계속 꺼집니다. 로그 마지막 부분:",
-    "The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.":
-        "로그는 {folder}에 있습니다. Sidenote를 다시 켜 보고, 또 그러면 로그를 붙여 이슈를 열어 주세요.",
     "Sidenote goes on without starting Ollama: the local model answers only once Ollama runs.":
         "Sidenote는 Ollama를 켜지 않고 계속 실행됩니다. 이 PC의 모델은 Ollama가 켜져 있어야 답합니다.",
+    # the problem page's own words (notice_page)
+    "Sidenote could not start": "Sidenote를 시작하지 못함",
+    "The Sidenote server did not start": "Sidenote 서버 시작 안 됨",
+    "Sidenote's server keeps stopping": "Sidenote 서버가 계속 꺼짐",
+    "Ollama keeps stopping": "Ollama가 계속 꺼짐",
+    "The capture program keeps stopping": "캡처 프로그램이 계속 꺼짐",
+    "Start Sidenote again; if it happens again, open an issue with the logs.":
+        "Sidenote를 다시 켜 보고, 또 그러면 로그를 붙여 이슈를 열어 주세요.",
+    "Error": "오류",
+    "The end of its log": "로그 마지막 부분",
+    "Open the logs folder": "로그 폴더 열기",
 }
 
 
@@ -259,18 +266,83 @@ def say(text: str, log: CappedLog | None = None) -> None:
         print(line, flush=True)
 
 
-def tell(text: str, log: CappedLog | None = None) -> None:
-    """A problem the person has to know about. The Windows app has no console, so it is shown in a message box."""
-    say(text, log)
+def notice_page(title: str, text: str, detail: str = "") -> str:
+    """A problem as a page of Sidenote's own look, for the browser the panel lives in: the wordmark with its highlighter,
+    a card on the notebook's paper with the margin's red rule and the panel's label of a failure, the title, the words,
+    the end of a log on a darker well to select and copy, and a key to the logs folder. One file, nothing fetched: the
+    panel's colours, light or dark as the system is. The grey box of the system it replaces read as another program's,
+    and on Linux nothing was shown at all."""
+    esc = html.escape
+    logs = (data_dir() / "logs").as_uri()
+    tail_html = (f'<p class="cap">{esc(t("The end of its log"))}</p><pre>{esc(detail)}</pre>') if detail else ""
+    css = """
+:root { color-scheme: light dark; --paper: #f8f8f8; --dot: #e4e4e4; --sheet: #ffffff; --well: #f1f1f1; --rule: #dddddd;
+  --rule-2: #bbbabb; --ink: #1d1c1d; --ink-2: #3f3e3f; --graphite: #616061; --margin: #f3a5bd; --bad: #cc1e54;
+  --bad-soft: rgba(204, 30, 84, .09); --hl: rgba(242, 199, 68, .62); --hl-h: 44%; --hl-y: 1px; }
+@media (prefers-color-scheme: dark) { :root { --paper: #161719; --dot: #232427; --sheet: #1d1e21; --well: #111214;
+  --rule: #303236; --rule-2: #48494e; --ink: #e3e4e5; --ink-2: #cbccce; --graphite: #b0b1b4; --margin: #6b1e38;
+  --bad: #eb6a92; --bad-soft: rgba(235, 106, 146, .12); --hl: rgba(236, 178, 46, .78); --hl-h: 30%; --hl-y: -2px; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; color: var(--ink);
+  background: radial-gradient(var(--dot) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--paper);
+  font: 15px/1.6 "Pretendard Variable", Pretendard, "Segoe UI", system-ui, -apple-system, "Apple SD Gothic Neo",
+  "Malgun Gothic", sans-serif; }
+main { width: min(640px, 100%); display: grid; gap: 16px; }
+.brand { justify-self: start; position: relative; isolation: isolate; padding: 2px 3px 3px; font-weight: 800;
+  font-size: 22px; letter-spacing: -.035em; line-height: 1; }
+.brand::after { content: ""; position: absolute; z-index: -1; left: -3px; right: -5px; bottom: var(--hl-y);
+  height: var(--hl-h); border-radius: 3px 7px 5px 3px; background: var(--hl); transform: skewX(-14deg) rotate(-1.2deg); }
+.card { display: grid; grid-template-columns: 64px 1fr; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--sheet); box-shadow: 0 18px 48px -26px rgba(0, 0, 0, .45); overflow: hidden; }
+.mg { padding: 20px 0 0; display: grid; justify-items: center; align-content: start; border-right: 2px solid var(--margin); }
+.label { padding: 2px 7px; border-radius: 4px; background: var(--bad-soft); color: var(--bad); font-size: 12px;
+  font-weight: 650; line-height: 1.5; }
+.ct { padding: 18px 22px 18px; display: grid; gap: 10px; min-width: 0; }
+h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.02em; line-height: 1.35; overflow-wrap: anywhere; }
+p { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+.cap { color: var(--graphite); font-size: 13px; margin-top: 4px; }
+pre { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--well); color: var(--ink-2); font: 12.5px/1.55 "JetBrains Mono", ui-monospace, Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.keys { display: flex; justify-content: flex-end; padding-top: 4px; }
+.keys a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 14px; border: 1px solid var(--rule-2);
+  border-radius: 6px; background: var(--sheet); color: var(--ink); font-weight: 600; font-size: 14px; text-decoration: none; }
+.keys a:hover { background: var(--well); } .keys a:focus-visible { outline: 2px solid var(--graphite); outline-offset: 2px; }
+@media (max-width: 480px) { .card { grid-template-columns: 1fr; } .mg { border-right: 0; border-bottom: 2px solid var(--margin);
+  justify-items: start; padding: 14px 18px 10px; } }
+"""
+    return (f'<!doctype html><html lang="{ui_lang()}"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>{esc(title)} · Sidenote</title>'
+            f'<style>{css}</style></head><body><main role="alert"><span class="brand">sidenote</span>'
+            f'<section class="card"><div class="mg"><span class="label">{esc(t("Error"))}</span></div>'
+            f'<div class="ct"><h1>{esc(title)}</h1><p>{esc(text)}</p>{tail_html}'
+            f'<div class="keys"><a href="{esc(logs)}">{esc(t("Open the logs folder"))}</a></div></div></section>'
+            f'</main></body></html>')
+
+
+def tell(text: str, log: CappedLog | None = None, title: str = "", detail: str = "") -> None:
+    """A problem the person has to know about: in the log, and on a page of Sidenote's own look in the browser
+    (notice_page), beside the logs it points to. Only when no browser can be opened at all does the app fall back to the
+    system's own box (Windows, the Mac), so that the problem is said somewhere: neither app has a console."""
+    say(text + ("\n" + detail if detail else ""), log)
+    try:
+        page = data_dir() / "logs" / "problem.html"
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text(notice_page(title or t("Sidenote could not start"), text, detail), encoding="utf-8")
+        if webbrowser.open(page.as_uri()):
+            return
+    except OSError:   # no data folder to write in: the box below
+        pass
+    whole = (title + "\n\n" if title else "") + text + ("\n\n" + detail if detail else "")
     if sys.platform == "win32" and FROZEN:
         import ctypes
         MB_ICONWARNING, MB_TOPMOST = 0x30, 0x40000
-        ctypes.windll.user32.MessageBoxW(None, text, "Sidenote", MB_ICONWARNING | MB_TOPMOST)
+        ctypes.windll.user32.MessageBoxW(None, whole, "Sidenote", MB_ICONWARNING | MB_TOPMOST)
     elif sys.platform == "darwin" and FROZEN:
-        # the Mac app has no console either: the system's own alert, the text passed as an argument, not as script
+        # the system's own alert, the text passed as an argument, not as script
         script = 'on run argv\ndisplay alert "Sidenote" message (item 1 of argv) as warning\nend run'
         try:
-            subprocess.run(["osascript", "-e", script, text], timeout=600, capture_output=True)
+            subprocess.run(["osascript", "-e", script, whole], timeout=600, capture_output=True)
         except (OSError, subprocess.TimeoutExpired):
             pass
 
@@ -456,7 +528,8 @@ def ask_server_to_stop(port: int, token: str) -> bool:
     try:
         with opener.open(request, timeout=3) as r:
             return r.status == 202
-    except OSError:                      # not answering, or the token refused: it is stopped the other way
+    # not answering, the token refused, or another program on the port that speaks no HTTP: stopped the other way
+    except (OSError, http.client.HTTPException):
         return False
 
 
@@ -467,7 +540,9 @@ def health(port: int, timeout: float = 1.5) -> dict | None:
     try:
         with opener.open(f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
             body = json.loads(r.read() or b"{}")
-    except (OSError, ValueError):
+    # another program on the port that answers with no HTTP (an SSH or mail server's greeting) is not Sidenote either:
+    # it went up as a traceback, before the check that says another program uses the port
+    except (OSError, ValueError, http.client.HTTPException):
         return None
     return body if isinstance(body, dict) and body.get("ok") is True and "analyzer" in body else None
 
@@ -573,7 +648,7 @@ def ollama_needed(env: dict) -> bool:
     try:
         with opener.open("http://127.0.0.1:11434/api/version", timeout=1.5):
             return False
-    except OSError:
+    except (OSError, http.client.HTTPException):   # nothing there, or something that is not Ollama
         return True
 
 
@@ -693,7 +768,7 @@ def run(args) -> int:
         return 0
     if not port_free(port):
         tell(t("Another program is using the port Sidenote needs ({port}). Close that program, then start Sidenote again.",
-               port=port), log)
+               port=port), log, title=t("Sidenote could not start"))
         log.close()
         return 1
     env = server_env(os.environ, data, port)
@@ -724,13 +799,9 @@ def run(args) -> int:
             say(f"started Ollama ({binary})", log)
         server.start()
         say(f"starting the server on {url}", log)
-        if not wait_for(lambda: health(port) is not None or server.exited() is not None, timeout=180) \
-                or health(port) is None:
-            tell(t("The Sidenote server did not start. The end of its log:") + "\n\n" + tail(server.log.path) + "\n\n"
-                 + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
-                     folder=logs), log)
-            return 1
-        say("the server is up", log)
+        # The capture program at once, with its tray icon, which says it is starting: the server takes 10 to 15 s to answer,
+        # and with no console (Windows) and no Dock icon (macOS) nothing showed the app had started at all. It connects
+        # once the server answers, as after any restart of the server
         supported, why = capture_supported()
         if supported and not args.no_capture:
             capture = Child("capture", role_cmd("--capture", "--server", f"ws://127.0.0.1:{port}/ingest",
@@ -744,6 +815,12 @@ def run(args) -> int:
                             CappedLog(logs / "capture.log"),
                             asked_code=CAPTURE_RESTART)   # its own restarts (tray Restart) are not failures
             capture.start()
+        if not wait_for(lambda: health(port) is not None or server.exited() is not None, timeout=180) \
+                or health(port) is None:
+            tell(t("Start Sidenote again; if it happens again, open an issue with the logs."), log,
+                 title=t("The Sidenote server did not start"), detail=tail(server.log.path))
+            return 1
+        say("the server is up", log)
         if why and not args.no_capture:
             say(why, log)
         if not args.no_browser:
@@ -765,7 +842,6 @@ def run(args) -> int:
 
 def watch(server: Child, capture: Child | None, ollama: Child | None, log: CappedLog) -> int:
     """Start again what stops, until the capture program is quit (or this program is stopped)."""
-    folder = server.log.path.parent
     while True:
         time.sleep(1)
         for child in (server, ollama):
@@ -779,13 +855,12 @@ def watch(server: Child, capture: Child | None, ollama: Child | None, log: Cappe
                 continue
             if child.given_up():
                 if child is ollama:      # the local model is one engine: the server, the panel and the agent go on
-                    tell(t("Ollama keeps stopping. The end of its log:") + "\n\n" + tail(child.log.path) + "\n\n"
-                         + t("Sidenote goes on without starting Ollama: the local model answers only once Ollama runs."), log)
+                    tell(t("Sidenote goes on without starting Ollama: the local model answers only once Ollama runs."), log,
+                         title=t("Ollama keeps stopping"), detail=tail(child.log.path))
                     ollama = None
                     continue
-                tell(t("Sidenote's server keeps stopping. The end of its log:") + "\n\n" + tail(child.log.path) + "\n\n"
-                     + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
-                         folder=folder), log)
+                tell(t("Start Sidenote again; if it happens again, open an issue with the logs."), log,
+                     title=t("Sidenote's server keeps stopping"), detail=tail(child.log.path))
                 return 1
             say(f"the {child.name} stopped (exit {child.exited()}); starting it again", log)
             child.start()
@@ -797,9 +872,8 @@ def watch(server: Child, capture: Child | None, ollama: Child | None, log: Cappe
             return 0
         asked = code == CAPTURE_RESTART  # a restart the person asked for: no sign of a program that keeps stopping
         if not asked and capture.given_up():
-            tell(t("The capture program keeps stopping. The end of its log:") + "\n\n" + tail(capture.log.path) + "\n\n"
-                 + t("The logs are in {folder}. Start Sidenote again; if it happens again, open an issue with them.",
-                     folder=folder), log)
+            tell(t("Start Sidenote again; if it happens again, open an issue with the logs."), log,
+                 title=t("The capture program keeps stopping"), detail=tail(capture.log.path))
             return 1
         why = ("asked for a restart" if asked else "gave way to another capture program that connected to this server"
                if code == CAPTURE_TAKEN_OVER else f"stopped (exit {code})")
@@ -926,6 +1000,15 @@ def check() -> int:
         header = sound_header()
         if header and not header.is_file():
             problems.append(f"soundcard: {header.name} is not beside it")
+        if sys.platform == "win32":
+            # the tray menu's program, which the capture program runs through this executable's -c door: its imports
+            # run here as a right click runs them (two of them were left out of the build, and the menu never opened)
+            from desktop.capture_main import menu_imports
+            try:
+                exec(compile(menu_imports((ROOT / "client" / "capture.py").read_text(encoding="utf-8")),
+                             "<the tray menu's imports>", "exec"), {})
+            except Exception as exc:
+                problems.append(f"the tray menu: {type(exc).__name__}: {exc}")
     # the panel's libraries: part of the built app (desktop/build.py will not build without them); from a checkout they
     # are fetched separately, and a check without them only says so
     if not (ROOT / "panel" / "vendor").is_dir():

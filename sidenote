@@ -766,7 +766,9 @@ $moved"
     sleep 0.5
   done
   capture_follow
-  cmd_status
+  # Not when install or capture --up called it: their own end says where things stand, and this one said "Capture program:
+  # not connected (./sidenote capture)" just before the same command started it
+  [ "${UP_QUIET:-0}" = 1 ] || cmd_status
 }
 
 # A down on its way holds this lock until it ends, and a start with --up waits for it (wait_down). The tray's Quit Sidenote
@@ -1373,7 +1375,7 @@ capture_started() {
 # and taken for one that is off, the session would have claimed a server someone else started, and its Quit ended it.
 brought_up() {
   health >/dev/null && return 1
-  local was=0
+  local was=0 UP_QUIET=1
   running && was=1
   cmd_up
   [ "$was" = 0 ]
@@ -1388,6 +1390,14 @@ quit_ends() {
 
 windows_starts() {
   local up="$1" ends=(); shift
+  # The starter's own Windows Python lacks capture packages (cmd_capture, --starter-lacks): it would start nothing, and a
+  # server brought up for it was left running with no one to stop it. Said back before the server, with the command that
+  # installs them, which the starter shows (client/launch.pyw, LACKS_MARK)
+  if [ -n "${starter_lacks:-}" ]; then
+    printf 'SIDENOTE-SETUP\t%s\n' "$(win_setup_command)"
+    printf 'SIDENOTE-LACKS\t%s\n' "$starter_lacks"
+    return 1
+  fi
   # whoever starts the server stops it: a start that brought it up hands its checkout on (see cmd_capture)
   if [ "$up" = 1 ]; then wait_down; brought_up && ends=($(quit_ends)); fi
   health >/dev/null || die "$(L "The server is off. Start it first with ./sidenote up, or start both with ./sidenote capture --up." \
@@ -1432,12 +1442,13 @@ cmd_capture() {
   # --up, --console and --from-windows are this launcher's own: they are noted here and not passed on (capture.py
   # would refuse them). --once sends one screen and ends, so it runs in this terminal as with --console, where
   # what it did is printed; started windowless it could also be gone before the start was seen.
-  local a up=0 console=0 from_win=0 opts=() started=0
+  local a up=0 console=0 from_win=0 opts=() started=0 starter_lacks=""
   for a in "$@"; do
     case "$a" in
       --up) up=1 ;;
       --console) console=1 ;;
       --from-windows) from_win=1 ;;   # client/launch.pyw, which can start the capture program itself (windows_starts)
+      --starter-lacks=*) starter_lacks="${a#--starter-lacks=}" ;;   # what that starter's own Python lacks (windows_starts)
       *) opts+=("$a")
          if [ "$a" = --once ]; then console=1; fi ;;
     esac
@@ -1450,22 +1461,29 @@ cmd_capture() {
     windows_starts "$up" ${opts[@]+"${opts[@]}"}
     return
   fi
+  # Where the shortcut's window is, for a failure in what follows (client/launch.pyw, STEP_MARK): Windows and its Python
+  # come before the server now, and the window, seeing no server answer, painted its Server step red over their reason
+  [ "$from_win" = 1 ] && printf 'SIDENOTE-STEP\tcapture\n'
   need_win
   # before the monitor list is asked of it too: without Python cmd.exe's own English line was all, with status 0
   win py -3 --version >/dev/null || die "$(L "No Python (py) on Windows. Install it from python.org, then ./sidenote setup-capture" \
                                               "Windows에 Python(py)이 없습니다. python.org에서 설치한 뒤 ./sidenote setup-capture를 실행하세요")"
-  # Only listing the monitors: capture.py answers and ends, so it runs here and now. (The options are in the launcher's
-  # own help, which capture --help prints before anything here runs.)
-  for a in ${opts[@]+"${opts[@]}"}; do
-    case "$a" in --list-monitors)
-      (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' | grep -vE "UNC paths|CMD.EXE|^$") || true
-      return 0 ;;
-    esac
-  done
   # The capture packages before the server: a start that brought the server up and then stopped here left it running
   # with no one to stop it, and the next start's tray said Quit where it says Quit Sidenote
   local packages
   packages="$(win_packages)" || die "$(L "The capture packages are not in Windows Python. ./sidenote setup-capture" "Windows Python에 캡처 패키지가 없습니다. ./sidenote setup-capture")"
+  # Only listing the monitors: capture.py answers and ends, so it runs here and now, after the packages it imports (one
+  # missing was a traceback before) and with its own status, which was 0 whatever it said. (The options are in the
+  # launcher's own help, which capture --help prints before anything here runs.)
+  for a in ${opts[@]+"${opts[@]}"}; do
+    case "$a" in --list-monitors)
+      local listed=0
+      (cd "$WIN_CWD" && "$CMD_EXE" /c py -3 -X utf8 -u "$CLIENT_WIN" ${opts[@]+"${opts[@]}"} 2>&1 | sed -u 's/\r$//' \
+         | { grep -vE "UNC paths|CMD.EXE|^$" || true; }) || listed=$?
+      return "$listed" ;;
+    esac
+  done
+  [ "$from_win" = 1 ] && printf 'SIDENOTE-STEP\tserver\n'   # those passed: a failure from here is in the window's own steps
   if [ "$up" = 1 ]; then   # bring the server up first (the desktop shortcut does this, through client/launch.pyw)
     # The desktop shortcut runs this with no terminal at all: client/launch.pyw reads what it prints, and its
     # failing status, and shows the reason in a message box. There the title and the wait below do nothing.
@@ -1474,10 +1492,12 @@ cmd_capture() {
     # waits for Enter first (only when there is a terminal to read from), and the terminal gets its own title
     # back however this ends.
     term_title "Sidenote Capture"
-    # Only in a window of its own, which wsl.exe opened for it (its parent is WSL's init, not a shell): typed in a
-    # terminal, the wait closed nothing and only held the prompt back
+    # Only in a window of its own, which wsl.exe opened for it: its parent is WSL's own process (init on older WSL,
+    # Relay(N) or SessionLeader now), not a shell. Typed in a terminal, the wait closed nothing and held the prompt back
     OWN_WINDOW=0
-    [ "$(ps -o comm= -p "$PPID" 2>/dev/null | tr -d ' ')" = init ] && OWN_WINDOW=1
+    case "$(ps -o comm= -p "$PPID" 2>/dev/null | tr -d ' ')" in
+      init|Relay\(*|SessionLeader) OWN_WINDOW=1 ;;
+    esac
     trap 'rc=$?; term_title ""; if [ "$rc" != 0 ] && [ "$OWN_WINDOW" = 1 ] && [ -t 0 ]; then printf "\n  %s" "$(L "Press Enter to close this window " "Enter를 누르면 이 창을 닫습니다 ")"; read -r _ || true; fi' EXIT
     # In the output, not sent to /dev/null: after a reboot nothing is running, and when the server cannot start
     # (Docker off, the port taken) its reason is what has to be seen, in the terminal or in the shortcut's
@@ -1593,6 +1613,7 @@ cmd_capture() {
      | grep --line-buffered -vE "DeprecationWarning|mss.mss\(\)|^\s*with mss|UNC paths|CMD.EXE|^$" | log_capture
    exit "${PIPESTATUS[0]}") || ended=$?
   if [ "$ended" = 76 ]; then CAPTURE_REFUSED=1; return 1; fi   # as a windowless start that finds one running ends
+  return "$ended"   # a failure of the program is the launcher's status, where it ended 0 whatever happened
 }
 
 # A Linux desktop: the capture program runs here, from the virtual environment ./sidenote setup-capture makes on Linux,
@@ -1632,7 +1653,7 @@ cmd_capture_here() {
   packages="$(here_packages)" || { setup_capture_here; packages="$(here_packages)"; } \
     || die "$(L "The capture packages did not install. ./sidenote setup-capture shows why." "캡처 패키지가 설치되지 않았습니다. ./sidenote setup-capture로 원인을 확인하세요.")"
   for a in ${opts[@]+"${opts[@]}"}; do   # the monitor list, as on WSL (capture --help is the launcher's own help)
-    case "$a" in --list-monitors) "$(here_py)" -X utf8 -u client/capture.py ${opts[@]+"${opts[@]}"}; return 0 ;; esac
+    case "$a" in --list-monitors) "$(here_py)" -X utf8 -u client/capture.py ${opts[@]+"${opts[@]}"} || return $?; return 0 ;; esac
   done
   [ "$ON_MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || die "$(L "No X11 display here (DISPLAY is not set). The capture program reads an X11 screen: run it in the desktop session." \
                                     "X11 화면이 없습니다(DISPLAY가 비어 있음). 캡처 프로그램은 X11 화면을 읽으니 데스크톱 세션에서 실행하세요.")"
@@ -1652,8 +1673,11 @@ cmd_capture_here() {
   local cmd=("$(here_py)" -X utf8 -u client/capture.py --server "ws://127.0.0.1:${PORT}/ingest" --started terminal)
   if [ "$console" = 1 ]; then
     echo "$(L "${B}Starting screen and sound capture${N} ${D}(Ctrl+C ends it)${N}" "${B}화면과 소리 캡처를 시작합니다${N} ${D}(끝내려면 Ctrl+C)${N}")"
-    ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} 2>&1 | log_capture || true
-    return 0
+    local rc=0
+    ${cmd[@]+"${cmd[@]}"} ${opts[@]+"${opts[@]}"} ${ends[@]+"${ends[@]}"} 2>&1 | log_capture || rc=$?
+    # the program's own end: 0 when it was quit, 130 for Ctrl+C here, 76 when another one runs (said above it); anything
+    # else is its failure, in the launcher's status too, where 0 said it went well
+    case "$rc" in 0|130) return 0 ;; 76) return 1 ;; *) return "$rc" ;; esac
   fi
   local base; base="$(clients)"
   # setsid --fork: a session of its own, so closing this terminal does not end it (see the WSL start above)
@@ -1677,7 +1701,11 @@ cmd_capture_here() {
   else
     ok "$(L "Screen and sound capture started ${D}(no tray icon)${N}" "화면과 소리 캡처를 시작했습니다 ${D}(트레이 아이콘 없이)${N}")"
   fi
-  echo "  $(L "To end it" "끝내기"): ${B}./sidenote capture-stop${N}   $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
+  # a start that brought the server up ends with it (the tray's Quit Sidenote, which Linux's plain X tray has no menu for):
+  # capture-stop alone left that server running
+  local ender=./sidenote\ capture-stop
+  [ ${#ends[@]} -gt 0 ] && ender=./sidenote\ down
+  echo "  $(L "To end it" "끝내기"): ${B}${ender}${N}   $(L "Panel" "패널"): ${B}${URL}${N}   $(L "Log" "로그"): $LOG_PATH/capture.log"
 }
 
 cmd_llm() {   # the local LLM: pull, list, logs
@@ -1832,7 +1860,7 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   echo "$(L "${B}Installing Sidenote${N} ${D}(steps already done are skipped)${N}" "${B}Sidenote를 설치합니다${N} ${D}(이미 끝난 단계는 건너뜁니다)${N}")"
   echo
   echo "${B}1/4${N} $(L "Server" "서버")"
-  if health >/dev/null; then ok "$(L "Already running" "이미 실행 중")"; else cmd_up; fi
+  if health >/dev/null; then ok "$(L "Already running" "이미 실행 중")"; else local UP_QUIET=1; cmd_up; fi   # doctor ends it
   echo
   if [ "$ON_WSL" = 0 ]; then echo "${B}2/4${N} $(L "Capture packages" "캡처 패키지")"
   else echo "${B}2/4${N} $(L "Windows capture packages" "Windows 캡처 패키지")"; fi
@@ -1846,7 +1874,10 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   if [ "$ON_WSL" = 1 ] && { [ -n "$winp" ] || ! win py -3 --version >/dev/null; }; then winpy=0; fi
   if [ "$ON_WSL" = 0 ]; then packages="$(here_packages)" || packages=""
   elif [ "$winpy" = 1 ]; then packages="$(win_packages 2>/dev/null)" || packages=""; fi
-  if [ -n "$winp" ]; then   # its first clause: the whole of it, with what to do, is in the checks at the end
+  if no_screen; then   # a virtual environment for a program with no screen to read, which failed without python3-venv
+    ok "$(L "Skipped: no screen here (DISPLAY is not set). The capture program runs on the PC whose screen it reads" \
+            "건너뜀: 이 PC엔 화면이 없음(DISPLAY 비어 있음). 캡처 프로그램은 화면을 읽을 PC에서 실행")"
+  elif [ -n "$winp" ]; then   # its first clause: the whole of it, with what to do, is in the checks at the end
     bad "${winp%%:*} ${D}($(L "what to do: in the checks below" "할 일은 아래 점검에"))${N}"
   elif [ "$winpy" = 0 ]; then
     # install again, not setup-capture: that one installs the packages and leaves out the desktop shortcut (step 4)
@@ -1887,7 +1918,9 @@ cmd_install() {   # everything a first run needs, in the order it needs it
   fi
   echo
   echo "${B}4/4${N} $(L "Desktop shortcut" "바탕화면 바로가기")"
-  if [ "$ON_WSL" = 0 ]; then
+  if no_screen; then
+    ok "$(L "Made on WSL only" "WSL에서만 만듦")"
+  elif [ "$ON_WSL" = 0 ]; then
     ok "$(L "Made on WSL only. Here ${B}./sidenote capture --up${N} starts the server and the capture together" \
             "WSL에서만 만듦. 여기서는 ${B}./sidenote capture --up${N}이 서버와 캡처를 함께 시작")"
   elif [ "$winpy" = 0 ]; then
@@ -1913,18 +1946,25 @@ install_next() {
     codex) [ -n "$(codex_login)" ] || login="./sidenote login codex" ;;
     anthropic-api) [ -n "$(setting ANTHROPIC_API_KEY "")" ] || login="ANTHROPIC_API_KEY in .env" ;;
   esac
+  # each command padded to one column, whichever login it is (./sidenote login codex is the longest)
+  next_line() { printf '  %s%-28s%s %s\n' "$B" "$1" "$N" "$2"; }
   echo
   echo "${B}$(L "Next" "다음 할 일")${N}"
-  if [ "$1" = 1 ]; then echo "  ${B}./sidenote llm pull${N}        $(L "the local model for this GPU" "이 GPU에 맞는 모델 받기")"; fi
-  if [ -n "$login" ]; then echo "  ${B}${login}${N}   $(L "the agent's login, for the hard problems" "어려운 문제를 맡길 에이전트 로그인")"; fi
+  if [ "$1" = 1 ]; then next_line "./sidenote llm pull" "$(L "the local model for this GPU" "이 GPU에 맞는 모델 받기")"; fi
+  if [ -n "$login" ]; then next_line "$login" "$(L "the agent's login, for the hard problems" "어려운 문제를 맡길 에이전트 로그인")"; fi
   if [ "$ON_WSL" = 1 ] && [ -n "$(win_problem)" ]; then
     echo "  $(L "In a Windows terminal, once (the capture packages and the desktop shortcut):" "Windows 터미널에서 한 번 (캡처 패키지와 바탕화면 바로가기):")"
     echo "    ${B}$(win_setup_command)${N}"
     echo "  $(L "Then the desktop shortcut starts the server and the capture" "그다음 바탕화면 바로가기가 서버와 캡처를 함께 시작")"
+  elif no_screen; then   # a server with no screen of its own: the capture runs on the PC whose screen it reads
+    echo "  $(L "The capture program, on the PC whose screen and sound it reads:" "캡처 프로그램은 화면과 소리를 읽을 PC에서:") ${B}docs/capture-client.md${N}"
   else
-    echo "  ${B}./sidenote capture --up${N}    $(L "start the server and the capture" "서버와 캡처 시작")"
+    next_line "./sidenote capture --up" "$(L "start the server and the capture" "서버와 캡처 시작")"
   fi
 }
+
+# Linux with no screen (a server, a session over SSH): no X11 or Wayland display for the capture program to read
+no_screen() { [ "$ON_WSL" = 0 ] && [ "$ON_MAC" = 0 ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; }
 
 cmd_version() {   # what is actually installed and running, in one place
   # The question behind this is always the same: which of these were updated. Each line is read
@@ -2070,7 +2110,12 @@ cmd_uninstall() {   # take back everything this project put on the PC
   echo "${B}$(L "What Sidenote made on this PC" "Sidenote가 이 PC에 만든 것")${N}"
   echo "  $(L "Removed with --yes:" "--yes로 지우는 것:")"
   echo "    $(L "Containers: " "컨테이너: ")$(docker ps -a --filter name=sidenote --format '{{.Names}}' | paste -sd' ' - || true)"
-  echo "    $(L "Images:     " "이미지:   ")sidenote:local, sidenote-runner:local, $ollama, $ollama-rocm, $search"
+  # the images this PC has: the AMD one (-rocm) was named on every PC, and those an offline install never pulled
+  local image images=()
+  for image in sidenote:local sidenote-runner:local "$ollama" "$ollama-rocm" "$search"; do
+    docker image inspect "$image" >/dev/null 2>&1 && images+=("$image")
+  done
+  echo "    $(L "Images:     " "이미지:   ")$(if [ ${#images[@]} -gt 0 ]; then printf '%s, ' "${images[@]}" | sed 's/, $//'; else L "none" "없음"; fi)"
   echo "    $(L "Volumes:    " "볼륨:     ")$(docker volume ls --format '{{.Name}}' | grep '^sidenote_' | paste -sd' ' - || true)"
   echo "      ${D}$(L "(the models are in the volume sidenote_llm-models: tens of GB, downloaded again once removed)" "(모델은 볼륨 sidenote_llm-models 안에 있습니다: 수십 GB, 지우면 다시 받아야 합니다)")${N}"
   # the shortcut is made on WSL only, on the Windows desktop; the capture packages of a Linux desktop are in a venv here
@@ -2500,7 +2545,7 @@ cmd_shortcut() {   # a Desktop shortcut that starts the capture program, so it t
   winps "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$lnk');
          \$s.TargetPath = '$(ps_quote "$pyw")';
          \$s.Arguments = '$(ps_quote "$args")';
-         \$s.Description = '$(L "Sidenote: start screen and sound capture (quit from the tray icon)" "Sidenote: 화면과 소리 캡처 시작 (끄기는 트레이 아이콘에서)")';
+         \$s.Description = '$(L "Sidenote: start screen and sound capture" "Sidenote: 화면과 소리 캡처 시작")';
          \$s.IconLocation = '$(ps_quote "$ico"),0';
          \$s.Save()" >/dev/null
   if [ -n "$(winps "if (Test-Path -LiteralPath '$lnk') { 'y' }")" ]; then
@@ -2622,7 +2667,7 @@ PY
              "Windows Python(py) 없음 (python.org에서 Windows용 Python 설치 뒤 ./sidenote setup-capture)")"
   fi
   if [ -d "$LOG_PATH" ]; then
-    local used days unit=days; used="$(du -sh "$LOG_PATH" 2>/dev/null | cut -f1)"
+    local used days unit=days; used="$(size_of "$LOG_PATH")"   # "8.1 MB" beside "5 MB": du -h wrote "8.1M"
     # The days as the server reads them (server/config.py env_float, server/telemetry.py KEEP_DAYS): whatever Python
     # reads as a number (+30, 1e2, 7., .5), the default for what it does not and for inf and nan, and at least a day.
     # A pattern of its own here called those four 14 days while the server kept 30, 100, 7 and 1.

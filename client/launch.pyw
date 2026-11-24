@@ -105,12 +105,11 @@ VERSION = code_version()
 
 KO = {
     "Capture did not start": "캡처를 시작하지 못함",
-    "Capture still starting": "캡처 시작 중",
-    "The start from the shortcut is still getting ready · the first start, and the first after an update, builds the "
-    "server image for a few minutes · the tray icon comes when it is done\n\n"
+    "Still starting": "시작하는 중",
+    "The first start, and the first after an update, builds the server image for a few minutes · the tray icon comes "
+    "when it is done\n\n"
     "Taking too long: ./sidenote status in the server's terminal":
-        "바로가기로 시작한 캡처가 아직 준비 중 · 처음과 업데이트 뒤에는 서버 이미지를 만드느라 몇 분 걸림 · "
-        "끝나면 트레이 아이콘이 나타남\n\n"
+        "처음과 업데이트 뒤에는 서버 이미지를 만드느라 몇 분 걸림 · 끝나면 트레이 아이콘이 나타남\n\n"
         "너무 오래 걸리면: 서버 터미널에서 ./sidenote status",
     "It ended without printing anything (exit code {rc}).": "아무것도 출력하지 않고 끝났습니다 (종료 코드 {rc}).",
     "The capture program did not connect to the server. In a Windows terminal this shows why:":
@@ -121,12 +120,10 @@ KO = {
     "Installing the capture packages into this Python ({python})": "이 Python에 캡처 패키지를 설치합니다 ({python})",
     "The packages did not install (pip ended with {rc}). The lines above say why.":
         "패키지를 설치하지 못했습니다 (pip 종료 코드 {rc}). 위 출력에 이유가 있습니다.",
-    "Sidenote: start screen and sound capture (quit from the tray icon)": "Sidenote: 화면과 소리 캡처 시작 (끄기는 트레이 아이콘에서)",
+    "Sidenote: start screen and sound capture": "Sidenote: 화면과 소리 캡처 시작",
     "Desktop shortcut made: {name}": "바탕화면에 바로가기를 만들었습니다: {name}",
     "Could not make the desktop shortcut: {error}": "바탕화면 바로가기를 만들지 못했습니다: {error}",
     "PowerShell made no file": "PowerShell이 파일을 만들지 않았습니다",
-    "A double click starts the server and the capture with no window, and a tray icon appears in the notification area.":
-        "두 번 클릭하면 창 없이 서버와 캡처가 함께 시작되고, 알림 영역에 트레이 아이콘이 나타납니다.",
     "Could not read the shortcut's arguments: {error}": "바로가기의 인자를 읽지 못했습니다: {error}",
     "Make the shortcut again with ./sidenote shortcut in the WSL terminal.": "WSL 터미널에서 ./sidenote shortcut으로 바로가기를 다시 만드세요.",
     "Could not run wsl.exe ({path}): {error}": "wsl.exe를 실행하지 못했습니다 ({path}): {error}",
@@ -166,10 +163,10 @@ def t(text: str, **values) -> str:
 # What the two notes this can show say at the top, as the panel says it: a short phrase. The window's own name stands
 # above it, so the name is not said again.
 FAILED = t("Capture did not start")
-BUSY = t("Capture still starting")
-BUSY_TEXT = t("The start from the shortcut is still getting ready · the first start, and the first after an update, builds the "
-              "server image for a few minutes · the tray icon comes when it is done\n\n"
-              "Taking too long: ./sidenote status in the server's terminal")
+BUSY = t("Still starting")   # the title's pill beside the release tag: "Capture still starting" ran over it in English
+BUSY_TEXT = t("The first start, and the first after an update, builds the server image for a few minutes · the tray icon comes "
+              "when it is done\n\n"
+              "Taking too long: ./sidenote status in the server's terminal")   # the title says it is still starting
 
 # MessageBoxW flags: one OK button, the icon, and in front of other windows. The box may come minutes after the
 # double click (the first start builds the server image), when another window has the focus and Windows would
@@ -988,6 +985,14 @@ def wrapped(text: str, measure, width: int) -> int:
     return count
 
 
+def failed_where(step: int, times, output: bytes):
+    """Where a start failed, for its note (FAILED_AT): the step its window was at and the time each step took, or None when
+    the launcher stopped before any of its steps (STEP_MARK "capture": Windows' Python, its packages). The server step had
+    not begun then, and painting it red set the reason about Python under the word Server."""
+    told = marked(output, STEP_MARK)
+    return None if told and told[0] == "capture" else (step, times)
+
+
 def with_window(work, port: int):
     """Run work() (the launcher, and its wait) under the small window, and return what it returned or raise what it
     raised. The window is a courtesy: if it cannot be made, work() simply runs."""
@@ -1030,7 +1035,8 @@ def with_window(work, port: int):
             window.show(stage(True, True), True)
             window.close_after(DONE_HOLD)
         else:                                                    # failed: the note in its place says why, straight away
-            FAILED_AT[0] = (window.step, window.times())         # ...and where, as this window saw it
+            said = box["value"][1] if "error" not in box and len(box["value"]) > 1 else b""
+            FAILED_AT[0] = failed_where(window.step, window.times(), said)   # ...and where, as this window saw it
             window.close()
 
     watch()
@@ -1263,6 +1269,13 @@ def run(command: list[str]) -> tuple[int, bytes]:
 # and the port set now, neither of which this file can know.
 OPEN_MARK, START_MARK = "SIDENOTE-OPEN", "SIDENOTE-START"
 LANG_MARK, SETUP_MARK = "SIDENOTE-LANG", "SIDENOTE-SETUP"
+# And where the launcher is, before a failure: "capture" while it checks Windows and its Python, which come before the server
+# and are none of the window's steps; "server" once they passed
+STEP_MARK = "SIDENOTE-STEP"
+# And what this starter's own Python lacks of the capture packages, said back when WSL cannot start Windows programs (this
+# starter then starts the capture program itself): the launcher stops there, before it brings the server up for a program
+# that could not start, which was left running with no one to stop it
+LACKS_MARK, LACKS_ARG = "SIDENOTE-LACKS", "--starter-lacks="
 DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP = 0x00000008, 0x00000200   # the program on its own: it outlives this starter
 CONNECT_WAIT = 10.0   # seconds a capture program started here is given to connect, as the launcher gives one it starts
 CAPTURE_BUSY = 76     # what capture.py ends with when another capture program runs for its server (CAPTURE_BUSY there)
@@ -1366,6 +1379,9 @@ def launch(command: list[str], port: int, dry_run: bool, setup_hint: str = "") -
     waited for as the launcher waits for one it starts; one that does not connect is said, with the command that shows
     why. Returns the status and what to show on a failure, as run does."""
     rc, output = run(command)
+    lacks = marked(output, LACKS_MARK)
+    if lacks:   # stopped before the server, for packages this Python lacks: said as when they are found missing below
+        return 1, lacking(lacks[0].split(","), output, setup_hint).encode("utf-8")
     if rc != 0:
         return rc, output
     url = marked(output, OPEN_MARK)
@@ -1401,10 +1417,7 @@ def launch(command: list[str], port: int, dry_run: bool, setup_hint: str = "") -
         return 0, output
     missing = missing_modules()
     if missing:   # as the launcher says it where it can ask Windows Python itself, with the command that installs them
-        hint = marked(output, SETUP_MARK)   # the launcher's own wording of it, when it sent one (an older launcher sends none)
-        why = t("The capture packages are not in this Windows Python ({missing}). In a Windows terminal this installs them:",
-                missing=", ".join(missing)) + "\n" + (hint[0] if hint and hint[0] else setup_hint)
-        return 1, why.encode("utf-8")
+        return 1, lacking(missing, output, setup_hint).encode("utf-8")
     # pyw.exe ran this file, so this is Windows Python's windowless interpreter, the one the launcher would have used
     program = [sys.executable, "-X", "utf8", *start]
     # The language set for Sidenote in WSL, for the program's tray menu and its log: one that is set there wins over
@@ -1455,6 +1468,14 @@ def setup_command(distro: str, repo: str, port: int) -> str:
     """The command that sets up the Windows side from Windows (main, --setup), for a box to show."""
     here = os.path.abspath(__file__)
     return f'py -3 "{here}" --setup --distro {distro} --repo "{repo}" --port {port}'
+
+
+def lacking(missing: list[str], output: bytes, setup_hint: str) -> str:
+    """What the note says of capture packages this Windows Python lacks, with the command that installs them: the
+    launcher's own wording of it when it sent one (SETUP_MARK; an older launcher sends none), else this starter's."""
+    hint = marked(output, SETUP_MARK)
+    return (t("The capture packages are not in this Windows Python ({missing}). In a Windows terminal this installs them:",
+              missing=", ".join(m for m in missing if m)) + "\n" + (hint[0] if hint and hint[0] else setup_hint))
 
 
 def missing_modules() -> list[str]:
@@ -1577,7 +1598,7 @@ def setup(args, dry_run: bool) -> int:
     script = (f"$d = [Environment]::GetFolderPath('Desktop'); $f = Join-Path $d '{ps_quote(SHORTCUT_NAME)}'; "
               "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($f); "
               f"$s.TargetPath = '{ps_quote(target)}'; $s.Arguments = '{ps_quote(arguments)}'; "
-              f"$s.Description = '{ps_quote(t('Sidenote: start screen and sound capture (quit from the tray icon)'))}'; "
+              f"$s.Description = '{ps_quote(t('Sidenote: start screen and sound capture'))}'; "
               f"$s.IconLocation = '{ps_quote(icon)},0'; $s.Save(); "
               + "".join(f"Remove-Item -LiteralPath (Join-Path $d '{ps_quote(old)}') -ErrorAction SilentlyContinue; "
                         for old in OLD_SHORTCUT_NAMES)   # one this command made under an older name
@@ -1587,7 +1608,8 @@ def setup(args, dry_run: bool) -> int:
         say(t("Could not make the desktop shortcut: {error}", error=error or t("PowerShell made no file")))
         return 1
     say(t("Desktop shortcut made: {name}", name=SHORTCUT_NAME))
-    say(t("A double click starts the server and the capture with no window, and a tray icon appears in the notification area."))
+    # what a double click does is in the guide, as ./sidenote shortcut leaves it; the typed start stays, the one way in from a
+    # WSL that cannot start Windows programs
     say(t("To start the capture from a Windows terminal, without the shortcut:"))
     say("  " + typed)
     return 0
@@ -1711,7 +1733,9 @@ def main(argv: list[str] | None = None) -> int:
         return remove(dry_run)
     if args.setup:
         return setup(args, dry_run)
-    command = [args.wsl or wsl_exe(), "-d", args.distro, "--exec", "bash", "-lc", SCRIPT, NAME, args.repo, *options]
+    lacks = missing_modules()   # said to the launcher, for a start it may hand back here (LACKS_MARK)
+    command = [args.wsl or wsl_exe(), "-d", args.distro, "--exec", "bash", "-lc", SCRIPT, NAME, args.repo, *options,
+               *([LACKS_ARG + ",".join(lacks)] if lacks else [])]
     if dry_run:
         print("[dry-run] run: " + subprocess.list2cmdline(command))
     start = OneStart(args.distro, args.repo)

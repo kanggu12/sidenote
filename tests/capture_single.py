@@ -83,8 +83,9 @@ def let_go(proc):
 def start(*options, env=None, limit=30):
     """main() started as a capture program for SERVER with `options`: its exit code, what it printed, the seconds."""
     began = time.monotonic()
+    # BROWSER: a second start opens the panel where a server answers (none does here), and never a real browser from a test
     done = subprocess.run([sys.executable, "-c", MAIN, str(CLIENT), "--server", SERVER, *options],
-                          capture_output=True, text=True, timeout=limit, env={**os.environ, **(env or {})})
+                          capture_output=True, text=True, timeout=limit, env={**os.environ, "BROWSER": "true", **(env or {})})
     return done.returncode, done.stdout + done.stderr, time.monotonic() - began
 
 
@@ -181,6 +182,35 @@ try:
           out)
     rc_ko, out_ko, _ = start("--started", "terminal", env={"SIDENOTE_LANG": "ko"})
     check("...in Korean too", rc_ko == 76 and "캡처 프로그램이 이미 실행 중" in out_ko and "capture-stop" in out_ko, out_ko)
+    # started where nothing shows what it prints, a second start opens the panel of the one that runs, when its server answers
+    import http.server
+    import threading
+
+    class Health(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"ok": true}')
+
+        def log_message(self, *a):
+            pass
+    up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Health)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    live = f"ws://127.0.0.1:{up.server_address[1]}/ingest"
+    first, _ = holder(live)
+    opened = WORK / "opened.txt"
+    recorder = WORK / "browser.sh"
+    recorder.write_text(f'#!/bin/sh\nprintf "%s\\n" "$1" >> "{opened}"\n', encoding="utf-8")
+    recorder.chmod(0o755)
+    done = subprocess.run([sys.executable, "-c", MAIN, str(CLIENT), "--server", live], capture_output=True, text=True, timeout=30,
+                          env={**os.environ, "BROWSER": str(recorder)}, stdin=subprocess.DEVNULL)
+    got = opened.read_text(encoding="utf-8").split() if opened.exists() else []
+    check("...started with nothing to show its lines, it opens the panel of the one that runs",
+          done.returncode == 76 and got == [f"http://127.0.0.1:{up.server_address[1]}/"], [done.returncode, got])
+    opened.unlink(missing_ok=True)
+    done = subprocess.run([sys.executable, "-c", MAIN, str(CLIENT), "--server", live, "--started", "terminal"], capture_output=True,
+                          text=True, timeout=30, env={**os.environ, "BROWSER": str(recorder)}, stdin=subprocess.DEVNULL)
+    check("...and not for the launcher, which says it itself", done.returncode == 76 and not opened.exists(), done.returncode)
+    let_go(first)
+    up.shutdown()
     rc, out, _ = start("--once")
     check("--once sends one screen beside whatever runs: never refused", rc == PAST, f"exit {rc}: {out!r}")
     rc, out, _ = start(env={"SIDENOTE_SUPERVISED": "1"})
@@ -190,7 +220,7 @@ try:
           rc == 76 and 4.0 <= took < 20.0, f"exit {rc} after {took:.1f} s")
     # the real program, nothing replaced: the same end, by the path the launcher starts it. Without a tray icon and with
     # no display named, so that even a guard that let it by could show nothing on the screen of whoever runs this
-    bare = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    bare = {**{k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}, "BROWSER": "true"}
     done = subprocess.run([sys.executable, "-X", "utf8", "-u", str(CLIENT / "capture.py"), "--server", SERVER, "--no-tray"],
                           capture_output=True, text=True, timeout=30, env=bare)
     check("client/capture.py itself, started as the launcher starts it, ends the same way",

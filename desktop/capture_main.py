@@ -40,6 +40,18 @@ else:
 SOUND_HEADER = {"win32": "mediafoundation.py.h", "darwin": "coreaudio.py.h"}.get(sys.platform, "pulseaudio.py.h")
 
 
+def menu_imports(source: str) -> str:
+    """The import lines of the tray menu's program (TRAY_MENU in client/capture.py, `source`), which the capture program
+    runs through the -c door below on Windows: --check runs them, as a right click would. Read as code nowhere else, two
+    of its modules were left out of both builds, and the menu never opened from them."""
+    import ast
+    menus = [node.value.value for node in ast.walk(ast.parse(source))
+             if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "TRAY_MENU" for t in node.targets)
+             and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)]
+    return "\n".join(ast.unparse(node) for menu in menus for node in ast.walk(ast.parse(menu))
+                     if isinstance(node, (ast.Import, ast.ImportFrom)))
+
+
 def python_c(code: str, argv: list[str]) -> int:
     """`python -c CODE ARGS`, as the capture program asks sys.executable for its tray menu's script on Windows."""
     sys.argv = ["-c", *argv]                                   # what that script reads as its arguments
@@ -69,6 +81,12 @@ def check() -> int:
     spec = importlib.util.find_spec("soundcard")
     if spec is None or not spec.origin or not (Path(spec.origin).parent / SOUND_HEADER).is_file():
         problems.append(f"soundcard: {SOUND_HEADER} is not beside it")
+    if sys.platform == "win32":
+        # the tray menu's program, on Windows the -c door's: its imports run here as a right click runs them
+        try:
+            exec(compile(menu_imports(SCRIPT.read_text(encoding="utf-8")), "<the tray menu's imports>", "exec"), {})
+        except Exception as exc:
+            problems.append(f"the tray menu: {type(exc).__name__}: {exc}")
     sys.stdout = sys.stderr = out                                 # the program's help goes to the same place
     try:
         run(["--help"])

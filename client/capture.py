@@ -102,6 +102,7 @@ KO = {
     "Using the Windows menu from now on": "이제 Windows 기본 메뉴를 씁니다",
     "Could not show the tray menu, using the Windows menu ({error})": "트레이 메뉴를 띄우지 못해 Windows 기본 메뉴를 씁니다 ({error})",
     "No tray icon ({error}). To install it: ./sidenote setup-capture": "트레이 아이콘을 쓰지 않습니다 ({error}). 설치하려면: ./sidenote setup-capture",
+    "No tray icon ({error})": "트레이 아이콘 없음 ({error})",
     "The Sidenote server is off. Run ./sidenote up in the server's terminal.": "Sidenote 서버가 꺼져 있습니다. 서버 터미널에서 ./sidenote up을 실행하세요.",
     "Quit from the tray.": "트레이에서 끝냈습니다.",
     "Quit from the panel": "패널에서 끝냈습니다",
@@ -117,6 +118,7 @@ KO = {
     "To end it: ./sidenote capture-stop in the server's terminal.": "끝내려면 서버 터미널에서 ./sidenote capture-stop.",
     # under the desktop app: its Quit ends the app, and there is no console for Ctrl+C nor ./sidenote to run
     "To end it: Quit Sidenote in the tray icon.": "끝내려면 트레이 아이콘의 Sidenote 끝내기.",
+    "To end it: Quit on the panel's Capture connection.": "끝내려면 패널의 캡처 연결에서 끝내기.",
     # started on its own, for a server elsewhere (another PC, a cluster's port forwarded here): no ./sidenote to name
     "To end it: Quit in the tray icon.": "끝내려면 트레이 아이콘의 끝내기.",
     "To end the one that runs: Quit in its tray icon.": "실행 중인 프로그램을 끝내려면 그 트레이 아이콘의 끝내기.",
@@ -148,9 +150,10 @@ KO = {
     "Restart capture": "캡처 다시 시작",
     "Quit": "끝내기",
     "Quit Sidenote": "Sidenote 끝내기",
-    "Sidenote is not running. Start the Sidenote app again.": "Sidenote가 실행 중이 아닙니다. Sidenote 앱을 다시 켜세요.",
+    "The Sidenote server is starting again": "Sidenote 서버를 다시 켜는 중",
     "Not connected (./sidenote up)": "서버에 연결되지 않음 (./sidenote up)",
     "Not connected": "서버에 연결되지 않음",
+    "Starting": "시작하는 중",
     "Capturing: {what}": "캡처 중: {what}",
     "Screen": "화면",
     "Sound": "소리",
@@ -176,6 +179,7 @@ KO = {
     "default is 1 (primary). 0 captures every monitor as one wide image.": "기본은 1(주 모니터). 0은 모든 모니터를 넓은 한 장으로 받습니다.",
     "monitor {asked} not found; {n} attached. Using 1.": "모니터 {asked}번이 없습니다. 연결된 {n}개 중 1번을 씁니다.",
     "./sidenote capture --list-monitors shows them.": "./sidenote capture --list-monitors로 볼 수 있습니다.",
+    "--list-monitors lists them.": "--list-monitors로 볼 수 있습니다.",
     "Monitor in Solver settings lists them.": "풀이 설정의 모니터에서 볼 수 있습니다.",
     "scroll-stitch": "스크롤 이어 붙이기",
     "single-shot": "한 장씩",
@@ -217,6 +221,7 @@ KO = {
         "지난 {sec}초 동안 보내는 길에 소리 {n}초를 버렸습니다 (서버나 네트워크가 뒤처짐)",
     "could not open the log file {path}: {error}": "로그 파일을 열지 못했습니다 {path}: {error}",
     "no word from the server yet; starting with screen and sound on": "아직 서버의 말이 없어 화면과 소리를 켠 채로 시작합니다",
+    "no word from the server yet; starting with the screen on": "아직 서버의 말이 없어 화면을 켠 채로 시작합니다",
     "capturing.": "캡처 중.",
     "Ctrl+C to stop.": "멈추려면 Ctrl+C.",
     "stopping...": "멈추는 중...",
@@ -1497,7 +1502,7 @@ class Sender:
             elif msg.get("reason") == "panel":     # Quit on the panel's Capture connection
                 print("[control] " + t("Quit from the panel"))
             else:   # ./sidenote capture-stop or down; under the app, the app ending (or the API)
-                print("[control] " + (t("The server asked this program to quit") if app
+                print("[control] " + (t("The server asked this program to quit") if app or not BY_LAUNCHER["yes"]
                                       else t("The server asked this program to quit (./sidenote capture-stop)")))
             self.quit_asked = True
             return
@@ -1514,7 +1519,7 @@ class Sender:
                 self.restart_pending = True
             else:   # the panel's Capture connection, or ./sidenote capture-restart: the tray's Restart, asked from elsewhere
                 print("[control] " + (t("Restarting from the panel") if msg.get("reason") == "panel"
-                                      else t("The server asked this program to restart") if app
+                                      else t("The server asked this program to restart") if app or not BY_LAUNCHER["yes"]
                                       else t("The server asked this program to restart (./sidenote capture-restart)")))
                 self.restart_asked = self.quit_asked = True
             return
@@ -1901,8 +1906,10 @@ def screen_loop(sender: Sender, stop: threading.Event, args) -> None:
                 if index != asked:
                     print("[screen] " + t("monitor {asked} not found; {n} attached. Using 1.", asked=asked, n=len(sct.monitors) - 1))
                     # the desktop app has no ./sidenote to run, and its panel lists the monitors where one is chosen
+                    # started on its own there is no ./sidenote either, and its own --list-monitors lists them
                     print("         " + (t("Monitor in Solver settings lists them.") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
-                                          else t("./sidenote capture --list-monitors shows them.")))
+                                          else t("./sidenote capture --list-monitors shows them.") if BY_LAUNCHER["yes"]
+                                          else t("--list-monitors lists them.")))
                 monitor = sct.monitors[index]
                 sizes = [[m["width"], m["height"]] for m in sct.monitors[1:]]
                 # Following looks at monitors this tool's panel may be on, and paints the panel over first so that its
@@ -2275,7 +2282,8 @@ def audio_loop(sender: Sender, stop: threading.Event, args) -> None:
     try:
         import soundcard as sc
     except Exception as exc:   # with the thread gone, the panel went on showing sound as on
-        print("[audio] " + t("Could not load the sound library, going on without sound: {error}", error=exc))
+        print("[audio] " + t("Could not load the sound library, going on without sound: {error}",
+                             error=f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__))   # no words of its own: its kind
         sender.set_caps(audio=False, audio_device="")
         return
 
@@ -3277,7 +3285,10 @@ def start_tray(sender, stop: threading.Event, args):
     try:
         import pystray
     except Exception as exc:
-        print("[tray] " + t("No tray icon ({error}). To install it: ./sidenote setup-capture", error=type(exc).__name__))
+        # the package named only where it is missing and ./sidenote is there to install it: under the app a display that
+        # could not be reached said to install a package it had
+        print("[tray] " + (t("No tray icon ({error}). To install it: ./sidenote setup-capture", error=type(exc).__name__)
+                           if isinstance(exc, ImportError) and BY_LAUNCHER["yes"] else t("No tray icon ({error})", error=type(exc).__name__)))
         return None
 
     url = panel_url(args.server)
@@ -3285,18 +3296,24 @@ def start_tray(sender, stop: threading.Event, args):
     def open_panel(icon=None, _item=None):
         import webbrowser
         if not server_up(url):
-            # under the desktop app, which runs the server itself, there is no ./sidenote to run
-            msg = (t("Sidenote is not running. Start the Sidenote app again.") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
+            # under the desktop app the server is its child, down only while the app starts it again (no ./sidenote there)
+            msg = (t("The Sidenote server is starting again") if os.environ.get("SIDENOTE_SUPERVISED") == "1"
                    else t("The Sidenote server is off. Run ./sidenote up in the server's terminal.") if BY_LAUNCHER["yes"]
                    else t("The Sidenote server at {address} does not answer.", address=re.sub(r"^https?://", "", url).rstrip("/")))
             print(f"[tray] {msg}")
             try:
-                if icon is not None:
+                if icon is not None and getattr(icon, "HAS_NOTIFICATION", True):
                     icon.notify(msg, TRAY_TITLE)   # a browser error page says nothing about this
+                    return
+                # Linux's plain X tray (pystray with no PyGObject) has no notifications: the desktop's own, where it has one
+                import shutil
+                import subprocess
+                if icon is not None and shutil.which("notify-send"):
+                    subprocess.run(["notify-send", "-a", TRAY_TITLE, TRAY_TITLE, msg], timeout=5, capture_output=True)
                     return
             except Exception:
                 pass
-        webbrowser.open(url)
+        webbrowser.open(url)   # nothing else can say it: the browser's page that nothing answers there
 
     def open_connection(icon=None, _item=None):
         """The panel's Capture connection (panel/app.js, openCapture): this program, the PC it runs on, the server it sends to
@@ -3337,8 +3354,15 @@ def start_tray(sender, stop: threading.Event, args):
         """A window of Skip windows is on screen, so no screen goes out (the screen loop says so in caps)."""
         return bool(sender.wants.get("screen")) and bool(getattr(sender, "caps", {}).get("skipping"))
 
+    def starting() -> bool:
+        """Under the desktop app before its server first answered: the app starts the two together, and the server's 10 to
+        15 s are no fault to say in red"""
+        return os.environ.get("SIDENOTE_SUPERVISED") == "1" and not sender.told.is_set()
+
     def state_text(_item=None):
         if not sender.connected:
+            if starting():
+                return t("Starting")
             # started by the desktop app, which starts the server itself: there is no ./sidenote to run
             return (t("Not connected") if os.environ.get("SIDENOTE_SUPERVISED") == "1" or not BY_LAUNCHER["yes"]
                     else t("Not connected (./sidenote up)"))
@@ -3350,7 +3374,7 @@ def start_tray(sender, stop: threading.Event, args):
     def state_tone(_item=None):
         """The colour of the state's pill in the drawn menu, from the state itself: no server, a window skipped, nothing
         taken, or taking."""
-        return "down" if not sender.connected else "warn" if skipped() else "on" if taking() else "idle"
+        return ("idle" if starting() else "down") if not sender.connected else "warn" if skipped() else "on" if taking() else "idle"
 
     def toggle(which):
         def go(icon=None, _item=None):
@@ -3366,9 +3390,12 @@ def start_tray(sender, stop: threading.Event, args):
         return go
 
     # The menu is drawn by Windows, so what can be made good here is what it says and in what order:
-    # what it is doing first, the two switches that matter, then the two ways out.
+    # what it is doing first, the two switches that matter, then the two ways out. Linux's plain X tray (pystray with
+    # no PyGObject) shows no menu at all, and a click runs the default item alone: there it is Capture connection, whose
+    # sheet has Restart and Quit, and the panel behind it
+    no_menu = not getattr(pystray.Icon, "HAS_MENU", True)
     menu = pystray.Menu(
-        marked(pystray.MenuItem(t("Open the panel"), open_panel, default=True), "open"),
+        marked(pystray.MenuItem(t("Open the panel"), open_panel, default=not no_menu), "open"),
         marked(pystray.MenuItem(state_text, None, enabled=False), tone=state_tone),
         pystray.Menu.SEPARATOR,
         # Only while the server is there to keep them: flipped with nobody connected, the switch would be undone
@@ -3380,7 +3407,7 @@ def start_tray(sender, stop: threading.Event, args):
                                 enabled=lambda _i: sender.connected and not args.no_audio), "sound"),
         pystray.Menu.SEPARATOR,
         # this program as the server sees it, and the way to start, restart or end it: the panel's sheet of that name
-        marked(pystray.MenuItem(t("Capture connection"), open_connection), "connect"),
+        marked(pystray.MenuItem(t("Capture connection"), open_connection, default=no_menu), "connect"),
         marked(pystray.MenuItem(t("Restart capture"), restart), "restart"),
         # under the desktop app quitting the capture program ends the whole app (desktop/app.py), and after a start that
         # brought the server up it ends that server too (--stop-server-on-quit): both say so
@@ -3763,6 +3790,14 @@ def main() -> None:
         print("[main] " + (t("To end the one that runs: Quit in its tray icon, or ./sidenote capture-stop in the server's terminal.")
                            if BY_LAUNCHER["yes"] else t("To end the one that runs: Quit in its tray icon.")))
         sys.stdout.flush()
+        # Started where nothing shows those lines (the windowed program, a double click in a file manager), a second start did
+        # nothing anyone could see: the panel the one that runs feeds opens, as a second start of the app or the shortcut
+        # opens it. Not in a terminal, which shows them, nor for the launcher, which says it itself
+        if not BY_LAUNCHER["yes"] and not (sys.stdin and sys.stdin.isatty()):
+            url = panel_url(args.server)
+            if server_up(url):
+                import webbrowser
+                webbrowser.open(url)
         sys.exit(CAPTURE_BUSY)   # nothing is started yet, so a plain exit: the starter reads the code (client/launch.pyw)
 
     set_dpi_aware()
@@ -3791,7 +3826,8 @@ def main() -> None:
     # nothing is captured at all, not even a first frame. No server yet: start as switched on.
     sender.keepalive()
     if not sender.told.wait(3):
-        print("[main] " + t("no word from the server yet; starting with screen and sound on"))
+        print("[main] " + (t("no word from the server yet; starting with the screen on") if args.no_audio
+                           else t("no word from the server yet; starting with screen and sound on")))
     stop = threading.Event()
     threads = [threading.Thread(target=screen_loop, args=(sender, stop, args), daemon=True)]
     if not args.no_audio:
@@ -3803,14 +3839,17 @@ def main() -> None:
     # Started without a window (--log, as ./sidenote capture does) there is no console for Ctrl+C to reach.
     # with no tray icon (--no-tray, or no pystray) there is no Quit in it to name. Under the desktop app neither a console
     # nor ./sidenote is there: what it prints goes to capture.log, and its Quit Sidenote ends the app (desktop/app.py)
+    # An icon with no menu (Linux's plain X tray) has no Quit in it either: its click opens Capture connection, with Quit
+    menu = tray is not None and getattr(tray, "HAS_MENU", True)
     if os.environ.get("SIDENOTE_SUPERVISED") == "1":
-        how = (t("To end it: Quit Sidenote on the panel's Capture connection.") if tray is None
+        how = (t("To end it: Quit Sidenote on the panel's Capture connection.") if not menu
                else t("To end it: Quit Sidenote in the tray icon."))
     else:
         how = (t("Ctrl+C to stop.") if not args.log else
-               t("To end it: Quit in the tray icon.") if not BY_LAUNCHER["yes"] and tray is not None else
+               t("To end it: Quit in the tray icon.") if not BY_LAUNCHER["yes"] and menu else
+               t("To end it: Quit on the panel's Capture connection.") if not BY_LAUNCHER["yes"] and tray is not None else
                t("Ctrl+C to stop.") if not BY_LAUNCHER["yes"] else
-               t("To end it: ./sidenote capture-stop in the server's terminal.") if tray is None else
+               t("To end it: ./sidenote capture-stop in the server's terminal.") if not menu else
                t("To end it: Quit in the tray icon, or ./sidenote capture-stop in the server's terminal."))
     print("[main] " + t("capturing.") + " " + how)
     updater = Updater(os.path.abspath(__file__), args.server) if sender.auto_update else None

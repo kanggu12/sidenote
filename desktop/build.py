@@ -262,14 +262,43 @@ def capture_imports() -> list[str]:
     not have (winreg off Windows, AppKit off macOS) is only a warning to PyInstaller."""
     import ast
     tree = ast.parse((ROOT / "client" / "capture.py").read_text(encoding="utf-8"))
+    trees = [tree]
+    if WINDOWS:
+        # and the tray menu's own program, a string the capture program hands to `python -c` (the executable's -c door,
+        # desktop/capture_main.py): read as code nowhere else, its PIL.ImageEnhance and tkinter.font were left out of both
+        # builds, and the menu never opened from them
+        trees += [ast.parse(node.value.value) for node in ast.walk(tree)
+                  if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "TRAY_MENU" for t in node.targets)
+                  and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)]
     found = set()
-    for node in ast.walk(tree):
+    for node in (n for t in trees for n in ast.walk(t)):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             found.add(node.module)
+            # `from PIL import ImageEnhance` names a module of PIL's that the package alone does not bring
+            found.update(filter(None, (submodule(node.module, alias.name) for alias in node.names)))
     # the server's package is the app's (code_version tries it first); alone, the version is read from the file beside it
     return sorted(name for name in found if name != "__future__" and not name.startswith("server"))
+
+
+def submodule(module: str, name: str) -> str | None:
+    """`module.name` when that is a module of its own (from PIL import ImageEnhance), None for a name inside the module
+    (from typing import Any). Looked up on disk: asking the import system would import the package first, and pystray
+    connects to the display and soundcard to the sound server as they are imported, which a build machine lacks."""
+    import importlib.machinery
+    import importlib.util
+    top, *inner = module.split(".")
+    try:
+        spec = importlib.util.find_spec(top)   # a top-level name is found without importing it
+    except (ImportError, ValueError):
+        return None
+    for where in (spec.submodule_search_locations or ()) if spec else ():
+        folder = Path(where, *inner)
+        if (folder / name / "__init__.py").is_file() or any((folder / (name + suffix)).is_file()
+                                                             for suffix in importlib.machinery.all_suffixes()):
+            return f"{module}.{name}"
+    return None
 
 
 def system_machine() -> tuple[str, str]:

@@ -9,6 +9,7 @@ import http.server
 import io
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -108,16 +109,15 @@ check("the panel's sign-in direction is the CLI's own in the app, the launcher's
       hints == ["claude", "codex login", "./sidenote login"], hints)
 
 with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8", "SIDENOTE_LANG": "ko"}, clear=True):
-    ko = app.t("The Sidenote server did not start. The end of its log:")
+    ko = app.t("The Sidenote server did not start")
 with mock.patch.object(sys, "platform", "linux"), mock.patch.dict(os.environ, {"LANG": "ko_KR.UTF-8"}, clear=True):
-    en = app.t("The Sidenote server did not start. The end of its log:")
-check("the app's message boxes are in English, and in Korean when SIDENOTE_LANG says ko: a Korean locale alone is not read",
-      ko.startswith("Sidenote 서버를") and en.startswith("The Sidenote server"), (ko, en))
-check("every message box the app can show has its Korean", all(
-    app.KO.get(m) for m in ("Another program is using the port Sidenote needs ({port}). Close that program, then start "
-                            "Sidenote again.", "Sidenote's server keeps stopping. The end of its log:",
-                            "Ollama keeps stopping. The end of its log:",
-                            "The capture program keeps stopping. The end of its log:")))
+    en = app.t("The Sidenote server did not start")
+check("the app's problems are in English, and in Korean when SIDENOTE_LANG says ko: a Korean locale alone is not read",
+      ko.startswith("Sidenote 서버") and en.startswith("The Sidenote server"), (ko, en))
+# every title and every word tell() is given, read off the app's own calls: one left out showed in English in a Korean page
+said = re.findall(r'\bt\("([^"]+)"', (ROOT / "desktop" / "app.py").read_text(encoding="utf-8").split("def tell(", 1)[1])
+check("every problem the app can show has its Korean", said and all(app.KO.get(m) for m in said),
+      [m for m in said if not app.KO.get(m)])
 
 print("[the data folder on each system]")
 # the home folder as the patched environment gives it, so the expectation is worked out the same way on every system
@@ -751,6 +751,41 @@ done = subprocess.run([sys.executable, str(ROOT / "desktop" / "capture_main.py")
                       text=True, timeout=60)
 check("...and any other arguments are the capture program's own (--help prints its options)",
       done.returncode == 0 and "--server SERVER" in done.stdout and "--no-auto-update" in done.stdout, done.stdout[-300:] + done.stderr[-300:])
+
+# A problem the person has to know about is a page of Sidenote's own look in the browser, beside the logs it points to:
+# the system's grey box read as another program's, and on Linux nothing was shown at all
+print("\n[a problem shown]")
+with tempfile.TemporaryDirectory() as d:
+    opened, boxes = [], []
+    env = {"SIDENOTE_DATA_DIR": d}
+    with mock.patch.dict(os.environ, env), mock.patch.object(app.webbrowser, "open", side_effect=lambda u: opened.append(u) or True), \
+            mock.patch.object(app.subprocess, "run", side_effect=lambda *a, **k: boxes.append(a)):
+        app.tell("Start Sidenote again; <b>if</b> it happens again, open an issue.", None, title="The Sidenote server did not start",
+                 detail="OSError: [Errno 98] Address already in use")
+    page = Path(d) / "logs" / "problem.html"
+    text = page.read_text(encoding="utf-8") if page.is_file() else ""
+    check("a problem is written as a page beside the logs and opened in the browser", page.is_file()
+          and opened == [page.as_uri()] and not boxes, [opened, boxes])
+    check("...with its title, its words and the end of its log, every word as text (nothing to run)",
+          "<h1>The Sidenote server did not start</h1>" in text and "&lt;b&gt;if&lt;/b&gt;" in text
+          and "<pre>OSError: [Errno 98] Address already in use</pre>" in text and "<script" not in text, text[-400:])
+    check("...one file, nothing fetched from anywhere", "http://" not in text and "https://" not in text
+          and 'src="' not in text, [line for line in text.split('"') if line.startswith("http")][:3])
+    check("...and a key to the logs folder", f'href="{(Path(d) / "logs").as_uri()}"' in text)
+    # no browser to open it in: said by the system's own box on the apps that have no console (a page alone said nothing)
+    opened.clear()
+    with mock.patch.dict(os.environ, env), mock.patch.object(app.webbrowser, "open", return_value=False), \
+            mock.patch.object(app, "FROZEN", True), mock.patch.object(app.sys, "platform", "darwin"), \
+            mock.patch.object(app.subprocess, "run", side_effect=lambda *a, **k: boxes.append(a[0])):
+        app.tell("Close that program, then start Sidenote again.", None, title="Sidenote could not start")
+    check("with no browser to open, the Mac app falls back to its own alert, with the title and the words",
+          len(boxes) == 1 and boxes[0][0] == "osascript" and "Sidenote could not start" in boxes[0][-1]
+          and "Close that program" in boxes[0][-1], boxes)
+    os.environ.pop("SIDENOTE_LANG", None)
+    with mock.patch.dict(os.environ, {**env, "SIDENOTE_LANG": "ko"}):
+        ko = app.notice_page(app.t("Sidenote could not start"), app.t("Start Sidenote again; if it happens again, open an issue with the logs."))
+    check("...in Korean when the app speaks it", "Sidenote를 시작하지 못함" in ko and "로그 폴더 열기" in ko and 'lang="ko"' in ko,
+          ko[:200])
 
 print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)
