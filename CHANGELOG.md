@@ -6,6 +6,48 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-24
+
+A follow-up never sends the room's speech to the agent, the Sound card says why there is no speech, and the desktop app
+shows its tray icon as it starts.
+
+### Fixed
+
+- A follow-up about a spoken question that the agent took over from this PC's model could carry the whole run of speech
+  heard, other voices too, to the agent (since 0.13.0). The agent gets only the question cut out of it, as the problem
+  went; what was heard stays with this PC's model.
+- A follow-up this PC's model answered after the agent failed says so on its card, with why, and a rejected sign-in marks
+  the agent signed out, as on a problem. When the agent declined and this PC's model then failed, the agent's reply
+  stands; when both fail, both are said.
+- The Sound card, the guide's sound step and the settings said "Off on the server: SIDENOTE_AUDIO=1" while the speech
+  model loaded (3 to 15 s at each start), after it failed to load, and with no transcriber. Each is said as
+  **Maintenance** says it, with a key to the server's log for a model that did not load.
+- The header's signals are grey for an agent switched off and for speech the server was started without, as their cards
+  are. **Last screen** on the screen card follows the first screen with the sound off too.
+- A "not solved" note on the **Heard** card stands at the end of its own sentence, where on a line of its own it read as
+  the heading of the next question.
+- The contents count against the answers kept ("40/135") and end with a key to the older ones. After the newest answer is
+  deleted, the question box says so rather than that the server restarted; its example shows under a multiple-choice
+  answer only.
+- **Paused** offers **Reanalyze** for what was heard only with speech on at the server. The key to **Capture connection**
+  has that one name everywhere, and in one column the screen card's picture fills its box.
+- **Reanalyze** pressed again before it starts gives every press the one id the answer comes with.
+- A rest of minutes for too many requests is not said as a usage limit; a rest the plan's meters cannot see stays after
+  a restart. A later run of speech is not held behind a question that only waits on **Send**, and **Continue** loads the
+  model the next question uses.
+- `./sidenote gpu off` twice keeps what the first found, and a broken record no longer stops `gpu on`.
+- The Windows app's and capture program's drawn tray menu could not open from the built programs: two of its modules were
+  left out of the builds (since 0.10.0). The builds now check that the menu's imports load.
+- The desktop app showed nothing for 10 to 15 s while its server started: its tray icon comes at once and says it is
+  starting. Another program on its port that speaks no HTTP no longer ends it with a traceback, and a problem starting
+  is a page of the product's own in the browser rather than the system's box.
+- On Linux's plain X tray, which has no menu, a click opens **Capture connection**, with Restart and Quit, and a server
+  that is off is said in a desktop notification. Started on its own a second time with nothing to show its lines, the
+  capture program opens the panel of the one that runs, and it names no `./sidenote` command.
+- `./sidenote capture --up` on Linux names `./sidenote down` when it brought the server up. A shortcut start that failed
+  at Windows' Python paints no step red, its **Still starting** title fits beside the release tag, and a start in a
+  window of its own on current WSL waits for Enter after a failure again.
+
 ## [0.13.0] - 2026-11-24
 
 Spoken questions are not dropped while an answer is being worked out, a follow-up is answered while either engine can,
@@ -1037,7 +1079,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/kanggu12/sidenote/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/kanggu12/sidenote/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/kanggu12/sidenote/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/kanggu12/sidenote/compare/v0.12.1...v0.12.2
