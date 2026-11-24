@@ -6,6 +6,29 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-24
+
+The speech model runs as a service of its own, beside the server, and the server's code is split into modules that each
+hold one part of it.
+
+### Changed
+
+- Under Docker the speech model runs in a container of its own, `speech` (`server/speech_service.py`, the server's
+  image): the server sends it the sound and gets the words back. Its threads, its models and their loading have their
+  own CPU and memory (`SIDENOTE_SPEECH_CPUS`, `SIDENOTE_SPEECH_MEMORY`), and when it ends the server, the panels and the
+  answer being written go on: it is started again, and the server loads its model there again with no restart of its
+  own. It has no port on the PC, and only the server reaches it. `SIDENOTE_SPEECH_URL` empty runs the model in the
+  server's container, as before; the desktop app keeps it in its own process.
+- The Helm chart deploys the speech service as a Deployment with a Service only the server's pods reach, and a claim
+  of its own for the models (`speech.enabled`). For no internet, the guide unpacks the speech models into its pod.
+- Every service of Sidenote's own answers `/health` with `ok` and its name (the server and the speech service with
+  their release too). `./sidenote status` says whether speech is on, still loading or failed, and
+  `./sidenote logs speech` follows the speech service's log, which never holds what it heard.
+- The server's code is in modules by what each does: the screen's preparation (`frames.py`), who may talk to the
+  server (`guards.py`), the code runner's client (`runner_client.py`), the API's shared parts (`api_support.py`) and
+  the speech service's client (`transcriber.py`), beside the server itself (`app.py`).
+- The architecture guide and its diagrams show the speech service, its requests and what each service may reach.
+
 ## [0.13.2] - 2026-11-24
 
 0.13.1's changes, released with every file: the Windows app builds again.
@@ -1089,7 +1112,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/kanggu12/sidenote/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/kanggu12/sidenote/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/kanggu12/sidenote/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/kanggu12/sidenote/compare/v0.12.3...v0.13.0
