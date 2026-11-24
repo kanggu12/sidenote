@@ -20,14 +20,16 @@ first and what differs from compose.
 | Component | compose service | Kubernetes objects | Notes |
 |:---|:---:|:---|:---|
 | Analysis server and panel | `server` | Deployment, Service (ClusterIP, port 8777), PersistentVolumeClaim, NetworkPolicy | Image built from `docker/Dockerfile`. One replica |
+| Speech service | `speech` | Deployment, Service (port 8779), PersistentVolumeClaim, NetworkPolicy | The server's image as `server/speech_service.py`: the speech model, with its own limits and restarts. Only the server reaches it. `speech.enabled` |
 | Code runner | `runner` | Deployment, Service (port 8000), NetworkPolicy, Secret (its token) | Image built from `runner/Dockerfile`. No network at all; see "Code runner isolation" |
 | Local model | `llm` | Deployment, Service (port 11434), PersistentVolumeClaim, NetworkPolicy | `ollama/ollama:0.40.5`, on an NVIDIA or AMD GPU (`llm.gpuVendor`). `llm.enabled` |
 | Model download | `llm-pull` | Job (Helm hook), NetworkPolicy | Off until `llm.pull.enabled=true` |
 | Web search | `searxng` | Deployment, Service (port 8080), ConfigMap, NetworkPolicy | `searxng/searxng:2026.10.7-6671d89be`. `search.enabled` |
 
 The chart points the server at the other components: `SIDENOTE_RUNNER_URL=http://<release>-runner:8000/run`,
-`SIDENOTE_LOCAL_URL=http://<release>-llm:11434/v1` and `SIDENOTE_SEARCH_URL=http://<release>-searxng:8080/search`.
-A component that is switched off gets an empty address (no run button, no web search). With `llm.enabled=false`
+`SIDENOTE_SPEECH_URL=http://<release>-speech:8779`, `SIDENOTE_LOCAL_URL=http://<release>-llm:11434/v1` and
+`SIDENOTE_SEARCH_URL=http://<release>-searxng:8080/search`. A component that is switched off gets an empty address (no
+run button, no web search; with `speech.enabled=false` the server's own pod runs the speech model, as before 0.14.0). With `llm.enabled=false`
 and no `SIDENOTE_LOCAL_URL` of your own, the chart sets `SIDENOTE_ANALYZER=agent` so the agent solves alone.
 
 ## Requirements

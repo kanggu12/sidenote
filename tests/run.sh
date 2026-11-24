@@ -35,7 +35,7 @@ cd "$(dirname "$0")/.." || exit 2      # the repository's root, whatever folder 
 
 # The suites in the order they run. Each is tests/<name>.py, run with its group's interpreter, except launcher_args and
 # entrypoint_loop, which are tests/<name>.sh, run with bash.
-SERVER=(integ agent_first local_fallback gpu_swap maintenance_check server_review worker_order voice_trigger speech_hints speech_terms heard_keep lang_vote stall_guard capture_loop up_wait
+SERVER=(integ agent_first local_fallback gpu_swap maintenance_check server_review worker_order voice_trigger speech_hints speech_split speech_terms heard_keep lang_vote stall_guard capture_loop up_wait
         report_period capture_update capture_panel capture_skip monitor_follow scroll_auto poll_rate crop_grow audio_path audio_gaps tray_switch launch_window start_output capture_single launch_setup
         codex_agent repeats_check limits_check server_scenarios models_check desktop_check desktop_restart i18n_check history_star history_delete history_verdict api_check stalled_panel many_clients session_end ci_gate
         update_check version_check changelog_check launcher_args entrypoint_loop)

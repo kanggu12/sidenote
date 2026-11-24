@@ -1,0 +1,107 @@
+{{- if .Values.speech.enabled }}
+# The speech model as a service of its own (compose service "speech", server/speech_service.py): the server sends it the
+# sound it is given and gets the words back (the server's SIDENOTE_SPEECH_URL). The server's image, another program in it
+# (SIDENOTE_ROLE=speech). Its decoder's threads, its two models and their loading have their own limits and restarts here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "speech") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "speech") | nindent 4 }}
+spec:
+  replicas: 1
+  # One model cache on a ReadWriteOnce claim: the old pod lets it go before the new one takes it
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "speech") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sidenote.labels" (dict "context" . "component" "speech") | nindent 8 }}
+      {{- with .Values.speech.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.speech.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: speech
+          image: {{ include "sidenote.image" (dict "context" . "image" .Values.server.image) | quote }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          env:
+            {{- include "sidenote.speech.env" . | trim | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8779
+              protocol: TCP
+          # The kubelet's probes come from the pod's own node, which a NetworkPolicy does not block. /health answers as soon
+          # as the service is up, with a model loaded or not: the server loads its own when it starts
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            {{- toYaml .Values.speech.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            {{- toYaml .Values.speech.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            {{- toYaml .Values.speech.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.speech.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.speech.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /data/hf
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /root
+      volumes:
+        # The whisper models, downloaded once (compose: hf-cache)
+        - name: models
+          {{- if .Values.speech.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "sidenote.speech.claimName" . }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.speech.persistence.size }}
+          {{- end }}
+        # compose.yaml's tmpfs mounts over the read-only root filesystem, in memory as there
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: home
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      {{- with .Values.speech.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.speech.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.speech.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

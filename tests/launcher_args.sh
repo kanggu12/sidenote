@@ -1040,9 +1040,9 @@ else bad "uninstall --yes removes them unforced, and goes on past one that is in
 #     from a folder of wheels. Without the switch nothing of this happens.
 state; EXTRA_ENV="SIDENOTE_OFFLINE=1" run up; last_call docker build; o_build=${#CALL[@]}; last_call docker up; o_up=" ${CALL[*]} "; o_rc="$(cat "$work/rc")"
 state; run up; last_call docker build; p_build=${#CALL[@]}; last_call docker up; p_up=" ${CALL[*]} "
-if [ "$o_rc" = 0 ] && [ "$o_build" = 0 ] && [[ $o_up == *" --no-build --pull never "* ]] && [[ $o_up == *" server runner llm "* ]]; then
-  ok "offline, up builds nothing, pulls nothing and starts the server, the runner and the local model"
-else bad "offline, up builds nothing, pulls nothing and starts the server, the runner and the local model" "rc $o_rc, build calls $o_build, up:$o_up"; fi
+if [ "$o_rc" = 0 ] && [ "$o_build" = 0 ] && [[ $o_up == *" --no-build --pull never "* ]] && [[ $o_up == *" server runner speech llm "* ]]; then
+  ok "offline, up builds nothing, pulls nothing and starts the server, the runner, the speech service and the local model"
+else bad "offline, up builds nothing, pulls nothing and starts the server, the runner, the speech service and the local model" "rc $o_rc, build calls $o_build, up:$o_up"; fi
 if [ "$p_build" -gt 0 ] && [[ $p_up != *" --pull never "* ]] && [[ $p_up != *" server runner"* ]]; then ok "...and without the switch up is as it was"
 else bad "...and without the switch up is as it was" "build calls $p_build, up:$p_up"; fi
 state no-image; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LANG=en" run up; last_call docker up; none=${#CALL[@]}
@@ -1064,11 +1064,11 @@ state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other" run up; last_call docker up; x_up="
 state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LOCAL_URL=$other" run up; last_call docker up; xo_up=" ${CALL[*]} "
 state; EXTRA_ENV="SIDENOTE_LOCAL_URL=http://llm:11434/v1" run up; last_call docker up; own_up=" ${CALL[*]} "
 state; EXTRA_ENV="SIDENOTE_OFFLINE=1 SIDENOTE_LOCAL_URL=http://llm:11434/v1" run up; last_call docker up; owno_up=" ${CALL[*]} "
-if [ "$x_rc" = 0 ] && [[ $x_up == *" server runner searxng "* ]] && [[ $x_up != *" llm "* ]] \
-   && [[ $xo_up == *" server runner "* ]] && [[ $xo_up != *" llm "* ]]; then
-  ok "with another model server up starts the server, the runner and the search engine, and no llm container"
-else bad "with another model server up starts the server, the runner and the search engine, and no llm container" "rc $x_rc, up:$x_up, offline:$xo_up"; fi
-if [[ $own_up != *" server runner"* ]] && [[ $owno_up == *" server runner llm "* ]]; then ok "...and with Ollama's own address up is as it was"
+if [ "$x_rc" = 0 ] && [[ $x_up == *" server runner speech searxng "* ]] && [[ $x_up != *" llm "* ]] \
+   && [[ $xo_up == *" server runner speech "* ]] && [[ $xo_up != *" llm "* ]]; then
+  ok "with another model server up starts the server, the runner, the speech service and the search engine, and no llm container"
+else bad "with another model server up starts the server, the runner, the speech service and the search engine, and no llm container" "rc $x_rc, up:$x_up, offline:$xo_up"; fi
+if [[ $own_up != *" server runner"* ]] && [[ $owno_up == *" server runner speech llm "* ]]; then ok "...and with Ollama's own address up is as it was"
 else bad "...and with Ollama's own address up is as it was" "up:$own_up, offline:$owno_up"; fi
 state; EXTRA_ENV="SIDENOTE_LOCAL_URL=$other SIDENOTE_LANG=en" run llm pull gemma4:e4b; last_call docker llm-pull; pulled=${#CALL[@]}
 if [ "$(cat "$work/rc")" != 0 ] && [ "$pulled" = 0 ] && said "served by $other"; then ok "...llm pull pulls nothing, and says the models are that server's"

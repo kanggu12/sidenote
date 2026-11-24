@@ -160,6 +160,8 @@ case "$CORES" in ''|*[!0-9]*) CORES=8 ;; esac
 if [ "$CORES" -gt 0 ] && [ "$CORES" -lt 8 ]; then
   export SIDENOTE_CPUS="$(setting SIDENOTE_CPUS "$CORES")" SIDENOTE_LLM_CPUS="$(setting SIDENOTE_LLM_CPUS "$CORES")"
 fi
+# the speech service's 6 the same way (compose.yaml), on a machine with fewer
+if [ "$CORES" -gt 0 ] && [ "$CORES" -lt 6 ]; then export SIDENOTE_SPEECH_CPUS="$(setting SIDENOTE_SPEECH_CPUS "$CORES")"; fi
 
 # The language of every word printed here: SIDENOTE_LANG (en or ko, from the environment or .env, as the server reads
 # it), else Korean when the locale is Korean (the first of LC_ALL, LC_MESSAGES and LANG that is set, the order the C
@@ -688,14 +690,14 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
   if offline; then
     nopull=(--pull never)
     # Named one by one to leave the search engine out: it only asks the internet, and its image need not come along
-    services=(server runner)
+    services=(server runner speech)
     if [ "$ANALYZER" = local ] && own_llm; then services+=(llm); fi
   else
     # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
     # during it had the container replaced under it, the very thing the wait is there to prevent.
     docker compose build 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
     # With another model server the services are named, the llm one left out (a named one starts whatever its profile)
-    if [ "$ANALYZER" = local ] && ! own_llm; then services=(server runner searxng); fi
+    if [ "$ANALYZER" = local ] && ! own_llm; then services=(server runner speech searxng); fi
   fi
   if [ "$rc" = 0 ]; then
     wait_idle
@@ -1024,12 +1026,30 @@ ENGINES
       bad "$(L "Code runner: not responding (./sidenote restart)" "코드 실행기: 응답 없음 (./sidenote restart)")"   # up leaves a running container alone
     else bad "$(L "Code runner: off (./sidenote up)" "코드 실행기: 꺼짐 (./sidenote up)")"; fi
   fi
+  # Speech as the server says it (server/app.py, speech_state): its model on, loading, or one that did not load, with the
+  # log that says why, the speech service's when it runs in one. Speech off on the server is how it was started: no line
+  local said_speech where_log="./sidenote logs"
+  docker inspect sidenote-speech >/dev/null 2>&1 </dev/null && where_log="./sidenote logs speech"
+  said_speech="$(echo "$h" | json '(d.get("speech") or {}).get("state", "")')"
+  case "$said_speech" in
+    on) ok "$(L "Speech recognition: on" "음성 인식: 켜짐")" ;;
+    loading) warn "$(L "Speech recognition: loading the model" "음성 인식: 모델 불러오는 중")" ;;
+    failed) bad "$(L "Speech recognition: the model did not load ($where_log)" "음성 인식: 모델을 불러오지 못함 ($where_log)")" ;;
+  esac
   echo
   echo "  $(L "Open the panel" "패널 열기"): ${B}${URL}${N}   ${D}($(L "or ./sidenote open" "또는 ./sidenote open"))${N}"
 }
 
 cmd_logs() {
   docker_up
+  # The speech service's own (compose's speech): what it loaded and why it could not, never what it heard
+  if [ "${1:-}" = speech ]; then
+    docker inspect sidenote-speech >/dev/null 2>&1 </dev/null \
+      || die "$(L "The speech service is not running (./sidenote up starts it)" "음성 서비스가 실행 중이 아닙니다 (./sidenote up으로 시작)")"
+    docker compose logs -f --tail 60 speech
+    return
+  fi
+  [ -z "${1:-}" ] || die "$(L "Unknown log: $1 (./sidenote logs, or ./sidenote logs speech)" "알 수 없는 로그입니다: $1 (./sidenote logs 또는 ./sidenote logs speech)")"
   if ! running; then
     # A server that ended by itself left its container, and the container its last lines: they are what says why it
     # ended, and status points here for them. Shown without -f (nothing more will come), then the same end as before.
@@ -2737,7 +2757,7 @@ ${B}Sidenote${N}: solves the problems on your screen and in its sound in real ti
     ./sidenote stats          Answers, tokens, cost, response times and the last error since the server started (--json)
     ./sidenote events         Recent events (-n 50, --errors for errors and stalls only)
     ./sidenote report         Summary by day and for the whole period (first token by engine, agent cost, GPU busy, example checks) (--days 30, --json)
-    ./sidenote logs           Follow the server log
+    ./sidenote logs           Follow the server log (logs speech: the speech service's)
     ./sidenote doctor         Check the install
     ./sidenote capture-stop   End a capture program that is left running
     ./sidenote uninstall      List what was made on this PC and what stays (--yes removes it, --data the history and settings too)
@@ -2798,7 +2818,7 @@ ${B}Sidenote${N}: 화면과 소리 속 문제를 이 PC의 모델과 클라우�
     ./sidenote stats          서버를 켠 뒤의 답 수, 토큰, 비용, 응답 시간, 마지막 오류 (--json)
     ./sidenote events         최근 이벤트 (-n 50, --errors는 오류와 멈춘 일만)
     ./sidenote report         날짜별 요약과 기간 전체 (엔진별 첫 토큰, 에이전트 비용, GPU 바쁨, 예제 검사) (--days 30, --json)
-    ./sidenote logs           서버 로그 실시간 보기
+    ./sidenote logs           서버 로그 실시간 보기 (logs speech: 음성 서비스 로그)
     ./sidenote doctor         설치 점검
     ./sidenote capture-stop   남아 있는 캡처 프로그램 끄기
     ./sidenote uninstall      이 PC에 만든 것과 남기는 것 목록 (--yes를 붙이면 삭제, --data면 기록과 설정까지)
@@ -2888,7 +2908,7 @@ case "${1:-help}" in
     in_image stats "$@" ;;
   events) shift; in_image events "$@" ;;
   report) shift; in_image report "$@" ;;
-  logs) cmd_logs ;;
+  logs) shift; cmd_logs "$@" ;;
   login) cmd_login "${2:-}" ;;
   capture) shift; cmd_capture "$@" ;;
   capture-stop) cmd_capture_stop ;;

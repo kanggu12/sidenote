@@ -21,6 +21,10 @@ services:
     depends_on:
       server-init:
         condition: service_completed_successfully
+      # started with it, not waited for: the server's first load of the speech model waits for it (RemoteTranscriber)
+      speech:
+        condition: service_started
+        required: false
     # Started by `./sidenote up` and stopped by `./sidenote down` only; Docker starting does not bring
     # it back (no resident program on this PC).
     restart: "no"
@@ -54,9 +58,13 @@ services:
       # The code runner (service below), through its socket in the runner-sock volume: it has no
       # network. Empty turns the "run this solution" feature off.
       SIDENOTE_RUNNER_URL: ${SIDENOTE_RUNNER_URL-unix:///sock/runner.sock}
+      # The speech service (below), which writes down what is heard. Empty: the speech model runs in this container,
+      # as before 0.14.0 and as the desktop app runs it.
+      SIDENOTE_SPEECH_URL: ${SIDENOTE_SPEECH_URL-http://speech:8779}
     networks:
       - default      # the agent's CLI here reaches its vendor (claude.ai, chatgpt.com)
       - llmnet       # and the local LLM (SIDENOTE_ANALYZER=local), which has no internet
+      - speechnet    # and the speech service, which nothing else reaches
     volumes:
       - hf-cache:/data/hf     # whisper models, downloaded once (~2.1 GB: large-v3-turbo for the sentences, small for the live words)
       - runner-sock:/sock     # the code runner's socket
@@ -151,6 +159,72 @@ services:
       options:
         max-size: "1m"
         max-file: "1"
+
+  # The speech model as a service of its own (server/speech_service.py): the server sends it the sound it is given and
+  # gets the words back, over this network (SIDENOTE_SPEECH_URL). The decoder's threads, its 1.8 GB of models and their
+  # loading are a process with its own memory and CPU limits, and an end of it (out of memory, a model that will not
+  # load) takes no answer and no panel with it: it is started again inside its container (docker/keep-running.sh, as the
+  # server is), and the server loads its model again once it is back (server/transcriber.py, RemoteTranscriber). No port
+  # on this PC, and nothing heard is written to its log.
+  speech:
+    image: sidenote:local     # the server's image, which has faster-whisper: another program in it (SIDENOTE_ROLE)
+    pull_policy: never        # built for the server, as server-init's
+    container_name: sidenote-speech
+    user: "${SIDENOTE_UID:-0}:${SIDENOTE_GID:-0}"
+    depends_on:
+      server-init:            # the model folder handed to the user it runs as
+        condition: service_completed_successfully
+    restart: "no"
+    environment:
+      TZ: ${TZ:-UTC}
+      SIDENOTE_ROLE: speech   # docker/entrypoint.sh: this program, not the server
+      SIDENOTE_SPEECH_PORT: "8779"
+      # Speech's own settings from .env, those the service reads: the language and the terms the server sends itself.
+      # Named one by one, not the whole .env, whose agent keys this container has no use for
+      SIDENOTE_AUDIO: ${SIDENOTE_AUDIO-}
+      SIDENOTE_TRANSCRIBER: ${SIDENOTE_TRANSCRIBER-}
+      SIDENOTE_WHISPER_MODEL: ${SIDENOTE_WHISPER_MODEL-}
+      SIDENOTE_WHISPER_LIVE_MODEL: ${SIDENOTE_WHISPER_LIVE_MODEL-}
+      SIDENOTE_WHISPER_COMPUTE: ${SIDENOTE_WHISPER_COMPUTE-}
+      SIDENOTE_WHISPER_THREADS: ${SIDENOTE_WHISPER_THREADS-}
+      # The decoder's own pool is capped in code (SIDENOTE_WHISPER_THREADS); these cap the libraries under it and stop
+      # their idle threads from spinning (measured in the server before: eight cores held for 95 minutes)
+      OMP_NUM_THREADS: ${SIDENOTE_WHISPER_THREADS:-4}
+      OMP_WAIT_POLICY: PASSIVE
+    # Reached by the server alone (speechnet, internal), and out on a network of its own for a model's first download: on
+    # the default network SearXNG, which reads the web, could have changed its terms or loaded model after model
+    networks:
+      - speechnet
+      - speech-out
+    volumes:
+      - hf-cache:/data/hf     # the whisper models, downloaded once (~2.1 GB), the volume the server kept them in
+    healthcheck:              # the image's asks for the server's port
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8779/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    # The server's hardening: CHOWN only for the entrypoint's handover of an older image's folder when it runs as root
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+      - /root:size=64m,uid=${SIDENOTE_UID:-0},gid=${SIDENOTE_GID:-0},mode=0700
+    pids_limit: 128
+    # The two models (large-v3-turbo for the sentences, small for the live line) and a third while one chosen in the
+    # panel loads beside them
+    mem_limit: ${SIDENOTE_SPEECH_MEMORY:-5g}
+    cpus: ${SIDENOTE_SPEECH_CPUS:-6}
+    ulimits:
+      core: 1
 
   # Runs the code from a solution and returns its real output. Isolated: no network at all, a
   # read-only root filesystem, process and memory capped, and every compile and every run under a
@@ -357,6 +431,9 @@ networks:
   default:
   llmnet:
     internal: true   # the server and the local LLM only
+  speechnet:
+    internal: true   # the server and the speech service only: SearXNG, which reads the web, cannot reach what hears
+  speech-out:        # the speech service alone, for a model's first download: nothing else is on it to reach it
 
 volumes:
   searxng-conf:   # the search engine's own config dir (its image declares it; named so recreates

@@ -164,6 +164,64 @@ server:
       drop: [ALL]
       add: [CHOWN]
 
+speech:
+  # The speech model in a pod of its own (speech-deployment.yaml; compose service "speech", server/speech_service.py):
+  # the server sends it the sound and gets the words back over a Service only the server's pods may reach. Its
+  # decoder's threads, its two models and their loading have their own requests, limits and restarts. false: the
+  # server's own pod runs the speech model, as before 0.14.0 (its data claim then holds the models, as said above).
+  # Its settings are the server's: SIDENOTE_WHISPER_* and SIDENOTE_AUDIO in server.env reach this pod too.
+  enabled: true
+  # The whisper models (about 2.1 GB for the two defaults), downloaded once. enabled: false uses an emptyDir, and the
+  # models are fetched again whenever the pod is replaced. helm uninstall leaves the claim; delete it with kubectl.
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 4Gi
+  # compose.yaml caps it at 6 CPUs and 5 GB (SIDENOTE_SPEECH_CPUS, SIDENOTE_SPEECH_MEMORY): the two models, and a third
+  # while one chosen in the panel loads beside them. The memory-backed /tmp (256 MiB) and /root (64 MiB) count too.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "6"
+      memory: 5Gi
+  # /health answers as soon as the service listens, with a model loaded or not: the server loads its own when it starts
+  probes:
+    startup:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 24
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 6
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  # As the server's: root of the container with CHOWN alone (the entrypoint hands an older image's model folder back to
+  # root), no privilege gain, a read-only root filesystem
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+      add: [CHOWN]
+
 runner:
   # false: no code runner, and the panel shows no run button (SIDENOTE_RUNNER_URL is empty).
   enabled: true

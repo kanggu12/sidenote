@@ -28,6 +28,13 @@ fi
 # desktop/app.py starts its server with the same three.
 set -- uvicorn server.app:app --host "${SIDENOTE_HOST:-0.0.0.0}" --port "${SIDENOTE_PORT:-8777}" --no-access-log \
     --ws-max-size 67108864 --timeout-graceful-shutdown 5 --limit-concurrency 512
+# The same image is the speech service too (compose's speech, the chart's speech Deployment): the speech model as a
+# program of its own, which the server asks over the services' network (server/speech_service.py). One client, the server,
+# and no access log either: its requests carry the room's speech.
+if [ "${SIDENOTE_ROLE:-server}" = speech ]; then
+    set -- uvicorn server.speech_service:app --host 0.0.0.0 --port "${SIDENOTE_SPEECH_PORT:-8779}" --no-access-log \
+        --timeout-graceful-shutdown 5 --limit-concurrency 64
+fi
 # Under compose a server that ends by itself (the watchdog ends one whose loop stopped turning) is started again inside
 # the container, as the desktop app does: keep-running.sh, beside this file in the image. Kubernetes starts a container
 # again itself, and the chart sets SIDENOTE_SELF_RESTART=0 so that a pod's restarts are its own.

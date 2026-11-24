@@ -1,0 +1,19 @@
+{{- if .Values.speech.enabled }}
+# The speech service's port, for the server's SIDENOTE_SPEECH_URL (http://<this>:8779). The NetworkPolicy beside it lets
+# the server's pods in and nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "speech") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "speech") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sidenote.selectorLabels" (dict "context" . "component" "speech") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8779
+      targetPort: http
+      protocol: TCP
+{{- end }}

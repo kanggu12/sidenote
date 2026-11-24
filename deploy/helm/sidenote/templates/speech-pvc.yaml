@@ -1,0 +1,21 @@
+{{- if and .Values.speech.enabled .Values.speech.persistence.enabled (not .Values.speech.persistence.existingClaim) }}
+# The whisper models (compose volume hf-cache), downloaded once: about 2.1 GB for the two defaults.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "sidenote.speech.claimName" . }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "speech") | nindent 4 }}
+  annotations:
+    # helm uninstall leaves them, as the server's data: delete the claim with kubectl to remove the models
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.speech.persistence.accessModes | nindent 4 }}
+  {{- with (include "sidenote.storageClass" .Values.speech.persistence) }}
+  {{- . | nindent 2 }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.speech.persistence.size }}
+{{- end }}

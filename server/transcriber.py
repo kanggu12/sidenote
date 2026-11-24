@@ -3,12 +3,16 @@
 The core pipeline runs without any speech dependency (NullTranscriber). Install
 server/requirements-audio.txt to enable faster-whisper; "auto" picks it up.
 Transcription is CPU-bound, so callers run .transcribe() in a thread executor.
+With SIDENOTE_SPEECH_URL the model runs in a service of its own (server/speech_service.py,
+compose's speech, the chart's speech Deployment) and RemoteTranscriber asks it over HTTP.
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
+import threading
+import time
 
 from . import forksafe
 
@@ -406,6 +410,135 @@ class UtteranceTracker:
 SIZES = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
 
+REACH_WAIT = 120.0   # seconds a first load waits for a speech service that is still starting
+
+
+class RemoteTranscriber:
+    """The speech model in a service of its own (server/speech_service.py, SIDENOTE_SPEECH_URL), asked over HTTP: what
+    FasterWhisperTranscriber does, with the decoding in another process, container or pod. Built as that one is built,
+    by loading the model (POST /load, which fetches it the first time: minutes), and used as that one is, from the speech
+    loop's threads (app.py, transcription_worker): its calls are plain blocking ones.
+
+    A service that started again has no model: the first call that finds none (409) loads this one's again, once, and is
+    asked again. A service that does not answer hears nothing for that call (no spans, no words), said in the log once a
+    minute: the speech loop goes on, and hears again when the service is back."""
+
+    available = True
+
+    def __init__(self, url: str, model: str = "", load_timeout: float = 1800.0):
+        import httpx2
+        self._httpx = httpx2
+        self.url = url.rstrip("/")
+        self.wanted = model          # the model this one asked for ("" is the service's own SIDENOTE_WHISPER_MODEL)
+        # one connection kept open: the loop asks for the speech spans about twice a second. No proxy: the services talk on
+        # their own network, and a proxy set for the agent's CLI would carry the room's speech out of it
+        self._http = httpx2.Client(timeout=httpx2.Timeout(10.0, read=120.0), trust_env=False)
+        self._load_timeout = load_timeout
+        self._reload = threading.Lock()   # one load again at a time, whichever thread found the service without a model
+        self._said_down = 0.0             # when the log last said the service does not answer
+        self._set: dict = {}              # the language and the terms given it, given again to a service that started again
+        self.last_language = ""
+        self.model_name = self.live_name = ""
+        self._language = "auto"
+        self._load()
+
+    def _load(self) -> None:
+        # The service may still be starting beside the server (compose starts the two together, Kubernetes in any order):
+        # not answering yet is waited for, two minutes at most, a refusal is not
+        until = time.monotonic() + REACH_WAIT
+        while True:
+            try:
+                r = self._http.post(f"{self.url}/load", json={"model": self.wanted},
+                                    timeout=self._httpx.Timeout(10.0, read=self._load_timeout))
+                break
+            except self._httpx.TransportError as exc:
+                if time.monotonic() > until:
+                    raise RuntimeError(f"the speech service at {self.url} does not answer ({type(exc).__name__})") from exc
+                time.sleep(2)
+        if r.status_code >= 400:
+            raise RuntimeError(_said(r) or f"the speech service could not load {self.wanted or 'its model'}")
+        self._take(r.json())
+        if not self.model_name:
+            raise RuntimeError("the speech service has no model")
+
+    def _take(self, st: dict) -> None:
+        """What the service says it runs: the names the panel and Maintenance show, and the language chosen."""
+        self.model_name = str(st.get("model") or "")
+        self.live_name = str(st.get("live_model") or self.model_name)
+        self._language = str(st.get("language") or "auto")
+
+    def _ask(self, method: str, path: str, empty, **kw):
+        """One call, and what it answers as JSON; `empty` when the service does not answer. A service with no model (it
+        started again) gets this one's again, and is asked once more."""
+        for attempt in (1, 2):
+            try:
+                r = self._http.request(method, f"{self.url}{path}", **kw)
+            except self._httpx.HTTPError as exc:   # not there (starting again, stopped): no speech this time
+                if time.monotonic() - self._said_down > 60:
+                    self._said_down = time.monotonic()
+                    log.warning("the speech service does not answer (%s): nothing is heard until it does", type(exc).__name__)
+                return empty
+            if r.status_code == 409 and attempt == 1:   # started again, with no model: this one's, then the call again
+                with self._reload:
+                    try:
+                        self._load()
+                        # and what the server had set on it, which a service that started again does not hold
+                        if "language" in self._set:
+                            self._http.put(f"{self.url}/language", json={"value": self._set["language"]})
+                        if "hints" in self._set:
+                            self._http.put(f"{self.url}/hints", json=self._set["hints"])
+                    except Exception as exc:
+                        log.warning("the speech service could not load %s again (%s)", self.wanted or "its model", exc)
+                        return empty
+                continue
+            if r.status_code >= 400:
+                log.warning("the speech service refused %s %s (%s %s)", method, path, r.status_code, _said(r)[:120])
+                return empty
+            return r.json()
+        return empty
+
+    @property
+    def language(self) -> str:
+        return self._language
+
+    @language.setter
+    def language(self, value: str) -> None:
+        self._set["language"] = value
+        got = self._ask("PUT", "/language", None, json={"value": value})
+        self._language = str((got or {}).get("language") or value)
+
+    def set_hints(self, hint, extra=()) -> None:
+        self._set["hints"] = {"hint": hint, "extra": list(extra or ())}
+        self._ask("PUT", "/hints", None, json=self._set["hints"])
+
+    def speech_segments(self, pcm_bytes: bytes, sample_rate: int) -> list[tuple[int, int]]:
+        got = self._ask("POST", "/segments", None, params={"sr": int(sample_rate)}, content=pcm_bytes)
+        return [(int(s), int(e)) for s, e in (got or {}).get("spans", [])]
+
+    def transcribe(self, pcm_bytes: bytes, sample_rate: int, live: bool = False) -> str:
+        got = self._ask("POST", "/transcribe", None, params={"sr": int(sample_rate), "live": int(bool(live))},
+                        content=pcm_bytes)
+        if not got:
+            return ""
+        self.last_language = str(got.get("last_language") or "")
+        return str(got.get("text") or "")
+
+    def transcribe_live(self, pcm_bytes: bytes, sample_rate: int) -> str:
+        return self.transcribe(pcm_bytes, sample_rate, live=True)
+
+    def close(self) -> None:
+        self._http.close()
+
+
+def _said(r) -> str:
+    """The service's own words for a refusal (FastAPI's detail), or its body."""
+    try:
+        body = r.json()
+        return str(body.get("detail") or body) if isinstance(body, dict) else str(body)
+    except ValueError:
+        return r.text[:200]
+
+
 def live_model(cfg, chosen: str) -> str:
     """The model that reads the live line beside `chosen`: SIDENOTE_WHISPER_LIVE_MODEL (small), or `chosen` itself when that
     is no heavier, or a folder or a name this list does not know, which is taken as it is (one model for both)."""
@@ -415,11 +548,13 @@ def live_model(cfg, chosen: str) -> str:
     return live
 
 
-def make_transcriber(cfg, model: str = "") -> "NullTranscriber | FasterWhisperTranscriber":
+def make_transcriber(cfg, model: str = "") -> "NullTranscriber | FasterWhisperTranscriber | RemoteTranscriber":
     """The speech model: `model` when it is named (the panel's choice), else the one the environment names. One not
     downloaded yet is fetched by faster-whisper on the way."""
     if not cfg.audio_enabled or cfg.transcriber == "null":
         return NullTranscriber()
+    if getattr(cfg, "speech_url", ""):   # the speech service: its model, loaded there (fetched there the first time)
+        return RemoteTranscriber(cfg.speech_url, model)
     if cfg.transcriber in ("auto", "faster-whisper"):
         try:
             chosen = model or cfg.whisper_model

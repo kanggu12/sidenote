@@ -79,6 +79,34 @@ storageClassName: {{ .storageClass | quote }}
 {{- .Values.server.persistence.existingClaim | default (printf "%s-data" (include "sidenote.componentName" (dict "context" . "component" "server"))) -}}
 {{- end -}}
 
+{{- define "sidenote.speech.claimName" -}}
+{{- .Values.speech.persistence.existingClaim | default (printf "%s-models" (include "sidenote.componentName" (dict "context" . "component" "speech"))) -}}
+{{- end -}}
+
+{{/*
+The speech service's environment (speech-deployment.yaml): what server.env says of speech that the service reads (its
+models, their threads, speech off), as the server's own process read them before, and the values that make the image the
+speech service. The language and the terms the server sends it itself.
+*/}}
+{{- define "sidenote.speech.env" -}}
+{{- $user := .Values.server.env | default dict -}}
+{{- $env := dict -}}
+{{- $_ := set $env "TZ" .Values.timezone -}}
+{{- $_ := set $env "OMP_NUM_THREADS" (toString (index $user "SIDENOTE_WHISPER_THREADS" | default "4")) -}}
+{{- $_ := set $env "OMP_WAIT_POLICY" "PASSIVE" -}}
+{{- range $name, $value := $user -}}
+{{- if or (hasPrefix "SIDENOTE_WHISPER_" $name) (has $name (list "SIDENOTE_AUDIO" "SIDENOTE_TRANSCRIBER")) -}}
+{{- $_ := set $env $name $value -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $env "SIDENOTE_ROLE" "speech" -}}
+{{- $_ := set $env "SIDENOTE_SPEECH_PORT" "8779" -}}
+{{- $_ := set $env "HF_HOME" "/data/hf" -}}
+{{- /* Kubernetes starts a container that ended again itself, as for the server */ -}}
+{{- $_ := set $env "SIDENOTE_SELF_RESTART" "0" -}}
+{{- include "sidenote.envFromMap" $env }}
+{{- end -}}
+
 {{- define "sidenote.llm.claimName" -}}
 {{- .Values.llm.persistence.existingClaim | default (printf "%s-models" (include "sidenote.componentName" (dict "context" . "component" "llm"))) -}}
 {{- end -}}
@@ -153,6 +181,13 @@ sidenote.validate). Rendered as a list for "env:".
 {{- else if not (or (hasKey $user "SIDENOTE_LOCAL_URL") (hasKey $user "SIDENOTE_ANALYZER")) -}}
 {{- /* No local LLM and none named: the agent alone solves, and the server stops looking for a local LLM at its default address (http://llm:11434/v1), which does not resolve here. */ -}}
 {{- $_ := set $env "SIDENOTE_ANALYZER" "agent" -}}
+{{- end -}}
+{{- /* The speech service (speech-deployment.yaml): the speech model in a pod of its own. Off, the server runs it itself,
+as compose's SIDENOTE_SPEECH_URL empty does. server.env may name another one. */ -}}
+{{- if .Values.speech.enabled -}}
+{{- $_ := set $env "SIDENOTE_SPEECH_URL" (printf "http://%s:8779" (include "sidenote.componentName" (dict "context" . "component" "speech"))) -}}
+{{- else -}}
+{{- $_ := set $env "SIDENOTE_SPEECH_URL" "" -}}
 {{- end -}}
 {{- /* SIDENOTE_SEARCH_URL is read as it is, so an empty value turns web search off. */ -}}
 {{- if .Values.search.enabled -}}

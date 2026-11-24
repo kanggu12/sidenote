@@ -212,8 +212,9 @@ check "...and the file a run user left in /work is gone" test "$OUT" = gone
 check "...and it is healthy" kc exec "$RPOD" -- python3 /app/runner.py --health
 
 echo "[no internet: the speech bundle, unpacked as docs/air-gapped.md does]"
-# The guide's own command, from the guide: what it runs in the server's pod for speech.tar
-read -r -a UNPACK <<< "$(sed -n 's|^kubectl -n sidenote exec -i deploy/sidenote-server -- \(.*\) < speech\.tar$|\1|p' "$REPO/docs/air-gapped.md")"
+# The guide's own command, from the guide: what it runs in the speech service's pod for speech.tar (the pod that holds the
+# models since 0.14.0, speech-deployment.yaml)
+read -r -a UNPACK <<< "$(sed -n 's|^kubectl -n sidenote exec -i deploy/sidenote-speech -- \(.*\) < speech\.tar$|\1|p' "$REPO/docs/air-gapped.md")"
 BUNDLE="$WORK/bundle"                                 # a model's files as the guide's command writes them, with no links
 SNAPSHOT="$BUNDLE/hub/models--Systran--faster-whisper-small/snapshots/0123456789012345678901234567890123456789"
 mkdir -p "$SNAPSHOT" "$BUNDLE/hub/models--Systran--faster-whisper-small/refs"
@@ -221,13 +222,13 @@ printf %s 0123456789012345678901234567890123456789 > "$BUNDLE/hub/models--Systra
 echo "the model" > "$SNAPSHOT/model.bin"
 # owned by the user of the PC it was made on, as a real one is, and not by the pod's root
 tar cf "$WORK/speech.tar" --owner=1000 --group=1000 -C "$BUNDLE" hub
-unpack() { [ "${#UNPACK[@]}" -gt 0 ] && kc exec -i deploy/sidenote-server -- "${UNPACK[@]}" < "$WORK/speech.tar"; }
-check "the guide's command unpacks it into the server's volume, with no error" unpack
+unpack() { [ "${#UNPACK[@]}" -gt 0 ] && kc exec -i deploy/sidenote-speech -- "${UNPACK[@]}" < "$WORK/speech.tar"; }
+check "the guide's command unpacks it into the speech service's volume, with no error" unpack
 FIND='import sys
 from faster_whisper import download_model
 sys.exit(open(download_model("small") + "/model.bin").read().strip() != "the model")'
 check "...and the library finds the model there with no network" \
-  kc exec deploy/sidenote-server -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
+  kc exec deploy/sidenote-speech -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
 
 echo "[upgrade: the token kept, Codex's login copied into a writable home]"
 TOKEN_BEFORE=$(kc get secret sidenote-runner-token -o jsonpath='{.data.token}')
@@ -241,8 +242,8 @@ check "the runner's token is the same after the upgrade" \
 check "Codex's login is in its home, and the home is writable" kc exec deploy/sidenote-server -- \
   sh -c 'test -s /root/.codex/auth.json && touch /root/.codex/written && ls -ld /root/.codex | grep -q "^drwx------"'
 check "the server's runs still work after the upgrade" kc exec deploy/sidenote-server -- python3 -c "$PROBE" token
-check "the speech model unpacked before it is still there in the new pod" \
-  kc exec deploy/sidenote-server -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
+check "the speech model unpacked before it is still there after the upgrade" \
+  kc exec deploy/sidenote-speech -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
 
 echo
 echo "==== $PASS passed, $FAIL failed ===="

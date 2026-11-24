@@ -351,6 +351,9 @@ class Config:
     # the sentences reads the live line with this one (server/transcriber.py, live_model; DECISIONS note 129)
     whisper_live_model: str = env_str("SIDENOTE_WHISPER_LIVE_MODEL", "small")
     whisper_compute: str = env_str("SIDENOTE_WHISPER_COMPUTE", "int8")
+    # The speech service (server/speech_service.py) to send the sound to, http://speech:8779 under compose and the chart's
+    # own under Kubernetes; empty: the model runs in this process, as the desktop app runs it
+    speech_url: str = env_str("SIDENOTE_SPEECH_URL", "")
     # Threads faster-whisper decodes with. Left to itself it takes every core the container has
     # (measured: eight, held for 95 minutes), which lags the PC it is meant to help.
     whisper_threads: int = env_int("SIDENOTE_WHISPER_THREADS", 4)

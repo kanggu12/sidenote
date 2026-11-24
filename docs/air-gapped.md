@@ -231,7 +231,7 @@ search:
 ```bash
 helm install sidenote sidenote-server-$V-helm-chart.tgz --namespace sidenote --create-namespace -f my-values.yaml --wait
 kubectl -n sidenote exec -i deploy/sidenote-llm -- tar xf - --no-same-owner -C /root/.ollama < models.tar
-kubectl -n sidenote exec -i deploy/sidenote-server -- tar xf - --no-same-owner -C /data/hf < speech.tar
+kubectl -n sidenote exec -i deploy/sidenote-speech -- tar xf - --no-same-owner -C /data/hf < speech.tar
 kubectl -n sidenote rollout restart deploy/sidenote-server
 kubectl -n sidenote port-forward svc/sidenote-server 8777:8777    # the panel, at http://127.0.0.1:8777
 ```

@@ -1,0 +1,24 @@
+{{- if and .Values.speech.enabled .Values.networkPolicy.enabled }}
+# compose.yaml publishes no port for the speech service: the server is its one client, and what it is sent is the room's
+# speech. Only the server's pods may connect here. Its own connections out stay open, for the first download of a model.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidenote.componentName" (dict "context" . "component" "speech") }}
+  labels:
+    {{- include "sidenote.labels" (dict "context" . "component" "speech") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sidenote.selectorLabels" (dict "context" . "component" "speech") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sidenote.selectorLabels" (dict "context" . "component" "server") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8779
+{{- end }}

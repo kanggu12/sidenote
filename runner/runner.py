@@ -626,7 +626,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):   # noqa: N802
         if self.path == "/health":
-            self._send({"ok": not DIRTY.is_set(), "busy": RUN_LOCK.locked()})
+            # ok and its name, as each of Sidenote's services answers it (the server's /health, the speech service's)
+            self._send({"ok": not DIRTY.is_set(), "service": "runner", "busy": RUN_LOCK.locked()})
         else:
             self._send({"error": "not found"}, 404)
 
