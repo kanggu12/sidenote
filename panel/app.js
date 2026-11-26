@@ -1715,18 +1715,59 @@ function vStepLeads(md) {
 }
 // The links of a chain, or nothing: "A -> B -> C" with short links, none of them a list of its own ("80% -> 21ns, 90% -> 11ns" pairs figures, it does not go anywhere)
 function vChain(text) {
-  const links = String(text).split(V_ARROW).map((x) => x.trim()).filter(Boolean);
+  return vChainLinks(String(text).split(V_ARROW).map((x) => x.trim()).filter(Boolean));
+}
+// The rules a chain's links keep, wherever they were cut from (a line of words, or named steps in code, below)
+function vChainLinks(links) {
   if (links.length < 3 || links.length > 9 || links.some((x) => x.length > 40)) return null;
   if (links.slice(1, -1).some((x) => /[,，;]/.test(x))) return null;
   if (links.some((x) => /[.!?。！？]$|[.!?。！？]\s|니다$|[한된있없]다$/.test(x) || (x.match(/["“”]/g) || []).length % 2)) return null;   // a sentence that happens to hold arrows: its pieces read as nothing in boxes
   return links;
 }
-function vFlow(links, said) {
+// A chain of named steps written as code with the arrows between them, in the words or as a formula: `A` → `B` (what it
+// does) → `C`, or $\rightarrow$ between them. The arrows are outside the code (an arrow inside one may be a type or a
+// pointer's path, and stays code, below), so the names are the links, each with the words in brackets after it. Anything
+// else on the line (a sentence around it, a link, bold) leaves it to the rules below
+function vMathArrow(el) {   // a formula that is an arrow alone, as written ($\rightarrow$) or as KaTeX keeps its source
+  const tex = (el.querySelector("annotation")?.textContent ?? el.textContent).trim().replace(/^\$+|\$+$/g, "").trim();
+  return /^\\(?:rightarrow|to|longrightarrow|Rightarrow|Longrightarrow|implies)$|^[→➜⟶⇒]$/.test(tex);
+}
+function vCodeChain(node) {
+  const links = [], parts = [];   // each link's words, and its name in code with the words in brackets after it
+  let arrow = false;   // an arrow since the last name: the next code is the next link
+  for (const c of node.childNodes) {
+    if (c.nodeType === 1 && c.tagName === "CODE") {
+      if (links.length && !arrow) return null;   // two names with no arrow between them
+      links.push(c.textContent.trim()); parts.push([c.textContent.trim(), ""]); arrow = false; continue;
+    }
+    if (c.nodeType === 1 && c.matches("span.math")) {
+      if (!vMathArrow(c) || !links.length || arrow) return null;
+      arrow = true; continue;
+    }
+    if (c.nodeType !== 3) return null;
+    for (const part of c.nodeValue.split(/(→|➜|⟶|⇒|=>|->)/)) {
+      const x = part.trim();
+      if (!x) continue;
+      if (/^(→|➜|⟶|⇒|=>|->)$/.test(x)) { if (!links.length || arrow) return null; arrow = true; continue; }
+      if (/^\([^()]{1,24}\)$/.test(x) && links.length && !arrow) { links[links.length - 1] += ` ${x}`; parts[parts.length - 1][1] = x; continue; }
+      return null;
+    }
+  }
+  // The links as they are, by the rules every chain keeps: joined and cut again at its arrows, a step with an arrow of its
+  // own (`head->next`, `x => x > 0`) came apart into pieces of code
+  return !arrow && links.length >= 3 && vChainLinks(links) ? { links, parts } : null;
+}
+// `parts`: each step's name in code and its words in brackets, drawn in the code's own letters as the line wrote them
+function vFlow(links, said, parts = null) {
   const box = vEl("div", "v-flow");
   box.setAttribute("role", "img"); box.setAttribute("aria-label", said || links.join(t(", then ")));
   links.forEach((x, i) => {
     if (i) box.insertAdjacentHTML("beforeend", mark('<path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/>', 2));
-    box.append(vEl("span", "", x));
+    if (!parts) { box.append(vEl("span", "", x)); return; }
+    const step = vEl("span", "");
+    step.append(vEl("code", "", parts[i][0]));
+    if (parts[i][1]) step.append(` ${parts[i][1]}`);
+    box.append(step);
   });
   return box;
 }
@@ -1747,6 +1788,10 @@ function vFlows(md) {
     if (node.tagName === "LI" && node.querySelector(":scope > p")) return;
     const said = node.tagName === "LI" ? [...node.childNodes].filter((c) => !["UL", "OL"].includes(c.nodeName)).map((c) => c.textContent).join("").trim() : node.textContent.trim();
     const plain = vOwnWords(said).trim();
+    // A line that is a chain of named steps in code, its arrows between them: drawn as the flow in its place, as a line of
+    // words that is all a chain is (it read as code and formulas mixed into one line)
+    const coded = node.querySelector(":scope > code") ? vCodeChain(node) : null;
+    if (coded) { node.textContent = ""; node.classList.add("v-flow-line"); node.append(vFlow(coded.links, coded.links.join(" → "), coded.parts)); return; }
     // With a picture's caption beside it the chain is drawn under the words, never in their place: the caption is words too
     const whole = plain === said && node.childElementCount <= 1 && !node.querySelector("code, .math, a, ul, ol") ? vChain(plain) : null;
     if (whole) { node.textContent = ""; node.classList.add("v-flow-line"); node.append(vFlow(whole, plain)); return; }
@@ -2435,8 +2480,8 @@ function screenState() {
   if (caps.skipping) return card("warn", t("Skipped window"), facts, t("No screen is sent while it shows · Skip windows in Solver settings"));
   // Screens are going out, and the list in the settings cannot do all it says here: a list that looks in force and is not is
   // worse than none. The program clears this with an empty list, where there is nothing to look for
-  if (caps.skip_limit === "none") return card("warn", t("Windows not skipped"), facts, t("This desktop does not say which windows are open · Turn the screen off while a private window shows"));
-  if (caps.skip_limit === "front") return card("warn", t("Front window only"), facts, t("This desktop does not list the windows behind the front one · Turn the screen off while a private window shows"));
+  if (caps.skip_limit === "none") return card("warn", t("Windows not skipped"), facts, t("This desktop does not say which windows are open"));
+  if (caps.skip_limit === "front") return card("warn", t("Front window only"), facts, t("This desktop does not list the windows behind the front one"));
   // The watching slowed itself down: every answer in a row found nothing, so this is somebody
   // working rather than a problem waiting. A tool that quietly looks less often is worse than one
   // that keeps asking, so the card says it while it holds and says what brings it back.
@@ -2470,8 +2515,12 @@ function audioState() {
   // No speech on the server, for one of three reasons Maintenance tells apart too (server/app.py, speech_state): its model
   // still loading after the server came up (3 to 15 s at each start), a model that did not load, or the server started
   // without it, whose variable no switch here can change. As one, all three said "off: SIDENOTE_AUDIO=1"
+  const sp = status.speech || {};
+  // the speech service does not answer (its container ended, or its network is cut): nothing is heard whatever the model
+  if (sp.state === "down") {
+    return card("bad", t("No response"), [], `${t("The speech service does not answer")} · <button type="button" class="key-hint act" data-act="maint-log">${LOG_MARK}${t("Server log")}</button>`);
+  }
   if (!status.audio) {
-    const sp = status.speech || {};
     if (sp.state === "loading") return card("idle", t("Model loading"), []);
     if (sp.state === "failed") {
       return card("bad", t("Did not load"), [], `${t("The speech model did not load")} · <button type="button" class="key-hint act" data-act="maint-log">${LOG_MARK}${t("Server log")}</button>`);
@@ -3135,8 +3184,10 @@ function renderAlerts() {
     // nothing captured there is nothing to take. It said "the current screen" with the screen switched off
     const title = `<b>${t("Paused")}</b>`;
     out.push(alertHtml("warn", capture.screen_on ? t("{title} No automatic analysis · {redo} takes the current screen only", { title, redo: REDO_KEY() })
-      // and what was heard only where something is: the sound switch on is nothing with speech off on the server
-      : capture.audio_on && status.audio ? t("{title} No automatic analysis · {redo} solves what was heard", { title, redo: REDO_KEY() })
+      // and what was heard only where something is or can be: the sound switch on is nothing with speech off on the server,
+      // nor with no capture program to hear and nothing heard since the server started (Reanalyze then found nothing)
+      : capture.audio_on && status.audio && (capture.clients > 0 || heard.text.trim())
+        ? t("{title} No automatic analysis · {redo} solves what was heard", { title, redo: REDO_KEY() })
       : t("{title} No automatic analysis", { title })));
   }
   out.push(updateBand());   // a newer release, last: only worth knowing ("" when there is none to show)
@@ -4864,6 +4915,12 @@ async function loadHistory(params = {}) {
     const [rows, days] = await Promise.all([fetch(`history?${url}`).then((r) => r.json()), fetch("history/days").then((r) => r.json())]);
     let added = false;
     for (const row of rows.answers || []) added = restore(row) || added;
+    // The newest answers (the page opening, a reconnect): where Load older answers starts, the oldest day among them, unless it
+    // has come further back already. Not from the page's own oldest answer, which a day picked or Starred may have brought
+    if (!params.day && !params.starred && !params.q && !params.kind) {
+      const opened = (rows.answers || []).map((r) => dayOf(r.ts * 1000)).sort()[0] || "";
+      if (opened && (!olderFrom || opened < olderFrom)) olderFrom = opened;
+    }
     historyDays = days.days || [];
     historyStarred = days.starred || 0;
     heardAny = !!days.heard; syncHeardKeys();
@@ -4945,13 +5002,23 @@ function sayable(s, block = false) { const w = plainAnswer(s, block); return /[\
 // The first sentence of a working that says something: a line of the body is read as a block, its heading's hashes and a
 // table row's bars are marks there
 function firstSayable(s) { return sayable(String(s || "").split(/(?<=[.?!。])\s|\n/).find((l) => sayable(l, true)), true); }
-// The newest day kept that the page does not hold whole (the day list says how many each has), or "" when it holds them all
-function olderDay() {
+// How far back Load older answers has come: the oldest day of the newest answers the page opened with, then each day the key
+// brought. It goes on from there. From the oldest answer on the page it skipped every day between the newest ones and one a
+// day picked in the Contents, Starred, a search or a restore had brought; and with the page full (MAX_ITEMS), a day it loaded
+// pushed out part of the one before, which was offered again, the two taking turns for good
+let olderFrom = "";
+// The days kept that the page does not hold whole (the day list says how many each has), newest first, back from olderFrom.
+// Whole: all of the day, or as many as the page holds (a day of more gave its newest 200 to every press, the key standing on it
+// for good). `left`: the answers they hold that the key brings
+function olderDays() {
   const here = new Map();
   for (const it of items.values()) { const d = dayOf(it.ts); here.set(d, (here.get(d) || 0) + 1); }
-  return [...historyDays].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
-    .find((d) => (here.get(d.day) || 0) < (d.n || 0))?.day || "";
+  const room = (d) => Math.min(d.n || 0, MAX_ITEMS);
+  const days = [...historyDays].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+    .filter((d) => (!olderFrom || d.day <= olderFrom) && (here.get(d.day) || 0) < room(d));
+  return { day: days[0]?.day || "", left: days.reduce((n, d) => n + room(d) - (here.get(d.day) || 0), 0) };
 }
+const olderDay = () => olderDays().day;   // the next one the key brings, or "" when there is none
 function renderIndex() {
   $("hist-none").hidden = thread.length > 0;
   $("hist-tools").hidden = thread.length === 0;
@@ -4969,9 +5036,9 @@ function renderIndex() {
   // 40, with nothing to say more were kept, and a day picked counted against what the page happened to hold
   const kept = Math.max(historyDays.reduce((n, d) => n + (d.n || 0), 0), thread.length);
   $("hist-count").textContent = !thread.length ? "" : narrowed ? `${ids.length}/${kept}` : kept > thread.length ? `${thread.length}/${kept}` : String(thread.length);
-  const more = $("hist-more"), older = narrowed ? "" : olderDay();
-  more.hidden = !older;
-  if (older) setHtml("hist-more", `${OPEN_MARK}<span>${t("Load older answers ({n} more)", { n: kept - thread.length })}</span>`);
+  const more = $("hist-more"), older = narrowed ? { day: "" } : olderDays();
+  more.hidden = !older.day;
+  if (older.day) setHtml("hist-more", `${OPEN_MARK}<span>${t("Load older answers ({n} more)", { n: older.left })}</span>`);
   const miss = $("hist-nomatch");
   miss.hidden = !(narrowed && !ids.length && thread.length);
   if (!miss.hidden) {
@@ -6715,14 +6782,21 @@ function placeToast() {
     // under the bands' strip too where it stands under the bar (one column), as wide as its words up to 560 px, centred
     const bands = $("alerts"), strip = !root.classList.contains("bands-in-bar") && bands?.children.length ? bands.getBoundingClientRect() : null;
     const top = Math.max(bar.bottom, strip && strip.bottom < window.innerHeight / 2 ? strip.bottom : 0) + 8;
-    const w = Math.min(need, 560, window.innerWidth - 32), l = Math.max(16, (window.innerWidth - w) / 2);
+    let w = Math.min(need, 560, window.innerWidth - 32), l = Math.max(16, (window.innerWidth - w) / 2);
+    // one about as wide as the page's cards takes their edges: on a phone it stood 4 px inside the card it lay over
+    const page = $("thread")?.getBoundingClientRect();
+    const full = !!page?.width && page.width <= 560 + 24 && w >= page.width - 24;
+    if (full) { l = page.left; w = page.width; }
+    // and as wide as they are: its own width is its words', and words a little shorter left it 1 to 2 px inside them
+    root.classList.toggle("toast-full", full);
     root.style.setProperty("--toast-l", `${Math.round(l)}px`);
-    root.style.setProperty("--toast-r", `${Math.round(Math.max(16, window.innerWidth - l - w))}px`);
+    root.style.setProperty("--toast-r", `${Math.round(Math.max(0, window.innerWidth - l - w))}px`);
     root.style.setProperty("--toast-y", `${Math.round(top)}px`);
     root.style.setProperty("--toast-h", "38px");
     root.classList.remove("toast-over-signals");
     return;
   }
+  root.classList.remove("toast-full");
   const room = rooms.find(fits) || rooms.reduce((a, b) => (b.r - b.l > a.r - a.l ? b : a));
   root.style.setProperty("--toast-l", `${Math.round(room.l)}px`);
   root.style.setProperty("--toast-r", `${Math.round(window.innerWidth - room.r)}px`);
@@ -6849,8 +6923,9 @@ function reanalyze() {
   if (!send({ type: "reanalyze" })) return;
   reanalyzedAt = Date.now();
   manualUntil = Date.now() + 10000;   // the analysis this starts was asked for by hand: said at once (onStart)
-  // with the screen off and nothing heard (speech off on the server), the server's own notice says why, and this none
-  if (!capture.screen_on && !status.audio) return;
+  // with the screen off and nothing heard (speech off on the server, or nothing yet), the server's own notice says why,
+  // and this none
+  if (!capture.screen_on && (!status.audio || !heard.text.trim())) return;
   toast(!capture.screen_on ? t("Solving again from what was heard") : capture.clients === 0 ? t("Capture off: reanalyzing the last screen") : t("Reanalyzing the screen now"));
 }
 function togglePause() { send({ type: paused ? "resume" : "pause" }); }
@@ -6930,7 +7005,7 @@ $("roi-draw").onclick = startDrawing;
 const clearRoi = () => { if (setSetting("roi_box", null)) toast(t("Region cleared · watching the whole screen"), null, "done"); };
 $("roi-clear").onclick = clearRoi;
 // the next day kept and not on the page, whole (a day holds at most what the page keeps, MAX_ITEMS)
-$("hist-more").onclick = () => { const d = olderDay(); if (d) loadHistory({ day: d, limit: MAX_ITEMS }); };
+$("hist-more").onclick = () => { const d = olderDay(); if (d) { olderFrom = d; loadHistory({ day: d, limit: MAX_ITEMS }); } };
 $("pause").onclick = togglePause;
 $("sw-screen").onclick = () => switchCapture("screen");
 $("sw-audio").onclick = () => switchCapture("audio");
@@ -8123,13 +8198,15 @@ function captureWays() {
       + `<p class="d">${t("On Windows the desktop shortcut Sidenote Capture does the same, and starts the server first")}</p>`) + `</ol>`)
     + more(t("From another PC"));
 }
-// The sheet's keys: Restart and Quit, for a program that is connected. Quit under the app ends the app (desktop/app.py),
-// and says so; elsewhere it ends the program alone, and a server its start brought up stays (the tray's Quit Sidenote ends both)
+// The sheet's keys: Restart capture and Quit, for a program that is connected, by the names of the tray's own items, which do
+// the same (they were Restart and Quit the program here). Quit under the app ends the app (desktop/app.py), and says so, as
+// the tray's Quit Sidenote; elsewhere it ends the program alone, as the tray's Quit, and a server its start brought up stays
+// (where the tray says Quit Sidenote, which ends both)
 function captureActs() {
   if (wsState !== "up" || !(capture.clients > 0)) return "";
   const w = capture.who || {}, app = w.started === "app";
-  return `<div class="setup-act"><button type="button" class="btn sm" data-cap="restart" title="${t("Starts the capture program again, as its tray's Restart capture")}">${t("Restart")}</button>`
-    + `<button type="button" class="btn sm" data-cap="quit" title="${app ? t("Ends Sidenote, as the tray's Quit Sidenote") : t("Ends the capture program; the server stays")}">${app ? t("Quit Sidenote") : t("Quit the program")}</button></div>`;
+  return `<div class="setup-act"><button type="button" class="btn sm" data-cap="restart" title="${t("Starts the capture program again")}">${t("Restart capture")}</button>`
+    + `<button type="button" class="btn sm" data-cap="quit" title="${app ? t("Ends Sidenote, as the tray's Quit Sidenote") : t("Ends the capture program; the server stays")}">${app ? t("Quit Sidenote") : t("Quit")}</button></div>`;
 }
 // The sheet's parts, drawn as the guide's are (drawParts)
 function captureParts() {

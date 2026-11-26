@@ -241,8 +241,8 @@ def group_connected(br, s) -> None:
           facts.get("PC") == "DESKTOP-7Q2KD · Windows 11" and facts.get("버전") == "v0.8.0 · 서버와 같음"
           and facts.get("시작 방식") == "바탕화면 바로가기 · 트레이의 Sidenote 끝내기는 서버도 끔" and facts.get("주소") == "127.0.0.1:8777"
           and "3분 전" in facts.get("연결 시각", ""), str(facts))
-    check("...Restart and Quit the program: the card says what the tray's Quit ends, the key what it ends itself",
-          got["keys"] == [["restart", "다시 시작"], ["quit", "프로그램 끝내기"]], str(got))
+    check("...Restart capture and Quit, by the names of the tray's own items that do the same; the card says what the tray's Quit ends",
+          got["keys"] == [["restart", "캡처 다시 시작"], ["quit", "끝내기"]], str(got))
     check("...the ways to start one folded away, another PC's left under its fold", "서버 PC에서" not in got["heads"] and got["folded"], str(got))
     check("...and the settings the program carries out, drawn as Solver settings draws them", got["rows"][:3] == ["monitor", "stitch", "skip_windows"]
           or {"monitor", "stitch", "skip_windows"} <= set(got["rows"]), str(got["rows"]))

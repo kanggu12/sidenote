@@ -684,10 +684,11 @@
   .viz-more > summary { cursor: pointer; color: var(--graphite); width: max-content; padding: 2px 0; }
   /* A summary's open mark is drawn like the page's other marks (a stroked chevron), not the browser's solid
      triangle, which was the only glyph of its kind left on the page. */
-  .viz-more > summary, .errbox summary { list-style: none; cursor: pointer; }
+  .viz-more > summary, .errbox summary, .ways-more > summary { list-style: none; cursor: pointer; }
   .errbox summary { padding: 2px 0; }
-  .viz-more > summary::-webkit-details-marker, .errbox summary::-webkit-details-marker { display: none; }
-  .viz-more > summary::before, .errbox summary::before { content: ""; display: inline-block; width: 6px; height: 6px;
+  .viz-more > summary::-webkit-details-marker, .errbox summary::-webkit-details-marker, .ways-more > summary::-webkit-details-marker { display: none; }
+  /* (Capture connection's "From another PC" too: it kept the triangle) */
+  :is(.viz-more > summary, .errbox summary, .ways-more > summary)::before { content: ""; display: inline-block; width: 6px; height: 6px;
     margin: 0 8px 2px 1px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
     transform: rotate(-45deg); transition: transform .15s var(--ease); }
   details[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px; }
@@ -978,6 +979,9 @@
     display: inline-flex; align-items: center; gap: 4px;
     border: 1px solid var(--pen); background: var(--pen); color: var(--pen-ink); font-weight: 650; font-size: 13px; cursor: pointer; box-shadow: var(--lift); }
   .jump svg { width: 13px; height: 13px; flex: none; }   /* the arrow, the size of a small button's mark */
+  /* Centred on the one-line box and its send key (40 px), where the foot alignment above put it 5 px low; still by the last
+     line when the question grows */
+  .composer:has(> textarea) > .jump { margin-bottom: 5px; }
   .errbox h2 { margin: 0 0 6px; font-size: 18px; line-height: 1.4; }   /* level with the label in the margin */
   .errbox p { margin: 0 0 8px; }
   .errbox details { font-size: 13px; color: var(--graphite); }
@@ -1465,17 +1469,19 @@
     /* On a phone the newest answer's six keys (Problem text, Right, Wrong, the star, Copy all, Delete) keep the head one line beside
        the kind and the time: the date's trailing margin and 4 px of the gap go to them, and today's date itself, which every
        answer of the day would repeat (app.js, entryWhen; an older day's stays, and its keys take a line of their own) */
-    .row.head:not(.err) { column-gap: 8px; }
-    .row.head:not(.err) > .mg time { margin-right: 0; }
+    .row.head { column-gap: 8px; }
+    .row.head > .mg time { margin-right: 0; }
     .row.head .stamped .day.today { display: none; }
     /* ...and so do the kind's own margin (the margin column's gap stays between it and the time) and 2 px each side of its word, the
        time's calendar mark, and 4 px of each key and 3 px of each gap: 24 px keys, 3 px apart, Delete still 4 px further off. With
        the 28 px keys Right and Wrong took the head to two lines, 47 px short in English (Algorithm, 04:42 AM) and 26 px in Korean at
        390 px. Up to 540 px, where six keys of 28 px beside an older day's date first fit (530 px in English): when this stopped at
        420 px, they took two lines from there to 516 px, and an older day's to 528, where four had kept one */
-    .row.head:not(.err) > .mg .kind { margin-right: 0; }
-    :root[data-skin="classic"] .row.head:not(.err) > .mg .kind { padding: 1px 6px; }
-    :root[data-skin="classic"] .row.head:not(.err) > .mg time.stamped::before { display: none; }
+    /* a failure's head too: its date stood 8 to 26 px right of the answers' beside it, with the mark and the room they drop
+       */
+    .row.head > .mg .kind { margin-right: 0; }
+    :root[data-skin="classic"] .row.head > .mg .kind { padding: 1px 6px; }
+    :root[data-skin="classic"] .row.head > .mg time.stamped::before { display: none; }
     :root[data-skin="classic"] .entry > .row.head:not(.err) .tools { gap: 3px; }
     :root[data-skin="classic"] .entry > .row.head:not(.err) .tools > .btn:has(svg) { width: 24px; height: 24px; }
   }
@@ -2156,6 +2162,7 @@
      words on one line), its top edge stands at --toast-y and its words take up to five lines, none cut where no pointer
      can rest on it for the rest: at three, a fallback's notice on a phone still lost its cause */
   html.toast-below[data-skin="classic"] .toast { translate: none; }
+  html.toast-below.toast-full[data-skin="classic"] .toast { width: auto; }   /* edge to edge with the cards (placeToast) */
   html.toast-below[data-skin="classic"] .toast > .alert { height: auto; min-height: var(--toast-h, 38px); padding-top: 8px; padding-bottom: 8px; }
   html.toast-below[data-skin="classic"] .toast > .alert .msg { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; }
   /* What the notice stands over gives it the room while it shows and comes back after: the signals it covers, the bands
@@ -2295,6 +2302,9 @@
   :root[data-skin="classic"] .rail .switch[aria-checked="false"] { background: linear-gradient(180deg, rgba(0, 0, 0, .16), rgba(255, 255, 255, .04)), #4d2528; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3), inset 0 0 0 1px rgba(255, 120, 120, .4); }
   :root[data-skin="classic"] .rail .src[data-rest] .switch[aria-checked="false"], :root[data-skin="classic"] .rail .switch[data-dead="true"][aria-checked] { background: linear-gradient(180deg, rgba(0, 0, 0, .14), rgba(255, 255, 255, .04)), #36373c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3), inset 0 0 0 1px rgba(255, 255, 255, .12); }
   :root[data-skin="classic"] .rail .switch[data-dead="true"][aria-checked]::after { background: #85868c; box-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
+  /* One that cannot be used now (the speech model loading, the server not answering) is grey too, as in the light theme: it kept
+     the red of a source switched off, or the green of one on, beside a grey "loading" */
+  :root[data-skin="classic"] .rail .switch:disabled[aria-checked] { background: linear-gradient(180deg, rgba(0, 0, 0, .14), rgba(255, 255, 255, .04)), #36373c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3), inset 0 0 0 1px rgba(255, 255, 255, .12); }
   :root[data-skin="classic"] .rail .steps3 i { background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
   :root[data-skin="classic"] .rail .steps3 i.on { background: linear-gradient(180deg, rgba(120, 240, 190, .85), rgba(46, 182, 125, .85)); box-shadow: 0 0 6px -1px rgba(46, 182, 125, .6); }
   :root[data-skin="classic"] .rail .agent-who { background: rgba(0, 0, 0, .2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
@@ -2455,6 +2465,8 @@
   /* A chain of arrows goes along: each link a box */
   :root[data-skin="classic"] .v-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; margin: 8px 0 2px; font-size: 14px; line-height: 1.4; letter-spacing: 0; font-weight: 620; }
   :root[data-skin="classic"] .v-flow > span { padding: 4px 11px; color: var(--ink); background: var(--v-soft); border: 1px solid var(--v-line); border-radius: 3px; overflow-wrap: anywhere; }
+  /* A step named in code keeps the code's letters, and none of its chip: a box drawn in the step's box */
+  :root[data-skin="classic"] .md .v-flow > span > code { padding: 0; background: none; border: 0; box-shadow: none; color: inherit; font-size: .93em; font-weight: 560; }
   :root[data-skin="classic"] .v-flow > svg { width: 17px; height: 17px; flex: none; color: var(--v); }
   :root[data-skin="classic"] .md .v-flow-line { margin: .8em 0; }
   /* What it costs on its scale, from constant to exponential: where it stands, with the figure the answer gave */
@@ -2667,6 +2679,12 @@
      in a fifth of it (710x399 at 768). As wide as the picture with the well's 6 px round it, on the card's left edge as its
      title and its words stand */
   @media (max-width: 1000px) { :root[data-skin="classic"] .rail .shot { max-width: 372px; } }
+  /* ...and its title, the title's rule and the crop key end with the picture, as in the rail's own column: they ran on to the
+     card's far edge, 530 px past it at 1000 px. The picture stays its size: it is a 360 px thumbnail */
+  @media (max-width: 1000px) {
+    :root[data-skin="classic"] .rail .card:has(> #shot) > h2 { max-width: 372px; box-sizing: border-box; }
+    :root[data-skin="classic"] .rail .card:has(> #shot) > .shot-tools { right: max(16px, calc(100% - 16px - 372px)); }
+  }
   /* Words with no place to break still stay inside */
   :root[data-skin="classic"] .toast { overflow-wrap: anywhere; }
   /* ---- The column, third pass ---- */
@@ -2694,13 +2712,14 @@
   :root[data-skin="classic"] .entry > .row.head.err { align-items: first baseline; }
   /* A failure's date stands where every answer's does, measured from the card's top (17.6 px from 821 px up; 20 px under it,
      where an answer's date line is centred on its 30 px keys and a failure's head has none): 1.4 px lower and 3 px higher
-     before (review 11-24, P13) */
+     before */
   @media (max-width: 820px) { :root[data-skin="classic"] .entry > .row.head.err > .mg { padding-top: 3px; } }
   @media (min-width: 821px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { justify-content: flex-end; } }
-  /* Up to 1000 px the type and the date stand on one line: the type at one width, so the dates of the answers stand in one column
+  /* Up to 820 px the type and the date stand on one line: the type at one width, so the dates of the answers stand in one column
      ("실무", "선다형" and "알고리즘" put them at 81, 92 and 104 px). Not on a phone's width, where the room it takes pushed the
-     answer's keys onto a second line */
-  @media (min-width: 481px) and (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) > .kind { min-width: 6.6em; text-align: center; } }
+     answer's keys onto a second line, and not from 821 px, where the type stands alone in the margin column, set to its right
+     edge: at one width there, wider than the column, a Korean type stood out of its card under the timeline's dot */
+  @media (min-width: 481px) and (max-width: 820px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) > .kind { min-width: 6.6em; text-align: center; } }
   @media (max-width: 1000px) { :root[data-skin="classic"] .entry > .row .mg:has(.kind) { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; } :root[data-skin="classic"] .entry > .row .mg:has(.kind) > * { align-self: baseline; margin-block: 0; } }
   /* A key's name in a sentence: on the sentence's baseline, its mark beside it */
   .key-hint { align-items: baseline; }

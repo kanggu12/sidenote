@@ -472,6 +472,21 @@ def group_drawn(br, s):
     p.wait(250)
     flows = p.js("() => [...entryEl(698).querySelectorAll('.md .v-flow')].map((f) => [...f.querySelectorAll(':scope > span')].map((x) => x.textContent.trim()))")
     check("a chain in a list item's own paragraph is drawn once, whole", flows == [["명시적 Deny", "Allow", "기본 Deny"]], flows)
+    # Named steps written as code with arrows between them, as words or as formulas, and what each does in brackets: the line
+    # is the flow. It read as code and formulas mixed into one line of words. An arrow inside the code stays code
+    p.answer(699, "work", "", "흐름", "경로는 다음과 같습니다.\n\n`AI Agent` $\\rightarrow$ `Self-test & AI Reviewer` (Pre-filter) "
+             "$\\rightarrow$ `Impact Analysis` (Selection) → `Full CI` (L3)\n\n`a -> b -> c` 는 타입입니다.\n\n"
+             "`head` → `head->next` → `head->next->next`\n")
+    p.wait(300)
+    coded = p.js("""() => { const e = entryEl(699); return { flows: [...e.querySelectorAll('.md .v-flow')].map((f) => [...f.querySelectorAll(':scope > span')].map((x) => x.textContent.trim())),
+      typed: [...e.querySelectorAll('.md code')].map((c) => c.textContent),
+      lettered: [...e.querySelectorAll('.md .v-flow > span > code')].map((c) => getComputedStyle(c).fontFamily === getComputedStyle(e.querySelector('.md p code') || c).fontFamily && getComputedStyle(c).backgroundColor === 'rgba(0, 0, 0, 0)') }; }""")
+    check("a chain of named steps in code, its arrows as words or formulas, is drawn as the flow",
+          coded["flows"][:1] == [["AI Agent", "Self-test & AI Reviewer (Pre-filter)", "Impact Analysis (Selection)", "Full CI (L3)"]]
+          and "a -> b -> c" in coded["typed"], coded)
+    check("...each step whole, an arrow of its own in its code included, in the code's letters with no chip of its own",
+          coded["flows"][1:] == [["head", "head->next", "head->next->next"]] and coded["lettered"] and all(coded["lettered"]),
+          coded)
     # Starting numbers
     p.answer(605, "work", "", "답", "3. 셋째부터\n4. 넷째\n")
     p.wait(150)
@@ -671,10 +686,11 @@ def group_skip(br, s):
         p.wait(120)
         got.append(p.js("""() => { const e = document.getElementById('pill-screen'), n = document.querySelector('#st-screen .src-note');
             return [e.textContent, e.dataset.state, e.scrollWidth <= e.clientWidth + 1, n ? n.textContent : '']; }"""))
-    check("no way to read the windows: the card warns, whole, and says what to do",
-          got[0] == ["창 못 건너뜀", "warn", True, "이 데스크톱은 열린 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면 끄기"], got[0])
-    check("only the window in front to go by: the same caution, told apart",
-          got[1] == ["맨 앞 창만", "warn", True, "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음 · 비공개 창을 띄울 때는 화면 끄기"], got[1])
+    # what the desktop does not say, and no advice on what to do about it (no caution: when to use what is the user's)
+    check("no way to read the windows: the card says so, whole, and why",
+          got[0] == ["창 못 건너뜀", "warn", True, "이 데스크톱은 열린 창을 알려 주지 않음"], got[0])
+    check("only the window in front to go by: told apart",
+          got[1] == ["맨 앞 창만", "warn", True, "이 데스크톱은 맨 앞 창 뒤의 창을 알려 주지 않음"], got[1])
     check("...and with nothing to say the card is receiving", got[2][:2] == ["받는 중", "ok"] or got[2][0] == "받는 중", got[2])
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skip_limit": "none", "skipping": True}})
     p.wait(120)
@@ -688,7 +704,7 @@ def group_skip(br, s):
     p.send({**h.CAPTURE, "now": now, "caps": {**h.CAPTURE["caps"], "skip_limit": "none"}})
     p.wait(150)
     limit_en = p.js("() => [document.getElementById('pill-screen').textContent, document.querySelector('#st-screen .src-note')?.textContent]")
-    check("...and where the windows cannot be read, in English too", limit_en == ["Windows not skipped", "This desktop does not say which windows are open · Turn the screen off while a private window shows"], limit_en)
+    check("...and where the windows cannot be read, in English too", limit_en == ["Windows not skipped", "This desktop does not say which windows are open"], limit_en)
     check("in English the card reads 'Skipped window', and where the words are", en == ["Skipped window", "No screen is sent while it shows · Skip windows in Solver settings"], en)
     p.close()
 

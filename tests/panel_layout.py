@@ -1570,7 +1570,7 @@ def group_controls(br, s):
     check("the local model's card in trouble says what to do, not what is wrong a second time",
           notes[0].endswith("서버 터미널에서 모델 받기 ./sidenote llm pull, 그다음 ./sidenote up") and notes[1].endswith("서버 터미널에서 ./sidenote doctor")
           and "없음." not in notes[0] and "응답 없음." not in notes[1], notes)
-    # The GPU under the model failing (2026-11-20: a memory error it could not correct, the driver asking for a reset): the
+    # The GPU under the model failing (a memory error it could not correct, the driver asking for a reset): the
     # card and the band say it is the GPU, what fixes it and who answers meanwhile, with no command, none of the server's
     # helping. They said "the local model does not respond" and gave ./sidenote doctor
     fault = {"kind": "reset", "detail": "Drain and Reset"}
@@ -1660,7 +1660,21 @@ def group_controls(br, s):
     p.send({"type": "status", "text": "connected", "paused": True, "lang": "auto", "audio": True, "voice": True, "can_ask": True, "run_enabled": True, "runner": True, "engines": eng()})
     p.wait(200)
     band = p.js("() => document.getElementById('alerts').textContent")
-    check("...and on the pause band", "지금 화면만 풀려면 다시 분석" in band, band)
+    # the key stands last, after a label and a colon as "한 번 더: 다시 분석" does, with no particle after it and no
+    # "to solve ..., press" before it
+    check("...and on the pause band", "지금 화면만: 다시 분석" in band and "려면" not in band, band)
+    # With the screen off, Reanalyze solves what was heard: offered only with something to hear it from, a capture program
+    # connected or words heard. It was offered with no program connected and nothing heard since the start
+    capture(p, clients=0, screen_on=False, audio_on=True)
+    p.wait(200)
+    none_band = p.js("() => document.getElementById('alerts').textContent")
+    capture(p, clients=1, screen_on=False, audio_on=True)
+    p.wait(200)
+    some_band = p.js("() => document.getElementById('alerts').textContent")
+    check("the pause band offers to solve what was heard only with a capture program connected or words heard",
+          "자동 분석 안 함" in none_band and "들은 말로" not in none_band and "들은 말로: 다시 분석" in some_band,
+          [none_band, some_band])
+    capture(p)
     status(p, eng())
     # The agent's review: named on one line in the margin, and no colon standing alone in its line
     p.send({"type": "verify", "id": 1801, "verdict": "fix", "text": "TYPE: essay\nANSWER: 다른 답\n\n이유", "sent": []})

@@ -249,6 +249,12 @@ def group_steps(br, s) -> None:
           and failed["state"] == "bad" and failed["key"] and failed["sig"] == "bad", failed)
     check("...and the server started without it: the variable that turns it on, grey in the header too",
           "SIDENOTE_TRANSCRIBER=auto" in (off["note"] or "") and "SIDENOTE_AUDIO" not in (off["note"] or "") and off["sig"] == "idle", off)
+    # the speech service not answering, with the model still on as far as the server last heard: down, red, with the key
+    p.send({"type": "status", "audio": True, "speech": {"state": "down", "remote": True}})
+    p.wait(150)
+    gone = p.js(sound)
+    check("the speech service not answering: said so in red, with the key to the server's log, where it said on",
+          gone["pill"] == "응답 없음" and gone["state"] == "bad" and gone["key"] and gone["sig"] == "bad", gone)
     p.send({"type": "status", "engines": {**h.ENGINES, "agent": {**h.ENGINES["agent"], "mode": "off"}}})
     p.wait(150)
     rested = p.js(sound)

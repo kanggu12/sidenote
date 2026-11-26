@@ -270,13 +270,94 @@ def group_older(br, s) -> None:
     p.close()
 
 
+def group_older_full(br, s) -> None:
+    """More kept than the page holds (MAX_ITEMS, 200): each press of the key brings an older day than the last, down to the
+    oldest, and says how many older ones are left. Past 200 a day loaded pushed out part of the one loaded before it, which
+    was offered again: the key took the two days in turn for good, under "200/490" and "(290 more)"."""
+    print("\n[older answers past what the page holds]")
+    import time
+    from urllib.parse import parse_qs
+    noon = time.mktime(time.localtime()[:3] + (12, 0, 0, 0, 0, -1)) - 86400
+    rows = [row(10000 + i, ts=noon - i * 60) for i in range(40)]                       # the latest day: 40
+    for d in range(1, 6):                                                              # and five days of 90 before it
+        rows += [row(10000 + d * 100 + i, ts=noon - d * 86400 - i * 60) for i in range(90)]
+    p = Page(br, s, rows, w=1400, h=900)
+    s.asked.clear()
+    days, counts = [], []
+    for _ in range(8):
+        key = p.js("() => { const b = document.getElementById('hist-more'); return b.hidden ? null : b.textContent; }")
+        if not key:
+            break
+        counts.append(int("".join(ch for ch in key.split("(")[-1] if ch.isdigit()) or -1))
+        p.page.click("#hist-more")
+        p.wait(400)
+        days.append(parse_qs(s.asked[-1]).get("day", [""])[0])
+    gone = p.js("() => document.getElementById('hist-more').hidden")
+    check("each press brings an older day than the last, five of them, and then the key goes",
+          len(days) == 5 and days == sorted(days, reverse=True) and len(set(days)) == 5 and gone, (days, gone))
+    check("...saying how many older ones are left, fewer each time", counts == sorted(counts, reverse=True) and len(set(counts)) == len(counts)
+          and counts[0] == 450, counts)
+    check("...and the page holds no more than it keeps", len(shown(p)["page"]) <= 200, len(shown(p)["page"]))
+    check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+
+
+def group_older_frontier(br, s) -> None:
+    """Load older answers goes on from where it has come, not from the oldest answer on the page: a day picked in the
+    Contents brought an older day in, and the key then skipped every day between. A day of more answers than the page holds
+    counts as done at that many: the key asked for its newest 200 at every press."""
+    print("\n[older answers: from where the key has come]")
+    import time
+    from urllib.parse import parse_qs
+    noon = time.mktime(time.localtime()[:3] + (12, 0, 0, 0, 0, -1)) - 86400
+    day = lambda k: time.strftime("%Y-%m-%d", time.localtime(noon - k * 86400))
+    rows = [row(20000 + i, ts=noon - i * 60) for i in range(50)]                       # the latest day: 50
+    for d in range(1, 5):                                                              # four days of 20 before it
+        rows += [row(20000 + d * 100 + i, ts=noon - d * 86400 - i * 60) for i in range(20)]
+    p = Page(br, s, rows, w=1400, h=900)
+    pick_day(p, day(3))                                                                # an older day, then all days again
+    p.wait(400)
+    pick_day(p, "")
+    p.wait(300)
+    s.asked.clear()
+    asked = []
+    for _ in range(8):
+        if p.js("() => document.getElementById('hist-more').hidden"):
+            break
+        p.page.click("#hist-more")
+        p.wait(400)
+        asked.append(parse_qs(s.asked[-1]).get("day", [""])[0])
+    got = shown(p)
+    check("after a day picked in the Contents, the key still brings each day back from the newest, the picked one as done",
+          asked == [day(0), day(1), day(2), day(4)] and got["count"] == "130", (asked, got["count"]))
+    check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+    # a day of 250: done at the page's 200, and the key goes on to the days before it
+    rows = [row(30000 + i, ts=noon - i * 20) for i in range(250)]
+    rows += [row(31000 + i, ts=noon - 86400 - i * 60) for i in range(10)]
+    rows += [row(32000 + i, ts=noon - 2 * 86400 - i * 60) for i in range(10)]
+    p = Page(br, s, rows, w=1400, h=900)
+    s.asked.clear()
+    asked = []
+    for _ in range(6):
+        if p.js("() => document.getElementById('hist-more').hidden"):
+            break
+        p.page.click("#hist-more")
+        p.wait(500)
+        asked.append(parse_qs(s.asked[-1]).get("day", [""])[0])
+    check("a day of more than the page holds is done at 200, and the key reaches the days before it",
+          asked == [day(0), day(1), day(2)], asked)
+    check("the page threw nothing", not p.errors, p.errors[:2])
+    p.close()
+
+
 def main() -> int:
     support.need_vendor(h.PANEL)
     s = Stand("star")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         br = pw.chromium.launch()
-        for group in (group_key, group_history, group_choice, group_older):
+        for group in (group_key, group_history, group_choice, group_older, group_older_full, group_older_frontier):
             group(br, s)
         br.close()
     return T.end()
