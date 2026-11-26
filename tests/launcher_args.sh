@@ -515,6 +515,33 @@ state; EXTRA_ENV="SIDENOTE_ANALYZER=Local" run up
 if grep -q local "$work/state/profiles" 2>/dev/null; then ok "SIDENOTE_ANALYZER=Local turns the local profile on"
 else bad "SIDENOTE_ANALYZER=Local turns the local profile on" "profiles: $(sort -u "$work/state/profiles" 2>/dev/null | tr '\n' ' ')"; fi
 
+# 7a. The speech service (0.14) only when the server asks it: by default its container is started; with speech off, or its
+#     model in the server (SIDENOTE_SPEECH_URL set empty, in .env too), or another service named, none is (it sat there
+#     idle), and one that ran before goes. The values are read as the server reads them, which compose.yaml hands them
+#     from the environment or .env: in any case, and the service's address however it is spelled. `logs speech` then
+#     says why there is no speech service and where speech is, where it said "not running (./sidenote up starts it)"
+speech_up() { last_call docker up; [[ " ${CALL[*]:-} " == *" --scale speech=0 "* ]] && echo none || echo started; }
+up_with() { state; EXTRA_ENV="$1" run up; speech_up; }
+s_default="$(up_with "")"
+s_off="$(up_with "SIDENOTE_AUDIO=off")"
+s_null="$(up_with "SIDENOTE_TRANSCRIBER=NULL")"
+s_inside="$(up_with "SIDENOTE_SPEECH_URL=")"
+s_named="$(up_with "SIDENOTE_SPEECH_URL=http://speech:8779")"
+s_upper="$(up_with "SIDENOTE_SPEECH_URL=HTTP://Speech:8779")"
+s_cname="$(up_with "SIDENOTE_SPEECH_URL=http://sidenote-speech:8779/")"
+s_other="$(up_with "SIDENOTE_SPEECH_URL=http://whisper.lan:9000")"
+printf 'SIDENOTE_SPEECH_URL=\n' > "$work/repo/.env"; s_dotenv="$(up_with "")"
+state; run logs speech; l_server="$(cat "$work/out")"
+printf 'SIDENOTE_AUDIO=0\n' > "$work/repo/.env"; state; run logs speech; l_off="$(cat "$work/out")"
+printf 'SIDENOTE_SPEECH_URL=http://whisper.lan:9000\n' > "$work/repo/.env"; state; run logs speech; l_other="$(cat "$work/out")"
+rm -f "$work/repo/.env"
+if [ "$s_default $s_off $s_null $s_inside $s_named $s_upper $s_cname $s_other $s_dotenv" = "started none none none started started started none none" ] \
+   && grep -qF "서버 컨테이너 안에서 실행됩니다: ./sidenote logs" <<<"$l_server" && grep -qF "서버에서 음성이 꺼져 있습니다" <<<"$l_off" \
+   && grep -qF "다른 서비스가 받아 적습니다" <<<"$l_other"; then
+  ok "up starts the speech service only when the server asks it, and logs speech says where speech is when there is none"
+else bad "up starts the speech service only when the server asks it, and logs speech says where speech is when there is none" \
+         "default $s_default off $s_off NULL $s_null empty $s_inside named $s_named upper $s_upper cname $s_cname other $s_other .env $s_dotenv; logs: $(head -1 <<<"$l_server") | $(head -1 <<<"$l_off") | $(head -1 <<<"$l_other")"; fi
+
 # 8. The Windows process query fails: capture must not refuse to start as if one were already running.
 state ps-broken; run capture; wait_started
 if ! said "이미 실행 중" && [ -f "$work/state/running" ]; then ok "a failed process query does not block capture"
@@ -865,7 +892,39 @@ if grep -qF "Local model: idle (sidenote-gemma4:26b)" <<<"$idle" && grep -qF "Lo
 else bad "status names the local model, its idle and on-GPU states, Solver settings, and what the agent takes" \
          "$(grep -hE "model|Agent" <<<"$idle$loaded$off" | tr '\n' '|')"; fi
 
-# 38b. The GPU under the local model failing (2026-11-20): status says it is the GPU, that a restart resets it and that the
+# 38a. Speech in the speech service (0.14): a service that does not answer is said so, with why its container ended (from
+#      Docker) and the service's log, where status said "on"; a model that failed in the server's own process names the
+#      server's log, not the service's
+speech_health() {   # the health above, with what the server says of speech
+  python3 - "$work/state/health.json" "$1" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8")); d["speech"] = json.loads(sys.argv[2])
+json.dump(d, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+}
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+speech_health '{"state": "down", "remote": true}'
+echo "exited 137 true" > "$work/state/container-ended"
+EXTRA_ENV="SIDENOTE_LANG=en" run status; sdown="$(cat "$work/out")"
+rm -f "$work/state/container-ended"
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+speech_health '{"state": "down", "remote": true}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; shung="$(cat "$work/out")"            # its container runs, and does not answer
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+speech_health '{"state": "down", "remote": true}'
+EXTRA_ENV="SIDENOTE_LANG=en SIDENOTE_SPEECH_URL=http://whisper.lan:9000" run status; sother="$(cat "$work/out")"
+state; health_with '{"present": true, "on": true, "ok": true, "model": "sidenote-gemma4:26b", "loaded": null}'
+speech_health '{"state": "failed", "remote": false}'
+EXTRA_ENV="SIDENOTE_LANG=en" run status; sown="$(cat "$work/out")"
+if grep -qF "Speech recognition: the speech service does not answer: it went over its memory limit and Docker ended it (./sidenote up, ./sidenote logs speech)" <<<"$sdown" \
+   && grep -qF "Speech recognition: the speech service does not answer (./sidenote restart, ./sidenote logs speech)" <<<"$shung" \
+   && grep -qF "Speech recognition: the speech service does not answer (SIDENOTE_SPEECH_URL)" <<<"$sother" \
+   && grep -qF "Speech recognition: the model did not load (./sidenote logs)" <<<"$sown"; then
+  ok "status says the speech service does not answer and why, what starts it again, and names the log that holds the reason"
+else bad "status says the speech service does not answer and why, what starts it again, and names the log that holds the reason" \
+         "$(grep -hF "Speech" <<<"$sdown$shung$sother$sown" | tr '\n' '|')"; fi
+
+# 38b. The GPU under the local model failing: status says it is the GPU, that a restart resets it and that the
 #      agent solves meanwhile, in the panel's words, and no command (it said "not responding (./sidenote llm logs)")
 state; health_with '{"present": true, "on": true, "ok": false, "model": "sidenote-gemma4:26b", "fault": {"kind": "reset", "detail": "Drain and Reset"}}'
 EXTRA_ENV="SIDENOTE_LANG=en" run status; gpufault="$(cat "$work/out")"

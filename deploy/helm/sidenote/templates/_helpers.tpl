@@ -95,7 +95,8 @@ speech service. The language and the terms the server sends it itself.
 {{- $_ := set $env "OMP_NUM_THREADS" (toString (index $user "SIDENOTE_WHISPER_THREADS" | default "4")) -}}
 {{- $_ := set $env "OMP_WAIT_POLICY" "PASSIVE" -}}
 {{- range $name, $value := $user -}}
-{{- if or (hasPrefix "SIDENOTE_WHISPER_" $name) (has $name (list "SIDENOTE_AUDIO" "SIDENOTE_TRANSCRIBER")) -}}
+{{- /* and the guide's HF_HUB_OFFLINE for no internet (docs/air-gapped.md): the models are the bundle's, none is asked for */ -}}
+{{- if or (hasPrefix "SIDENOTE_WHISPER_" $name) (has $name (list "SIDENOTE_AUDIO" "SIDENOTE_TRANSCRIBER" "HF_HUB_OFFLINE")) -}}
 {{- $_ := set $env $name $value -}}
 {{- end -}}
 {{- end -}}

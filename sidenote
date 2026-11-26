@@ -162,6 +162,28 @@ if [ "$CORES" -gt 0 ] && [ "$CORES" -lt 8 ]; then
 fi
 # the speech service's 6 the same way (compose.yaml), on a machine with fewer
 if [ "$CORES" -gt 0 ] && [ "$CORES" -lt 6 ]; then export SIDENOTE_SPEECH_CPUS="$(setting SIDENOTE_SPEECH_CPUS "$CORES")"; fi
+# Where the server writes speech down, read as the server reads its settings (server/config.py, compose.yaml hands it
+# these three from the environment or .env, as this reads them): `off` (SIDENOTE_AUDIO 0/false/no/off, or
+# SIDENOTE_TRANSCRIBER null, in any case), `service` (compose's speech service: SIDENOTE_SPEECH_URL not set, or naming
+# it, as speech or sidenote-speech, however it is spelled), `server` (set empty: the model in the server's container) or
+# `other` (another service). Only `service` has `up` start the speech container; otherwise none is started (it sat idle),
+# and one that ran before goes.
+speech_where() {
+  local audio how url host
+  audio="$(setting SIDENOTE_AUDIO "" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "$audio" in 0|false|no|off) echo off; return ;; esac
+  how="$(setting SIDENOTE_TRANSCRIBER "" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [ "$how" = null ] && { echo off; return; }
+  # set at all, empty too: compose fills the server's in only when it is not set (${SIDENOTE_SPEECH_URL-...})
+  if [ -n "${SIDENOTE_SPEECH_URL+x}" ]; then url="$SIDENOTE_SPEECH_URL"
+  elif [ -f .env ] && grep -qE "^[[:space:]]*(export[[:space:]]+)?SIDENOTE_SPEECH_URL[[:space:]]*=" .env; then url="$(dotenv SIDENOTE_SPEECH_URL)"
+  else echo service; return; fi
+  url="$(printf '%s' "$url" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [ -n "$url" ] || { echo server; return; }
+  host="${url#*://}"; host="${host%%/*}"; host="${host%%:*}"
+  case "$host" in speech|sidenote-speech) echo service ;; *) echo other ;; esac
+}
+speech_service_used() { [ "$(speech_where)" = service ]; }
 
 # The language of every word printed here: SIDENOTE_LANG (en or ko, from the environment or .env, as the server reads
 # it), else Korean when the locale is Korean (the first of LC_ALL, LC_MESSAGES and LANG that is set, the order the C
@@ -686,22 +708,24 @@ cmd_up() {   # $1 = recreate: build and recreate even if nothing changed (./side
     done
   fi
   local rc=0 out; out="$(mktemp)"   # what compose printed, read for its reason when it fails; each end below removes it
-  local nopull=() services=()
+  local nopull=() services=() speech=(speech) scale=()
+  # no speech container when the server does not ask it (speech_service_used): none started, one there removed
+  speech_service_used || { speech=(); scale=(--scale speech=0); }
   if offline; then
     nopull=(--pull never)
     # Named one by one to leave the search engine out: it only asks the internet, and its image need not come along
-    services=(server runner speech)
+    services=(server runner ${speech[@]+"${speech[@]}"})
     if [ "$ANALYZER" = local ] && own_llm; then services+=(llm); fi
   else
     # Built first, and the wait for a quiet server looked at once more: a build takes minutes, and a problem begun
     # during it had the container replaced under it, the very thing the wait is there to prevent.
     docker compose build 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
     # With another model server the services are named, the llm one left out (a named one starts whatever its profile)
-    if [ "$ANALYZER" = local ] && ! own_llm; then services=(server runner speech searxng); fi
+    if [ "$ANALYZER" = local ] && ! own_llm; then services=(server runner ${speech[@]+"${speech[@]}"} searxng); fi
   fi
   if [ "$rc" = 0 ]; then
     wait_idle
-    docker compose up -d --no-build ${nopull[@]+"${nopull[@]}"} --quiet-pull ${1:+--force-recreate} ${services[@]+"${services[@]}"} 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
+    docker compose up -d --no-build ${nopull[@]+"${nopull[@]}"} --quiet-pull ${1:+--force-recreate} ${scale[@]+"${scale[@]}"} ${services[@]+"${services[@]}"} 2>&1 | tee "$out" | { grep -vE "^\s*$" || true; } | uniq | sed 's/^/  /' || rc=$?
   fi
   if [ "$rc" != 0 ]; then
     # A taken port leaves a created but never started server behind; the next up would start it
@@ -1028,13 +1052,26 @@ ENGINES
   fi
   # Speech as the server says it (server/app.py, speech_state): its model on, loading, or one that did not load, with the
   # log that says why, the speech service's when it runs in one. Speech off on the server is how it was started: no line
-  local said_speech where_log="./sidenote logs"
-  docker inspect sidenote-speech >/dev/null 2>&1 </dev/null && where_log="./sidenote logs speech"
+  # whose log says why: the speech service's when the server asks one (`remote`), else the server's own (a speech
+  # container may be there and unused, with SIDENOTE_SPEECH_URL empty)
+  local said_speech swhy where_log="./sidenote logs"
+  [ "$(echo "$h" | json '(d.get("speech") or {}).get("remote", False)')" = True ] && where_log="./sidenote logs speech"
   said_speech="$(echo "$h" | json '(d.get("speech") or {}).get("state", "")')"
   case "$said_speech" in
     on) ok "$(L "Speech recognition: on" "음성 인식: 켜짐")" ;;
     loading) warn "$(L "Speech recognition: loading the model" "음성 인식: 모델 불러오는 중")" ;;
     failed) bad "$(L "Speech recognition: the model did not load ($where_log)" "음성 인식: 모델을 불러오지 못함 ($where_log)")" ;;
+    # the speech service does not answer. Ours: its container ended (said why, from Docker; up starts it again), or it
+    # runs and does not answer (restart: up leaves a running container alone). Another (SIDENOTE_SPEECH_URL): its own
+    down) if [ "$(speech_where)" = service ]; then
+            swhy="$(ended_why sidenote-speech)"; sfix="./sidenote restart"
+            if [ -n "$swhy" ] || ! docker inspect sidenote-speech >/dev/null 2>&1 </dev/null; then sfix="./sidenote up"; fi
+            bad "$(L "Speech recognition: the speech service does not answer${swhy:+: $swhy} ($sfix, $where_log)" \
+                     "음성 인식: 음성 서비스 응답 없음${swhy:+: $swhy} ($sfix, $where_log)")"
+          else
+            bad "$(L "Speech recognition: the speech service does not answer (SIDENOTE_SPEECH_URL)" \
+                     "음성 인식: 음성 서비스 응답 없음 (SIDENOTE_SPEECH_URL)")"
+          fi ;;
   esac
   echo
   echo "  $(L "Open the panel" "패널 열기"): ${B}${URL}${N}   ${D}($(L "or ./sidenote open" "또는 ./sidenote open"))${N}"
@@ -1044,6 +1081,12 @@ cmd_logs() {
   docker_up
   # The speech service's own (compose's speech): what it loaded and why it could not, never what it heard
   if [ "${1:-}" = speech ]; then
+    # none to show when the server does not ask it: said why, and where the log that holds speech is
+    case "$(speech_where)" in
+      off) die "$(L "Speech is off on the server (SIDENOTE_AUDIO, SIDENOTE_TRANSCRIBER)" "서버에서 음성이 꺼져 있습니다 (SIDENOTE_AUDIO, SIDENOTE_TRANSCRIBER)")" ;;
+      server) die "$(L "Speech runs in the server's container: ./sidenote logs" "음성은 서버 컨테이너 안에서 실행됩니다: ./sidenote logs")" ;;
+      other) die "$(L "Speech is asked of another service (SIDENOTE_SPEECH_URL): its own log" "음성은 다른 서비스가 받아 적습니다 (SIDENOTE_SPEECH_URL): 그 서비스의 로그")" ;;
+    esac
     docker inspect sidenote-speech >/dev/null 2>&1 </dev/null \
       || die "$(L "The speech service is not running (./sidenote up starts it)" "음성 서비스가 실행 중이 아닙니다 (./sidenote up으로 시작)")"
     docker compose logs -f --tail 60 speech

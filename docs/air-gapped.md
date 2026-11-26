@@ -36,7 +36,7 @@ Windows when Sidenote runs in WSL, and the `python3-venv` package on a Debian or
 ## 1. On a connected PC: make the bundle
 
 Use a Linux or WSL 2 PC with Docker. The images are built for that PC's architecture, so the PC with no internet must have
-the same one (x86-64 or arm64). It needs no GPU, only room for the bundle: about 5 GB of images, half a GB for speech, and
+the same one (x86-64 or arm64). It needs no GPU, only room for the bundle: about 5 GB of images, 2.1 GB for speech, and
 the models.
 
 Pick the models for the GPU of the PC with no internet. The second is the smaller one Sidenote answers with while another
@@ -294,12 +294,22 @@ cd sidenote && ./sidenote up
 
 `.env` stays, as the archive holds none. The volumes keep the models, and the history stays in
 `~/.local/state/sidenote/logs`. For the app, bring the new zip. On Kubernetes, push the new images and run `helm upgrade`
-with the new chart.
+with the new chart. From a chart before 0.14 the speech models were in the server's pod, and the speech service's pod
+starts with a claim of its own and no models: copy them across from the server's pod once, as the bundle writes them,
+and start the server again.
+
+```bash
+kubectl -n sidenote exec deploy/sidenote-server -- tar cf - --dereference --exclude=blobs -C /data/hf hub \
+  | kubectl -n sidenote exec -i deploy/sidenote-speech -- tar xf - --no-same-owner -C /data/hf
+kubectl -n sidenote rollout restart deploy/sidenote-server
+```
+
+The server's claim keeps that copy under `/data/hf`, which nothing reads any more (about 2.1 GB).
 
 ## How this is checked
 
 `tests/offline_check.sh` brings the server and the code runner up from `compose.yaml` on a network with no way out, with
 the settings above. It fails if the start waits on the internet, or if the page loads anything from outside. It also writes
 and unpacks the speech bundle with the command above, from a cache laid out as the real one is, and fails if a link is left
-in it or the model is not found. `tests/k3d_check.sh` unpacks one in the server's pod with the Kubernetes command above and
-finds the model there. CI runs the first on every commit, and the second whenever the chart or the images change.
+in it or the model is not found. `tests/k3d_check.sh` unpacks one in the speech service's pod with the Kubernetes command
+above and finds the model there. CI runs the first on every commit, and the second whenever the chart or the images change.

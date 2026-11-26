@@ -61,6 +61,10 @@ services:
       # The speech service (below), which writes down what is heard. Empty: the speech model runs in this container,
       # as the desktop app runs it in its own process.
       SIDENOTE_SPEECH_URL: ${SIDENOTE_SPEECH_URL-http://speech:8779}
+      # Speech on or off, from the environment or .env as the speech service and ./sidenote read them: from .env alone
+      # here, `SIDENOTE_AUDIO=0 ./sidenote up` turned speech off in the service and the launcher, and not in the server
+      SIDENOTE_AUDIO: ${SIDENOTE_AUDIO-}
+      SIDENOTE_TRANSCRIBER: ${SIDENOTE_TRANSCRIBER-}
     networks:
       - default      # the agent's CLI here reaches its vendor (claude.ai, chatgpt.com)
       - llmnet       # and the local LLM (SIDENOTE_ANALYZER=local), which has no internet
@@ -165,7 +169,8 @@ services:
   # loading are a process with its own memory and CPU limits, and an end of it (out of memory, a model that will not
   # load) takes no answer and no panel with it: it is started again inside its container (docker/keep-running.sh, as the
   # server is), and the server loads its model again once it is back (server/transcriber.py, RemoteTranscriber). No port
-  # on this PC, and nothing heard is written to its log.
+  # on this PC, and nothing heard is written to its log. ./sidenote up starts it only when the server asks it: not with
+  # speech off (SIDENOTE_AUDIO, SIDENOTE_TRANSCRIBER) or SIDENOTE_SPEECH_URL set to another or to nothing.
   speech:
     image: sidenote:local     # the server's image, which has faster-whisper: another program in it (SIDENOTE_ROLE)
     pull_policy: never        # built for the server, as server-init's

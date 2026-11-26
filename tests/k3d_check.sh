@@ -72,6 +72,7 @@ set_images=(--set "server.image.repository=${SERVER_IMG%:*}" --set "server.image
             --set "runner.image.tag=${RUNNER_IMG##*:}" --set runner.image.pullPolicy=Never)
 "$HELM" install sidenote "$REPO/deploy/helm/sidenote" --namespace "$NS" --create-namespace "${set_images[@]}" \
   --set llm.enabled=false --set search.enabled=false --set-string server.env.SIDENOTE_TRANSCRIBER=null \
+  --set-string server.env.HF_HUB_OFFLINE=1 \
   "${EXTRA[@]}" --wait --timeout "$WAIT" > "$SP/k3d_install.log" 2>&1
 check "helm install, every pod ready" grep -q "STATUS: deployed" "$SP/k3d_install.log"
 kc get pods --no-headers | sed 's/^/  /'
@@ -227,8 +228,9 @@ check "the guide's command unpacks it into the speech service's volume, with no 
 FIND='import sys
 from faster_whisper import download_model
 sys.exit(open(download_model("small") + "/model.bin").read().strip() != "the model")'
+# with the pod's own settings: the guide's HF_HUB_OFFLINE in server.env reaches the speech pod too (it did not, 0.14.1)
 check "...and the library finds the model there with no network" \
-  kc exec deploy/sidenote-speech -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
+  kc exec deploy/sidenote-speech -- python3 -c "$FIND"
 
 echo "[upgrade: the token kept, Codex's login copied into a writable home]"
 TOKEN_BEFORE=$(kc get secret sidenote-runner-token -o jsonpath='{.data.token}')
@@ -243,7 +245,23 @@ check "Codex's login is in its home, and the home is writable" kc exec deploy/si
   sh -c 'test -s /root/.codex/auth.json && touch /root/.codex/written && ls -ld /root/.codex | grep -q "^drwx------"'
 check "the server's runs still work after the upgrade" kc exec deploy/sidenote-server -- python3 -c "$PROBE" token
 check "the speech model unpacked before it is still there after the upgrade" \
-  kc exec deploy/sidenote-speech -- env HF_HUB_OFFLINE=1 python3 -c "$FIND"
+  kc exec deploy/sidenote-speech -- python3 -c "$FIND"
+
+echo "[upgrade from a chart before 0.14: the speech models copied from the server's pod]"
+# Where 0.13 kept them: the server's claim. A model of another name there (tiny), and the guide's two commands, as written,
+# that copy it into the speech pod
+TINY="$WORK/tiny/hub/models--Systran--faster-whisper-tiny"
+mkdir -p "$TINY/snapshots/0123456789012345678901234567890123456789" "$TINY/refs"
+printf %s 0123456789012345678901234567890123456789 > "$TINY/refs/main"
+echo "the model" > "$TINY/snapshots/0123456789012345678901234567890123456789/model.bin"
+tar cf "$WORK/tiny.tar" --owner=1000 --group=1000 -C "$WORK/tiny" hub
+kc exec -i deploy/sidenote-server -- tar xf - --no-same-owner -C /data/hf < "$WORK/tiny.tar"
+read -r -a PACK <<< "$(sed -n 's|^kubectl -n sidenote exec deploy/sidenote-server -- \(.*\) \\$|\1|p' "$REPO/docs/air-gapped.md")"
+read -r -a INTO <<< "$(sed -n 's#^  | kubectl -n sidenote exec -i deploy/sidenote-speech -- \(.*\)$#\1#p' "$REPO/docs/air-gapped.md")"
+copy() { [ "${#PACK[@]}" -gt 0 ] && [ "${#INTO[@]}" -gt 0 ] && kc exec deploy/sidenote-server -- "${PACK[@]}" | kc exec -i deploy/sidenote-speech -- "${INTO[@]}"; }
+check "the guide's commands copy them from the server's pod into the speech pod, with no error" copy
+check "...and the library finds the copied model in the speech pod with no network" \
+  kc exec deploy/sidenote-speech -- python3 -c "${FIND//small/tiny}"
 
 echo
 echo "==== $PASS passed, $FAIL failed ===="

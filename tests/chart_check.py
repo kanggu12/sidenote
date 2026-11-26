@@ -113,5 +113,18 @@ check(f"every container ({len(seen)}, init containers too) asks for CPU and memo
 check("...Codex's copy of its login among them", "alpha-sidenote-server/codex-home" in seen, sorted(seen))
 check("no pod is given a token for the cluster's API", not tokens, tokens)
 
+print("\n[the speech service's settings]")
+# The guide for no internet puts HF_HUB_OFFLINE in server.env: the speech pod reads the bundle's models with it too
+docs = render("alpha", SETS["every part"] + ["server.env.HF_HUB_OFFLINE=1", "server.env.SIDENOTE_WHISPER_MODEL=small"])
+speech = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "alpha-sidenote-speech")
+env = {e["name"]: e.get("value") for e in speech["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+server = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "alpha-sidenote-server")
+senv = {e["name"]: e.get("value") for e in server["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+check("server.env's HF_HUB_OFFLINE and speech settings reach the speech pod, and the server is pointed at it",
+      env.get("HF_HUB_OFFLINE") == "1" and env.get("SIDENOTE_WHISPER_MODEL") == "small" and env.get("SIDENOTE_ROLE") == "speech"
+      and senv.get("SIDENOTE_SPEECH_URL") == "http://alpha-sidenote-speech:8779", {"speech": env, "server url": senv.get("SIDENOTE_SPEECH_URL")})
+check("...and none of the server's other settings (an agent's key goes nowhere near it)",
+      not any(k.startswith(("SIDENOTE_AGENT", "ANTHROPIC", "CLAUDE")) for k in env), sorted(env))
+
 print(f"\n==== {len(PASS)} passed, {len(FAIL)} failed ====")
 sys.exit(1 if FAIL else 0)
