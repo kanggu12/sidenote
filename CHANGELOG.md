@@ -1172,7 +1172,8 @@ Code answers come in a language you choose when nothing names one, Python by def
 
 The first public release: the app for Windows and Linux, the Docker setup, the Helm chart and the capture program.
 
-[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/kanggu12/sidenote/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/kanggu12/sidenote/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/kanggu12/sidenote/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/kanggu12/sidenote/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/kanggu12/sidenote/compare/v0.13.1...v0.13.2
