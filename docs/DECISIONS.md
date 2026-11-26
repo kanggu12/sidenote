@@ -14,7 +14,7 @@ RTX 4090); the scripts and their data are not published. The suites that check w
 | [The agents](#the-agents) | [5](#note-5), [7](#note-7), [8](#note-8), [9](#note-9), [19](#note-19), [23](#note-23), [29](#note-29), [67](#note-67), [68](#note-68), [71](#note-71), [86](#note-86), [87](#note-87), [89](#note-89), [90](#note-90), [139](#note-139) |
 | [Code checks](#code-checks) | [42](#note-42), [43](#note-43), [47](#note-47), [68](#note-68), [69](#note-69), [71](#note-71), [75](#note-75), [79](#note-79), [82](#note-82), [83](#note-83), [84](#note-84), [139](#note-139) |
 | [The panel](#the-panel) | [4](#note-4), [18](#note-18), [20](#note-20), [27](#note-27), [28](#note-28), [33](#note-33), [44](#note-44), [45](#note-45), [52](#note-52), [58](#note-58), [59](#note-59), [60](#note-60), [61](#note-61), [62](#note-62), [63](#note-63), [65](#note-65), [70](#note-70), [72](#note-72), [75](#note-75), [83](#note-83), [90](#note-90), [91](#note-91), [92](#note-92), [93](#note-93), [95](#note-95), [96](#note-96), [97](#note-97), [98](#note-98), [99](#note-99), [101](#note-101), [102](#note-102), [104](#note-104), [105](#note-105), [114](#note-114), [116](#note-116), [118](#note-118), [120](#note-120), [122](#note-122), [126](#note-126), [128](#note-128), [132](#note-132), [133](#note-133), [134](#note-134) |
-| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137), [143](#note-143) |
+| [Speech](#speech) | [12](#note-12), [13](#note-13), [17](#note-17), [31](#note-31), [32](#note-32), [46](#note-46), [106](#note-106), [129](#note-129), [131](#note-131), [136](#note-136), [137](#note-137), [143](#note-143), [144](#note-144) |
 | [Security and isolation](#security-and-isolation) | [18](#note-18), [28](#note-28), [37](#note-37), [38](#note-38), [39](#note-39), [43](#note-43), [47](#note-47), [85](#note-85), [87](#note-87), [116](#note-116), [124](#note-124) |
 | [Deployment and packaging](#deployment-and-packaging) | [23](#note-23), [24](#note-24), [25](#note-25), [36](#note-36), [39](#note-39), [73](#note-73), [74](#note-74), [87](#note-87), [90](#note-90), [112](#note-112), [113](#note-113), [119](#note-119), [121](#note-121), [123](#note-123), [124](#note-124), [125](#note-125), [138](#note-138), [143](#note-143) |
 
@@ -2138,7 +2138,7 @@ three numbers or none) and keeps them with that connection: the capture message 
 (`since`), a `--once` run beside it never replaces them, a newer program that takes over brings its own and the notice
 names its PC, and they go when the connection ends.
 
-**Capture connection** shows them, with **Restart** and **Quit the program** (the tray's, through the server) and the
+**Capture connection** shows them, with **Restart capture** and **Quit** (the tray's, by their names, through the server) and the
 settings the program carries out. With none connected it waits with its seconds and gives the way to start one for where
 the server runs, which the server now says (`where`: the app, a container of `./sidenote`, a cluster, by hand), each
 command with this page's port, as a program on the browser's PC reaches the server where the browser does; for a cluster,
@@ -2670,7 +2670,7 @@ request).
 
 ### <a id="note-140"></a>140. When the GPU under this PC's model fails, the agent answers
 
-On 2026-11-20 the GPU under the local model (an RTX 4090 with ECC on) gave an error in its memory it could not correct.
+Once, the GPU under the local model (an RTX 4090 with ECC on) gave an error in its memory it could not correct.
 Its driver marked the row for remapping and asked for the GPU to be reset (its recovery action, "Drain and Reset"), and
 until it was, every load of the model failed in about 2 s: the model's server answered HTTP 500, "llama-server process
 has terminated: CUDA error: uncorrectable ECC error encountered". The server still counted the model usable, as its
@@ -2788,3 +2788,26 @@ cluster's own names, and one copy of each service. The desktop app keeps the mod
 answers `GET /health` with `ok` and `service` (the server and the speech service with `version` too), so one probe reads
 them all. The agent's CLI is the next one this would fit (it forks for every question, the same reason as the first
 above); its login files, shared with the PC's own CLI under its lock, make it a larger move, and it waits.
+
+### <a id="note-144"></a>144. A speech model is asked for, then followed
+
+What a load held in one request did:
+
+- **A long download.** The server stopped waiting after 30 minutes and put its choice back, and the service went on and
+  put the model in use: the two ran different models.
+- **A restart.** A service that started again while the panel's choice loaded lost it, and the client of the model in
+  use, finding the service without a model, asked for its own back: taken as a later choice, it dropped the panel's. The
+  server's first load, waiting for a service that was late, did the same to a choice made meanwhile, and took that for a
+  saved model that could not be had.
+- **Its memory.** Each model put in use left the memory of the one before it with the C library: twelve changes took the
+  service from 1.4 GB to its 5 GB limit.
+
+So `POST /load` says which model is wanted and answers at once (202), and one loader in the service loads the model asked
+for last, beside the one in use. The server follows the load in `GET /health` (`wanted`, `loading`, `failed`, `error`),
+asks again when the service started again meanwhile, and fails with the service's own reason. A client's model back in a
+service found without one (`restore`), and the server's first load (`defer`), are taken only while no other model is
+asked for. While no one speaks the server looks at the service every 10 seconds: one that does not answer is speech down
+on the panel, in Maintenance and in `./sidenote status`, and one running another model than the server's gets the
+server's again. After each change the memory of the model replaced goes back to the system (`malloc_trim`), and a model
+the old one held under the same name, the live line's `small`, is shared: eight changes stayed at 1.2 GB where they had
+reached 4.1 GB.

@@ -74,8 +74,8 @@ after a start that brought the server up, which ends that server too), in Korean
 each label). The line under **Open the panel** says what is being sent: the sound only while its device is open, as the
 panel's sound card says. On Linux the icon appears where the desktop
 shows such icons: an AppIndicator, or the X11 tray; on macOS it is in the menu bar, and a click opens its menu. The X11
-tray (pystray without PyGObject) shows no menu: there a click opens **Capture connection**, which has **Restart** and
-**Quit**, and a note on the server being off comes as the desktop's notification (`notify-send`).
+tray (pystray without PyGObject) shows no menu: there a click opens **Capture connection**, which has **Restart capture**
+and **Quit**, and a note on the server being off comes as the desktop's notification (`notify-send`).
 
 <img alt="The tray menu under sidenote capture v0.8.0: Open the panel; the state, Capturing: Screen · Sound; the Screen
   capture and Sound capture switches, both on; Capture connection; Restart capture; Quit" src="assets/tray-menu.png" width="272">

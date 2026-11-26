@@ -10,9 +10,9 @@ written, and the code in an answer runs on the problem's examples in a code runn
 The same code runs in three ways. The app (`Sidenote.exe` on Windows, `Sidenote.app` on macOS, or the Linux app; each is
 `desktop/app.py`)
 starts the server, the capture program and the PC's own Ollama as child processes and starts again what stops; it has no
-code runner and no web search, since both are containers. With Docker, `./sidenote up` starts the server, the local
-model, the code runner and SearXNG as containers (`compose.yaml`), and the capture program runs on the desktop. On
-Kubernetes, the Helm chart (`deploy/helm/sidenote/`) runs the same four as pods, and the capture program on the PC
+code runner and no web search, since both are containers. With Docker, `./sidenote up` starts the server, the speech
+service, the local model, the code runner and SearXNG as containers (`compose.yaml`), and the capture program runs on the
+desktop. On Kubernetes, the Helm chart (`deploy/helm/sidenote/`) runs the same five as pods, and the capture program on the PC
 reaches the server through `kubectl port-forward`. In all three, the panel and the capture program reach the server at
 `127.0.0.1:8777`.
 
@@ -237,7 +237,7 @@ PersistentVolumeClaim on Kubernetes.
 | `.ended` | under compose, the server's last end nobody asked for, as the loop it runs in saw it (`docker/keep-running.sh`): when, its exit code, its starts in the last 10 minutes, whether it was started again, and whether `stall.txt` was written in that run; `./sidenote status` reads it | removed when its container starts | one line |
 | `before-restore-<when>/` | what `./sidenote restore` replaced: the history and the settings as they were | each, until `./sidenote uninstall --data` | the files it holds |
 | `none_*.png` | with `SIDENOTE_DEBUG_FRAMES` set, the screens read as nothing to solve | the last eight | a few MB each |
-| Docker's container logs | each container's output (json-file) | rotated | the server 3 x 5 MB, the local model 2 x 5 MB, the runner and SearXNG 2 x 2 MB, the model download 1 x 2 MB |
+| Docker's container logs | each container's output (json-file) | rotated | the server and the speech service 3 x 5 MB each, the local model 2 x 5 MB, the runner and SearXNG 2 x 2 MB, the model download 1 x 2 MB |
 | `hf-cache` volume | the speech models, mounted by the speech service (and by the server, for its own when `SIDENOTE_SPEECH_URL` is empty) | until removed | about 2.1 GB for `large-v3-turbo` and `small`, the live words' model |
 | `llm-models` volume | the local model's weights | until removed | tens of GB a model |
 
@@ -265,8 +265,8 @@ one is logged as lost (code 1009).
 | Type | When | Main fields |
 |:---|:---|:---|
 | `control` | on connect and on every change | `screen`, `audio`, `stitch`, `monitor`, `monitor_follow` (**Follow the changing screen**; an older server sends none, and the program keeps it off), `skip_windows` (the words of **Skip windows**: no frame is sent while a window on screen has one in its title or its program's name) |
-| `quit` | `./sidenote capture-stop` (`POST /capture/quit`, `POST /api/v1/capture/quit`), the panel's **Quit the program**, and when another capture program connects | `reason` (`panel` for the panel's, `taken_over` for the latter), `by` (the newer one's PC and system, or its `info` where it says none) |
-| `restart` | `./sidenote capture-restart` (`POST /capture/restart`, `POST /api/v1/capture/restart`), the panel's **Restart**, and a deploy with new code for it | `reason` (`panel` for the panel's), `quiet` (a deploy's: at a quiet moment) |
+| `quit` | `./sidenote capture-stop` (`POST /capture/quit`, `POST /api/v1/capture/quit`), the panel's **Quit**, and when another capture program connects | `reason` (`panel` for the panel's, `taken_over` for the latter), `by` (the newer one's PC and system, or its `info` where it says none) |
+| `restart` | `./sidenote capture-restart` (`POST /capture/restart`, `POST /api/v1/capture/restart`), the panel's **Restart capture**, and a deploy with new code for it | `reason` (`panel` for the panel's), `quiet` (a deploy's: at a quiet moment) |
 
 One capture program feeds a server. The PC's own guard keeps a second one off that PC (it ends with exit code 76); one
 that connects from elsewhere, another PC or another account, takes over when its hello comes. The one before is sent `quit` with
@@ -288,7 +288,7 @@ for where the server runs, which the server says in its status (`where`, and in 
 
 | Type | When | Main fields |
 |:---|:---|:---|
-| `status` | everything on connect, then the keys that changed | `analyzer`, `paused`, `lang`, `audio`, `speech` (why there is no speech when `audio` is false: `state` `loading`, `failed` or `off`, with `turn_on`, the variable that turns it on), `voice`, `can_ask`, `ask_off` (`deleted` when the last answer was deleted, rather than a server started after it), `run_enabled` (the runner configured and responding, and **Run button** on), `runner`, `engines` (each engine's state; for the agent its `provider`, `label`, `short`, `login`, `effective` mode, payload, model, effort, `brake` and `limit_until`; for the local model `stand_in`), `version`, `update_check` (false when `SIDENOTE_UPDATE_CHECK=0` or mock mode leaves the check nothing to do), `update` (a newer release, `version` and `url`, or null; sent again when the check or **Check for new versions** changes it) |
+| `status` | everything on connect, then the keys that changed | `analyzer`, `paused`, `lang`, `audio`, `speech` (what speech is: `state` `on`; when there is none, `loading`, `failed`, `off` with `turn_on`, the variable that turns it on, or `down`, a speech service that does not answer; `remote`, whether the model runs in the speech service), `voice`, `can_ask`, `ask_off` (`deleted` when the last answer was deleted, rather than a server started after it), `run_enabled` (the runner configured and responding, and **Run button** on), `runner`, `engines` (each engine's state; for the agent its `provider`, `label`, `short`, `login`, `effective` mode, payload, model, effort, `brake` and `limit_until`; for the local model `stand_in`), `version`, `update_check` (false when `SIDENOTE_UPDATE_CHECK=0` or mock mode leaves the check nothing to do), `update` (a newer release, `version` and `url`, or null; sent again when the check or **Check for new versions** changes it) |
 | `settings` | `meta` and `values` on connect, then the changed `values` | `meta` (sections and items), `values`, `options` (a list of choices that changed: the pulled models, the monitors) |
 | `capture` | on connect, on a change, and at most every 5 s while frames and sound arrive | `clients`, `info`, `last_frame`, `last_audio`, `screen_on`, `audio_on`, `caps`, `empty_run` and `quiet_sec` (the watching slowed by answers that found nothing) |
 | `usage` | on connect and after each answer | `answers`, `empty` (analyses with nothing to solve), `tokens_in`, `tokens_out`, `cost_usd`, `errors`, `elapsed_p50`, `first_token_p50`, `first_token_avg`, `tps_avg`, `last_error` |
@@ -389,15 +389,18 @@ mono PCM in the body, a minute at most (413 past that). Nothing heard is written
 
 | Request | Answer |
 |:---|:---|
-| `GET /health` | `ok`, `service` (`speech`), `version`, `available`, `model`, `live_model`, `language`, `loading` (the model being loaded), `error` (the last load's failure) |
-| `POST /load` with `model` (`""`: `SIDENOTE_WHISPER_MODEL`) | the health's fields once it is loaded (the model in use already: at once); 500 with the reason when it cannot be had, the one in use staying; 409 when another was asked for while it loaded or waited |
+| `GET /health` | `ok`, `service` (`speech`), `version`, `available`, `model`, `live_model`, `language`, `wanted` (the model asked for last), `loading` (the one being loaded), `error` and `failed` (the last failure to load, and its model) |
+| `POST /load` with `model` (`""`: `SIDENOTE_WHISPER_MODEL`, else one the panel offers or the environment names), `restore` and `defer` | at once, the health's fields and `asked` (the model's name there): 200 when it is in use already, else 202, and the service's one loader fetches it (the first time) and loads it beside the one in use, which goes on hearing. The client follows the load in `GET /health` until the model is in use, `failed` names it (the reason in `error`, the one in use staying), or another is `wanted`. 400 for a model not offered. `restore`: a client's model back in a service found without one, taken only while none is in use, loading or asked for; `defer`: the server's start, taken only while no other model is loading or asked for |
 | `POST /segments?sr=16000` | `spans`: the speech in the sound, as `[start, end]` sample pairs; 409 with no model loaded |
 | `POST /transcribe?sr=16000&live=0` | `text`, `last_language` (what it was read as), `language`; `live=1` reads it with the live line's model; 409 with no model loaded |
 | `PUT /language` with `value` (`auto`, `ko`, `en`) | `language` |
 | `PUT /hints` with `hint` (the built-in term lists, or null) and `extra` (the person's **Extra terms**) | `ok` |
 
-A 409 for no model is a service that started again: the server's client loads its own model there again, gives it the
-language and the terms again, and asks once more. Every one of Sidenote's own services answers `GET /health` with `ok`
+A 409 for no model is a service that started again: the server's client loads its own model there again (`restore`),
+gives it the language and the terms again, and asks once more. A load the service lost by starting again while the client
+followed it (nothing in use, loading or asked for) is asked for again. While no one speaks the server looks at `GET /health`
+every 10 seconds: a service that does not answer is speech `down`, one with no model gets the client's back, and one
+running another model than the server's (a load the server stopped waiting for) gets the server's again. Every one of Sidenote's own services answers `GET /health` with `ok`
 and `service`: the server (`server`, with `version`), this one and the code runner.
 
 ## Security

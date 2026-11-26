@@ -41,13 +41,14 @@ Sidenote is a few programs that work together. Which of them run, and where, dep
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-ways-dark.svg">
-  <img alt="The app (desktop/app.py) starts the server in its own Python, the capture program and the PC's own Ollama. Docker (./sidenote and compose.yaml) runs the server, the local model, the code runner and web search as containers, and the capture program on the desktop outside Docker. Kubernetes (deploy/helm/sidenote) runs the same four as pods, and the capture program on your PC through a port-forward" src="assets/diagram-ways-light.svg" width="100%">
+  <img alt="The app (desktop/app.py) starts the server in its own Python, the speech model with it, the capture program and the PC's own Ollama. Docker (./sidenote and compose.yaml) runs the server, the speech service, the local model, the code runner and web search as containers, and the capture program on the desktop outside Docker. Kubernetes (deploy/helm/sidenote) runs the same five as pods, and the capture program on your PC through a port-forward" src="assets/diagram-ways-light.svg" width="100%">
 </picture>
 
 | Part | What it does | In the app | With Docker |
 |:---|:---|:---|:---|
 | Capture program, `client/capture.py` | Captures the screen and the speaker sound and sends them to the server | a process the app starts | Windows Python, or the Python of a Linux desktop or a Mac |
 | Server, `server/` | Finds the problems in screens and speech, solves them with the local model or the agent, and reads the web pages the local model asks for | a process the app starts | the `sidenote` container |
+| Speech service, `server/speech_service.py` | Writes down what is said in the sound the server is sent (faster-whisper, on the CPU) | inside the server's process | the `sidenote-speech` container, which only the server reaches; none while speech is off |
 | Local model | The vision model that solves (Ollama) | this PC's Ollama | the `sidenote-llm` container, on the GPU, with no internet |
 | Web search | Sends the local model's searches to search engines (SearXNG) | none | the `sidenote-searxng` container |
 | Code runner, `runner/runner.py` | Runs the code you run from the panel and the example checks, and returns the real output | none | the `sidenote-runner` container, with no network |
@@ -438,7 +439,7 @@ of the same name. It is also the setup guide's first step.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/capture-connection-dark.png">
-    <img alt="Capture connection with a capture program connected: the Capture program card saying Connected, with its PC and system, its release the same as the server's, started by the desktop shortcut so that its tray's Quit Sidenote ends the server too, its address and when it connected; the keys Restart and Quit the program; another PC's ways folded; and the settings Monitor, Follow the changing screen, Join scrolled screens and Skip windows" src="assets/capture-connection-light.png" width="560">
+    <img alt="Capture connection with a capture program connected: the Capture program card saying Connected, with its PC and system, its release the same as the server's, started by the desktop shortcut so that its tray's Quit Sidenote ends the server too, its address and when it connected; the keys Restart capture and Quit; another PC's ways folded; and the settings Monitor, Follow the changing screen, Join scrolled screens and Skip windows" src="assets/capture-connection-light.png" width="560">
   </picture>
 </p>
 
@@ -448,9 +449,9 @@ of the same name. It is also the setup guide's first step.
   program says these in its hello as it connects; one older than 0.8.0 says none of them. A program of another release
   turns the card amber, with what to do: one started from the server's checkout runs the server's code once restarted,
   and one elsewhere is replaced from that release's `sidenote-capture-<version>-<os>-<arch>.zip`, which the card links to.
-- **Restart** and **Quit the program**, which asks twice, ask the program what its tray's **Restart capture** and
-  **Quit** do. **Quit the program** ends the program alone: a server the desktop shortcut brought up stays, as the tray's
-  **Quit Sidenote** would have ended it too. Under the app the key is **Quit Sidenote**, which ends the app.
+- **Restart capture** and **Quit**, which asks twice, do what the tray's items of the same names do. **Quit** ends the
+  program alone: a server the desktop shortcut brought up stays, where the tray's **Quit Sidenote** ends it too. Under the
+  app the key is **Quit Sidenote**, which ends the app.
 - With none connected, it waits, with the seconds since the sheet opened, and past a minute says where to look for why
   (`./sidenote capture --console` prints what stops it, with its **Copy** key). When one connects, it says so with the
   PC it is on.
@@ -1506,7 +1507,7 @@ explained where they are read: the change thresholds and the like in `server/con
 | `SIDENOTE_CONTINUE_WINDOW_SEC` | `600` | A problem joined by scrolling within this many seconds of its answer fills that answer out under the same card instead of being solved again (0 turns it off) |
 | `SIDENOTE_CLI_TIMEOUT` | `120` | How long a CLI agent's answer may go quiet before the turn is ended (seconds) |
 | `SIDENOTE_RUNNER_URL` | (set automatically in the container) | Code runner address. Empty turns the **Run** feature off (the button disappears from the panel) |
-| `SIDENOTE_SPEECH_URL` | (set automatically in the container: `http://speech:8779`) | The speech service the server sends the sound to, the `speech` container that writes down what is said. Empty runs the speech model inside the server's container, as the desktop app runs it in its own |
+| `SIDENOTE_SPEECH_URL` | (set automatically in the container: `http://speech:8779`) | The speech service the server sends the sound to, the `speech` container that writes down what is said. Empty runs the speech model inside the server's container, as the desktop app runs it in its own, and `./sidenote up` then starts no `speech` container |
 | `SIDENOTE_RUNNER_TIMEOUT` | `10` | Time limit for one code run (seconds) |
 | `SIDENOTE_RUNNER_TOKEN` | (empty) | The token sent with every run, for a runner reached over TCP that takes runs only with it (`RUNNER_TOKEN`). The Helm chart makes one; compose's Unix socket needs none |
 | `SIDENOTE_TRUST_GATEWAY` | `1` | Whether connections from the container's default gateway are let in, as Docker's published port makes them. The Helm chart sets `0`: loopback only, where `kubectl port-forward` arrives |
@@ -1963,8 +1964,8 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 연결하기 | Connect | the capture card's foot and the alert bar, with no capture program connected |
 | 연결 관리 | Manage | the capture card's foot, with a capture program connected |
 | 캡처 프로그램 | Capture program | **Capture connection**: its card |
-| 다시 시작 | Restart | **Capture connection** |
-| 프로그램 끝내기 | Quit the program | **Capture connection** |
+| 캡처 다시 시작 | Restart capture | **Capture connection** |
+| 끝내기 | Quit | **Capture connection** |
 | 다른 PC에서 | From another PC | **Capture connection** |
 | 캡처 프로그램 기다리는 중 | Waiting for the capture program | **Capture connection**, the setup guide |
 | v… | v… | beside the name in the top bar, a link to that release's notes |
@@ -1980,6 +1981,7 @@ and the tray menu speaks Korean with `SIDENOTE_LANG=ko`. The agent is **Agent** 
 | 아직 이 PC의 모델 없음 | No local model yet | alert bar, in the app |
 | Ollama가 응답하지 않음 | Ollama does not answer | alert bar, in the app |
 | 이 PC의 모델 응답 없음 | The local model does not respond | alert bar |
+| 음성 서비스 응답 없음 | The speech service does not answer | the capture card, **Maintenance** |
 | 풀 엔진이 모두 꺼짐 | Every engine is off | alert bar |
 | 풀 엔진 없음 | No engine to solve | error cards |
 | 풀 수 있는 엔진 없음 | No engine can answer | `./sidenote status` |

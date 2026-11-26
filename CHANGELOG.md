@@ -6,15 +6,62 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
-## [0.14.1] - 2026-11-24
+## [0.14.2] - 2026-11-26
 
-0.14.0's changes, released with every file: the speech service starts on a machine with fewer than six cores.
+Fixes for the speech service and the panel: speech is said as down when its service stops answering, a choice of speech
+model holds through a restart or a late start, the service gives its memory back, and older answers are reached past the
+200 the page holds.
+
+### Changed
+
+- A speech model is asked for, then followed: the speech service answers the server's ask at once and loads the model in
+  a loader of its own, and the server follows the load in the service's health. A download longer than the server's wait
+  left the two on different models, and a service that started again lost a load the server was waiting on.
+- Capture connection's keys have the names of the tray's items that do the same: **Restart capture** and **Quit** (they
+  were **Restart** and **Quit the program**).
+- `./sidenote up` starts no speech container when the server does not use one: speech off, or `SIDENOTE_SPEECH_URL` set
+  empty or to another service. The server takes `SIDENOTE_AUDIO` and `SIDENOTE_TRANSCRIBER` from the environment as well
+  as from `.env`, as the speech service and `./sidenote` do.
 
 ### Fixed
 
-- `docker compose up` run by hand, with no `./sidenote` to bring the speech service's 6 CPUs down to the machine's,
-  failed on a machine with fewer cores, as it did in the release's own checks, so 0.14.0 was never published; its
-  changes, below, come with this release. `./sidenote up` already brought it down.
+- When the speech service stops answering, the panel, Maintenance and `./sidenote status` say so, and the Sound switch,
+  the Heard card and the Paused band no longer offer speech; status says why its container ended, and which command
+  brings it back. The server looks at the service every 10 seconds while no one speaks.
+- A model chosen in the panel is kept when the speech service starts again during its load, when the server's start was
+  still waiting for a late service, and when another is chosen while it is set up. The server keeps the language it set.
+- A speech service that comes up after the server's two minutes of waiting, or a first download that failed, is asked
+  again, 15 seconds later and then every minute: speech stayed off until the server started again.
+- Changing the Speech model gives the speech service's memory back: twelve changes took it to its 5 GB limit, and it now
+  stays at its two models' 1.2 GB. A model the one in use already holds, such as the live line's `small`, is shared.
+- The speech service says why a model did not load, where it said "faster-whisper missing" for every cause, and loads
+  only the models the panel offers. A service that refuses every call is in the server's log once a minute.
+- A change of the speech language or the terms no longer holds up the server while the speech service writes a sentence
+  down.
+- The Helm chart passes `HF_HUB_OFFLINE` to the speech pod, and the guide for no internet says how to copy the speech
+  models into the speech pod when upgrading from a chart before 0.14.
+- In the panel, Load older answers goes back day by day past the 200 answers the page holds, where it took two days in
+  turn, and after a day picked in the Contents or Starred, where it skipped the days between; a day of more than 200
+  counts as done at 200. A flow of named steps written as code with arrows between them is drawn as a flow, each step in
+  the code's letters. The pause band offers to solve what was heard only with a capture program connected or words
+  heard, and in Korean names the key as the failure card does.
+- Smaller panel fixes: the type badge at 821 to 1000 px, the dark theme's switches that cannot be used, the New answer
+  pill's place in the question bar, a failure's date on a phone, the screen card's title in one column, the mark of
+  Capture connection's From another PC, and a notice under the bar on a phone. The note under a screen card that cannot
+  skip windows says what the desktop does not tell, and no longer advises.
+- The guide's parts table, its diagram of the three ways to run Sidenote and the architecture guide show the speech
+  service.
+
+## [0.14.1] - 2026-11-24
+
+0.14.0's changes, released with every file: its release checks failed on a four-core machine, so 0.14.0 was never
+published.
+
+### Fixed
+
+- The release's own checks started the speech service with its 6 CPUs on a four-core machine, which Docker refuses, so
+  0.14.0 was never published; its changes, in 0.14.0's section of `CHANGELOG.md`, come with this release.
+  `./sidenote up` brings the limit down to the machine's cores and was never affected.
 - With no internet, the speech service is told so as the server is (`HF_HUB_OFFLINE` in `.env`, as the guide writes
   it), and reads the bundle's models without asking for them.
 
@@ -29,7 +76,8 @@ hold one part of it.
   image): the server sends it the sound and gets the words back. Its threads, its models and their loading have their
   own CPU and memory (`SIDENOTE_SPEECH_CPUS`, `SIDENOTE_SPEECH_MEMORY`), and when it ends the server, the panels and the
   answer being written go on: it is started again, and the server loads its model there again with no restart of its
-  own. It has no port on the PC, and only the server reaches it. `SIDENOTE_SPEECH_URL` empty runs the model in the
+  own. `SIDENOTE_CPUS` no longer limits the speech model, and with the server's 8 GB the two may use up to 13 GB. It
+  has no port on the PC, and only the server reaches it. `SIDENOTE_SPEECH_URL` empty runs the model in the
   server's container, as before; the desktop app keeps it in its own process.
 - The Helm chart deploys the speech service as a Deployment with a Service only the server's pods reach, and a claim
   of its own for the models (`speech.enabled`). For no internet, the guide unpacks the speech models into its pod.
