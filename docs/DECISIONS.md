@@ -1218,7 +1218,8 @@ the rules it relies on required marked 18.
 ### <a id="note-27"></a>27. The notebook thread
 
 Solutions pile up downward, oldest first. Only the latest 3 stay expanded and the rest fold to their answer line, but
-the solution being read is never folded. The view follows new answers down only while the end of the notebook is on
+the solution being read is never folded. A short answer, a multiple choice and a math result never fold: their answer line
+is a value (`Yes.`, `③`, `9`), and folded to it they kept nothing of why; a summary or an approach reads on its own. The view follows new answers down only while the end of the notebook is on
 screen (or just below it), and scrolling up by wheel, key or touch, even one step, stops following at once and only
 shows the **New answer** button, so that one wheel step within the 140 px tolerance is not dragged down by the next
 characters. Stopped following turns on again only when a new answer enters the notebook 8 seconds after the last manual

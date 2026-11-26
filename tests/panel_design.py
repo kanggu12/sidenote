@@ -474,19 +474,37 @@ def group_drawn(br, s):
     check("a chain in a list item's own paragraph is drawn once, whole", flows == [["명시적 Deny", "Allow", "기본 Deny"]], flows)
     # Named steps written as code with arrows between them, as words or as formulas, and what each does in brackets: the line
     # is the flow. It read as code and formulas mixed into one line of words. An arrow inside the code stays code
-    p.answer(699, "work", "", "흐름", "경로는 다음과 같습니다.\n\n`AI Agent` $\\rightarrow$ `Self-test & AI Reviewer` (Pre-filter) "
-             "$\\rightarrow$ `Impact Analysis` (Selection) → `Full CI` (L3)\n\n`a -> b -> c` 는 타입입니다.\n\n"
+    # (under a section's heading, as a real answer had it: the flow there is 304 px wide on a phone, where a step and its arrow
+    # fill a line exactly)
+    p.answer(699, "work", "", "흐름", "## 1. 앞 절\n\n앞 절의 본문입니다.\n\n## 2. 요약된 제어 흐름\n\n경로는 다음과 같습니다.\n\n`AI Agent` $\\rightarrow$ `Self-test & AI Reviewer` (Pre-filter) "
+             "$\\rightarrow$ `Impact Analysis` (Selection) → `Lightweight CI` (L2) → `Full CI / Batch Process` (L3)\n\n"
+             "`a -> b -> c` 는 타입입니다.\n\n"
              "`head` → `head->next` → `head->next->next`\n")
     p.wait(300)
     coded = p.js("""() => { const e = entryEl(699); return { flows: [...e.querySelectorAll('.md .v-flow')].map((f) => [...f.querySelectorAll(':scope > span')].map((x) => x.textContent.trim())),
       typed: [...e.querySelectorAll('.md code')].map((c) => c.textContent),
       lettered: [...e.querySelectorAll('.md .v-flow > span > code')].map((c) => getComputedStyle(c).fontFamily === getComputedStyle(e.querySelector('.md p code') || c).fontFamily && getComputedStyle(c).backgroundColor === 'rgba(0, 0, 0, 0)') }; }""")
     check("a chain of named steps in code, its arrows as words or formulas, is drawn as the flow",
-          coded["flows"][:1] == [["AI Agent", "Self-test & AI Reviewer (Pre-filter)", "Impact Analysis (Selection)", "Full CI (L3)"]]
+          coded["flows"][:1] == [["AI Agent", "Self-test & AI Reviewer (Pre-filter)", "Impact Analysis (Selection)",
+                                  "Lightweight CI (L2)", "Full CI / Batch Process (L3)"]]
           and "a -> b -> c" in coded["typed"], coded)
     check("...each step whole, an arrow of its own in its code included, in the code's letters with no chip of its own",
           coded["flows"][1:] == [["head", "head->next", "head->next->next"]] and coded["lettered"] and all(coded["lettered"]),
           coded)
+    # On a phone the flow wraps: each line ends with its arrow, as a wide one does. Wrapped between a step and its arrow, a
+    # line began with an arrow and the one before ended with none (a step wider than the line, and a line filled exactly)
+    was_size = p.page.viewport_size
+    p.page.set_viewport_size({"width": 390, "height": 844})
+    p.wait(300)
+    rows = p.js("""() => { const f = entryEl(699).querySelector('.md .v-flow'); const lines = [];
+      for (const c of f.children) { const r = c.getBoundingClientRect(), mid = (r.top + r.bottom) / 2, k = c.tagName === 'svg' ? '>' : '[]';
+        const l = lines.find((x) => Math.abs(x.mid - mid) < 10); if (l) l.k.push(k); else lines.push({ mid, k: [k] }); }
+      return lines.map((l) => l.k.join(' ')); }""")
+    p.page.set_viewport_size(was_size)
+    p.wait(200)
+    check("...and wrapped on a phone, every line but the last ends with its arrow, and none begins with one",
+          len(rows) > 1 and all(r.endswith(">") for r in rows[:-1]) and not any(r.startswith(">") for r in rows)
+          and not rows[-1].endswith(">"), rows)
     # Starting numbers
     p.answer(605, "work", "", "답", "3. 셋째부터\n4. 넷째\n")
     p.wait(150)

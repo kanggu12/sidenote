@@ -29,14 +29,15 @@ def check(name, cond, detail=""):
     print(f"  {'ok' if cond else 'FAIL'} {name}" + (f": {detail}" if detail and not cond else ""))
 
 
-def answer(seq, ts, kind="short", text="풀이 **핵심 구절** 입니다.\n\n`코드` 와 **`굵은 코드`** 도 있습니다."):
+def answer(seq, ts, kind="essay", text="풀이 **핵심 구절** 입니다.\n\n`코드` 와 **`굵은 코드`** 도 있습니다."):
+    # essay by default: a kind that folds when older (a short answer, a choice and a result stay open with their working)
     full = f"TYPE: {kind}\nANSWER: 답 {seq}\n\n{text}\n"
     return [{"type": "analysis_start", "id": seq, "ts": ts, "thumb": None, "transcript": "", "pages": 0, "trigger": "screen", "roi": None},
             {"type": "analysis_done", "id": seq, "text": full, "usage": {}, "cost_usd": 0.0, "model": "m", "engine": "local",
              "sent": [], "stages": {"local": True, "agent": False}, "elapsed": 1.0, "region": None}]
 
 
-def row(seq, ts, kind="short"):
+def row(seq, ts, kind="essay"):
     """One row of the server's /history."""
     return {"id": seq, "ts": ts, "kind": kind, "trigger": "screen", "transcript": "", "text": f"TYPE: {kind}\nANSWER: 옛 답 {seq}\n\n옛 풀이 {seq}.\n",
             "model": "m", "engine": "local", "sent": [], "usage": {}, "elapsed": 1.0, "thumb": None}
@@ -493,10 +494,18 @@ def main() -> int:
         if got:
             check("a folded answer's body is not drawn until it is opened", got[0] == 0, str(got))
             page.evaluate("(id) => { unfolded.add(+id); renderEntry(items.get(+id)); }", got[1])
-            math = page.evaluate("""() => { const it = items.get(latestId() - 3); unfolded.delete(it.id); it.raw = 'TYPE: short\\nANSWER: 시간 $O(n)$\\n\\n풀이.'; it.head = splitHead(it.raw, true);
+            math = page.evaluate("""() => { const it = items.get(latestId() - 3); unfolded.delete(it.id); it.raw = 'TYPE: algorithm\\nANSWER: 시간 $O(n)$\\n\\n풀이.'; it.head = splitHead(it.raw, true);
                 renderEntry(it); const a = entryEl(it.id).querySelector('.hl'); return [entryEl(it.id).classList.contains('folded'), a.textContent.includes('$'), !!a.querySelector('.katex')]; }""")
             check("a formula in a folded answer's line is still set", math == [True, False, True], str(math))
             check("and is drawn when it is", page.evaluate("(id) => entryEl(+id).querySelector('[data-body]').childElementCount", got[1]) > 0)
+            # a short answer, a choice or a result is its value alone: older, it stays open with its working, where it folded
+            # to "Yes." with nothing of why; an essay beside it still folds to its summary
+            kept = page.evaluate("""() => [['short', 'Yes.'], ['mcq', '③'], ['math', '9']].map(([k, a], n) => {
+                const it = items.get(latestId() - 4 - n); unfolded.delete(it.id); it.raw = `TYPE: ${k}\\nANSWER: ${a}\\n\\n세 마운트에 둘을 더해 아홉입니다.`;
+                it.head = splitHead(it.raw, true); renderEntry(it); const e = entryEl(it.id);
+                return [k, e.classList.contains('folded'), e.querySelector('[data-body]').textContent.includes('아홉')]; })""")
+            check("an older short answer, choice or result stays open with its working", all(not f and body for _, f, body in kept), str(kept))
+            check("...and an older essay still folds to its summary", page.evaluate("() => entryEl(latestId() - 3) && document.querySelectorAll('.entry.folded').length > 0"))
         else:
             check("(an answer folds)", False, "none folded")
         page.close()

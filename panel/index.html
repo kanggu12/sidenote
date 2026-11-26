@@ -2468,6 +2468,15 @@
   /* A step named in code keeps the code's letters, and none of its chip: a box drawn in the step's box */
   :root[data-skin="classic"] .md .v-flow > span > code { padding: 0; background: none; border: 0; box-shadow: none; color: inherit; font-size: .93em; font-weight: 560; }
   :root[data-skin="classic"] .v-flow > svg { width: 17px; height: 17px; flex: none; color: var(--v); }
+  /* An arrow stays on the line of the step before it: the step keeps the arrow's room and the spaces round it as its margin
+     (5 + 17 + 5 px), and the arrow stands in it, taking no room of its own; the flow's gap between them is none, as a gap
+     alone could still push the arrow to the next line. Wrapped between them, a phone's line began with an arrow and the line
+     before ended with none; every line now ends with its arrow, as a wide one does */
+  :root[data-skin="classic"] .v-flow { column-gap: 0; }
+  /* (and no wider than the line less that room: a step wider than the line was laid out at its full width before it shrank,
+     and filled the line before its arrow came) */
+  :root[data-skin="classic"] .v-flow > span:has(+ svg) { margin-right: 27px; max-width: calc(100% - 27px); }
+  :root[data-skin="classic"] .v-flow > span + svg { margin: 0 5px 0 -22px; }
   :root[data-skin="classic"] .md .v-flow-line { margin: .8em 0; }
   /* What it costs on its scale, from constant to exponential: where it stands, with the figure the answer gave */
   :root[data-skin="classic"] .md .v-bigo { margin: 2px 0 16px; padding: 10px 16px 10px; background: var(--v-pane); border: 1px solid var(--v-pane-line); border-radius: 3px; }

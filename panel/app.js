@@ -3623,7 +3623,11 @@ const turnWrote = (t) => {
 };
 // Errors are short: never folded. An entry stays open while a follow-up about it is being written.
 // One kept back by Practice is not folded either: folded, it would show the answer line it keeps back.
-const foldable = (it) => olderThanOpen(it) && !it.live && !it.error && !held(it);
+// The kinds whose answer line is the answer itself, a value or a choice: folded to that line, an older one said "Yes." or "③"
+// and nothing of why. They stay open with their working; the others fold to their summary or their approach, which reads
+// on its own
+const OPEN_KINDS = new Set(["short", "mcq", "math"]);
+const foldable = (it) => olderThanOpen(it) && !it.live && !it.error && !held(it) && !OPEN_KINDS.has(it.head?.type);
 const folded = (it) => foldable(it) && !unfolded.has(it.id) && !it.turns.some((t) => turns.get(t)?.live);
 // When an answer was, with its day when that was not today
 function answerItems(text) {
@@ -5233,7 +5237,9 @@ const exportWhere = () => { const b = $("hist-export").getBoundingClientRect(); 
 // instead and ran across the top edge of the contents' card. The room is asked as the key's scroll margin, so whichever of
 // its boxes scrolls gives it; at most half the window, for a long list that then scrolls inside itself (comboPlace)
 function roomUnder(key, h) {
-  key.style.scrollMarginBottom = `${Math.ceil(Math.min(h, innerHeight / 2) + 6 + 8)}px`;   // the gap to the list, the list, the window's edge
+  // the gap to the list, the list, the window's edge, and a pixel more: scrolled to the exact room, a key at a fraction of a
+  // pixel (726.3) read as not leaving it, and its list opened over it across the card's top edge, by the page's length
+  key.style.scrollMarginBottom = `${Math.ceil(Math.min(h, innerHeight / 2) + 6 + 8) + 1}px`;
   key.scrollIntoView({ block: "nearest", behavior: "instant" });
   key.style.scrollMarginBottom = "";
 }
@@ -5253,7 +5259,7 @@ function exportMenu(open, back = false) {
   m.style.left = "8px"; m.style.top = "8px";               // measured first where nothing squeezes it
   roomUnder(key, m.offsetHeight);                          // the key in the window with room under it, for the menu to hang from
   const b = key.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
-  const up = b.bottom + 6 + h > innerHeight - 8 && b.top - 6 - h >= 8;
+  const up = Math.round(b.bottom) + 6 + h > innerHeight - 8 && b.top - 6 - h >= 8;   // (whole pixels: as roomUnder)
   m.classList.toggle("up", up);
   m.style.top = `${Math.round(up ? b.top - 6 - h : b.bottom + 6)}px`;
   m.style.left = `${Math.round(Math.min(Math.max(8, b.right - w), innerWidth - 8 - w))}px`;
@@ -6544,7 +6550,7 @@ function comboPlace() {
   // it 4 px off its key
   const h = list.offsetHeight;
   // below unless it does not fit there and does above
-  const up = b.bottom + 6 + h > bottom && b.top - 6 - h >= top;
+  const up = Math.round(b.bottom) + 6 + h > bottom && b.top - 6 - h >= top;   // (whole pixels: as roomUnder)
   list.classList.toggle("up", up);
   const w = list.offsetWidth;
   // Lined up with the control on the side the sheet lines it up on: right edges on a wide sheet, where

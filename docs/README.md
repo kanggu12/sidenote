@@ -665,7 +665,8 @@ marks the current one, whose screen the right column shows.
   and **Other causes** for an operations answer. Each one asks the whole question for you, and the reply is added
   under the same answer. The first pass stays short on purpose: most screens hold nothing to solve, and depth is
   worth paying for only when it is asked for.
-- The three most recent solutions stay expanded; older ones keep only their answer line. **Show the solution**
+- The three most recent solutions stay expanded; older ones keep only their answer line, except a short answer, a
+  multiple choice and a math result, which keep their working under the answer at any age. **Show the solution**
   expands one again, and **Fold** folds it back. A folded answer to a spoken problem with no question line of its own
   also keeps the end of what was heard, where the question usually is.
 - A spoken problem's **Heard** row holds what was said, three sentences a paragraph; a long one shows its first lines,

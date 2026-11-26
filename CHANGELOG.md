@@ -6,6 +6,21 @@ that only fixes raises the patch number. Each release's section here is its rele
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-11-26
+
+Fixes for the panel: an older short answer keeps its working under it, a flow's arrows stay with their steps on a phone,
+and the Contents' menus at a phone's foot open under their key.
+
+### Fixed
+
+- A short answer, a multiple choice and a math result keep their working under the answer at any age, where older ones
+  folded to the answer alone: "Yes." or "③" with nothing of why. A summary or an approach still folds, as it reads on its
+  own.
+- A flow of steps wrapped on a phone keeps each arrow at the end of the step before it, where a line could begin with an
+  arrow and the one before end with none.
+- The Contents' Export menu and its lists of days and types, opened at the foot of a phone's window, open under their
+  key: by the page's length they opened over it, across the top edge of the Contents' card.
+
 ## [0.14.2] - 2026-11-26
 
 Fixes for the speech service and the panel: speech is said as down when its service stops answering, a choice of speech
