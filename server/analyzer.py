@@ -909,7 +909,7 @@ class LocalServerError(RuntimeError):
 def gpu_fault(text: str) -> str:
     """Whether a failure of the model's server is the GPU under it failing: "ecc" when the GPU's memory gave an error it
     could not correct, "gpu" for another failure of the GPU (the server's runner gone on a CUDA error), "" for anything
-    else. A GPU short of memory ("out of memory") is busy, not broken, and passes. Seen 2026-11-20 on an RTX 4090: after
+    else. A GPU short of memory ("out of memory") is busy, not broken, and passes. Seen on an RTX 4090: after
     one uncorrectable memory error the driver asked for the GPU to be reset ("Drain and Reset"), and until it was, every
     load of the model failed in about 2 s with "llama-server process has terminated: CUDA error: uncorrectable ECC error
     encountered"."""

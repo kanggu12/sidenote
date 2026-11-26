@@ -10,13 +10,21 @@ questions, the answers), and this keeps nothing.
 
     python -m uvicorn server.speech_service:app --host 0.0.0.0 --port 8779
 
-One client, the server. No sign-in: it answers only on the services' own network (compose's default network, no port
-on the host; the chart's NetworkPolicy lets the server alone in), as the local model's server does. Nothing heard is
-written to its log: what it hears is the room's speech.
+One client, the server. No sign-in: it answers only on the services' own network (compose's speechnet, internal, which the
+server alone shares, and no port on the host; the chart's NetworkPolicy lets the server alone in), as the local model's
+server does, and it loads only the models the panel offers. Nothing heard is written to its log: what it hears is the
+room's speech.
 
-    GET  /health                     the model in use, the one loading, the last failure to load
-    POST /load        {"model"}      load that model (fetched the first time) beside the one in use, then use it;
-                                     "" for SIDENOTE_WHISPER_MODEL. 409 when a later one was asked for meanwhile
+    GET  /health                     the model in use, the one asked for (`wanted`), the one loading, and the last
+                                     failure to load (`error`, about `failed`)
+    POST /load        {"model", "restore", "defer"}  ask for that model: "" for SIDENOTE_WHISPER_MODEL, else one the
+                                     panel offers (config.py, SPEECH_MODELS). 200 with the health when it is in use
+                                     already, else 202: it is fetched the first time and loaded beside the one in use,
+                                     which goes on hearing, and the client follows it in /health. A later ask takes the
+                                     place of one not loaded yet. "restore": a client's model back in a service found
+                                     without one, taken only while none is in use, loading or asked for. "defer": the
+                                     server's start, taken only while no other model is loading or asked for. Both
+                                     otherwise answer the health as it is. Every answer says the model asked (`asked`)
     POST /segments?sr=16000          the speech spans of 16-bit mono PCM in the body: {"spans": [[start, end], ...]}
     POST /transcribe?sr=16000&live=0 the words of 16-bit mono PCM in the body: {"text", "last_language", "language"}
     PUT  /language    {"value"}      "auto", "ko" or "en"; a new choice starts the session's vote over
@@ -31,10 +39,11 @@ import logging
 import threading
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from .config import CONFIG
-from .transcriber import NullTranscriber, make_transcriber
+from .config import CONFIG, SPEECH_MODELS
+from .transcriber import NullTranscriber, give_back_memory, make_transcriber
 from .version import VERSION
 
 # Its log, as the server's (server/app.py): the models loaded and why one could not be, at INFO; never a word heard, which
@@ -47,9 +56,13 @@ app = FastAPI(title="sidenote-speech", docs_url=None, redoc_url=None, openapi_ur
 
 # One decode at a time, as the server's one speech loop asks for them: the model's own threads are its CPU limit
 _DECODE = threading.Lock()
-# One load at a time: a choice made while another loads waits for it, and only the latest asked for is taken
-_LOAD = threading.Lock()
-_STATE: dict = {"tr": NullTranscriber(), "wanted": None, "loading": "", "error": ""}
+# What there is and what is asked for, read and changed together (never held while waiting on _DECODE: taken after it)
+_STATE_LOCK = threading.Lock()
+_STATE: dict = {"tr": NullTranscriber(), "wanted": "", "loading": "", "error": "", "failed": ""}
+# One loader: the model asked for last is the one loaded and put in use, one load at a time. A request only says what is
+# wanted and answers at once; a load held in a request for minutes (a first download) outlived the client's wait, and
+# several requests waiting on each other's loads took locks that were hard to follow
+_WAKE = threading.Event()
 MAX_BODY = 16000 * 2 * 60   # a minute of 16 kHz 16-bit sound: the server sends a sentence, or the live line's window
 
 
@@ -58,10 +71,17 @@ def _model():
 
 
 def _status() -> dict:
-    tr = _model()
+    with _STATE_LOCK:
+        return _status_now()
+
+
+def _status_now() -> dict:
+    """The health, under _STATE_LOCK."""
+    tr = _STATE["tr"]
     return {"ok": True, "service": "speech", "version": VERSION, "available": bool(getattr(tr, "available", False)),
             "model": getattr(tr, "model_name", ""), "live_model": getattr(tr, "live_name", ""),
-            "language": getattr(tr, "language", None), "loading": _STATE["loading"], "error": _STATE["error"]}
+            "language": getattr(tr, "language", None), "wanted": _STATE["wanted"], "loading": _STATE["loading"],
+            "error": _STATE["error"], "failed": _STATE["failed"]}
 
 
 async def _pcm(request: Request) -> bytes:
@@ -87,36 +107,100 @@ def health() -> dict:
     return _status()
 
 
+def _offered(name: str) -> bool:
+    """A model this service loads: the panel's, and the one the environment names (a folder too, for no internet). Any
+    name was fetched and loaded, and written whole to the log: from the model's site, into the models' volume."""
+    return name in SPEECH_MODELS or name == CONFIG.whisper_model
+
+
 @app.post("/load")
-def load(body: dict) -> dict:
-    """The model named (the panel's choice), or the environment's: fetched the first time, loaded beside the one in use,
-    which goes on hearing until this one is ready. One that cannot be had leaves the one in use, and says why. The same
-    model again (a server that started again asks for the one it had) is answered at once."""
-    model = str(body.get("model") or "") or CONFIG.whisper_model
-    _STATE["wanted"] = model
-    with _LOAD:
-        if _STATE["wanted"] != model:   # a later choice came while this one waited its turn: that one settles it
-            raise HTTPException(409, "a later model was asked for")
-        tr = _model()
-        if getattr(tr, "available", False) and getattr(tr, "model_name", "") == model:
-            return _status()
-        _STATE["loading"], _STATE["error"] = model, ""
-        try:
-            new = make_transcriber(CONFIG, model)
-        except Exception as exc:
-            _STATE["loading"], _STATE["error"] = "", str(exc)[:200]
-            log.error("speech model %s did not load (%s)", model, exc)
-            raise HTTPException(500, _STATE["error"])
-        _STATE["loading"] = ""
-        if not getattr(new, "available", False):
-            _STATE["error"] = f"{model} did not load (faster-whisper missing, or speech off: SIDENOTE_AUDIO, SIDENOTE_TRANSCRIBER)"
-            raise HTTPException(500, _STATE["error"])
-        if _STATE["wanted"] != model:   # another asked for while it loaded: dropped, the one in use stays
-            raise HTTPException(409, "a later model was asked for")
-        with _DECODE:
-            _STATE["tr"] = new
-        log.info("speech model ready (%s)", getattr(new, "model_name", model))
-        return _status()
+def load(body: dict):
+    """The model named (the panel's choice), or the environment's, asked for. In use already (a server that started again
+    asks for the one it had): its health at once. Otherwise the loader fetches and loads it beside the one in use, which
+    goes on hearing, and the answer is 202: the client follows the load in /health. One that cannot be had leaves the one
+    in use, and /health says why (`failed`, `error`)."""
+    name = str(body.get("model") or "")
+    if len(name) > 200 or (name and not _offered(name)):
+        log.warning("refused to load a model this service does not offer (%s)", name[:60])
+        raise HTTPException(400, "not a speech model this service offers")
+    model = name or CONFIG.whisper_model
+    with _STATE_LOCK:
+        tr = _STATE["tr"]
+        inuse = bool(getattr(tr, "available", False))
+        wanted, loading = _STATE["wanted"], _STATE["loading"]
+        # another model asked for and not in use yet (a failed ask is no longer one): the panel's choice, loading
+        other = (loading and loading != model) or (wanted and wanted not in (model, _STATE["failed"])
+                                                   and not (inuse and wanted == getattr(tr, "model_name", "")))
+        # A client's model back in a service found without one (it started again): never in the place of a model in use
+        # or one asked for, whose load the client's own once took over and dropped. The server's start defers the same
+        # way to a choice made while it waited for the service, which its saved model took the place of
+        if (body.get("restore") and (inuse or loading or (wanted and wanted not in (model, _STATE["failed"])))) \
+                or (body.get("defer") and other):
+            return {**_status_now(), "asked": model}
+        if inuse and getattr(tr, "model_name", "") == model and not loading:
+            _STATE["wanted"] = model   # the one in use: nothing to load, and an earlier ask not loaded yet is dropped
+            return {**_status_now(), "asked": model}
+        _STATE["wanted"] = model
+        if _STATE["failed"] == model:   # asked again: tried again
+            _STATE["failed"] = _STATE["error"] = ""
+        state = {**_status_now(), "asked": model}
+    _WAKE.set()
+    return JSONResponse(state, status_code=202)
+
+
+def _loader() -> None:
+    """The loads, one at a time, of the model asked for last. One asked for while another loads is loaded after it, and the
+    earlier one is dropped unless it is still the one asked for."""
+    while True:
+        _WAKE.wait()
+        _WAKE.clear()
+        while _load_wanted():
+            pass
+
+
+def _load_wanted() -> bool:
+    """One load of the model asked for, when it is not in use already and has not failed: True when one was tried."""
+    with _STATE_LOCK:
+        model, tr = _STATE["wanted"], _STATE["tr"]
+        if (not model or model == _STATE["failed"]
+                or (getattr(tr, "available", False) and getattr(tr, "model_name", "") == model)):
+            _STATE["loading"] = ""
+            return False
+        _STATE["loading"], _STATE["error"], _STATE["failed"] = model, "", ""
+    why, new = "", None
+    try:
+        # strict: why a model did not load is its own error (no internet and not in the volume, no room), where the
+        # stand-in said "faster-whisper missing, or speech off" for all of them. `reuse`: what the one in use holds
+        # under the same name is shared, not loaded twice
+        new = make_transcriber(CONFIG, model, reuse=tr, strict=True)
+        if not getattr(new, "available", False):   # SIDENOTE_AUDIO=0 or SIDENOTE_TRANSCRIBER=null in this service's settings
+            why = f"{model} did not load: speech is off here (SIDENOTE_AUDIO, SIDENOTE_TRANSCRIBER)"
+    except Exception as exc:
+        why = str(exc)[:200] or type(exc).__name__
+    del tr
+    swapped = False
+    if why:
+        with _STATE_LOCK:
+            _STATE["loading"], _STATE["error"], _STATE["failed"] = "", why, model
+    else:
+        with _DECODE:   # a decode running ends first; then the state, briefly (_STATE_LOCK is taken after _DECODE, never before)
+            with _STATE_LOCK:
+                _STATE["loading"] = ""
+                if _STATE["wanted"] == model:   # still the one asked for: in use from now on
+                    _STATE["tr"], swapped = new, True
+    new = None
+    if why:
+        log.error("speech model %s did not load (%s)", model, why)
+    elif swapped:
+        log.info("speech model ready (%s)", model)
+    # the memory of the model replaced (or of the one dropped) given back now, and again in a moment for a decode that
+    # still held it
+    give_back_memory()
+    threading.Thread(target=give_back_memory, args=(5.0,), daemon=True).start()
+    return True
+
+
+threading.Thread(target=_loader, name="speech-loader", daemon=True).start()
 
 
 @app.post("/segments")

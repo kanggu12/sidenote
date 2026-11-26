@@ -134,6 +134,9 @@ def checks(f: dict) -> list[dict]:
         # off by SIDENOTE_AUDIO=0, or by no transcriber at all (SIDENOTE_TRANSCRIBER=null): the variable that turns it on
         on = "SIDENOTE_TRANSCRIBER=auto" if sp.get("transcriber") == "null" else "SIDENOTE_AUDIO=1"
         out.append(_check("speech", t("Speech recognition"), OFF, t("Off on the server"), t("Start the server with {cmd}", cmd=on)))
+    elif sp.get("down"):   # the speech service does not answer: the server's log says when it stopped answering
+        out.append(_check("speech", t("Speech recognition"), BAD, t("The speech service does not answer"),
+                          t("See the server's log in Log"), go="log"))
     elif not sp.get("available"):
         out.append(_check("speech", t("Speech recognition"), BAD if sp.get("failed") else IDLE,
                           t("The speech model did not load") if sp.get("failed") else t("Loading the speech model"),

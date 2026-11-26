@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import telemetry
-from .config import CONFIG, agent_name
+from .config import CONFIG, SPEECH_MODELS, agent_name
 from .i18n import t
 from .updates import allowed as update_allowed
 
@@ -50,7 +50,6 @@ WORDS_MAX, WORD_MAX = 50, 60   # a list of free words: at most this many, each a
 # PC with other work running: 0.29, 0.81 and 0.84 s for each second of speech (docs/DECISIONS.md, note 129). The live line
 # is read with small beside the larger two, at small's cost (note 106)
 SPEECH_SENTENCE = {"small": "1.5", "medium": "4", "large-v3-turbo": "4"}
-SPEECH_MODELS = ("small", "medium", "large-v3-turbo")
 # The languages Default code language offers, by the names people write them in: the ones the example check runs
 # (codecheck.py; C as a program that reads its input), Bash left out, as no algorithm or coding answer is written in it
 # by choice

@@ -2143,7 +2143,7 @@ class Pipeline:
         it asked about the present (present_question), and the agent gets the web search for it."""
         # This PC's model went down while the analysis ran (its first pass found the GPU failing: app.local_fault_seen): the
         # agent's request is made as with no local model, which it can answer alone. Asked to read the question out of
-        # what was heard, the broken model failed the agent with it (76 analyses on 2026-11-20)
+        # what was heard, the broken model failed the agent with it (76 analyses in one sitting)
         if local is not None and not self.hooks.local_ok():
             local = None
         images, text, what, words, read_from = await self._agent_payload(seq, local, frame, look, pages, transcript,

@@ -81,6 +81,11 @@ WHISPER_HINTS = {
 }
 
 
+# The speech models the panel offers (server/settings.py, Speech model), with the one the environment names: what the speech
+# service loads when asked (server/speech_service.py), where any name or path was taken
+SPEECH_MODELS = ("small", "medium", "large-v3-turbo")
+
+
 @dataclass
 class Config:
     # Network

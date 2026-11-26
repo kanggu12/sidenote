@@ -132,7 +132,7 @@ class FasterWhisperTranscriber:
     available = True
 
     def __init__(self, model_size: str = "base", compute_type: str = "int8", language: str = "auto",
-                 hint: str | dict = "", cpu_threads: int = 4, live_model: str = ""):
+                 hint: str | dict = "", cpu_threads: int = 4, live_model: str = "", reuse=None):
         # Lazy, heavy imports kept inside so the module import stays cheap.
         import numpy  # noqa: F401  (validated here, used in transcribe)
         from faster_whisper import WhisperModel, download_model
@@ -152,23 +152,30 @@ class FasterWhisperTranscriber:
         # `live_model` reads the live line, `model_size` every sentence. The same name, or none, is one model for both
         self.model_name = model_size
         self.live_name = live_model if live_model and live_model != model_size else model_size
+        self.compute_type, self.cpu_threads = compute_type, max(1, int(cpu_threads))
+        # `reuse`: the model this one replaces (the panel's Speech model changed). One it already holds under the same name,
+        # built the same way, is taken from it: each new model loaded its own copy of the live line's small beside the old
+        # one's, four models in memory where three were counted for (compose.yaml, SIDENOTE_SPEECH_MEMORY)
+        main_had, live_had = _held(reuse, model_size, compute_type, cpu_threads), None
+        if self.live_name != model_size:
+            live_had = _held(reuse, self.live_name, compute_type, cpu_threads)
         log.info("loading faster-whisper model=%s%s compute=%s lang=%s threads=%s", model_size,
                  f" (live line: {self.live_name})" if self.live_name != model_size else "", compute_type, self.language, cpu_threads)
         # cpu_threads: without it CTranslate2 decodes on every core the container has, which is
         # the lag the tool is supposed to save the user. num_workers 1: one utterance at a time.
         # Fetched first, outside the spawn lock: a first download takes minutes, and the model in use and every agent's
         # process would wait on that lock for as long.
-        where = model_size if os.path.isdir(model_size) else download_model(model_size)
+        where = None if main_had is not None else model_size if os.path.isdir(model_size) else download_model(model_size)
         live_where = None
-        if self.live_name != model_size:
+        if self.live_name != model_size and live_had is None:
             live_where = self.live_name if os.path.isdir(self.live_name) else download_model(self.live_name)
         # Built under the spawn lock: it loads in the background now, beside the CLI checks and the analyses, and its
         # int8 conversion can run in a native parallel region, which a fork must not meet (forksafe.py)
         with forksafe.native_work():
-            self._model = WhisperModel(where, device="cpu", compute_type=compute_type,
-                                       cpu_threads=max(1, int(cpu_threads)), num_workers=1)
+            self._model = main_had if main_had is not None else WhisperModel(
+                where, device="cpu", compute_type=compute_type, cpu_threads=max(1, int(cpu_threads)), num_workers=1)
             # the two read in turn, in the one speech loop (app.py, transcription_worker), so they share the threads
-            self._live_model = None if live_where is None else WhisperModel(
+            self._live_model = live_had if live_had is not None else None if live_where is None else WhisperModel(
                 live_where, device="cpu", compute_type=compute_type, cpu_threads=max(1, int(cpu_threads)), num_workers=1)
 
     def _told(self, audio):
@@ -411,21 +418,69 @@ SIZES = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 
 
 REACH_WAIT = 120.0   # seconds a first load waits for a speech service that is still starting
+LOAD_POLL = 0.5      # how often a load is followed in the speech service's /health (RemoteTranscriber._follow)
+
+
+class ServiceDown(RuntimeError):
+    """The speech service did not answer: the model asked for is not at fault (app.py keeps the panel's choice)."""
+
+
+class _Busy(RuntimeError):
+    """The speech service loads another model, or has one: a client's model back is not loaded (speech_service.py)."""
+
+
+class Superseded(RuntimeError):
+    """A later model was asked for in the speech service while this one waited or loaded: that one settles which runs, and
+    this one is no fault of its own (app.py keeps the later choice, where it took this for a model that cannot be had)."""
+
+
+def _held(tr, name: str, compute_type: str, cpu_threads: int):
+    """The loaded model named `name` that `tr` holds, for its sentences or its live line, built as one asked for now would
+    be (the same precision and threads), or None."""
+    if not isinstance(tr, FasterWhisperTranscriber) or (tr.compute_type, tr.cpu_threads) != (compute_type, max(1, int(cpu_threads))):
+        return None
+    if tr.model_name == name:
+        return tr._model
+    if tr.live_name == name and tr._live_model is not None:
+        return tr._live_model
+    return None
+
+
+def give_back_memory(delay: float = 0.0) -> None:
+    """The memory of a speech model just dropped, given back to the system (after `delay` seconds, for a decode that still
+    held it). The C library keeps what was freed for its next allocations: twelve changes of the Speech model took the
+    speech service from 1.4 GB to its 5 GB limit with two models loaded, and one trim took it back to 1.2 GB. Nothing
+    where the C library is not glibc (the desktop app on Windows and macOS)."""
+    import ctypes
+    import gc
+    if delay:
+        time.sleep(delay)
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 class RemoteTranscriber:
     """The speech model in a service of its own (server/speech_service.py, SIDENOTE_SPEECH_URL), asked over HTTP: what
     FasterWhisperTranscriber does, with the decoding in another process, container or pod. Built as that one is built,
     by loading the model (POST /load, which fetches it the first time: minutes), and used as that one is, from the speech
-    loop's threads (app.py, transcription_worker): its calls are plain blocking ones.
+    loop's threads (app.py, transcription_worker): its calls are plain blocking ones. The load is asked for and followed
+    in the service's /health (speech_service.py), with no request held open for the minutes a first download takes.
 
     A service that started again has no model: the first call that finds none (409) loads this one's again, once, and is
     asked again. A service that does not answer hears nothing for that call (no spans, no words), said in the log once a
-    minute: the speech loop goes on, and hears again when the service is back."""
+    minute: the speech loop goes on, and hears again when the service is back. One being replaced (`retired`, the panel's
+    Speech model loading in another) loads nothing again: its loads took the place of the one chosen."""
 
-    available = True
+    @property
+    def available(self) -> bool:
+        """Speech to be had: the service answered the last time it was asked. What the server says as `audio` (the Sound
+        switch, the Heard card, the Paused band) follows it; always true, they offered speech beside a service that was gone."""
+        return self.reachable
 
-    def __init__(self, url: str, model: str = "", load_timeout: float = 1800.0):
+    def __init__(self, url: str, model: str = "", load_timeout: float = 1800.0, defer: bool = False):
         import httpx2
         self._httpx = httpx2
         self.url = url.rstrip("/")
@@ -437,29 +492,99 @@ class RemoteTranscriber:
         self._reload = threading.Lock()   # one load again at a time, whichever thread found the service without a model
         self._said_down = 0.0             # when the log last said the service does not answer
         self._set: dict = {}              # the language and the terms given it, given again to a service that started again
+        # whether the service answered the last time it was asked (a call, or probe() when no one speaks): the server says
+        # speech is down while it does not, where "on" stood beside a speech container that was gone
+        self.reachable = True
+        # set by the server while another takes this one's place (app.py, change_speech_model): its model back in a service
+        # that started again, asked for while the chosen one loaded, was taken as a later choice and that one dropped
+        self.retired = False
+        self._said_refused: dict = {}    # when the log last said the service refused, by its status
+        # no load again before this: one that failed is not asked for on every call (twice a second while somebody speaks),
+        # nor a model back while another loads there
+        self._next_reload = self._next_restore = 0.0
         self.last_language = ""
         self.model_name = self.live_name = ""
         self._language = "auto"
-        self._load()
+        self._load(defer=defer)
 
-    def _load(self) -> None:
-        # The service may still be starting beside the server (compose starts the two together, Kubernetes in any order):
-        # not answering yet is waited for, two minutes at most, a refusal is not
+    def _load(self, restore: bool = False, defer: bool = False) -> None:
+        """This one's model asked for in the service, then followed there until it is in use (speech_service.py: the ask is
+        answered at once, the load runs in the service's loader). `restore`: back in a service found without one, which the
+        service takes only while no model is in use, loading or asked for; raises _Busy when it did not, and leaves the
+        names this one said. `defer`: the server's start, which gives way (Superseded) to a model asked for meanwhile."""
+        st = self._ask_load(restore, defer)
+        if "wanted" not in st:
+            # a speech service of a release before this one (0.14.1), which loads in the request and answers once loaded:
+            # what it says is the model in use. In a chart's upgrade the new server meets the old pod first, and took its
+            # answer for another model asked for, its start giving up with no speech
+            self._take(st)
+            if not self.model_name:
+                raise RuntimeError("the speech service has no model")
+            return
+        want = str(st.get("asked") or self.wanted or "")   # the service's name for it ("" is its SIDENOTE_WHISPER_MODEL)
+        if restore and not (st.get("available") and st.get("model") == self.model_name) \
+                and st.get("wanted") != self.model_name:
+            raise _Busy(f"another speech model is in use or loading there "
+                        f"({st.get('loading') or st.get('wanted') or st.get('model') or 'none'})")
+        if defer and st.get("wanted") != want:   # another one asked for: even with this one in use now, it goes
+            raise Superseded("a model chosen meanwhile was asked for there")
+        st = self._follow(want, st, restore, defer)
+        self._take(st)
+        if not self.model_name:
+            raise RuntimeError("the speech service has no model")
+
+    def _ask_load(self, restore: bool, defer: bool = False) -> dict:
+        """POST /load, and the health it answers with. The service may still be starting beside the server (compose starts
+        the two together, Kubernetes in any order): not answering yet is waited for, REACH_WAIT at most; a refusal is not."""
         until = time.monotonic() + REACH_WAIT
         while True:
             try:
-                r = self._http.post(f"{self.url}/load", json={"model": self.wanted},
-                                    timeout=self._httpx.Timeout(10.0, read=self._load_timeout))
+                r = self._http.post(f"{self.url}/load", json={"model": self.wanted, "restore": restore, "defer": defer},
+                                    timeout=self._httpx.Timeout(10.0))
                 break
             except self._httpx.TransportError as exc:
                 if time.monotonic() > until:
-                    raise RuntimeError(f"the speech service at {self.url} does not answer ({type(exc).__name__})") from exc
+                    raise ServiceDown(f"the speech service at {self.url} does not answer ({type(exc).__name__})") from exc
                 time.sleep(2)
+        self.reachable = True   # it answered: a refusal is a model that cannot be had, not a service gone
         if r.status_code >= 400:
             raise RuntimeError(_said(r) or f"the speech service could not load {self.wanted or 'its model'}")
-        self._take(r.json())
-        if not self.model_name:
-            raise RuntimeError("the speech service has no model")
+        return r.json()
+
+    def _follow(self, want: str, st: dict, restore: bool, defer: bool = False) -> dict:
+        """The load of `want` followed in /health until it is in use. Raises with the service's own reason when it failed,
+        Superseded when a later model was asked for there, past the load's time limit, and ServiceDown when the service
+        has not answered for REACH_WAIT. A service that started again meanwhile (nothing in use, loading or asked for) lost
+        the ask: it is asked again, where a load held in one request was lost with the request."""
+        began, gone, again = time.monotonic(), None, 0
+        while True:
+            if st.get("available") and st.get("model") == want and st.get("loading") != want:
+                return st
+            if want and st.get("failed") == want:
+                raise RuntimeError(st.get("error") or f"{want} did not load")
+            if not st.get("wanted") and not st.get("loading") and not st.get("available"):
+                if again >= 3:
+                    raise RuntimeError("the speech service started again three times while it loaded")
+                again += 1
+                st = self._ask_load(restore, defer)
+                continue
+            if st.get("wanted") != want:
+                raise Superseded("a later model was asked for")
+            if time.monotonic() - began > self._load_timeout:
+                raise RuntimeError(f"{want} did not load in {self._load_timeout / 60:.0f} minutes")
+            time.sleep(LOAD_POLL)
+            try:
+                r = self._http.get(f"{self.url}/health", timeout=self._httpx.Timeout(5.0))
+                got = r.json() if r.status_code == 200 else None
+            except (self._httpx.HTTPError, ValueError):
+                got = None
+            if not isinstance(got, dict):   # not answering: waited for, as a service starting again is
+                gone = gone or time.monotonic()
+                if time.monotonic() - gone > REACH_WAIT:
+                    raise ServiceDown(f"the speech service at {self.url} stopped answering while {want} loaded")
+                continue
+            gone, st = None, got
+            self.reachable = True
 
     def _take(self, st: dict) -> None:
         """What the service says it runs: the names the panel and Maintenance show, and the language chosen."""
@@ -474,25 +599,18 @@ class RemoteTranscriber:
             try:
                 r = self._http.request(method, f"{self.url}{path}", **kw)
             except self._httpx.HTTPError as exc:   # not there (starting again, stopped): no speech this time
-                if time.monotonic() - self._said_down > 60:
-                    self._said_down = time.monotonic()
-                    log.warning("the speech service does not answer (%s): nothing is heard until it does", type(exc).__name__)
+                self._gone(exc)
                 return empty
+            self.reachable = True
             if r.status_code == 409 and attempt == 1:   # started again, with no model: this one's, then the call again
-                with self._reload:
-                    try:
-                        self._load()
-                        # and what the server had set on it, which a service that started again does not hold
-                        if "language" in self._set:
-                            self._http.put(f"{self.url}/language", json={"value": self._set["language"]})
-                        if "hints" in self._set:
-                            self._http.put(f"{self.url}/hints", json=self._set["hints"])
-                    except Exception as exc:
-                        log.warning("the speech service could not load %s again (%s)", self.wanted or "its model", exc)
-                        return empty
+                if self.retired or not self._reload_model(restore=True):
+                    return empty
                 continue
             if r.status_code >= 400:
-                log.warning("the speech service refused %s %s (%s %s)", method, path, r.status_code, _said(r)[:120])
+                # once a minute for each status: one that refused every call wrote a line a second while somebody spoke
+                if time.monotonic() - self._said_refused.get(r.status_code, -1e9) > 60:
+                    self._said_refused[r.status_code] = time.monotonic()
+                    log.warning("the speech service refused %s %s (%s %s)", method, path, r.status_code, _said(r)[:120])
                 return empty
             return r.json()
         return empty
@@ -506,6 +624,63 @@ class RemoteTranscriber:
         self._set["language"] = value
         got = self._ask("PUT", "/language", None, json={"value": value})
         self._language = str((got or {}).get("language") or value)
+
+    def _gone(self, exc) -> None:
+        """The service did not answer: said as down, and in the log once a minute."""
+        self.reachable = False
+        if time.monotonic() - self._said_down > 60:
+            self._said_down = time.monotonic()
+            log.warning("the speech service does not answer (%s): nothing is heard until it does", type(exc).__name__)
+
+    def _reload_model(self, restore: bool = True) -> bool:
+        """This one's model loaded again, in a service that started again (`restore`) or one that runs another (probe),
+        with the language and the terms the server had set on it, which a model loaded there does not hold. False when it
+        could not be had."""
+        if time.monotonic() < (self._next_restore if restore else 0.0) or time.monotonic() < self._next_reload:
+            return False
+        with self._reload:
+            try:
+                self._load(restore)
+                if "language" in self._set:
+                    r = self._http.put(f"{self.url}/language", json={"value": self._set["language"]})
+                    # and said as the language here: _take had put the service's own, so the server said auto while
+                    # the model had the pinned one again
+                    self._language = str((r.json() if r.status_code == 200 else {}).get("language") or self._set["language"])
+                if "hints" in self._set:
+                    self._http.put(f"{self.url}/hints", json=self._set["hints"])
+                return True
+            except _Busy as exc:   # the panel's choice loads there: it brings a model, and this one is being replaced
+                log.debug("speech model not loaded again: %s", exc)
+                self._next_restore = time.monotonic() + 2
+                return False
+            except Exception as exc:
+                log.warning("the speech service could not load %s again (%s)", self.wanted or "its model", exc)
+                self._next_reload = time.monotonic() + 30
+                return False
+
+    def probe(self) -> None:
+        """The service's /health, asked while no one speaks (nothing else asks it then): one that is gone is said as down,
+        and one that started again with no model gets this one's back before the next sentence, not with it."""
+        try:
+            r = self._http.get(f"{self.url}/health", timeout=self._httpx.Timeout(3.0))
+            st = r.json() if r.status_code == 200 else None
+        except (self._httpx.HTTPError, ValueError) as exc:
+            self._gone(exc)
+            return
+        if not isinstance(st, dict):
+            self.reachable = False
+            return
+        self.reachable = True
+        if self.retired or st.get("loading"):   # another takes this one's place, or a load there settles what it runs
+            return
+        if not st.get("available"):
+            self._reload_model(restore=True)
+        elif self.model_name and st.get("model") != self.model_name:
+            # It runs another model than the server says: a load the server gave up waiting for (a download slower than
+            # the load's time limit), finished there after all. The server put its choice back; the service follows it
+            log.warning("the speech service runs %s where the server uses %s: loading %s there again",
+                        str(st.get("model"))[:60], self.model_name, self.model_name)
+            self._reload_model(restore=False)
 
     def set_hints(self, hint, extra=()) -> None:
         self._set["hints"] = {"hint": hint, "extra": list(extra or ())}
@@ -548,20 +723,24 @@ def live_model(cfg, chosen: str) -> str:
     return live
 
 
-def make_transcriber(cfg, model: str = "") -> "NullTranscriber | FasterWhisperTranscriber | RemoteTranscriber":
+def make_transcriber(cfg, model: str = "", reuse=None, strict: bool = False,
+                     defer: bool = False) -> "NullTranscriber | FasterWhisperTranscriber | RemoteTranscriber":
     """The speech model: `model` when it is named (the panel's choice), else the one the environment names. One not
-    downloaded yet is fetched by faster-whisper on the way."""
+    downloaded yet is fetched by faster-whisper on the way. `reuse`: the model it replaces, whose models it may share.
+    `strict`: a model that cannot load raises with its reason under SIDENOTE_TRANSCRIBER=auto too (the speech service,
+    which says why), where auto gives the stand-in that hears nothing. `defer`: the server's start, which in the speech
+    service gives way to a model chosen meanwhile (RemoteTranscriber; raises Superseded)."""
     if not cfg.audio_enabled or cfg.transcriber == "null":
         return NullTranscriber()
     if getattr(cfg, "speech_url", ""):   # the speech service: its model, loaded there (fetched there the first time)
-        return RemoteTranscriber(cfg.speech_url, model)
+        return RemoteTranscriber(cfg.speech_url, model, defer=defer)
     if cfg.transcriber in ("auto", "faster-whisper"):
         try:
             chosen = model or cfg.whisper_model
             return FasterWhisperTranscriber(chosen, cfg.whisper_compute, cfg.speech_lang, cfg.whisper_hint,
-                                            getattr(cfg, "whisper_threads", 4), live_model(cfg, chosen))
+                                            getattr(cfg, "whisper_threads", 4), live_model(cfg, chosen), reuse=reuse)
         except Exception as exc:  # pragma: no cover - env dependent
-            if cfg.transcriber == "faster-whisper":
+            if cfg.transcriber == "faster-whisper" or strict:
                 raise
             log.warning("faster-whisper unavailable (%s); transcription disabled", exc)
             return NullTranscriber()

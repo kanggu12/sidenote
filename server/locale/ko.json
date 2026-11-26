@@ -395,6 +395,7 @@
  "The speech model did not load": "음성 모델을 불러오지 못함",
  "Loading the speech model": "음성 모델 불러오는 중",
  "See the server's log in Log": "로그에서 서버 로그 보기",
+ "The speech service does not answer": "음성 서비스 응답 없음",
  "live words: {m}": "실시간 글 {m}",
  "{model} not downloaded": "{model} 받지 않음",
  "Not installed on this PC": "이 PC에 설치 안 됨",

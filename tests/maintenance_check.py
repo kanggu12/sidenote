@@ -97,7 +97,7 @@ check("...on your PC for a cluster, and by starting the app again under the app"
 other = by_id(M.checks(facts(capture={"who": {"host": "PC", "version": "0.8.0"}})))
 check("a program of another release: a warning naming both, and to restart it", other["capture"]["state"] == "warn"
       and "0.8.0" in other["capture"]["said"] and "0.9.1" in other["capture"]["said"] and "Restart" in other["capture"]["fix"], other["capture"])
-# The GPU under the local model failing (2026-11-20): the local row says it is the GPU and that a restart resets it, with no
+# The GPU under the local model failing: the local row says it is the GPU and that a restart resets it, with no
 # command (it said the model's server did not answer and gave ./sidenote up), and the GPU's row says its driver asks for it
 reset = by_id(M.checks(facts(local={"ok": False, "fault": {"kind": "reset", "detail": "Drain and Reset"}},
                              gpu={"recovery": "Drain and Reset"})))
@@ -130,6 +130,9 @@ check("...or with no transcriber, the one that gives it one", "SIDENOTE_TRANSCRI
 failed = by_id(M.checks(facts(speech={"available": False, "failed": True})))
 check("a speech model that did not load: a fault, and a key to the log", failed["speech"]["state"] == "bad" and failed["speech"]["go"] == "log", failed["speech"])
 check("...one still loading is not", by_id(M.checks(facts(speech={"available": False})))["speech"]["state"] == "idle")
+down = by_id(M.checks(facts(speech={"available": True, "down": True})))["speech"]
+check("the speech service not answering: a fault, said, with a key to the log, where it said the models were on",
+      down["state"] == "bad" and down["said"] == "The speech service does not answer" and down["go"] == "log", down)
 missing = by_id(M.checks(facts(local={"missing": True, "want": "sidenote-gemma4:26b"})))
 check("the local model not downloaded: a fault, downloaded in Models where the panel may", missing["local"]["state"] == "bad"
       and missing["local"]["go"] == "models" and "26b" in missing["local"]["said"], missing["local"])
@@ -156,8 +159,11 @@ check("...one that ends today: the clock alone", by_id(M.checks(facts(agent={"li
       == "Usage limit until 11:59 PM")
 import server.i18n as I18N  # noqa: E402
 was_lang, I18N.LANG = I18N.LANG, "ko"
-nov = time.mktime((2026, 11, 26, 10, 0, 0, 0, 0, -1))
-check("...in Korean as the panel writes it: 11.26(목) 10:00 AM", M.panel_when(nov) == "11.26(목) 10:00 AM", M.panel_when(nov))
+# a day that is never today: a fixed date was today on the day a run fell on it, and gave the clock alone
+other = time.localtime(time.time() + 2 * 86400)
+day_ts = time.mktime((other.tm_year, other.tm_mon, other.tm_mday, 10, 0, 0, 0, 0, -1))
+want = f"{other.tm_mon:02d}.{other.tm_mday:02d}({'월화수목금토일'[other.tm_wday]}) 10:00 AM"
+check("...in Korean as the panel writes it: MM.DD(요일) 10:00 AM", M.panel_when(day_ts) == want, (M.panel_when(day_ts), want))
 I18N.LANG = was_lang
 check("...not installed, or switched off: no fault", by_id(M.checks(facts(agent={"ok": False, "installed": False})))["agent"]["state"] == "off"
       and by_id(M.checks(facts(agent={"mode": "off"})))["agent"]["state"] == "off")

@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 
@@ -251,7 +252,7 @@ async def model_choice():
     class Fake:
         available = True
 
-        def __init__(self, model, *a):
+        def __init__(self, model, *a, **k):
             asked.append(model)
     real = tr.FasterWhisperTranscriber
     tr.FasterWhisperTranscriber = Fake
@@ -276,7 +277,7 @@ async def model_choice():
     class Two:
         available = True
 
-        def __init__(self, model, compute, lang, hint, threads, live=""):
+        def __init__(self, model, compute, lang, hint, threads, live="", **k):
             made.append((model, live))
     tr.FasterWhisperTranscriber = Two
     lc.transcriber, lc.audio_enabled = "auto", True
@@ -346,7 +347,7 @@ async def model_choice():
     release = asyncio.Event()
     made = []
 
-    def maker(cfg, model=""):
+    def maker(cfg, model="", *a, **k):
         made.append(model)
         return Stand(model)
     real_make = A.make_transcriber
@@ -362,7 +363,7 @@ async def model_choice():
     check("the panel hears that speech is there", any(m.get("type") == "status" and m.get("audio") for m in BROADCAST), BROADCAST)
 
     # one that cannot be had: a download with no network
-    def no_model(cfg, model=""):
+    def no_model(cfg, model="", *a, **k):
         raise OSError("no connection to the model's site")
     A.make_transcriber = no_model
     now = APP.state.transcriber
@@ -374,7 +375,7 @@ async def model_choice():
     warned = [m for m in BROADCAST if m.get("type") == "notice" and m.get("level") == "bad"]
     check("...and says so", len(warned) == 1 and "small" in warned[0]["text"], BROADCAST)
     check("...and the panel's choice shows it", any(m.get("type") == "settings" and m.get("values") == {"whisper_model": "medium"} for m in BROADCAST), BROADCAST)
-    A.make_transcriber = lambda cfg, model="": tr.NullTranscriber()   # "auto": no faster-whisper for it, and no exception
+    A.make_transcriber = lambda cfg, model="", *a, **k: tr.NullTranscriber()   # "auto": no faster-whisper for it, and no exception
     await apply("whisper_model", "small")
     await APP.state.speech_model_task
     check("one that comes back empty-handed counts the same", APP.state.transcriber is now and SETTINGS.get("whisper_model") == "medium")
@@ -382,7 +383,7 @@ async def model_choice():
     # two choices one after the other: the last one stands
     gate = asyncio.Event()
 
-    def slow(cfg, model=""):
+    def slow(cfg, model="", *a, **k):
         return Stand(model)
     A.make_transcriber = slow
     await apply("whisper_model", "small")
@@ -396,7 +397,7 @@ async def model_choice():
     SETTINGS.values["whisper_model"] = "medium"
     tried = []
 
-    def start_maker(cfg, model=""):
+    def start_maker(cfg, model="", *a, **k):
         tried.append(model)
         return tr.NullTranscriber() if model == "medium" else Stand(model)
     A.make_transcriber = start_maker
@@ -411,7 +412,7 @@ async def model_choice():
     SETTINGS.values["whisper_model"] = "medium"
     tried.clear()
 
-    def raising(cfg, model=""):   # SIDENOTE_TRANSCRIBER=faster-whisper raises when it cannot load
+    def raising(cfg, model="", *a, **k):   # SIDENOTE_TRANSCRIBER=faster-whisper raises when it cannot load
         tried.append(model)
         if model == "medium":
             raise OSError("no connection to the model's site")
@@ -424,7 +425,7 @@ async def model_choice():
     mine = Stand("medium")
     APP.state.transcriber = mine
 
-    def choose_meanwhile(cfg, model=""):
+    def choose_meanwhile(cfg, model="", *a, **k):
         SETTINGS.values["whisper_model"] = "medium"
         return Stand(model)
     A.make_transcriber = choose_meanwhile
@@ -437,25 +438,25 @@ async def model_choice():
     await A.load_speech(APP)
     check("a choice still loading: the start's model hears meanwhile", model_in_use() == "small" and SETTINGS.get("whisper_model") == "medium", APP.state.transcriber.__dict__)
     SETTINGS.values["whisper_model"] = "medium"
-    A.make_transcriber = lambda cfg, model="": tr.NullTranscriber()
+    A.make_transcriber = lambda cfg, model="", *a, **k: tr.NullTranscriber()
     now = APP.state.transcriber
     await A.change_speech_model(APP, "small", "medium")
     check("...and when it cannot be had, the panel's choice and what runs agree", APP.state.transcriber is now and SETTINGS.get("whisper_model") == "small")
     BROADCAST.clear()
     SETTINGS.values["whisper_model"] = "medium"
-    A.make_transcriber = lambda cfg, model="": tr.NullTranscriber() if model == "medium" else Stand(model)
+    A.make_transcriber = lambda cfg, model="", *a, **k: tr.NullTranscriber() if model == "medium" else Stand(model)
     await A.load_speech(APP)
     check("a panel open at the start hears that the saved model gave way", any(m.get("type") == "settings" and m.get("values") == {"whisper_model": envs} for m in BROADCAST), BROADCAST)
     SETTINGS.values["whisper_model"] = "medium"
     tried.clear()
-    A.make_transcriber = lambda cfg, model="": (tried.append(model), Stand(model))[1]
+    A.make_transcriber = lambda cfg, model="", *a, **k: (tried.append(model), Stand(model))[1]
     await A.load_speech(APP)
     check("a saved model that loads is the one that runs", tried == ["medium"] and model_in_use() == "medium", tried)
     # A choice that loaded first has its worker running: the start's load, ending after it, starts no second one
     SETTINGS.values["whisper_model"] = "small"
     started = []
     A.transcription_worker = lambda app: (started.append(app), asyncio.sleep(0))[1]
-    A.make_transcriber = lambda cfg, model="": Stand(model)
+    A.make_transcriber = lambda cfg, model="", *a, **k: Stand(model)
     running = asyncio.create_task(asyncio.sleep(60))
     APP.state.transcribe_worker = running
     await A.load_speech(APP)
@@ -470,12 +471,12 @@ async def model_choice():
     # loading (the panel's Sound card and Maintenance said "loading" for good)
     APP.state.transcriber, APP.state.speech_failed = tr.NullTranscriber(), False
     SETTINGS.values["whisper_model"] = A.CONFIG.whisper_model
-    A.make_transcriber = lambda cfg, model="": tr.NullTranscriber()
+    A.make_transcriber = lambda cfg, model="", *a, **k: tr.NullTranscriber()
     BROADCAST.clear()
     await A.load_speech(APP)
     said = [m["speech"] for m in BROADCAST if m.get("type") == "status" and "speech" in m]
     check("auto with no model that loads: said as failed, not as loading for good",
-          APP.state.speech_failed is True and said == [{"state": "failed"}], said)
+          APP.state.speech_failed is True and said == [{"state": "failed", "remote": False}], said)
     APP.state.speech_failed = False
     A.make_transcriber = real_make
     A.transcription_worker = worker
@@ -732,7 +733,194 @@ async def what_the_engines_are_told():
     check("...and the answer kept is the same", out == "".join(sent), out)
 
 
+async def the_loop_does_not_wait_on_the_speech_service():
+    """The speech service takes the language and the terms over HTTP once the sentence it is writing down is done (seconds
+    with the larger model): set on the server's loop, every panel and the capture waited that long."""
+    print("[the server's loop while the speech service is busy]")
+
+    class Slow:
+        """A model in the speech service, mid-sentence: each setting waits for the decode."""
+        available = True
+
+        def __init__(self):
+            self._language = "auto"
+            self.hints = None
+
+        @property
+        def language(self):
+            return self._language
+
+        @language.setter
+        def language(self, value):
+            time.sleep(0.6)
+            self._language = value
+
+        def set_hints(self, hint, extra=()):
+            time.sleep(0.6)
+            self.hints = (hint, list(extra))
+    was = APP.state.transcriber
+    APP.state.transcriber = slow = Slow()
+    gaps, stop = [], asyncio.Event()
+
+    async def tick():   # what the loop does meanwhile: a panel's message, a frame
+        last = time.monotonic()
+        while not stop.is_set():
+            await asyncio.sleep(0.02)
+            now = time.monotonic()
+            gaps.append(now - last)
+            last = now
+    ticker = asyncio.create_task(tick())
+    try:
+        await apply("speech_lang", "en")
+        await apply("speech_terms", ["Kafka"])
+    finally:
+        stop.set()
+        await ticker
+        APP.state.transcriber = was
+        SETTINGS.values["speech_lang"] = "auto"
+        SETTINGS.values["speech_terms"] = []
+    check("the language and the terms reach the model, and the loop goes on while the service takes them",
+          slow.language == "en" and slow.hints is not None and max(gaps) < 0.3, (slow.language, slow.hints, round(max(gaps), 2)))
+
+
+async def the_speech_service_down_is_said():
+    """A speech service that does not answer is down on the panel, Maintenance and status, where they said "on" beside a
+    container that was gone; the watch looks while no one speaks and tells the panels when it changes."""
+    print("[the speech service down]")
+
+    class Remote:
+        available = True
+
+        def __init__(self):
+            self.reachable = True
+            self.looks = 0
+
+        def probe(self):
+            self.looks += 1
+            self.reachable = self.looks < 2   # answers the first look, not the second
+    was, url, how, on = APP.state.transcriber, A.CONFIG.speech_url, A.CONFIG.transcriber, A.CONFIG.audio_enabled
+    APP.state.transcriber, A.CONFIG.speech_url = Remote(), "http://speech:8779"
+    A.CONFIG.transcriber, A.CONFIG.audio_enabled = "auto", True   # speech on, in the service
+    BROADCAST.clear()
+    look = A.SPEECH_LOOK_SEC
+    A.SPEECH_LOOK_SEC = 0.05
+    try:
+        up = A.speech_state(APP)
+        watch = asyncio.create_task(A.speech_watch(APP))
+        await asyncio.sleep(0.4)
+        watch.cancel()
+        await asyncio.gather(watch, return_exceptions=True)
+        down = A.speech_state(APP)
+        told = [m["speech"] for m in BROADCAST if m.get("type") == "status" and "speech" in m]
+    finally:
+        A.SPEECH_LOOK_SEC = look
+        APP.state.transcriber, A.CONFIG.speech_url = was, url
+        A.CONFIG.transcriber, A.CONFIG.audio_enabled = how, on
+    check("a speech service that answers is on, said as the service's", up == {"state": "on", "remote": True}, up)
+    check("...one that stops answering is down, and the panels are told once", down == {"state": "down", "remote": True}
+          and told == [{"state": "down", "remote": True}], (down, told))
+    # gone already at the first look: told too (the first look only set what it compared with, and the panels kept "on")
+    gone = Remote()
+    gone.looks = 1
+    APP.state.transcriber, A.CONFIG.speech_url = gone, "http://speech:8779"
+    A.CONFIG.transcriber, A.CONFIG.audio_enabled = "auto", True
+    A.SPEECH_LOOK_SEC = 0.05
+    BROADCAST.clear()
+    try:
+        watch = asyncio.create_task(A.speech_watch(APP))
+        await asyncio.sleep(0.2)
+        watch.cancel()
+        await asyncio.gather(watch, return_exceptions=True)
+        first = [m["speech"] for m in BROADCAST if m.get("type") == "status" and "speech" in m]
+    finally:
+        A.SPEECH_LOOK_SEC = look
+        APP.state.transcriber, A.CONFIG.speech_url = was, url
+        A.CONFIG.transcriber, A.CONFIG.audio_enabled = how, on
+    check("...gone at the watch's first look: the panels are told", first[:1] == [{"state": "down", "remote": True}], first)
+
+
+async def the_speech_service_late():
+    """The speech service up after the server's first load gave up (an image still pulled, a download that failed once): asked
+    again until it loads, with the panel's choice kept and the panel told when speech is back. It said failed until the
+    server started again. And a choice loading beside the service's client in use: that client loads nothing again while it
+    does, and is back as it was when the choice cannot be had."""
+    print("[the speech service late, and a choice loading beside its client]")
+    tries = []
+
+    class Remote(Stand):
+        retired = False
+
+    def late(cfg, model="", *a, **k):   # two tries find no service, the third loads
+        tries.append(model)
+        if len(tries) < 3:
+            raise tr.ServiceDown("the speech service at http://speech:8779 does not answer (ConnectError)")
+        return Remote(model)
+    was = (A.make_transcriber, A.transcription_worker, A.CONFIG.speech_url, A.CONFIG.transcriber, A.CONFIG.audio_enabled,
+           A.SPEECH_RETRY_SEC, SETTINGS.values.get("whisper_model"))
+    A.make_transcriber, A.transcription_worker = late, (lambda app: asyncio.sleep(0))
+    A.CONFIG.speech_url, A.CONFIG.transcriber, A.CONFIG.audio_enabled = "http://speech:8779", "auto", True
+    A.SPEECH_RETRY_SEC = (0.05, 0.1)
+    SETTINGS.values["whisper_model"] = "medium"              # the panel's choice, not the environment's
+    APP.state.transcriber, APP.state.speech_failed = tr.NullTranscriber(), False
+    BROADCAST.clear()
+    try:
+        await asyncio.wait_for(A.load_speech(APP), 10)
+        notes = [(m.get("level"), m.get("text")) for m in BROADCAST if m.get("type") == "notice"]
+        check("a service not up yet is asked again until it loads, the panel's choice kept",
+              tries == ["medium"] * 3 and model_in_use() == "medium" and SETTINGS.get("whisper_model") == "medium"
+              and APP.state.speech_failed is False, (tries, model_in_use(), SETTINGS.get("whisper_model")))
+        check("...said once as not loaded, and once as ready", [lvl for lvl, _ in notes] == ["bad", "done"], notes)
+        # a choice beside the client in use: retired while it loads, and back when it cannot be had
+        inuse = APP.state.transcriber
+        seen = {}
+
+        def broken(cfg, model="", *a, **k):
+            seen["retired while loading"] = inuse.retired
+            raise OSError("no such model")
+        A.make_transcriber = broken
+        SETTINGS.values["whisper_model"] = "small"            # as the panel's choice sets it before its load
+        await A.change_speech_model(APP, "medium", "small")
+        check("the client in use loads nothing again while a choice loads, and is back when it cannot be had",
+              seen.get("retired while loading") is True and inuse.retired is False and APP.state.transcriber is inuse
+              and SETTINGS.get("whisper_model") == "medium", (seen, inuse.retired, SETTINGS.get("whisper_model")))
+        A.make_transcriber = lambda cfg, model="", *a, **k: Remote(model)
+        SETTINGS.values["whisper_model"] = "small"
+        await A.change_speech_model(APP, "medium", "small")
+        check("...and stays retired when it has been replaced", inuse.retired is True and model_in_use() == "small")
+        # a second choice made while the first was being set up (its language and terms): the first is not put in use
+        in_use, ready = APP.state.transcriber, A.ready_speech
+
+        def chosen_again(tr_):
+            SETTINGS.values["whisper_model"] = "large-v3-turbo"
+        A.ready_speech = chosen_again
+        SETTINGS.values["whisper_model"] = "medium"
+        BROADCAST.clear()
+        await A.change_speech_model(APP, "small", "medium")
+        A.ready_speech = ready
+        told = [m.get("text") for m in BROADCAST if m.get("type") == "notice" and m.get("level") == "done"]
+        check("a choice made while the one before it was set up: that one is not put in use, nor said ready",
+              APP.state.transcriber is in_use and not told, (model_in_use(), told))
+        # the start, asked to give way in the speech service to a choice made meanwhile, leaves it all to that choice
+        def gave_way(cfg, model="", *a, **k):
+            raise tr.Superseded("a model chosen meanwhile was asked for there")
+        A.make_transcriber = gave_way
+        SETTINGS.values["whisper_model"] = "medium"
+        now_in_use = APP.state.transcriber
+        BROADCAST.clear()
+        done = await A.load_speech_once(APP)
+        check("...and the start that gave way to a choice changes nothing: no fall back, no failure said",
+              done is True and APP.state.transcriber is now_in_use and SETTINGS.get("whisper_model") == "medium"
+              and not [m for m in BROADCAST if m.get("type") in ("notice", "settings")], BROADCAST)
+    finally:
+        (A.make_transcriber, A.transcription_worker, A.CONFIG.speech_url, A.CONFIG.transcriber, A.CONFIG.audio_enabled,
+         A.SPEECH_RETRY_SEC, SETTINGS.values["whisper_model"]) = was
+        APP.state.speech_failed = False
+
+
 async def main():
+    await the_loop_does_not_wait_on_the_speech_service()
+    await the_speech_service_down_is_said()
+    await the_speech_service_late()
     await settings_act_at_once()
     await model_choice()
     await worker_follows_the_model()

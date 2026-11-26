@@ -13,7 +13,7 @@ Checks, each a thing the server did differently before:
             agent, which answers it on the same card, cleared of what the local model wrote, with a note saying so
   limits    not when the agent is off, braked, held back from the problem (not sent) or has had it already; when the
             agent fails too, the card says both failed; the verify mode's direct pass does the same
-  gpu       the GPU under this PC's model failing (2026-11-20: every load ended in HTTP 500, "uncorrectable ECC error"):
+  gpu       the GPU under this PC's model failing (every load ended in HTTP 500, "uncorrectable ECC error"):
             the agent answers every problem, the one that found it included, from what it would get with no local
             model; the model is not tried again meanwhile; a reading out that fails sends the problem as with no local
             model; when the agent fails too the analysis says both, without trying the broken model again
@@ -614,7 +614,7 @@ async def followups():
 # ---------------------------------------------------------------------------------------------------------------------
 # The GPU under this PC's model failing: the model's server answers, and every load of the model fails on the GPU
 
-# What the model's server answered on 2026-11-20 to every load and request, word for word (the server's log): the GPU's
+# What the model's server answered to every load and request, word for word (the server's log), on a GPU whose
 # memory had given an error it could not correct, and its driver asked for a reset
 ECC_BODY = ('{"error":{"message":"llama-server process has terminated: CUDA error\\nCUDA error: uncorrectable ECC error '
             'encountered: CUDA error\\nCUDA error: uncorrectable ECC error encountered","type":"api_error","param":null,'

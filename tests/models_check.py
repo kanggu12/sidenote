@@ -111,7 +111,7 @@ finally:
     app_module.GPU_STAT, hardware.usage = saved_stat, saved_usage
 
 print("[the GPU failing under this PC's model: the server stops using the model]")
-# The llm container's readings with the driver's recovery action (docker/compose.nvidia.yaml): the GPU on 2026-11-20 after
+# The llm container's readings with the driver's recovery action (docker/compose.nvidia.yaml): a GPU after
 # one uncorrectable memory error, a GPU at rest, and a container started before the field was read
 saved_stat, saved_engines, saved_local = app_module.GPU_STAT, app_module.ENGINES, dict(app_module.STATE.local)
 try:

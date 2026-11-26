@@ -77,7 +77,8 @@ from .pipeline import (CONFIRM_TIMEOUT, GpuBusy, Hooks, NoSolver, NotSent, Pipel
                        followup_engine,
                        followup, retry_request)
 from .settings import SETTINGS, WORDS_MAX
-from .transcriber import NullTranscriber, UtteranceTracker, hint_words, make_transcriber
+from .transcriber import (FasterWhisperTranscriber, NullTranscriber, ServiceDown, Superseded, UtteranceTracker,
+                          give_back_memory, hint_words, make_transcriber)
 from .updates import RELEASES
 from .version import VERSION
 
@@ -1189,7 +1190,7 @@ LOCAL_FAULT_HOLD = 180.0
 def local_fault() -> dict | None:
     """Why this PC's model cannot be used now though its server answers ({"kind", "detail"}), or None. "reset": the GPU's
     driver asks for the GPU to be reset (its recovery action, after a memory error it could not correct); "ecc" or "gpu":
-    the model's server failed on the GPU lately (LocalLlmAnalyzer._noticed). Seen 2026-11-20: with the driver asking for a
+    the model's server failed on the GPU lately (LocalLlmAnalyzer._noticed). Seen on the test PC: with the driver asking for a
     reset, every problem of a sitting tried the model, failed in 2 s, and then failed the agent too, which was given the
     problem through the same broken model (76 analyses failed)."""
     reading = read_gpu() or {}
@@ -1871,6 +1872,9 @@ async def transcription_worker(app: FastAPI) -> None:
              CONFIG.transcribe_interval, "on" if SETTINGS.on("voice_auto") else "off")
     pass_time = 0.0
     while True:
+        # Not held while waiting: a model the panel replaced stayed in memory as long as no sound came (paused, or quiet),
+        # past the moment its memory was given back (change_speech_model), 0.8 GB in the desktop app
+        transcriber = None
         # Fixed cadence: a pass that took t seconds shortens the next wait by t.
         await asyncio.sleep(max(0.2, CONFIG.transcribe_interval - pass_time))
         pass_time = 0.0
@@ -2727,6 +2731,7 @@ def maintenance_facts(app) -> dict:
                     "skipping": (STATE.capture_caps or {}).get("skipping") is True},
         "speech": {"enabled": CONFIG.audio_enabled and CONFIG.transcriber != "null", "transcriber": CONFIG.transcriber,
                    "available": bool(getattr(tr, "available", False)), "failed": bool(getattr(app.state, "speech_failed", False)),
+                   "down": getattr(tr, "reachable", True) is False,   # the speech service does not answer
                    "model": getattr(tr, "model_name", "") or "", "live": getattr(tr, "live_name", "") or ""},
         "local": eng["local"],
         "agent": eng["agent"], "search": eng.get("search") or {},
@@ -2792,7 +2797,8 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
     elif key == "run_button":
         await broadcast({"type": "status", "run_enabled": run_enabled()})
     elif key in ("whisper_hint", "speech_terms"):
-        speech_hints(app.state.transcriber)
+        # off the loop: the speech service's model takes them over HTTP, after the sentence it is writing down
+        await asyncio.to_thread(speech_hints, app.state.transcriber)
     elif key == "whisper_model" and old != value:
         app.state.speech_model_task = asyncio.create_task(change_speech_model(app, old, value))
     elif key in ("agent_model_name", "agent_effort") and ENGINES is not None and ENGINES.agent is not None:
@@ -2808,7 +2814,9 @@ async def apply_setting(app: FastAPI, key: str, value) -> tuple[bool, str]:
     elif key == "speech_lang":
         tr = app.state.transcriber
         if hasattr(tr, "language"):
-            tr.language = value      # the worker re-transcribes the buffer in it
+            # the worker re-transcribes the buffer in it. Off the loop: the speech service takes it over HTTP once the
+            # sentence it is writing down is done, seconds with the larger model, and every panel waited on that
+            await asyncio.to_thread(setattr, tr, "language", value)
             await broadcast({"type": "status", "lang": value})
     elif key == "voice_auto":
         if not value:
@@ -2858,23 +2866,45 @@ async def change_speech_model(app: FastAPI, old: str, model: str) -> None:
     model not downloaded yet is fetched here, as the first start fetches `small`, and one that cannot be had leaves the
     old one in use and the choice back on it: kept, it would leave the next start of the server with no speech at all."""
     await notice(t("Loading the speech model {model}: the first time it is downloaded", model=model))
+    prev = app.state.transcriber
+    # The speech service's client in use loads nothing again while this one loads: its model back in a service that
+    # started again was taken there as a later choice, and this one was dropped and put back (RemoteTranscriber.retired)
+    if hasattr(prev, "retired"):
+        prev.retired = True
     try:
-        tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+        # in this process, the models the one in use holds that this one needs too are shared, not loaded twice
+        tr = await asyncio.to_thread(make_transcriber, CONFIG, model, prev)
         failed = "" if getattr(tr, "available", False) else "unavailable"
     except asyncio.CancelledError:
         raise
+    except Superseded:   # a later choice was asked for in the speech service: that one's own load settles it
+        return
     except Exception as exc:
         tr, failed = None, str(exc)[:120]
     if SETTINGS.get("whisper_model") != model:   # another choice since: that one's own load settles it
         return
     if failed:
+        # the model in use stays, said by its name: after two choices in a row, the setting went back to the first, which
+        # had never been taken
+        old = getattr(app.state.transcriber, "model_name", "") or old
+        if hasattr(prev, "retired") and app.state.transcriber is prev:
+            prev.retired = False
         log.warning("the speech model %s did not load (%s); %s stays", model, failed, old)
         SETTINGS.set("whisper_model", old)
         await broadcast({"type": "settings", "values": {"whisper_model": old}})
         await notice(t("The speech model {model} did not load: {old} stays", model=model, old=old), "bad")
         return
-    ready_speech(tr)
+    await asyncio.to_thread(ready_speech, tr)   # its language and terms, over HTTP for the speech service
+    if SETTINGS.get("whisper_model") != model:
+        # another choice made while this one was set up: that one's load settles it. Put in use here, this one took its
+        # place, said it was ready, and (not retired) asked the service for its own model back
+        return
     app.state.transcriber = tr   # the worker reads it at its next pass (transcription_worker)
+    app.state.speech_failed = False
+    if isinstance(prev, FasterWhisperTranscriber):
+        # the memory of the model dropped here given back to the system, once the speech loop has let go of it
+        del prev
+        asyncio.get_running_loop().run_in_executor(None, give_back_memory, 5.0)
     # A server that had no speech until now has no worker either
     if getattr(app.state, "transcribe_worker", None) is None or app.state.transcribe_worker.done():
         app.state.transcribe_worker = asyncio.create_task(transcription_worker(app))
@@ -2889,40 +2919,114 @@ def speech_state(app: FastAPI) -> dict:
     loading (the model loads after the server is up, 3 to 15 s), failed to load, or off on the server with the variable
     that turns it on. With `audio` alone, all three that were not on were "off on the server: SIDENOTE_AUDIO=1"."""
     tr = getattr(app.state, "transcriber", None)
+    # `remote`: in a service of its own (SIDENOTE_SPEECH_URL), whose log says why, not the server's
+    remote = bool(CONFIG.speech_url) and CONFIG.audio_enabled and CONFIG.transcriber != "null"
+    if getattr(tr, "reachable", True) is False:   # the speech service does not answer: nothing is heard
+        return {"state": "down", "remote": True}
     if getattr(tr, "available", False):
-        return {"state": "on"}
+        return {"state": "on", "remote": remote}
     if not (CONFIG.audio_enabled and CONFIG.transcriber != "null"):
-        return {"state": "off", "turn_on": "SIDENOTE_TRANSCRIBER=auto" if CONFIG.transcriber == "null" else "SIDENOTE_AUDIO=1"}
-    return {"state": "failed" if getattr(app.state, "speech_failed", False) else "loading"}
+        return {"state": "off", "turn_on": "SIDENOTE_TRANSCRIBER=auto" if CONFIG.transcriber == "null" else "SIDENOTE_AUDIO=1",
+                "remote": False}
+    return {"state": "failed" if getattr(app.state, "speech_failed", False) else "loading", "remote": remote}
+
+
+SPEECH_LOOK_SEC = 10.0   # how often the speech service is looked at while no one speaks (speech_watch)
+
+
+async def speech_watch(app: FastAPI) -> None:
+    """The speech service looked at every SPEECH_LOOK_SEC (RemoteTranscriber.probe), and the panels told when what speech
+    is changes: a service that went away is down at once, not "on" until someone speaks, and one that started again gets
+    its model back. In the server's own process there is nothing to look at, and what changes is told where it changes."""
+    # as the panels last heard it: the first look, finding the service gone, said nothing, and the panels kept "on"
+    said = speech_state(app)
+    while True:
+        await asyncio.sleep(SPEECH_LOOK_SEC)
+        tr = getattr(app.state, "transcriber", None)
+        probe = getattr(tr, "probe", None)
+        if probe is None:
+            continue
+        try:
+            await asyncio.to_thread(probe)
+        except Exception as exc:   # a look that fails is no reason to stop looking
+            log.debug("speech service look failed (%s)", exc)
+            continue
+        now = speech_state(app)
+        if now != said:
+            log.info("speech: %s", now["state"])
+            await broadcast({"type": "status", "speech": now, "audio": getattr(app.state.transcriber, "available", False)})
+        said = now
+
+
+SPEECH_RETRY_SEC = (15.0, 60.0)   # the first wait before the speech service is asked again, and the longest (load_speech)
 
 
 async def load_speech(app: FastAPI) -> None:
     """The speech model, loaded after the server is up, then its worker started and the panels told that speech is
     there. A model that cannot load leaves the server without speech, and says so in the log and on the panel. One
-    chosen in the panel that cannot be had any more gives way to the one the environment names."""
+    chosen in the panel that cannot be had any more gives way to the one the environment names.
+
+    In the speech service (SIDENOTE_SPEECH_URL) a first load that fails is asked again, every minute at most, until it
+    loads or a model chosen in the panel does: a service up after the server's two minutes of waiting (an image pulled, a
+    claim bound), or a download that failed once, left speech failed until the server started again."""
+    remote = bool(CONFIG.speech_url) and CONFIG.audio_enabled and CONFIG.transcriber != "null"
+    wait, failed = SPEECH_RETRY_SEC[0], False
+    while True:
+        if await load_speech_once(app, quiet=failed):
+            if failed and getattr(app.state.transcriber, "available", False):   # back after a failure: said, as the failure was
+                await notice(t("The speech model {model} is ready", model=getattr(app.state.transcriber, "model_name", "")), "done")
+            return
+        failed = True
+        if not remote:
+            return
+        log.info("asking the speech service for its model again in %d s", wait)
+        await asyncio.sleep(wait)
+        wait = min(wait * 2, SPEECH_RETRY_SEC[1])
+        if getattr(app.state.transcriber, "available", False):   # a model chosen in the panel loaded meanwhile
+            return
+
+
+async def load_speech_once(app: FastAPI, quiet: bool = False) -> bool:
+    """One load of the speech model at the start (load_speech): True when it is done with, loaded or never to be, False when
+    it failed and may load when asked again. `quiet`: a failure said before is not said again on the panel."""
     model = SETTINGS.get("whisper_model")
+    # defer: in the speech service, a model chosen in the panel while this start waited for it is not taken over
+    make = functools.partial(make_transcriber, defer=True)
     try:
         try:
-            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+            tr = await asyncio.to_thread(make, CONFIG, model)
+        except ServiceDown:   # the speech service not up yet: no fault of the choice, which stays (asked again, load_speech)
+            raise
+        except Superseded:    # a model chosen in the panel meanwhile was asked for there: its own load settles it
+            return True
         except Exception:   # the environment's own model failing is the case below; a panel's choice has that one to fall back on
             if model == CONFIG.whisper_model:
                 raise
             tr = NullTranscriber()
         if model != CONFIG.whisper_model and CONFIG.audio_enabled and CONFIG.transcriber != "null" and not getattr(tr, "available", False):
+            if SETTINGS.get("whisper_model") != model:
+                # a model chosen in the panel while the saved one failed: its own load settles it. This went back to the
+                # environment's model and put that in the setting, over the choice
+                return True
             log.warning("the speech model %s did not load; going back to %s", model, CONFIG.whisper_model)
             SETTINGS.set("whisper_model", CONFIG.whisper_model)
             await broadcast({"type": "settings", "values": {"whisper_model": CONFIG.whisper_model}})
             model = CONFIG.whisper_model
-            tr = await asyncio.to_thread(make_transcriber, CONFIG, model)
+            tr = await asyncio.to_thread(make, CONFIG, model)
     except asyncio.CancelledError:
         raise
     except Exception as exc:   # SIDENOTE_TRANSCRIBER=faster-whisper raises on purpose when it cannot load
+        if not isinstance(exc, ServiceDown) and SETTINGS.get("whisper_model") != model:
+            return True   # a model chosen in the panel meanwhile: its own load settles it, not this failure
         app.state.speech_failed = True   # the Maintenance sheet's check says it failed, not that it is still loading
+        if quiet:
+            log.warning("the speech model did not load again (%s)", str(exc)[:160])
+            return False
         log.error("the speech model did not load (%s); the server goes on without speech", exc)
         await notice(t("The speech model did not load: questions read aloud are not heard ({why})", why=str(exc)[:120]),
                      "bad")
         await broadcast({"type": "status", "speech": speech_state(app)})   # the Sound card: did not load, not still loading
-        return
+        return False
     if (CONFIG.audio_enabled and CONFIG.transcriber != "null" and not getattr(tr, "available", False)
             and not getattr(app.state.transcriber, "available", False)):
         # auto with no faster-whisper that would load (transcriber.py gives the stand-in then), and no choice made in the
@@ -2930,13 +3034,17 @@ async def load_speech(app: FastAPI) -> None:
         app.state.speech_failed = True
         log.error("the speech model did not load; the server goes on without speech")
         await broadcast({"type": "status", "speech": speech_state(app)})
-        return
+        return True
     # Another model chosen in the panel while this one loaded, and already taken over: that one stays. Not yet: this one hears
     # until it does, and is what is left when that one cannot be had
     if SETTINGS.get("whisper_model") != model and getattr(app.state.transcriber, "available", False):
-        return
-    ready_speech(tr)
+        return True
+    await asyncio.to_thread(ready_speech, tr)   # its language and terms, over HTTP for the speech service
+    if SETTINGS.get("whisper_model") != model and getattr(app.state.transcriber, "available", False):
+        return True   # the same, for a choice that took over while this one was set up
     app.state.transcriber = tr
+    if getattr(tr, "available", False):
+        app.state.speech_failed = False
     # A choice in the panel that loaded first has its worker running, and that worker reads this model at its next pass. A
     # second one would cut every sentence twice, and nothing would hold it to cancel at shutdown.
     if getattr(app.state, "transcribe_worker", None) is None or app.state.transcribe_worker.done():
@@ -2945,6 +3053,7 @@ async def load_speech(app: FastAPI) -> None:
         log.info("speech model ready (%s)", model)
         await broadcast({"type": "status", "audio": True, "speech": speech_state(app), "lang": getattr(tr, "language", None),
                          "voice": SETTINGS.on("voice_auto")})
+    return True
 
 
 async def analysis_worker(app: FastAPI) -> None:
@@ -3628,6 +3737,7 @@ def create_app() -> FastAPI:
         app.state.transcribe_worker = None
         app.state.speech_model_task = None
         app.state.speech_task = asyncio.create_task(load_speech(app))
+        app.state.speech_watch = asyncio.create_task(speech_watch(app))
         crop_on = CONFIG.crop != "off" and app.state.ocr is not None
         audio_on = getattr(app.state.transcriber, "available", False)
         # the release that runs, on the line every start writes: only the release check, a minute later and only when it
@@ -3678,6 +3788,7 @@ def create_app() -> FastAPI:
             app.state.runner_task.cancel()
             app.state.worker.cancel()
             app.state.speech_task.cancel()
+            app.state.speech_watch.cancel()
             if app.state.speech_model_task is not None:
                 app.state.speech_model_task.cancel()
             if app.state.transcribe_worker is not None:
